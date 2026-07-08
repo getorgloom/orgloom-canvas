@@ -1,30 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -42,12 +15,8 @@
 			const renderBulkView = deps.renderBulkView;
 			const showBulkToast = deps.showBulkToast;
 
-
-
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction : null;
-
-
 
 			function _captureValuesUndo(records) {
 				const prior = records.map((r) => ({ rec: r, values: r.values }));
@@ -59,15 +28,6 @@
 					showBulkToast('Restored the previous field values.');
 				};
 			}
-
-
-
-
-
-
-
-
-
 
 				const bulkEditModal = document.createElement('div');
 				bulkEditModal.className = 'modal hidden';
@@ -92,8 +52,6 @@ closeBulkEditModal();
 } 
 });
 
-
-
 				let _beState = null;
 
 				function openBulkEditModal() {
@@ -101,7 +59,6 @@ closeBulkEditModal();
 						showBulkToast('Add some records first.', 'error');
 						return;
 					}
-
 
 					const objCounts = new Map();
 					canvasState.bulkRecords.forEach(r => objCounts.set(r.objectName, (objCounts.get(r.objectName) || 0) + 1));
@@ -120,7 +77,6 @@ closeBulkEditModal();
 						value: '',
 					};
 
-
 					ensureDescribe(activeObj).then(() => {
 						renderBulkEditModal();
 					}).catch(() => renderBulkEditModal());
@@ -131,25 +87,12 @@ closeBulkEditModal();
 					_beState = null;
 				}
 
-
-
-
-
-
-
-
-
-
 				function _isStringLikeField(f) {
 					if (!f) {
 return false;
 }
 					return ['string', 'textarea', 'email', 'phone', 'url', 'encryptedstring', 'picklist', 'multipicklist', 'combobox', 'reference', 'id'].indexOf(f.type) !== -1;
 				}
-
-
-
-
 
 				function _renderSetValueInput(field, current) {
 					const cur = current == null ? '' : String(current);
@@ -209,8 +152,6 @@ return false;
 					}
 				}
 
-
-
 				function _readSetValueFromInput(field, container) {
 					if (!field) {
 return '';
@@ -241,12 +182,9 @@ _beState.fieldName = fields[0].name;
 					const currentField = fields.find(f => f.name === _beState.fieldName) || null;
 					const stringLike = _isStringLikeField(currentField);
 
-
-
 					if (_beState.action === 'replace' && !stringLike && currentField) {
 						_beState.action = 'set';
 					}
-
 
 					const objCounts = new Map();
 					canvasState.bulkRecords.forEach(r => objCounts.set(r.objectName, (objCounts.get(r.objectName) || 0) + 1));
@@ -295,7 +233,6 @@ _beState.fieldName = fields[0].name;
 						actionTabs +
 						actionPanel +
 						'<div class="be-preview" id="be-preview"></div>';
-
 
 					const objSel = content.querySelector('#be-object');
 					objSel.addEventListener('change', () => {
@@ -351,8 +288,6 @@ wholeEl.addEventListener('change', () => {
 });
 }
 
-
-
 					const valEl = content.querySelector('#be-value');
 					if (valEl) {
 						const sync = () => {
@@ -370,10 +305,6 @@ wholeEl.addEventListener('change', () => {
 return [];
 }
 
-
-
-
-
 					const recs = canvasState.bulkRecords.filter(r =>
 						r.objectName === _beState.objectName && !r.isTypeNode && !r.isPending);
 					if (_beState.scope === 'selected') {
@@ -381,10 +312,6 @@ return recs.filter(r => canvasState.bulkSelectedIds.has(r.id));
 }
 					return recs;
 				}
-
-
-
-
 
 				function bulkEditLoadedInScope() {
 					return bulkEditAffectedRecords().filter(r => r.loadedFromId).length;
@@ -439,9 +366,6 @@ apply.disabled = true;
 						return;
 					}
 
-
-
-
 					const _loaded = bulkEditLoadedInScope();
 					const sfHint = _loaded > 0
 						? ' Includes ' + _loaded + ' Salesforce-loaded record' + (_loaded === 1 ? '' : 's') +
@@ -464,10 +388,6 @@ apply.disabled = n === 0;
 }
 					}
 				}
-
-
-
-
 
 				function _coerceForField(field, raw) {
 					if (raw === '' || raw == null) {
@@ -500,7 +420,6 @@ return;
 						: null;
 					const affected = bulkEditAffectedRecords();
 
-
 					const _undo = _captureValuesUndo(affected);
 					let updatedCount = 0;
 					if (_beState.action === 'replace') {
@@ -523,10 +442,6 @@ return;
 							} else if (_beState.caseSensitive) {
 								nv = sv.split(find).join(_beState.replace);
 							} else {
-
-
-
-
 
 								const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 								const rep = _beState.replace;
@@ -558,7 +473,6 @@ next[_beState.fieldName] = coerced;
 					}
 				}
 				bulkEditModal.querySelector('#bulk-edit-apply').onclick = applyBulkEdit;
-
 
 			return {
 				openModal: openBulkEditModal,

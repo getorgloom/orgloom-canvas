@@ -1,10 +1,5 @@
 #!/usr/bin/env node
 
-
-
-
-
-
 import { connectViaSfCli, cleanupTestRules } from './sf-helpers.js';
 
 const RUN_LIVE = process.env.RUN_SF_LIVE === '1';

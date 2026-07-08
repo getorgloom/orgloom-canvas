@@ -1,32 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -55,12 +26,6 @@ throw new Error('stale-ref.mount: missing deps object');
 return false;
 }
 
-
-
-
-
-
-
 				if (rec._deletedInSf) {
 					return true;
 				}
@@ -72,14 +37,6 @@ return false;
 					if (!s || !s.sfId) {
 return;
 }
-
-
-
-
-
-
-
-
 
 					const reason = s.reason || 'unknown';
 					if (reason === 'no-access') {
@@ -105,16 +62,6 @@ return;
 } catch (_) {}
 				}
 			}
-
-
-
-
-
-
-
-
-
-
 
 			document.addEventListener('orgloom:records-deleted', (e) => {
 				const ids = (e && e.detail && e.detail.sfIds) || [];
@@ -194,9 +141,6 @@ cleanup();
 						if (action === 'convert') {
 							rec.loadedFromId = null;
 							rec._staleAck = false;
-
-
-
 
 							rec._deletedInSf = false;
 						} else if (action === 'remove') {

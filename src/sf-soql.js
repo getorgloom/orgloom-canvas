@@ -1,22 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export function escapeSoqlLiteral(value) {
 	if (value == null) {
 return '';

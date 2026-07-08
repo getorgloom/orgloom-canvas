@@ -1,4 +1,3 @@
-
 (function () {
 	"use strict";
 
@@ -33,7 +32,6 @@
 			const bulkAutoFill = deps.bulkAutoFill;
 			const ensureDescribe = deps.ensureDescribe;
 			const renderBulkView = deps.renderBulkView;
-
 
 			const canvasCapCheck = typeof deps.canvasCapCheck === "function"
 				? deps.canvasCapCheck
@@ -855,7 +853,7 @@
 								_baseY = rr.y + STEP_Y;
 							}
 						}
-	
+
 						if (canvasState.bulkRecords.length === 0) {
 							_baseY = _ch > 0 ? _ch / 2 : 400;
 						}
@@ -892,14 +890,6 @@
 						}
 
 						const tempIdToRuntimeId = new Map();
-
-
-
-
-
-
-
-
 
 						const _addResultCount = results.filter(
 							(r) =>

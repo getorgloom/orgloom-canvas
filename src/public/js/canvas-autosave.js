@@ -1,26 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -42,29 +19,12 @@
 			const _CANVAS_DRAFT_KEY = 'orgloom:canvas-draft:v1';
 			const _ORGSWITCH_STASH_KEY = 'orgloom:org-switch-stash:v1';
 
-
-
-
-
-
-
-
-
 			const _MIGRATION_KEY = 'orgloom:migration:v1';
-
-
 
 			try {
 				window.localStorage.removeItem(_ORGSWITCH_STASH_KEY);
 				window.localStorage.removeItem(_MIGRATION_KEY);
 			} catch (_e) {}
-
-
-
-
-
-
-
 
 			const SYSTEM_FIELDS_TO_STRIP = [
 				'Id',
@@ -81,11 +41,6 @@
 				'MasterRecordId',
 			];
 
-
-
-
-
-
 			function _applyRestoredState(s, sourceOrg, targetOrg) {
 				const isCrossOrg =
 					!!sourceOrg && !!targetOrg && sourceOrg !== targetOrg;
@@ -94,9 +49,6 @@
 					if (!rec || typeof rec !== 'object') {
 						return rec;
 					}
-
-
-
 
 					if (isCrossOrg && rec.loadedFromId && !rec._migrateMatchedId) {
 						convertedCount++;
@@ -118,11 +70,6 @@
 					return rec;
 				});
 				if (Array.isArray(s.selectedObjects)) {
-
-
-
-
-
 
 					canvasState.selectedObjects = isCrossOrg
 						? s.selectedObjects.map((sel) => {
@@ -253,30 +200,6 @@
 				return true;
 			}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 			function _stampSourceRecordTypeDevNames() {
 				const cache = canvasState.describeCache || {};
 				(canvasState.bulkRecords || []).forEach((rec) => {
@@ -337,11 +260,6 @@
 				}
 			}
 
-
-
-
-
-
 			function _migrationSyncIfActive() {
 				const existing = _peekMigration();
 				if (!existing || existing.status !== 'in-progress') {
@@ -363,10 +281,6 @@
 					sessionStorage.setItem(_MIGRATION_KEY, JSON.stringify(existing));
 				} catch (_e) {}
 			}
-
-
-
-
 
 			function _peekMigration() {
 				let raw;
@@ -393,10 +307,6 @@
 				}
 				return payload;
 			}
-
-
-
-
 
 			function _migrationRestore() {
 				const payload = _peekMigration();
@@ -429,17 +339,6 @@
 				return !!_peekMigration();
 			}
 
-
-
-
-
-
-
-
-
-
-
-
 			function _migrationResume() {
 				const payload = _peekMigration();
 				if (!payload) {
@@ -467,7 +366,6 @@
 				}
 				if (isArrival) {
 
-
 					try {
 						payload.status = 'in-progress';
 						payload.targetSfOrgId = currentOrg;
@@ -487,15 +385,6 @@
 						'new',
 				].join(':');
 			}
-
-
-
-
-
-
-
-
-
 
 			function _scopedDraftKey() {
 				return _CANVAS_DRAFT_KEY + '|' + _autosaveScopeKey();
@@ -525,8 +414,6 @@
 					sessionStorage.setItem(_scopedDraftKey(), JSON.stringify(payload));
 				} catch (_e) {
 				}
-
-
 
 				_migrationSyncIfActive();
 			}
@@ -613,16 +500,10 @@
 				}
 			}
 
-
-
-
-
 			window.Orgloom = window.Orgloom || {};
 			window.Orgloom.canvasOrgSwitch = {
 				stash: _orgSwitchStash,
 				restore: _orgSwitchRestore,
-
-
 
 				migrationStash: _migrationStash,
 				migrationResume: _migrationResume,

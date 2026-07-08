@@ -1,35 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -45,24 +13,12 @@ let _bsTokenize, _bsParse, _bsInterpret, _BS_FORBIDDEN_PROPS;
 before(() => {
 	const src = readFileSync(BULK_SCRIPT_PATH, 'utf8');
 
-
-
-
-
-
-
 	const ANCHOR = 'return {\n\t\t\t\topenModal: openBulkScriptModal,';
 	if (!src.includes(ANCHOR)) {
 		throw new Error('Could not find injection anchor in bulk-script.js — refactor may have moved mount\'s return. Update ANCHOR.');
 	}
 	const INJECTED = 'globalThis.__bsTestInternals = { _bsTokenize, _bsParse, _bsInterpret, _BS_FORBIDDEN_PROPS };\n\t\t\t';
 	const modifiedSrc = src.replace(ANCHOR, INJECTED + ANCHOR);
-
-
-
-
-
-
 
 	const makeStubEl = () => {
 		const el = new Proxy(function () {}, {
@@ -112,8 +68,6 @@ return 0;
 	vm.createContext(sandbox);
 	vm.runInContext(modifiedSrc, sandbox);
 
-
-
 	const stubDeps = {
 		canvasState: { bulkRecords: [] },
 		showBulkToast: () => {},
@@ -131,12 +85,6 @@ throw new Error('Internals not captured — bulk-script.js may have changed shap
 	_bsInterpret = internals._bsInterpret;
 	_BS_FORBIDDEN_PROPS = internals._BS_FORBIDDEN_PROPS;
 });
-
-
-
-
-
-
 
 function makeEnv(records = []) {
 	return {
@@ -163,10 +111,6 @@ function makeEnv(records = []) {
 	};
 }
 
-
-
-
-
 function runScript(source, records = []) {
 	const env = makeEnv(records);
 	try {
@@ -179,7 +123,6 @@ function runScript(source, records = []) {
 	}
 }
 
-
 function assertRejects(source, matchMessage, records = []) {
 	const { error } = runScript(source, records);
 	assert.ok(error, 'Expected script to throw, but it succeeded:\n  ' + source);
@@ -188,26 +131,13 @@ function assertRejects(source, matchMessage, records = []) {
 	}
 }
 
-
 function assertAccepts(source, records = []) {
 	const { error } = runScript(source, records);
 	assert.equal(error, null, 'Expected script to succeed, but it threw:\n  ' + source + '\n  Error: ' + (error && error.message));
 }
 
-
-
-
-
-
-
-
-
-
-
 describe('Sandbox: prototype-chain escape attempts must throw', () => {
 	test('object literal .constructor blocked', () => {
-
-
 
 		assertRejects('let f = max.constructor;', /Property "constructor" is not allowed/);
 	});
@@ -242,8 +172,6 @@ describe('Sandbox: prototype-chain escape attempts must throw', () => {
 
 	test('bracket-notation .constructor blocked (computed access path)', () => {
 
-
-
 		const records = [{ id: 1, values: {} }];
 		assertRejects('records[0]["constructor"];', /Property "constructor" is not allowed/, records);
 	});
@@ -267,12 +195,6 @@ describe('Sandbox: prototype-chain escape attempts must throw', () => {
 	});
 });
 
-
-
-
-
-
-
 describe('Sandbox: browser globals are not in scope', () => {
 	const FORBIDDEN_GLOBALS = [
 		'window', 'document', 'fetch', 'XMLHttpRequest', 'localStorage',
@@ -286,13 +208,6 @@ describe('Sandbox: browser globals are not in scope', () => {
 		});
 	}
 });
-
-
-
-
-
-
-
 
 describe('Sandbox: record identity is read-only', () => {
 	test('reading r.id is allowed', () => {
@@ -323,21 +238,10 @@ describe('Sandbox: record identity is read-only', () => {
 
 	test('reassigning a NON-identity field on r is allowed', () => {
 
-
-
-
 		const records = [{ id: 1, label: 'old', values: {} }];
 		assertAccepts("records[0].label = 'new';", records);
 	});
 });
-
-
-
-
-
-
-
-
 
 describe('Sandbox: exposed helpers can\'t be used to escape', () => {
 	test('max.call.constructor still blocked', () => {
@@ -356,12 +260,6 @@ describe('Sandbox: exposed helpers can\'t be used to escape', () => {
 		assertRejects("abort('stop');", /stop/);
 	});
 });
-
-
-
-
-
-
 
 describe('Sandbox: parser rejects out-of-spec syntax', () => {
 	test('arrow function rejected', () => {
@@ -409,16 +307,10 @@ describe('Sandbox: parser rejects out-of-spec syntax', () => {
 	});
 });
 
-
-
 describe('Sandbox: runaway loops abort via step cap', () => {
 	test('1M-step counter trips before infinite loop completes', () => {
 
-
-
-
 		const records = Array.from({ length: 100000 }, (_, i) => ({ id: i, values: {} }));
-
 
 		const src = `
 			for (const r of records) {
@@ -431,11 +323,6 @@ describe('Sandbox: runaway loops abort via step cap', () => {
 		assertRejects(src, /Script exceeded/, records);
 	});
 });
-
-
-
-
-
 
 describe('Sandbox: documented features actually work', () => {
 	test('basic for-of mutation', () => {
@@ -510,11 +397,6 @@ describe('Sandbox: documented features actually work', () => {
 		assert.equal(records[2].values.Touched, undefined);
 	});
 });
-
-
-
-
-
 
 describe('Sandbox: forbidden-props list inventory', () => {
 	test('forbidden set has not shrunk', () => {

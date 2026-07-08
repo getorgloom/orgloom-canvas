@@ -1,13 +1,3 @@
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -31,7 +21,6 @@ describe('topoSortRecords', () => {
 		const associations = [fk(3, 2), fk(2, 1)];
 		const { order, cycleIds } = topoSortRecords(records, associations);
 		assert.equal(cycleIds.size, 0);
-
 
 		const pos = new Map(order.map((id, i) => [id, i]));
 		for (const a of associations) {
@@ -67,7 +56,6 @@ describe('topoSortRecords', () => {
 		assert.ok(cycleIds.has(1));
 		assert.ok(cycleIds.has(2));
 		assert.ok(cycleIds.has(3));
-
 
 		assert.equal(order.length, 3);
 	});

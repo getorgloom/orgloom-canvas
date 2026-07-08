@@ -1,32 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -39,12 +10,6 @@
 			}
 			const escapeHtml = deps.escapeHtml;
 			const getGraph = deps.getGraph;
-
-
-
-
-
-
 
 			function _toastHost() {
 				const g = getGraph();
@@ -74,9 +39,6 @@ toast.remove();
 				toast.querySelector('.bulk-toast-close').addEventListener('click', dismiss);
 				setTimeout(dismiss, 4000);
 			}
-			
-
-
 
 			function showBulkToastWithAction(message, actionLabel, onAction, variant) {
 				const canvas = _toastHost();
@@ -85,7 +47,6 @@ return;
 }
 				canvas.querySelectorAll('.bulk-toast').forEach(t => t.remove());
 				const toast = document.createElement('div');
-
 
 				toast.className = 'bulk-toast has-action' + (variant ? ' ' + variant : '');
 				toast.innerHTML =
@@ -112,9 +73,6 @@ toast.remove();
 				toast.querySelector('.bulk-toast-close').addEventListener('click', dismiss);
 				setTimeout(dismiss, 10000);
 			}
-			
-
-
 
 			function showConfirmDialog({ title, message, confirmLabel, cancelLabel, danger }) {
 				return new Promise((resolve) => {
@@ -163,11 +121,6 @@ finish(true);
 					setTimeout(() => modal.querySelector('[data-cf-confirm]').focus(), 0);
 				});
 			}
-			
-
-
-
-
 
 			function confirmHydrateChoice({ placeholderLabel, currentValues, incoming, fieldLabelLookup }) {
 				return new Promise((resolve) => {
@@ -236,7 +189,6 @@ close('skip');
 					document.addEventListener('keydown', onEsc);
 				});
 			}
-			
 
 			return {
 				showBulkToast: showBulkToast,

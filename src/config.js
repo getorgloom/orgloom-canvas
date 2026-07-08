@@ -1,12 +1,5 @@
 import 'dotenv/config';
 
-
-
-
-
-
-
-
 const required = ['SF_CLIENT_ID', 'SF_CLIENT_SECRET', 'SF_REDIRECT_URI'];
 const missing = required.filter((v) => !process.env[v]);
 if (missing.length > 0) {
@@ -20,16 +13,6 @@ if (missing.length > 0) {
 	}
 }
 
-
-
-
-
-
-
-
-
-
-
 const _nodeEnvRaw = process.env.NODE_ENV;
 if (_nodeEnvRaw && _nodeEnvRaw !== 'production' && /prod/i.test(_nodeEnvRaw)) {
 	console.error(
@@ -40,10 +23,6 @@ if (_nodeEnvRaw && _nodeEnvRaw !== 'production' && /prod/i.test(_nodeEnvRaw)) {
 	);
 	process.exit(1);
 }
-
-
-
-
 
 const _DEFAULT_SESSION_SECRET = 'dev-only-change-me';
 const _envSessionSecret = (process.env.SESSION_SECRET || '').trim();
@@ -60,22 +39,8 @@ if (_isProd) {
 	}
 }
 
-
-
-
-
-
-
-
-
-
-
 if (_isProd && !_canvasStandalone) {
 	const fatal = [];
-
-
-
-
 
 	const emailTransport = (process.env.EMAIL_TRANSPORT || 'console').toLowerCase();
 	if (emailTransport === 'console') {
@@ -87,10 +52,6 @@ if (_isProd && !_canvasStandalone) {
 	if (!process.env.EMAIL_FROM) {
 		fatal.push('EMAIL_FROM must be set in production (defaults to noreply@orgloom.local which fails DMARC).');
 	}
-
-
-
-
 
 	if (!process.env.APP_URL) {
 		fatal.push('APP_URL must be set in production (e.g. https://orgloom.com).');
@@ -115,44 +76,15 @@ export const config = {
 		clientSecret: process.env.SF_CLIENT_SECRET,
 		redirectUri: process.env.SF_REDIRECT_URI,
 
-
-
-
 		loginUrl: (process.env.SF_LOGIN_URL || '').trim() || 'https://login.salesforce.com',
-
-
-
-
-
-
 
 		scope: process.env.SF_OAUTH_SCOPE || '',
 
-
-
-
-
-
-
-
 		apiVersion: (process.env.SF_API_VERSION || '').trim() || '62.0',
-
-
-
-
-
-
-
 
 		packageVersionId: (process.env.ORGLOOM_PACKAGE_VERSION_ID || '').trim() || null,
 	},
 	canvas: {
-
-
-
-
-
-
 
 		namespacePrefix: 'orgloom',
 	},

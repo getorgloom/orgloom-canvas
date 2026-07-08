@@ -1,41 +1,7 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
-
-
-
-
 
 	function parseCsv(text) {
 		const rows = [];
@@ -89,19 +55,6 @@ return { headers: [], rows: [] };
 	function csvNormalizeKey(s) {
 		return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 	}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	function csvGuessObjectFromFilename(filename, candidates) {
 		if (!filename || !Array.isArray(candidates) || candidates.length === 0) {
@@ -165,16 +118,9 @@ return hit;
 		return null;
 	}
 
-
-
-
 	function csvAutoMapHeaders(headers, fields) {
 		const byName = {};
 		const byLabel = {};
-
-
-
-
 
 		byName[csvNormalizeKey('Id')] = 'Id';
 		byLabel[csvNormalizeKey('Record Id')] = 'Id';
@@ -188,15 +134,6 @@ return;
 			if (labelKey) {
 byLabel[labelKey] = f.name;
 }
-
-
-
-
-
-
-
-
-
 
 			if (f.type === 'reference') {
 				if (nameKey.endsWith('id') && nameKey.length > 2) {
@@ -224,19 +161,10 @@ byLabel[stripped] = f.name;
 	window.OrgLoom.csvImport = {
 		mount: function mount(deps) {
 
-
-
-
 				if (!deps || !deps.csrfFetch) {
 					throw new Error('csv-import.mount: missing required dep csrfFetch');
 				}
 				const csrfFetch = deps.csrfFetch;
-
-
-
-
-
-
 
 			function pingAuditEvent(action, fields) {
 				try {
@@ -251,12 +179,10 @@ byLabel[stripped] = f.name;
 
 				return {
 
-
 					parseCsv: parseCsv,
 					csvNormalizeKey: csvNormalizeKey,
 					csvGuessObjectFromFilename: csvGuessObjectFromFilename,
 					csvAutoMapHeaders: csvAutoMapHeaders,
-
 
 					pingAuditEvent: pingAuditEvent,
 				};

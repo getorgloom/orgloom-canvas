@@ -1,7 +1,4 @@
-
-
 import crypto from "node:crypto";
-
 
 const connections = new Map();
 
@@ -29,8 +26,6 @@ function _writeSseEvent(res, event, data) {
 	}
 }
 
-
-
 export function registerConnection({ accountId, workspaceId, sseRes }) {
 	const connectionId = crypto.randomUUID();
 	connections.set(connectionId, {
@@ -56,7 +51,6 @@ export function registerConnection({ accountId, workspaceId, sseRes }) {
 	});
 	return connectionId;
 }
-
 
 export function unregisterConnection(connectionId) {
 	const conn = connections.get(connectionId);
@@ -90,11 +84,6 @@ export function unregisterConnection(connectionId) {
 		}
 	}
 }
-
-
-
-
-
 
 export function registerCanvas({ connectionId, canvasId, meta, accountId }) {
 	const conn = connections.get(connectionId);
@@ -225,8 +214,6 @@ export function recordResponse({ connectionId, requestId, result, error, account
 		return false;
 	}
 
-
-
 	if (accountId !== undefined) {
 		const conn = connections.get(connectionId);
 		if (!conn || conn.accountId !== accountId) {
@@ -272,7 +259,6 @@ export function purgeWorkspace(workspaceId) {
 	}
 	return removed;
 }
-
 
 export function workspaceLiveSummary(workspaceId) {
 	const rows = listCanvasesInWorkspace(workspaceId);

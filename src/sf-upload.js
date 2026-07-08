@@ -1,19 +1,4 @@
-
-
-
-
-
-
-
-
-
-
 export const FAKE_REF_ID = '001000000000001';
-
-
-
-
-
 
 export const UPLOAD_PAYLOAD_BYTE_CAP = 5 * 1024 * 1024;
 
@@ -30,9 +15,6 @@ export function rejectIfOverPayloadCap(req, res) {
 	}
 	return false;
 }
-
-
-
 
 export async function withSfRetry(fn, { maxAttempts = 4, baseDelay = 500 } = {}) {
 	let lastErr;
@@ -54,8 +36,6 @@ throw err;
 	throw lastErr;
 }
 
-
-
 export function makeDescribeCache(conn) {
 	const cache = new Map();
 	return async function getDescribe(objectName) {
@@ -65,14 +45,6 @@ export function makeDescribeCache(conn) {
 		return cache.get(objectName);
 	};
 }
-
-
-
-
-
-
-
-
 
 export function stripUnwritableFields(values, describe, isUpdate) {
 	if (!values || !describe || !Array.isArray(describe.fields)) {
@@ -93,16 +65,12 @@ writable.add(f.name);
 	const out = {};
 	Object.keys(values).forEach((k) => {
 
-
 		if (k === 'Id' || writable.has(k)) {
 out[k] = values[k];
 }
 	});
 	return out;
 }
-
-
-
 
 export function formatUploadError(err) {
 	if (!err) {
@@ -125,14 +93,6 @@ return '';
 	}
 	return fmtOne(err) || 'Unknown error';
 }
-
-
-
-
-
-
-
-
 
 export function extractUploadErrorCode(err) {
 	if (!err) {
@@ -157,12 +117,6 @@ export function extractUploadErrorCode(err) {
 	}
 	return codeOf(err);
 }
-
-
-
-
-
-
 
 export function topoSortRecords(records, associations) {
 	const recordsById = new Map();
@@ -213,31 +167,14 @@ cycleIds.add(stackArr[i]);
 	return { order, cycleIds, deps };
 }
 
-
-
-
-
-
-
 export const SYSTEM_RO_FIELDS = new Set([
 	'Id', 'IsDeleted', 'CreatedDate', 'CreatedById',
 	'LastModifiedDate', 'LastModifiedById', 'SystemModstamp',
 	'LastActivityDate', 'LastViewedDate', 'LastReferencedDate',
 ]);
 
-
-
-
 export const GRAPH_PER_GRAPH_CAP = 75;
 export const GRAPH_TOTAL_NODES_CAP = 500;
-
-
-
-
-
-
-
-
 
 export function groupConnectedComponents(submittedIds, submittedOrder, associations) {
 	const adj = new Map();
@@ -283,19 +220,9 @@ continue;
 	return components;
 }
 
-
-
-
 export function graphRefIdFor(tempId) {
 	return 'r' + String(tempId).replace(/[^a-zA-Z0-9]/g, '_');
 }
-
-
-
-
-
-
-
 
 export function buildGraphSubRequest({
 	rec,
@@ -347,17 +274,6 @@ return;
 return;
 }
 
-
-
-
-
-
-
-
-
-
-
-
 		if (parent.loadedFromId) {
 			values[a.fieldName] = parent.loadedFromId;
 		} else if (submittedIds.has(a.toId)) {
@@ -379,16 +295,6 @@ return;
 		body: values,
 	};
 }
-
-
-
-
-
-
-
-
-
-
 
 export function normalizeValuesForUpload(rec, tempId, associations, realIdByTempId) {
 	const values = Object.assign({}, rec.values || {});
@@ -414,9 +320,6 @@ return;
 			delete values[textField];
 		}
 	});
-
-
-
 
 	const _fkSetByAssoc = new Set();
 	(associations || []).forEach((a) => {

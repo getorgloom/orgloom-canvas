@@ -1,7 +1,3 @@
-
-
-
-
 import { ext } from "../extensions.js";
 import {
 	generateDataKey,

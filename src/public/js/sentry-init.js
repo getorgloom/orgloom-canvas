@@ -1,16 +1,6 @@
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 	if (typeof window.Sentry === 'undefined') {
-
 
 		return;
 	}
@@ -29,7 +19,6 @@ return s;
 	}
 
 	function scrubEvent(event) {
-
 
 		if (event.request && typeof event.request.url === 'string') {
 			var i = event.request.url.indexOf('?');
@@ -67,19 +56,14 @@ ex.value = scrubString(ex.value);
 		release: window.ORGLOOM_RELEASE || undefined,
 		tracesSampleRate: 0.1,
 
-
-
 		replaysSessionSampleRate: 0,
 		replaysOnErrorSampleRate: 0,
 		beforeSend: scrubEvent,
 		beforeBreadcrumb: function (b) {
 
-
-
 			if (b && (b.category === 'fetch' || b.category === 'xhr')) {
 return null;
 }
-
 
 			if (b && b.category === 'ui.click' && b.message) {
 				b.message = scrubString(b.message);
@@ -87,9 +71,6 @@ return null;
 			return b;
 		},
 	});
-
-
-
 
 	if (window.ORGLOOM_ACCOUNT_ID_HASH) {
 		window.Sentry.setUser({ id: 'acct:' + window.ORGLOOM_ACCOUNT_ID_HASH });

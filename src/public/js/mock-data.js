@@ -1,40 +1,14 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
-
-
-
-
-
-
 
 	function mockId(prefix, n) {
 		const padded = String(n).padStart(12, '0');
 		return prefix + padded + 'AAA';
 	}
 
-
-
 	function pick(arr, i) {
  return arr[i % arr.length]; 
 }
-
-
 
 	const COMPANY_NAMES = [
 		'Acme Corporation', 'Globex Industries', 'Initech Systems', 'Soylent Foods',
@@ -117,8 +91,6 @@
 	const QUOTE_STATUSES = ['Draft', 'Needs Review', 'In Review', 'Approved', 'Rejected', 'Presented', 'Accepted', 'Denied'];
 	const ASSET_STATUSES = ['Purchased', 'Shipped', 'Installed', 'Registered', 'Obsolete'];
 
-
-
 	function userRow(id, firstName, lastName, email, alias, title) {
 		return {
 			Id: id,
@@ -140,8 +112,6 @@
 		};
 	}
 	const USERS = [
-
-
 
 		userRow('005DEMO000000000AAA', 'Demo', 'User', 'demo@orgloom.local', 'duser', 'Salesforce Admin'),
 		userRow(mockId('005', 1), 'Jordan', 'Slattery', 'jordan@acme.demo', 'jslat', 'Account Executive'),
@@ -172,8 +142,6 @@
 			NumberOfEmployees: 5 + (i * 13) % 5000,
 			OwnerId: owner.Id,
 
-
-
 			ParentId: (i % 5 === 1 || i % 5 === 2 || i % 5 === 3) ? mockId('001', i - (i % 5) + 1) : null,
 			BillingStreet: street,
 			BillingCity: city,
@@ -190,9 +158,6 @@
 			LastModifiedDate: new Date(2025, (i % 12), 1 + (i % 27)).toISOString(),
 		};
 	});
-
-
-
 
 	const CONTACTS = [];
 	let contactIdx = 0;
@@ -230,8 +195,6 @@
 			contactIdx++;
 		}
 	}
-
-
 
 	const OPPORTUNITIES = [];
 	for (let ai = 0; ai < ACCOUNTS.length; ai++) {
@@ -273,7 +236,6 @@
 			});
 		}
 	}
-
 
 	const LEADS = [];
 	for (let li = 0; li < 30; li++) {
@@ -317,18 +279,9 @@
 		});
 	}
 
-
-
-
-
-
-
-
 	function isoDate(year, monthIdx, day) {
 		return new Date(year, monthIdx, day).toISOString();
 	}
-
-
 
 	const CASES = [];
 	for (let i = 0; i < 30; i++) {
@@ -355,10 +308,6 @@
 			LastModifiedDate: isoDate(2025, i % 12, 1 + (i % 27)),
 		});
 	}
-
-
-
-
 
 	const TASKS = [];
 	for (let i = 0; i < 50; i++) {
@@ -388,7 +337,6 @@
 		});
 	}
 
-
 	const EVENTS = [];
 	for (let i = 0; i < 20; i++) {
 		const acct = ACCOUNTS[i % 15];
@@ -417,7 +365,6 @@
 			LastModifiedDate: isoDate(2025, i % 12, 1 + (i % 27)),
 		});
 	}
-
 
 	const CAMPAIGNS = [
 		{ name: 'Spring Webinar Series 2025', type: 'Webinar', cost: 5000, expected: 50_000 },
@@ -449,9 +396,6 @@
 		};
 	});
 
-
-
-
 	const CAMPAIGN_MEMBERS = [];
 	for (let i = 0; i < 30; i++) {
 		const campaign = CAMPAIGNS[i % CAMPAIGNS.length];
@@ -471,7 +415,6 @@
 			LastModifiedDate: isoDate(2025, i % 12, 1 + (i % 27)),
 		});
 	}
-
 
 	const PRODUCTS = [
 		{ name: 'Platform — Starter', family: 'Software', sku: 'PLT-STR' },
@@ -496,7 +439,6 @@
 		LastModifiedDate: isoDate(2025, 0, 1),
 	}));
 
-
 	const PRICEBOOKS = [
 		{
 			Id: mockId('01s', 1),
@@ -509,7 +451,6 @@
 			LastModifiedDate: isoDate(2024, 0, 1),
 		},
 	];
-
 
 	const PRICEBOOK_PRICES = [499, 999, 2999, 199, 599, 4999, 12_500, 2_500, 1_200, 600];
 	const PRICEBOOK_ENTRIES = PRODUCTS.map((p, i) => ({
@@ -524,7 +465,6 @@
 		CreatedDate: isoDate(2024, 0, 1),
 		LastModifiedDate: isoDate(2025, 0, 1),
 	}));
-
 
 	const OPP_LINE_ITEMS = [];
 	OPPORTUNITIES.forEach((opp, oi) => {
@@ -550,7 +490,6 @@
 			});
 		}
 	});
-
 
 	const CONTRACTS = [];
 	for (let i = 0; i < 10; i++) {
@@ -579,7 +518,6 @@
 			LastModifiedDate: isoDate(2025, i % 12, 1),
 		});
 	}
-
 
 	const ORDERS = [];
 	for (let i = 0; i < 15; i++) {
@@ -617,7 +555,6 @@
 		});
 	}
 
-
 	const ORDER_ITEMS = [];
 	ORDERS.forEach((ord, oi) => {
 		const count = 1 + (oi % 3);
@@ -641,7 +578,6 @@
 			});
 		}
 	});
-
 
 	const QUOTES = [];
 	for (let i = 0; i < 10; i++) {
@@ -680,7 +616,6 @@
 		});
 	}
 
-
 	const QUOTE_LINE_ITEMS = [];
 	QUOTES.forEach((q, qi) => {
 		const count = 2 + (qi % 2);
@@ -706,8 +641,6 @@
 		}
 	});
 
-
-
 	const ASSETS = [];
 	for (let i = 0; i < 15; i++) {
 		const acct = ACCOUNTS[i % 15];
@@ -732,13 +665,6 @@
 			LastModifiedDate: isoDate(2025, i % 12, 1 + (i % 27)),
 		});
 	}
-
-
-
-
-
-
-
 
 	function field(opts) {
 
@@ -978,8 +904,6 @@
 		recordTypeInfos: [],
 		childRelationships: [],
 	};
-
-
 
 	const CASE_DESCRIBE = {
 		name: 'Case', label: 'Case', labelPlural: 'Cases', keyPrefix: '500',
@@ -1349,20 +1273,6 @@
 		childRelationships: [],
 	};
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	function c(apiName, label) {
 		return { apiName, label: label || apiName, required: false, editableForNew: true, editableForUpdate: true };
 	}
@@ -1679,16 +1589,11 @@
 		]),
 	]};
 
-
-
 	window.OrgLoomMock = Object.freeze({
 
 		demoOrgId: '00DDEMO000000000AAA',
 		demoUserId: '005DEMO000000000AAA',
 		instanceUrl: 'https://demo.orgloom.local',
-
-
-
 
 		objects: [
 			{ name: 'Account', label: 'Account', keyPrefix: '001', custom: false, queryable: true },

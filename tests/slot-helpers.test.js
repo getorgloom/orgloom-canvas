@@ -1,7 +1,3 @@
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { stripDraftsForNonOwner, stripDraftValuesForSave, applySlotFieldFilter, slotKind, slotProgress, aggregateSlotProgress, slotProgressClass } from '../src/slot-helpers.js';
@@ -35,8 +31,6 @@ describe('stripDraftsForNonOwner', () => {
 		assert.equal(out.drafts[0].objectName, 'Account');
 		assert.equal(out.drafts[0].x, 10);
 		assert.equal(out.drafts[0].y, 20);
-
-
 
 		assert.deepEqual(out.drafts[0].values, { Name: 'Acme' });
 		assert.deepEqual(out.drafts[0].slot, { slotId: 1, label: 'Customer' });
@@ -84,7 +78,6 @@ describe('stripDraftsForNonOwner', () => {
 			],
 		});
 
-
 		assert.equal(out.loadedRecords[0].loadedFromId, '006FIELDS');
 		assert.equal(out.loadedRecords[0].x, 100);
 		assert.equal(out.loadedRecords[0].y, 200);
@@ -108,8 +101,6 @@ describe('stripDraftsForNonOwner', () => {
 });
 
 describe('stripDraftValuesForSave', () => {
-
-
 
 	test('preserves drafts with values (identity pass-through)', () => {
 		const input = {

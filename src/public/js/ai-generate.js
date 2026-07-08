@@ -1,4 +1,3 @@
-
 (function () {
 	"use strict";
 
@@ -27,7 +26,6 @@
 			const renderBulkView = deps.renderBulkView;
 			const getGraph = deps.getGraph;
 			const startElapsedTicker = deps.startElapsedTicker;
-
 
 			const canvasCapCheck = typeof deps.canvasCapCheck === "function"
 				? deps.canvasCapCheck
@@ -444,8 +442,6 @@
 						return;
 					}
 
-
-
 					aiGenState = Object.assign({}, aiGenState, {
 						text,
 						plan: data,
@@ -574,12 +570,6 @@
 				const records = plan.records || [];
 				const associations = plan.associations || [];
 
-
-
-
-
-
-
 				let _aiCap;
 				if (clearFirst) {
 					const _probe = canvasCapCheck(records.length);
@@ -636,7 +626,6 @@
 						inDeg.set(a.toTempId, (inDeg.get(a.toTempId) || 0) + 1);
 					}
 				});
-
 
 				function layoutCluster(memberIds) {
 					const memberSet = new Set(memberIds);
@@ -747,7 +736,6 @@
 						curX += size.width + CLUSTER_GAP_X;
 					}
 				});
-
 
 				const idMap = new Map();
 				records.forEach((r) => {

@@ -1,7 +1,3 @@
-
-
-
-
 (function () {
 	function openTarget() {
 		var hash = location.hash ? location.hash.slice(1) : '';
@@ -13,8 +9,6 @@ return;
 return;
 }
 		el.open = true;
-
-
 
 		setTimeout(function () {
 			try {

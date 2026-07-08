@@ -1,28 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -32,8 +7,6 @@
 		if (a === b) {
 return true;
 }
-
-
 
 		const sa = (a == null) ? '' : String(a).trim();
 		const sb = (b == null) ? '' : String(b).trim();
@@ -82,11 +55,6 @@ return true;
 		return false;
 	}
 
-
-
-
-
-
 	function changedFieldNames(a, b) {
 		const out = [];
 		const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
@@ -103,8 +71,6 @@ out.push(k);
 return false;
 }
 
-
-
 		if (rec._inaccessible) {
 return false;
 }
@@ -113,13 +79,6 @@ return false;
 }
 		return valuesDiffer(rec.values || {}, rec.loadedValues || {});
 	}
-
-
-
-
-
-
-
 
 	function isRecordPendingDelete(rec) {
 		if (!rec) {
@@ -137,11 +96,6 @@ return false;
 		return !!rec.pendingDelete;
 	}
 
-
-
-
-
-
 	function isRecordPendingCreate(rec) {
 		if (!rec) {
 return false;
@@ -152,47 +106,9 @@ return false;
 		return !rec.loadedFromId;
 	}
 
-
-
-
-
-
 	function hasPendingChange(rec) {
 		return isRecordPendingCreate(rec) || isRecordModified(rec) || isRecordPendingDelete(rec);
 	}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	function _hasMeaningfulValue(v) {
 		if (v == null) {

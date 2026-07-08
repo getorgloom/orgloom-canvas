@@ -1,14 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -18,10 +7,6 @@ import { ext } from '../src/extensions.js';
 let app;
 let server;
 let baseUrl;
-
-
-
-
 
 let injectFakeSf = false;
 
@@ -39,11 +24,6 @@ before(async () => {
 		req.session = {};
 		next();
 	});
-
-
-
-
-
 
 	app.use('/api/records/refresh', (req, _res, next) => {
 		if (injectFakeSf) {
@@ -77,8 +57,6 @@ after(async () => {
 describe('POST /api/records/refresh — route mounts', () => {
 	test('route exists (auth gate fires, not 404)', async () => {
 
-
-
 		const r = await fetch(baseUrl + '/api/records/refresh', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -90,12 +68,6 @@ describe('POST /api/records/refresh — route mounts', () => {
 });
 
 describe('POST /api/records/refresh — validation', () => {
-
-
-
-
-
-
 
 	let prevAccountResolver;
 	let prevCapResolver;

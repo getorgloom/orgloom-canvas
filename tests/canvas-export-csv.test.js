@@ -1,8 +1,3 @@
-
-
-
-
-
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -12,7 +7,6 @@ let T;
 
 before(() => {
 	const src = readFileSync(new URL('../src/public/js/canvas-export-csv.js', import.meta.url), 'utf8');
-
 
 	const el = () => ({
 		className: '', innerHTML: '', style: {},
@@ -91,7 +85,6 @@ describe('buildCsv', () => {
 
 describe('orderFields', () => {
 	test('priority fields first (in list order), rest alphabetical', () => {
-
 
 		const ordered = [...T.orderFields(['Zeta', 'Name', 'Alpha', 'Id', 'Email'])];
 		assert.deepEqual(ordered, ['Id', 'Name', 'Email', 'Alpha', 'Zeta']);

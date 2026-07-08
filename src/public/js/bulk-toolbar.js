@@ -1,23 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -51,34 +31,16 @@ throw new Error('bulk-toolbar.mount: missing deps object');
 			const _slotProgressClass = deps._slotProgressClass;
 			const showSaveMenu = deps.showSaveMenu;
 
-
-
-
-
-
-
-
 			const _getCanvasShareCount = deps.getCanvasShareCount;
-
-
-
 
 			const openCanvasEmailLinkModal = deps.openCanvasEmailLinkModal;
 			const promptCanvasSave = deps.promptCanvasSave;
-
 
 			const showAddRecordsMenu = deps.showAddRecordsMenu;
 			const showBulkOperationsMenu = deps.showBulkOperationsMenu;
 			const openUploadModal = deps.openUploadModal;
 			const getGraph = deps.getGraph;
 			const getReadOnlyMode = deps.getReadOnlyMode;
-
-
-
-
-
-
-
 
 			const openAiGenModal = deps.openAiGenModal;
 			const getAiGen = deps.getAiGen;
@@ -87,64 +49,24 @@ throw new Error('bulk-toolbar.mount: missing deps object');
 
 			function renderBulkToolbar() {
 
-
-
-
-
-
-
-
 				const cloneBar = getGraph().querySelector('#subbar-clone-btns');
 				const recordsBar = getGraph().querySelector('#subbar-records');
 				if (!cloneBar || !recordsBar) {
 return;
 }
 
-
-
-
 				if (canvasState.selectedObjects.length === 0) {
 					cloneBar.innerHTML = '';
 				}
 
-
-
-
-
-
-
-
-
-
-
 				const addMenuBtn = '<button type="button" class="batch-btn" data-bulk-add-menu title="Import records from a CSV or saved template">+ Import records</button>';
-
-
-
-
-
-
-
 
 				const draftCountForToolbar = canvasState.bulkRecords.filter((r) => !r.loadedFromId && !r.isTypeNode).length;
 				const _uploadEmpty = canvasState.bulkRecords.filter((r) => !r.isTypeNode).length === 0;
 
-
-
-
-
-
-
-
-
 				const bulkOpsBtn = _uploadEmpty
 					? '<button type="button" class="batch-btn" data-bulk-ops title="Add records to the canvas first" disabled aria-disabled="true">Tools ▾</button>'
 					: '<button type="button" class="batch-btn" data-bulk-ops title="Auto-fill drafts, bulk edit fields, run a script, or diff records on the canvas">Tools ▾</button>';
-
-
-
-
-
 
 				const _allRealCount = canvasState.bulkRecords.filter((r) => !r.isTypeNode).length;
 				const _selectedRealCount = canvasState.bulkRecords.filter((r) => !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id)).length;
@@ -157,47 +79,11 @@ return;
 							? '<button type="button" class="upload-btn upload-btn--scoped" data-bulk-upload data-upload-scope-default="selected" title="Review and upload the ' + _selectedRealCount + ' selected record' + (_selectedRealCount === 1 ? '' : 's') + ' (and any FK dependencies)">Upload ' + _selectedRealCount + ' selected</button>'
 							: '<button type="button" class="upload-btn" data-bulk-upload title="Review and upload all records to Salesforce">Upload to Salesforce</button>'));
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 				const saveCanvasBtn = '<button type="button" class="batch-btn" data-bulk-save title="Save this canvas to your Salesforce org (stored as a File). Empty canvases can be saved as a starting point for AI proposals.">Save \u25BE</button>';
-
-
-
-
-
 
 				const exportBtn = '';
 
-
-
-
-
 				const helpBtn = '';
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const _shareIconSvg =
 					'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:0.4em;display:inline-block" aria-hidden="true">' +
@@ -207,33 +93,6 @@ return;
 						'<line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>' +
 						'<line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>' +
 					'</svg>';
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const cc = canvasState.currentCanvas;
 				const isRecipient = !!(cc && cc.id && !cc.ownedByMe);
@@ -264,12 +123,6 @@ return;
 						shareCountBadge +
 					'</button>';
 
-
-
-
-
-
-
 				const _historyIconSvg =
 					'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
 						'<path d="M3 12a9 9 0 1 0 9-9 9.74 9.74 0 0 0-6.74 2.74L3 8"/>' +
@@ -280,37 +133,13 @@ return;
 						_historyIconSvg +
 					'</button>';
 
-
-
-
-
-
 				const aiGenBtn = getAiGen().isEnabled()
 					? '<button type="button" class="batch-btn ai-gen-btn" data-bulk-ai-gen title="Describe what you want and let Claude draft records + relationships">\u2728 Generate with AI</button>'
 					: '';
 				cloneBar.innerHTML = '';
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 				recordsBar.innerHTML = addMenuBtn + aiGenBtn + bulkOpsBtn + '<span class="bulk-hint-spacer"></span>' + shareBtn + saveCanvasBtn + uploadBtn + historyBtn;
-			
+
 				const bulkOpsTrigger = getGraph().querySelector('[data-bulk-ops]');
 				if (bulkOpsTrigger) {
 bulkOpsTrigger.addEventListener('click', (e) => {
@@ -333,16 +162,11 @@ shareTrigger.addEventListener('click', (e) => {
 return;
 }
 
-
-
 					const cc2 = canvasState.currentCanvas;
 					const state = shareTrigger.dataset.shareState;
 					if (state === 'owned-saved' && cc2 && cc2.id) {
 						openCanvasEmailLinkModal(cc2.id, cc2.title || '');
 					} else if (state === 'owned-unsaved') {
-
-
-
 
 						promptCanvasSave({
 							title: 'Name this canvas to share it',
@@ -357,13 +181,9 @@ return;
 				});
 }
 
-
 				const saveCanvasTrigger = getGraph().querySelector('[data-bulk-save]');
 				if (saveCanvasTrigger) {
 saveCanvasTrigger.addEventListener('click', () => {
-
-
-
 
 					showSaveMenu(saveCanvasTrigger);
 				});
@@ -384,21 +204,6 @@ uploadTrigger.addEventListener('click', () => {
 }
 				_wireCanvasFloatingAdd();
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function renderBulkCountChip() {
 				const chip = getGraph().querySelector('#bulk-count-chip');
@@ -423,11 +228,6 @@ return;
 					}
 				});
 
-
-
-
-
-
 				if (total === 0) {
 					chip.style.display = 'none';
 					chip.innerHTML = '';
@@ -447,9 +247,6 @@ return;
 						'<span class="bcc-dot" aria-hidden="true"></span>' + existing + ' existing' +
 					'</span>' +
 
-
-
-
 					(() => {
 						const sp = _aggregateSlotProgress();
 						if (sp.total === 0) {
@@ -463,7 +260,7 @@ return '';
 							'</span>';
 					})();
 			}
-			
+
 			function renderBulkSelectionChip() {
 				const chip = getGraph().querySelector('#bulk-selection-chip');
 				if (!chip) {
@@ -475,14 +272,6 @@ return;
 					chip.innerHTML = '';
 					return;
 				}
-
-
-
-
-
-
-
-
 
 				const selectedReal = canvasState.bulkRecords.filter((r) =>
 					!r.isTypeNode && !r.isPending && canvasState.bulkSelectedIds.has(r.id)
@@ -516,9 +305,6 @@ pasteBtn.addEventListener('click', () => openPasteCountPrompt());
 				if (diffTrigger) {
 diffTrigger.addEventListener('click', () => {
 
-
-
-
 					const pair = canvasState.bulkRecords.filter((r) =>
 						!r.isTypeNode && !r.isPending && canvasState.bulkSelectedIds.has(r.id)
 					);
@@ -532,7 +318,6 @@ openRecordDiffModal(pair[0], pair[1]);
 					renderBulkView();
 				});
 			}
-			
 
 			return {
 				renderBulkToolbar: renderBulkToolbar,

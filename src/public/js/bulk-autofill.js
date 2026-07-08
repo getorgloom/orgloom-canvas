@@ -1,24 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -51,15 +30,8 @@ throw new Error('bulk-autofill.mount: missing deps object');
 			const showConfirmDialog = deps.showConfirmDialog;
 			const loadSmartDefaults = deps.loadSmartDefaults;
 
-
-
-
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction : null;
-
-
-
-
 
 			function _captureValuesUndo(records) {
 				const prior = records.map((r) => ({ rec: r, values: r.values }));
@@ -79,15 +51,6 @@ throw new Error('bulk-autofill.mount: missing deps object');
 					: null;
 				const silent = !!opts.silent;
 
-
-
-
-
-
-
-
-
-
 				const includeLoaded = !!opts.includeLoaded;
 				if (canvasState.bulkRecords.length === 0) {
 					if (!silent) {
@@ -95,12 +58,6 @@ showBulkToast('No records to fill.');
 }
 					return;
 				}
-
-
-
-
-
-
 
 				let draftRecords = canvasState.bulkRecords.filter((r) => {
 					if (r.isTypeNode || r.isPending) {
@@ -128,12 +85,6 @@ showBulkToast(msg);
 				}
 				const objectNames = Array.from(new Set(draftRecords.map(r => r.objectName)));
 
-
-
-
-
-
-
 				if (!silent) {
 					const objCounts = new Map();
 					draftRecords.forEach((r) => {
@@ -150,10 +101,6 @@ showBulkToast(msg);
 					const scopeLine = scope === 'required'
 						? '• Fills empty required fields only. Fields that already have a value are left alone.'
 						: '• Fills every empty field (required and optional). Fields that already have a value are left alone.';
-
-
-
-
 
 					const skipLine = onlyIds
 						? '• Only draft records in your selection are changed.'
@@ -178,15 +125,11 @@ return;
 }
 				}
 
-
-
-
 				Promise.all([
 					loadSmartDefaults(),
 					...objectNames.map(n => ensureDescribe(n)),
 				])
 					.then(() => {
-
 
 						const _undo = _captureValuesUndo(draftRecords);
 						let touchedCount = 0;
@@ -197,19 +140,13 @@ return;
 }
 							const values = Object.assign({}, rec.values || {});
 
-
-
-
 							if (rec.objectName === 'User'
 								&& (values.IsActive === undefined || values.IsActive === '' || values.IsActive === null)) {
 								values.IsActive = false;
 							}
 
-
-
 							const recRtId = (values.RecordTypeId) || describe.defaultRecordTypeId || null;
 							let touched = false;
-
 
 							const ordered = [
 								...describe.fields.filter(f => !f.controllerName),
@@ -225,8 +162,6 @@ return;
 }
 								const existing = values[f.name];
 								if (existing === undefined || existing === '' || existing === null) {
-
-
 
 									if (f.type === 'reference') {
 										const smartId = getSmartDefault(rec.objectName, f.name);
@@ -244,7 +179,6 @@ return;
 								}
 							});
 
-
 							if (rec.objectName === 'User' && rec.values && rec.values.IsActive !== values.IsActive) {
 								touched = true;
 							}
@@ -258,7 +192,6 @@ return;
 						const skipNote = skippedLoaded > 0
 							? ' Skipped ' + skippedLoaded + ' loaded record' + (skippedLoaded === 1 ? '' : 's') + ' (Seed only applies to drafts).'
 							: '';
-
 
 						const recNoun = includeLoaded ? 'record' : 'draft record';
 						const _msg = 'Pre-filled ' + label + ' on ' + touchedCount + ' ' + recNoun + (touchedCount === 1 ? '' : 's') + '.' + skipNote;
@@ -276,30 +209,12 @@ showBulkToast('Failed to load field metadata: ' + (err.message || err), 'error')
 }
 					});
 			}
-			
-
-
-
-
-
-
-
-
 
 			async function bulkClearAllFields(opts) {
 				opts = opts || {};
 				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0
 					? new Set(opts.tempIds)
 					: null;
-
-
-
-
-
-
-
-
-
 
 				const includeLoaded = !!opts.includeLoaded;
 				if (canvasState.bulkRecords.length === 0) {
@@ -345,11 +260,6 @@ draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
 					.join(', ');
 				const moreObjs = objCounts.size > 3 ? ' + ' + (objCounts.size - 3) + ' more' : '';
 
-
-
-
-
-
 				let skipLine;
 				if (includeLoaded && loadedInScope > 0) {
 					skipLine = '\u2022 Includes ' + loadedInScope + ' loaded Salesforce record' +
@@ -384,7 +294,6 @@ draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
 return;
 }
 
-
 				const _undo = _captureValuesUndo(draftRecords);
 				let touchedCount = 0;
 				draftRecords.forEach((rec) => {
@@ -402,7 +311,6 @@ touchedCount++;
 						: '');
 				const scopeNote = onlyIds ? ' selected' : '';
 
-
 				const recNoun = includeLoaded ? 'record' : 'draft record';
 				const _msg = 'Cleared all fields on ' + touchedCount + scopeNote + ' ' + recNoun + (touchedCount === 1 ? '' : 's') + '.' + skipNote;
 				if (touchedCount > 0 && showBulkToastWithAction) {
@@ -411,7 +319,6 @@ touchedCount++;
 					showBulkToast(_msg);
 				}
 			}
-			
 
 			return {
 				bulkAutoFill: bulkAutoFill,

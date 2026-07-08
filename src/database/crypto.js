@@ -1,4 +1,3 @@
-
 import crypto from "node:crypto";
 
 const _key = process.env.ENCRYPTION_KEY
@@ -63,8 +62,6 @@ export function decrypt(encoded) {
 		throw new Error("decrypt: malformed IV");
 	}
 	const tag = Buffer.from(tagHex, "hex");
-
-
 
 	if (tag.length !== 16) {
 		throw new Error("decrypt: invalid auth tag length");

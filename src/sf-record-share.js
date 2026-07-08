@@ -1,55 +1,8 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export function shareSchemaFor(objectName) {
 	if (typeof objectName !== 'string' || !objectName) {
 		throw new Error('shareSchemaFor: objectName is required');
 	}
 	if (objectName.endsWith('__c')) {
-
-
 
 		return {
 			shareTable: objectName.slice(0, -3) + '__Share',
@@ -58,10 +11,6 @@ export function shareSchemaFor(objectName) {
 			extraFields: {},
 		};
 	}
-
-
-
-
 
 	if (objectName === 'Account') {
 		return {
@@ -83,20 +32,9 @@ export function shareSchemaFor(objectName) {
 	};
 }
 
-
 export function shareTableFor(objectName) {
 	return shareSchemaFor(objectName).shareTable;
 }
-
-
-
-
-
-
-
-
-
-
 
 export function _classifyShareError(msg) {
 	if (!msg) {
@@ -112,26 +50,6 @@ return 'covered-by-owd';
 	return 'fatal';
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export async function grantRecordAccess(conn, items, recipientSfUserId) {
 	const granted = [];
 	const failed = [];
@@ -141,10 +59,6 @@ return { granted, failed };
 	if (typeof recipientSfUserId !== 'string' || !recipientSfUserId) {
 		throw new Error('grantRecordAccess: recipientSfUserId is required');
 	}
-
-
-
-
 
 	for (const item of items) {
 		const objectName = item && item.objectName;
@@ -164,11 +78,6 @@ return { granted, failed };
 			failed.push({ objectName, recordId, error: e.message || String(e) });
 			continue;
 		}
-
-
-
-
-
 
 		const row = Object.assign(
 			{
@@ -209,16 +118,6 @@ return { granted, failed };
 
 	return { granted, failed };
 }
-
-
-
-
-
-
-
-
-
-
 
 export function recordsToShareFromManifest(payload) {
 	const out = [];

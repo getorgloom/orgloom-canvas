@@ -1,48 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -62,12 +17,6 @@ throw new Error('cy-interactions.mount: missing deps object');
 			const getCanvasSpaceHeld = deps.getCanvasSpaceHeld;
 			const setCanvasMiddleMousePanning = deps.setCanvasMiddleMousePanning;
 
-
-
-
-
-
-
 			const _CY_MARKER_COLOR = '#9aa0a8';
 			const _CY_MARKER_COLOR_SEL = '#e09240';
 			const _CY_MARKERS_DEFS =
@@ -85,10 +34,6 @@ return svg;
 				const ns = 'http://www.w3.org/2000/svg';
 				svg = document.createElementNS(ns, 'svg');
 				svg.setAttribute('class', 'cy-edge-markers-svg');
-
-
-
-
 
 				svg.setAttribute('width', '100%');
 				svg.setAttribute('height', '100%');
@@ -108,13 +53,6 @@ svg.removeChild(el);
 				});
 				const ns = 'http://www.w3.org/2000/svg';
 
-
-
-
-
-
-
-
 				cy.edges('[kind = "fk"], [kind = "host"], [kind = "ring"]').forEach((edge) => {
 					const r1 = edge.renderedSourceEndpoint();
 					const r2 = edge.renderedTargetEndpoint();
@@ -129,12 +67,6 @@ return;
 					const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
 					const markerColor = edge.hasClass('edge-picked') ? _CY_MARKER_COLOR_SEL : _CY_MARKER_COLOR;
 
-
-
-
-
-
-
 					let crowAt = r1, barAt = r2, crowAngle = angleDeg, barAngle = angleDeg + 180;
 					if (edge.data('kind') === 'ring') {
 						const ringKind = edge.target().data('kind') || '';
@@ -144,11 +76,6 @@ return;
 							barAngle = angleDeg;
 						}
 					}
-
-
-
-
-
 
 					const crow = document.createElementNS(ns, 'g');
 					crow.setAttribute('transform', 'translate(' + crowAt.x + ',' + crowAt.y + ') rotate(' + crowAngle + ')');
@@ -174,7 +101,6 @@ return;
 				});
 			}
 
-
 			const _cyMarkersAttached = new WeakSet();
 			function attachCyEdgeMarkers(cy, container) {
 				if (!cy || !container || _cyMarkersAttached.has(cy)) {
@@ -187,38 +113,19 @@ return;
 				cy.on('classChange', 'edge', redraw);
 				redraw();
 			}
-			
-
-
-
-
-
-
-
-
 
 			const _cyMarqueeAttached = new WeakSet();
-			
+
 			function attachCyMarqueeSelect(cy, container, onSelectionUpdate) {
 				if (!cy || !container || _cyMarqueeAttached.has(cy)) {
 return;
 }
 				_cyMarqueeAttached.add(cy);
 
-
-
-
-
-
 				const EDGE = 32;
 				const MAX_VEL = 14;
 				let marquee = null;
 				let autoPanRaf = null;
-
-
-
-
-
 
 				const projectStart = () => {
 					if (!marquee) {
@@ -244,15 +151,6 @@ return;
 					marquee.box.style.width = Math.abs(c.x - s.x) + 'px';
 					marquee.box.style.height = Math.abs(c.y - s.y) + 'px';
 				};
-
-
-
-
-
-
-
-
-
 
 				const autoPanTick = () => {
 					autoPanRaf = null;
@@ -307,11 +205,6 @@ return;
 box.parentNode.removeChild(box);
 }
 
-
-
-
-
-
 					const dx = Math.abs(c.x - s.x);
 					const dy = Math.abs(c.y - s.y);
 					if (dx < 3 && dy < 3) {
@@ -320,10 +213,6 @@ box.parentNode.removeChild(box);
 						}
 						return;
 					}
-
-
-
-
 
 					const pan = cy.pan();
 					const zoom = cy.zoom();
@@ -361,8 +250,6 @@ return;
 return;
 }
 
-
-
 					if (getCanvasSpaceHeld()) {
 return;
 }
@@ -393,9 +280,6 @@ return;
 					marquee.current = { x: oe.clientX - rect.left, y: oe.clientY - rect.top };
 					update();
 
-
-
-
 					scheduleAutoPan();
 				});
 				cy.on('tapend', (evt) => {
@@ -410,11 +294,6 @@ return;
 					finish();
 				});
 			}
-			
-
-
-
-
 
 			const _cySpacePanAttached = new WeakSet();
 			function attachCySpacePan(cy, container) {
@@ -460,31 +339,8 @@ return;
 				container.addEventListener('pointerup', finish);
 				container.addEventListener('pointercancel', finish);
 			}
-			
-
-
-
-
 
 			const _cyMmbAttached = new WeakSet();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			const _cyWheelAttached = new WeakSet();
 			function attachCyWheelZoom(cy, container) {
@@ -501,8 +357,6 @@ return;
 							|| ev.clientY < rect.top || ev.clientY > rect.bottom) {
 return;
 }
-
-
 
 					if (ev.ctrlKey) {
 ev.preventDefault();
@@ -524,7 +378,7 @@ return;
 					cy.zoom({ level: next, renderedPosition: { x: rx, y: ry } });
 				}, { passive: false, capture: true });
 			}
-			
+
 			function attachCyMiddleClickPan(cy, container) {
 				if (!cy || !container || _cyMmbAttached.has(cy)) {
 return;
@@ -532,10 +386,6 @@ return;
 				_cyMmbAttached.add(cy);
 				let active = false;
 				let lastX = 0, lastY = 0;
-
-
-
-
 
 				document.addEventListener('pointerdown', (e) => {
 					if (e.button !== 1) {
@@ -569,14 +419,9 @@ return;
 					setCanvasMiddleMousePanning(false);
 					container.style.cursor = '';
 
-
-
 				};
 				document.addEventListener('pointerup', finish);
 				document.addEventListener('pointercancel', finish);
-
-
-
 
 				container.addEventListener('auxclick', (e) => {
  if (e.button === 1) {

@@ -1,32 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -41,10 +12,6 @@
 			const escapeHtml = deps.escapeHtml;
 			const showBulkToast = deps.showBulkToast;
 
-
-
-
-
 			function showUploadHistoryModal() {
 				document.querySelectorAll('.upload-history-modal').forEach((el) => el.remove());
 				const overlay = document.createElement('div');
@@ -53,10 +20,6 @@
 					'<div class="modal-overlay" data-uh-close></div>' +
 					'<div class="modal-body" style="max-width:720px">' +
 						'<div class="modal-header">' +
-
-
-
-
 
 							'<h3 id="uh-header-title">Recent uploads</h3>' +
 							'<button class="modal-close" data-uh-close>&times;</button>' +
@@ -105,14 +68,6 @@ title.textContent = 'Recent uploads';
 						return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 					};
 
-
-
-
-
-
-
-
-
 					const sourceLabel = (s) => {
 						if (s === 'canvas') {
 return 'Canvas';
@@ -147,16 +102,10 @@ return '<span class="tag uh-status-busy">Recalling…</span>';
 						return '<span class="tag uh-status-uploaded">Uploaded</span>';
 					};
 
-
-
-
-
-
 					const detailLine = (b) => {
 						const ins = typeof b.insertedCount === 'number' ? b.insertedCount : null;
 						const del = typeof b.deletedCount === 'number' ? b.deletedCount : 0;
 						if (ins == null) {
-
 
 							return b.recordCount + ' record' + (b.recordCount === 1 ? '' : 's');
 						}
@@ -169,9 +118,6 @@ return del + ' deleted';
 						return ins + ' synced + ' + del + ' deleted';
 					};
 					const hasRecallableInserts = (b) => {
-
-
-
 
 						if (typeof b.insertedCount !== 'number') {
 return true;
@@ -254,10 +200,6 @@ throw new Error(preflight.error || 'Preflight failed');
 				const unverifiedList = preflight.unverified || [];
 				const cascadeConflicts = preflight.cascadeConflicts || [];
 
-
-
-
-
 				const byObj = {};
 				cleanList.forEach((r) => {
  byObj[r.objectName] = (byObj[r.objectName] || 0) + 1; 
@@ -265,7 +207,6 @@ throw new Error(preflight.error || 'Preflight failed');
 				const cleanBreakdown = Object.keys(byObj).sort().map((o) =>
 					'<li>' + byObj[o] + ' ' + escapeHtml(o) + (byObj[o] === 1 ? '' : 's') + '</li>'
 				).join('');
-
 
 				const driftedRows = driftedList.map((r) => {
 					const when = r.lastModifiedDate
@@ -286,23 +227,6 @@ throw new Error(preflight.error || 'Preflight failed');
 						' already removed from Salesforce; nothing to recall there.</p>'
 					: '';
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 				const valueDrift = (preflight && preflight.valueDrift) || { records: [], summary: {} };
 				const revertableRecords = (valueDrift.records || []).filter((r) =>
 					r && !r.notFound && ((r.clean && r.clean.length > 0) || (r.drifted && r.drifted.length > 0)),
@@ -316,17 +240,6 @@ throw new Error(preflight.error || 'Preflight failed');
 						' updated (not newly created) and will be left in Salesforce. ' +
 						'Recall does not restore pre-update values for this batch (uploaded before the value-revert feature shipped).</li></ul>'
 					: '';
-
-
-
-
-
-
-
-
-
-
-
 
 				function fmtVal(v) {
 					if (v == null || v === '') {
@@ -391,15 +304,6 @@ counts.push(rec.drifted.length + ' drifted');
 					'</div>'
 					: '';
 
-
-
-
-
-
-
-
-
-
 				const unverifiedRows = unverifiedList.map((r) => {
 					const reason = r.probeError ? r.probeError : 'reason unknown';
 					return '<li>' +
@@ -427,12 +331,6 @@ counts.push(rec.drifted.length + ' drifted');
 					'</div>'
 					: '';
 
-
-
-
-
-
-
 				const cascadeRows = cascadeConflicts.map((c) => {
 					const bucketLabel = c.childBucket === 'updates'
 						? 'updated by this batch'
@@ -442,7 +340,6 @@ counts.push(rec.drifted.length + ' drifted');
 						'<span class="tag">&mdash; ' + bucketLabel + '</span>' +
 					'</li>';
 				}).join('');
-
 
 				const cascadeHasUpdates = cascadeConflicts.some((c) => c.childBucket === 'updates');
 				const cascadeHasDrifted = cascadeConflicts.some((c) => c.childBucket !== 'updates');
@@ -471,12 +368,6 @@ counts.push(rec.drifted.length + ' drifted');
 						? ' &mdash; this batch only updated existing records; nothing was newly created to delete.'
 						: '.';
 
-
-
-
-
-
-
 				const batchDeletedCount = Array.isArray(batch && batch.deletedIds)
 					? batch.deletedIds.length
 					: 0;
@@ -489,7 +380,6 @@ counts.push(rec.drifted.length + ' drifted');
 					: '';
 				content.innerHTML =
 					'<div class="uh-confirm">' +
-
 
 						(cleanList.length > 0
 							? '<p>Delete from Salesforce:</p><ul>' + cleanBreakdown + '</ul>'
@@ -531,10 +421,6 @@ pluralSpan.textContent = total === 1 ? '' : 's';
 					const cascadeAckRequired = cascadeConflicts.length > 0 && !include;
 					const cascadeAckSatisfied = !cascadeAckRequired || (cascadeAckBox && cascadeAckBox.checked);
 
-
-
-
-
 					const hasWork = total > 0 || checkedRevertFields > 0;
 					if (recallBtn) {
 recallBtn.disabled = !hasWork || !cascadeAckSatisfied;
@@ -567,11 +453,6 @@ skipSfIds.push(r.sfId);
 skipSfIds.push(r.sfId);
 } 
 });
-
-
-
-
-
 
 					const revertByRecord = new Map();
 					content.querySelectorAll('input[data-uh-revert-field]:checked').forEach((cb) => {
@@ -615,11 +496,6 @@ throw new Error(body.error || 'Recall failed');
 					const failures = allResults.filter((x) => x && !x.success);
 					const failed = failures.length;
 					const preservedUpdates = body.preservedUpdatesCount || 0;
-
-
-
-
-
 
 					const deletedSfIds = allResults
 						.filter((x) => x && x.success && x.sfId)
@@ -693,8 +569,6 @@ throw new Error(body.error || 'Forget failed');
 
 			return {
 				openModal: showUploadHistoryModal,
-
-
 
 				_testConfirmAndRecall: function (batchId) {
 					const overlay = document.querySelector('.upload-history-modal');

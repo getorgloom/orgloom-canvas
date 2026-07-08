@@ -1,4 +1,3 @@
-
 import crypto from "node:crypto";
 import { ext } from "../extensions.js";
 
@@ -13,10 +12,6 @@ export async function findById(id) {
 		.where("id", "=", id)
 		.executeTakeFirst();
 }
-
-
-
-
 
 export async function upsertFromOauth({
 	accountId,

@@ -1,73 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -100,40 +30,22 @@
 			const _runSlotPreflight = deps.runSlotPreflight;
 			const clearEmptyStarterCard = deps.clearEmptyStarterCard;
 
-
-
 			const canvasCapCheck = typeof deps.canvasCapCheck === 'function'
 				? deps.canvasCapCheck
 				: function () { return { ok: true, blocked: false, reason: null }; };
 
-
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction
 				: null;
-
-
 
 			const _CANVAS_RECORD_CAP_get = () => _getCanvasRecordCap();
 
 				const TEMPLATE_VERSION = 1;
 				const TEMPLATE_RECORD_CAP = 500;
 
-
-
-
-
 				try {
  localStorage.removeItem('sf-loader-templates-v1'); 
 } catch (_) {}
-
-
-
-
-
-
-
-
-
 
 				function serializeObjects(includeIdx) {
 					const idxById = new Map();
@@ -153,9 +65,6 @@
 					});
 				}
 
-
-
-
 				function recordCommonParts(r) {
 					const out = {};
 					if (r.slot) {
@@ -166,8 +75,6 @@
 					}
 					return out;
 				}
-
-
 
 				function loadedEditDelta(r) {
 					if (!r.loadedValues) {
@@ -190,20 +97,8 @@
 					opts = opts || {};
 					const schemaOnly = !!opts.schemaOnly;
 
-
-
-
-
-
 					const preserveLoadedLinks = !!opts.preserveLoadedLinks;
 					const objects = serializeObjects(false);
-
-
-
-
-
-
-
 
 					let records;
 					let associations;
@@ -216,7 +111,6 @@
 						includesLoadedData = base.some((r) => !!r.loadedFromId);
 						records = base.map(r => {
 
-
 							const rec = Object.assign({
 								id: r.id,
 								objectName: r.objectName,
@@ -225,11 +119,6 @@
 								y: r.y,
 								values: r.values || {},
 							}, recordCommonParts(r));
-
-
-
-
-
 
 							if (preserveLoadedLinks && r.loadedFromId) {
 								rec.loadedFromId = r.loadedFromId;
@@ -258,8 +147,6 @@
 							schemaOnly,
 							includesLoadedData,
 
-
-
 							preservesLoadedLinks: preserveLoadedLinks && includesLoadedData,
 							includedLoadedObjects: includesLoadedData
 								? Array.from(new Set(canvasState.bulkRecords.filter((r) => !r.isTypeNode && r.loadedFromId).map((r) => r.objectName)))
@@ -276,23 +163,9 @@
 					return String(s || 'orgloom-template').replace(/[^a-zA-Z0-9_\-. ]+/g, '_').slice(0, 80) || 'orgloom-template';
 				}
 
-
-
-
-
-
-
-
-
-
-
 				function buildCanvasPayload() {
 					const objects = serializeObjects(true);
 					const real = canvasState.bulkRecords.filter((r) => !r.isTypeNode && !r.isPending);
-
-
-
-
 
 					const loadedRecords = real
 						.filter((r) => !!r.loadedFromId)
@@ -310,14 +183,6 @@
 							return base;
 						});
 
-
-
-
-
-
-
-
-
 					const drafts = real
 						.filter((r) => !r.loadedFromId)
 						.map((r) => Object.assign({
@@ -327,11 +192,6 @@
 							y: r.y,
 							values: r.values || {},
 						}, recordCommonParts(r)));
-
-
-
-
-
 
 					const resolveRefKey = (rec) => {
 						if (!rec) {
@@ -422,11 +282,6 @@ return null;
 					});
 				}
 
-
-
-
-
-
 				async function saveTemplateRemote(name, scope) {
 					let payload;
 					try {
@@ -452,14 +307,7 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 					}
 				}
 
-
-
-
-
 				const ACCEPTED_APP_TAGS = ['Orgloom', 'Org Loom', 'Seedsmith'];
-
-
-
 
 				function _checkFileVersion(meta) {
 					const v = meta && meta.version;
@@ -468,30 +316,16 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 					}
 				}
 
-
-
-
-
-
-
-
 				function _isRecordEntry(r) {
 					return !!(r && typeof r === 'object' && typeof r.objectName === 'string' && r.objectName);
 				}
-
-
 
 				function _cleanValues(v) {
 					return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
 				}
 
-
-
-
 				const _admitAssociation = window.OrgLoom.importShared.admitAssociation;
 				const _skipSuffix = window.OrgLoom.importShared.skipSuffix;
-
-
 
 				function _summaryToast(msg, variant, opts) {
 					if (opts && typeof opts.undo === 'function' && showBulkToastWithAction) {
@@ -500,12 +334,6 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 						showBulkToast(msg, variant);
 					}
 				}
-
-
-
-
-
-
 
 				function _mergeOffsetY(merge, incomingYs) {
 					if (!merge || !incomingYs.length) {
@@ -519,7 +347,6 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 					const minIncoming = Math.min.apply(null, incomingYs);
 					return (maxY + 260) - minIncoming;
 				}
-
 
 				function validateTemplate(t) {
 					if (!t || typeof t !== 'object') {
@@ -543,13 +370,6 @@ throw new Error('Template exceeds the ' + TEMPLATE_RECORD_CAP + '-record cap.');
 }
 				}
 
-
-
-
-
-
-
-
 				function validateCanvasPayload(p) {
 					if (!p || typeof p !== 'object') {
 throw new Error('Invalid canvas file: not an object.');
@@ -570,17 +390,8 @@ throw new Error('Invalid canvas file: missing associations.');
 					opts = opts || {};
 					const schemaOnly = !!opts.schemaOnly;
 
-
-
-
-
-
-
-
 					const merge = !!opts.merge;
 					validateTemplate(t);
-
-
 
 					{
 						const incoming = (Array.isArray(t.records) ? t.records.length : 0);
@@ -590,19 +401,10 @@ throw new Error('Invalid canvas file: missing associations.');
 						}
 					}
 
-
-
-
-
 					const _crossOrg = !!(t._meta.exportedFrom && window.SF_ORG_ID && t._meta.exportedFrom !== window.SF_ORG_ID);
-
-
-
 
 					clearEmptyStarterCard();
 					if (!merge) {
-
-
 
 						canvasState.selectedObjects = [];
 						canvasState.selectedIdSeq = 1;
@@ -621,7 +423,6 @@ throw new Error('Invalid canvas file: missing associations.');
 						canvasState._renderedRecIds.clear();
 					}
 
-
 					const idByIdx = [];
 					for (let i = 0; i < t.schema.objects.length; i++) {
 						const obj = t.schema.objects[i];
@@ -635,20 +436,11 @@ throw new Error('Invalid canvas file: missing associations.');
 						}
 					}
 
-
-
-
-
-
 					let skippedRecords = 0;
 					let skippedAssoc = 0;
 					let demotedToDrafts = 0;
 					if (!schemaOnly) {
 						const idMap = new Map();
-
-
-
-
 
 						const sameOrg = !!(t._meta && t._meta.exportedFrom)
 							&& t._meta.exportedFrom === window.SF_ORG_ID;
@@ -656,7 +448,6 @@ throw new Error('Invalid canvas file: missing associations.');
 						const _offY = _mergeOffsetY(merge,
 							t.records.filter(_isRecordEntry).map((r) => Number(r.y) || 200));
 						t.records.forEach(r => {
-
 
 							if (!_isRecordEntry(r)) {
 								skippedRecords += 1;
@@ -677,14 +468,9 @@ throw new Error('Invalid canvas file: missing associations.');
 								if (honorLoadedLinks) {
 									rec.loadedFromId = r.loadedFromId;
 
-
-
-
-
 									if (r.loadedValues && typeof r.loadedValues === 'object') {
 										rec.loadedValues = Object.assign({}, r.loadedValues);
 									}
-
 
 									if (r.pendingDelete) {
 										rec.pendingDelete = true;
@@ -694,17 +480,12 @@ throw new Error('Invalid canvas file: missing associations.');
 								}
 							}
 
-
-
 							if (r.slot && r.slot.slotId != null) {
 								rec.slot = r.slot;
 								slotIdSeq = Math.max(slotIdSeq, r.slot.slotId + 1);
 							}
 							canvasState.bulkRecords.push(rec);
 						});
-
-
-
 
 						const usedFk = new Set();
 						t.associations.forEach(a => {
@@ -719,8 +500,6 @@ throw new Error('Invalid canvas file: missing associations.');
 					}
 					canvasState.bulkInitialized = true;
 					canvasState.activeIndex = 0;
-
-
 
 					if (typeof setGraphView === 'function') {
 setGraphView(schemaOnly ? 'schema' : 'bulk');
@@ -741,10 +520,6 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 					} else {
 						const totalRecords = t.records.length;
 						const importedCount = totalRecords - skippedRecords;
-
-
-
-
 
 						let msg = 'Imported ' + importedCount + ' of ' + totalRecords + ' record' + (totalRecords === 1 ? '' : 's') + '.';
 						msg += _skipSuffix(skippedRecords, skippedAssoc);
@@ -770,18 +545,6 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 					}
 				}
 
-
-
-
-
-
-
-
-
-
-
-
-
 				async function applyCanvasPayload(payload, opts) {
 					opts = opts || {};
 					const merge = !!opts.merge;
@@ -795,20 +558,6 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 					const associations = Array.isArray(payload.associations) ? payload.associations : [];
 
 					const incomingCount = loadedRefs.length + drafts.length;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 					let _cap;
 					if (merge) {
@@ -824,8 +573,6 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 						return;
 					}
 
-
-
 					clearEmptyStarterCard();
 					if (!merge) {
 						canvasState.selectedObjects = [];
@@ -833,13 +580,7 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 						canvasState.activeIndex = 0;
 						canvasState.hiddenObjects.clear();
 
-
-
-
 						canvasState.currentCanvas = null;
-
-
-
 
 						if (window.Orgloom && window.Orgloom.canvasState && window.Orgloom.canvasState.clearDraft) {
 							window.Orgloom.canvasState.clearDraft();
@@ -858,8 +599,6 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 						canvasState._autoSpawnedPending = true;
 					}
 
-
-
 					const idByIdx = [];
 					for (let i = 0; i < schemaObjects.length; i++) {
 						const obj = schemaObjects[i];
@@ -873,38 +612,15 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 						}
 					}
 
-
-
-
-
-
-
-
-
-
-
-
 					const loadedById = new Map();
 					const slotById = new Map();
 					let droppedFromAccess = 0;
 
-
-
 					let skippedRecords = 0;
-
 
 					const _offY = _mergeOffsetY(merge,
 						loadedRefs.filter(_isRecordEntry).map((r) => Number(r.y) || 200)
 							.concat(drafts.filter(_isRecordEntry).map((d) => Number(d.y) || 200)));
-
-
-
-
-
-
-
-
-
 
 					const pushInaccessiblePlaceholder = (ref, isSlot) => {
 						droppedFromAccess++;
@@ -925,8 +641,6 @@ loadedById.set(ref.loadedFromId, newId);
 							_inaccessible: true,
 						};
 
-
-
 						if (isSlot && ref.slot && ref.slot.slotId != null) {
 							recObj.slot = {
 								label: ref.slot.label,
@@ -940,11 +654,6 @@ loadedById.set(ref.loadedFromId, newId);
 						canvasState.bulkRecords.push(recObj);
 					};
 
-
-
-
-
-
 					const mergeExistingByKey = new Map();
 					if (merge) {
 						canvasState.bulkRecords.forEach((br) => {
@@ -956,7 +665,6 @@ return;
 					}
 					let skippedExistingMerge = 0;
 
-
 					const _fetchJobs = [];
 					for (const ref of loadedRefs) {
 						if (!_isRecordEntry(ref)) {
@@ -965,8 +673,6 @@ return;
 						}
 						const isSlot = ref.slot && ref.slot.slotId != null;
 						const hasLoadedId = !!ref.loadedFromId;
-
-
 
 						if (merge && hasLoadedId) {
 							const existingId = mergeExistingByKey.get(ref.objectName + '::' + ref.loadedFromId);
@@ -977,12 +683,6 @@ return;
 							}
 						}
 						if (isSlot && !hasLoadedId) {
-
-
-
-
-
-
 
 							const matchingSel = canvasState.selectedObjects.find((s) => s.name === ref.objectName);
 							const newId = canvasState.bulkIdSeq++;
@@ -1001,9 +701,6 @@ return;
 									slotId: ref.slot.slotId,
 									description: ref.slot.description || null,
 
-
-
-
 									kind: ref.slot.kind || 'whole-record',
 								},
 								_recipientSlot: true,
@@ -1012,9 +709,6 @@ return;
 						}
 						_fetchJobs.push({ ref: ref, isSlot: isSlot });
 					}
-
-
-
 
 					const _fetchResults = new Array(_fetchJobs.length);
 					{
@@ -1032,7 +726,6 @@ return;
 										'/records/' + encodeURIComponent(job.ref.loadedFromId),
 										{ credentials: 'same-origin' },
 									);
-
 
 									_fetchResults[idx] = r.ok ? { ok: true, sf: await r.json() } : { ok: false };
 								} catch (e) {
@@ -1054,11 +747,6 @@ return;
 						const matchingSel = canvasState.selectedObjects.find((s) => s.name === ref.objectName);
 						const newId = canvasState.bulkIdSeq++;
 						loadedById.set(ref.loadedFromId, newId);
-
-
-
-
-
 
 						const _fresh = _result.sf || {};
 						const recObj = {
@@ -1087,8 +775,6 @@ return;
 							if (ref.slot.kind === 'fields' && Array.isArray(ref.slot.fields)) {
 								recObj.slot.fields = ref.slot.fields.slice();
 
-
-
 								if (!opts.ownedByMe) {
 recObj._recipientSlot = true;
 }
@@ -1098,13 +784,6 @@ recObj._recipientSlot = true;
 						}
 						canvasState.bulkRecords.push(recObj);
 					});
-
-
-
-
-
-
-
 
 					const draftById = new Map();
 					drafts.forEach((d) => {
@@ -1124,12 +803,6 @@ recObj._recipientSlot = true;
 							y: (Number(d.y) || 200) + _offY,
 							values: _cleanValues(d.values),
 
-
-
-
-
-
-
 							_persistedTempId: d.tempId,
 						};
 						if (d.slot && d.slot.slotId != null) {
@@ -1139,9 +812,6 @@ recObj._recipientSlot = true;
 								description: d.slot.description || null,
 								kind: d.slot.kind || 'whole-record',
 							};
-
-
-
 
 							if (recObj.slot.kind === 'fields') {
 recObj.slot.kind = 'whole-record';
@@ -1154,10 +824,6 @@ recObj._recipientSlot = true;
 						}
 						canvasState.bulkRecords.push(recObj);
 					});
-
-
-
-
 
 					const resolveEndpoint = (e) => {
 						if (!e) {
@@ -1175,12 +841,7 @@ return slotById.get(e.ref);
 						return null;
 					};
 
-
-
-
 					const existingAssocKey = new Set();
-
-
 
 					const usedFk = new Set();
 					canvasState.bulkAssociations.forEach((a) => {
@@ -1189,11 +850,6 @@ existingAssocKey.add(a.fromId + '->' + a.toId + '::' + a.fieldName);
 }
 						usedFk.add(a.fromId + '::' + a.fieldName);
 					});
-
-
-
-
-
 
 					let skippedAssoc = 0;
 					associations.forEach((a) => {
@@ -1217,20 +873,11 @@ existingAssocKey.add(key);
 }
 					});
 
-
-
-
-
-
-
 					canvasState.bulkInitialized = true;
 					if (typeof setGraphView === 'function') {
 setGraphView('bulk');
 }
 					renderAll();
-
-
-
 
 					_runSlotPreflight().catch((e) => console.warn('slot preflight failed:', e));
 					let msg = 'Loaded canvas: ' + loadedById.size + ' existing record' +

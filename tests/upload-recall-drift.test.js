@@ -1,26 +1,9 @@
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyBatchDrift, detectCascadeConflicts } from '../src/upload-recall.js';
 
-
-
-
-
-
-
 function makeFakeConn(stateById) {
 	return {
-
 
 		version: '60.0',
 		request: async ({ method, url }) => {
@@ -64,9 +47,6 @@ describe('classifyBatchDrift', () => {
 			uploaderSfUserId: UPLOADER_SF_ID,
 			uploadTimeMs: UPLOAD_TIME,
 		});
-
-
-
 
 		assert.deepEqual(result, {
 			clean: [], drifted: [], alreadyDeleted: [],
@@ -155,8 +135,6 @@ describe('classifyBatchDrift', () => {
 
 	test('record missing from SF entirely → alreadyDeleted', async () => {
 
-
-
 		const inserted = [{ tempId: 't1', sfId: '001missing', objectName: 'Account' }];
 		const conn = makeFakeConn({});
 		const r = await classifyBatchDrift({
@@ -206,8 +184,6 @@ describe('classifyBatchDrift', () => {
 
 	test('15-char vs 18-char SF id comparison is case-tolerant', async () => {
 
-
-
 		const uploader15 = '005AAA00000Uploa';
 		const uploader18 = uploader15 + 'XYZ';
 		const inserted = [{ tempId: 't1', sfId: '001abc', objectName: 'Account' }];
@@ -227,7 +203,6 @@ describe('classifyBatchDrift', () => {
 	});
 
 	test('custom gracePeriodMs is honored', async () => {
-
 
 		const inserted = [{ tempId: 't1', sfId: '001abc', objectName: 'Account' }];
 		const conn = makeFakeConn({
@@ -255,7 +230,6 @@ describe('classifyBatchDrift', () => {
 
 	test('records without sfId are silently skipped', async () => {
 
-
 		const inserted = [
 			{ tempId: 't1', sfId: null, objectName: 'Account' },
 			{ tempId: 't2', objectName: 'Account' },
@@ -276,12 +250,6 @@ describe('classifyBatchDrift', () => {
 		assert.equal(r.clean[0].sfId, '001valid');
 	});
 });
-
-
-
-
-
-
 
 function makeFakeConnWithDescribe(describesByObject) {
 	return {
@@ -313,8 +281,6 @@ describe('detectCascadeConflicts', () => {
 
 	test('lookup field (cascadeDelete=false) — no conflict even with parent clean + child drifted', async () => {
 
-
-
 		const conn = makeFakeConnWithDescribe({
 			Contact: [{ name: 'AccountId', cascadeDelete: false }],
 		});
@@ -338,7 +304,6 @@ describe('detectCascadeConflicts', () => {
 	});
 
 	test('master-detail field (cascadeDelete=true) + parent clean + child drifted → conflict', async () => {
-
 
 		const conn = makeFakeConnWithDescribe({
 			Order_Line__c: [{ name: 'Order__c', cascadeDelete: true }],
@@ -369,7 +334,6 @@ describe('detectCascadeConflicts', () => {
 
 	test('master-detail field but parent in drifted (not clean) → no conflict (skip is meaningful)', async () => {
 
-
 		const conn = makeFakeConnWithDescribe({
 			Order_Line__c: [{ name: 'Order__c', cascadeDelete: true }],
 		});
@@ -391,7 +355,6 @@ describe('detectCascadeConflicts', () => {
 	});
 
 	test('master-detail field + child clean (will be recalled) → no conflict (no skip to invalidate)', async () => {
-
 
 		const conn = makeFakeConnWithDescribe({
 			Order_Line__c: [{ name: 'Order__c', cascadeDelete: true }],
@@ -442,8 +405,6 @@ describe('detectCascadeConflicts', () => {
 
 	test('describe failure on a child object → no conflict reported (conservative)', async () => {
 
-
-
 		const conn = {
 			sobject: (name) => ({
 				describe: async () => {
@@ -472,7 +433,6 @@ throw new Error('No describe access');
 	});
 
 	test('only master-detail fields with cascadeDelete=true count', async () => {
-
 
 		const conn = makeFakeConnWithDescribe({
 			Order_Line__c: [

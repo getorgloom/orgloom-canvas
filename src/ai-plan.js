@@ -1,30 +1,8 @@
-
-
-
-
-
-
-
-
-
-
-
 export const AI_MAX_RECORDS = 100;
 export const AI_MAX_OBJECTS = 10;
 export const AI_MAX_PROMPT_CHARS = 2000;
 
-
-
 const AI_MAX_PICKLIST_VALUES_IN_SUMMARY = 80;
-
-
-
-
-
-
-
-
-
 
 export function buildAiDescribeSummary(describes, fkFieldsByObject) {
 	return describes.map(({ name, describe }) => {
@@ -119,10 +97,6 @@ export const AI_PLAN_TOOL = {
 		},
 	},
 };
-
-
-
-
 
 export function validateAiPlan(plan, describes) {
 	const warnings = [];

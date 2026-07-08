@@ -1,23 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export async function up(db) {
 	await db.schema
 		.createTable("audit_chain_anchors")
@@ -26,9 +6,6 @@ export async function up(db) {
 		.addColumn("purged_count", "integer", (col) => col.notNull().defaultTo(0))
 		.addColumn("updated_at", "integer", (col) => col.notNull())
 		.execute();
-
-
-
 
 	await db.schema
 		.createIndex("audit_log_chain_hash_idx")

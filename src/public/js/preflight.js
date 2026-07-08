@@ -1,38 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -47,27 +12,10 @@
 			const isRecordModified = deps.isRecordModified;
 			const recordOrdinal = deps.recordOrdinal;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 			function validateBulkRecords() {
 				const issues = [];
 				const byRecordId = new Map();
 				const missingDescribes = new Set();
-			
-
 
 				const assocByFrom = new Map();
 				(canvasState.bulkAssociations || []).forEach((a) => {
@@ -80,31 +28,19 @@ return;
 }
 					s.add(a.fieldName);
 				});
-			
+
 				(canvasState.bulkRecords || []).forEach((rec) => {
 					if (!rec || !rec.objectName) {
 return;
 }
 
-
-
 					if (rec.isTypeNode) {
 return;
 }
 
-
-
-
-
 					if (rec.pendingDelete && rec.loadedFromId) {
 return;
 }
-
-
-
-
-
-
 
 					if (rec.loadedFromId && !isRecordModified(rec)) {
 return;
@@ -118,36 +54,24 @@ return;
 					const values = rec.values || {};
 					const linkedFields = assocByFrom.get(rec.id) || new Set();
 
-
-
-
-
-
-
-
 					const partialFieldSet = (Array.isArray(rec._loadedFieldNames) && rec.loadedFromId)
 						? new Set(rec._loadedFieldNames)
 						: null;
-			
+
 					describe.fields.forEach((f) => {
 						if (!f || !f.name) {
 return;
 }
 
-
 						if (!f.createable) {
 return;
 }
-			
+
 						const raw = values[f.name];
 						const hasValue = raw !== undefined && raw !== null && !(typeof raw === 'string' && raw === '');
 						const hasFkLink = f.type === 'reference' && linkedFields.has(f.name);
-			
 
 						if (f.required && !hasValue && !hasFkLink && !f.defaultedOnCreate) {
-
-
-
 
 							if (partialFieldSet && !partialFieldSet.has(f.name)) {
 return;
@@ -158,7 +82,6 @@ return;
 						if (!hasValue) {
 return;
 }
-			
 
 						if ((f.type === 'picklist' || f.type === 'combobox') && Array.isArray(f.picklistValues) && f.picklistValues.length > 0) {
 							const ok = f.picklistValues.some((p) => p && p.active !== false && p.value === raw);
@@ -174,7 +97,6 @@ addIssue(rec, f, 'error', 'Value "' + p + '" is not an active picklist option.')
 }
 							});
 						}
-			
 
 						if (typeof raw === 'string' && f.length && f.length > 0) {
 							const stringTypes = new Set(['string', 'textarea', 'phone', 'url', 'email', 'encryptedstring']);
@@ -182,7 +104,6 @@ addIssue(rec, f, 'error', 'Value "' + p + '" is not an active picklist option.')
 								addIssue(rec, f, 'error', 'Value is ' + raw.length + ' chars, max is ' + f.length + '.');
 							}
 						}
-			
 
 						const numericTypes = new Set(['int', 'double', 'currency', 'percent']);
 						if (numericTypes.has(f.type)) {
@@ -193,20 +114,17 @@ addIssue(rec, f, 'error', 'Value "' + p + '" is not an active picklist option.')
 								addIssue(rec, f, 'error', 'Value must be an integer.');
 							}
 						}
-			
 
 						if (f.type === 'date' && typeof raw === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
 							addIssue(rec, f, 'error', 'Date must be YYYY-MM-DD.');
 						}
 						if (f.type === 'datetime' && typeof raw === 'string') {
 
-
 							const looksOk = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) || !isNaN(Date.parse(raw));
 							if (!looksOk) {
 addIssue(rec, f, 'error', 'Datetime is unparseable.');
 }
 						}
-			
 
 						if (f.type === 'email' && typeof raw === 'string' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
 							addIssue(rec, f, 'error', 'Doesn\u2019t look like a valid email address.');
@@ -214,14 +132,13 @@ addIssue(rec, f, 'error', 'Datetime is unparseable.');
 						if (f.type === 'url' && typeof raw === 'string' && raw.length > 0 && !/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
 							addIssue(rec, f, 'warning', 'URL is missing a scheme (e.g. https://).');
 						}
-			
 
 						if (f.type === 'reference' && typeof raw === 'string' && raw.length > 0 && !/^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(raw)) {
 							addIssue(rec, f, 'error', 'Lookup value isn\u2019t a Salesforce ID and no FK link is set.');
 						}
 					});
 				});
-			
+
 				function addIssue(rec, field, severity, message) {
 					const issue = {
 						recordId: rec.id,
@@ -239,29 +156,6 @@ addIssue(rec, f, 'error', 'Datetime is unparseable.');
 }
 					bucket.push(issue);
 				}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const recordById = new Map();
 				canvasState.bulkRecords.forEach((r) => {
@@ -333,38 +227,11 @@ return;
 
 				return { issues, byRecordId, missingDescribes };
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function computeUploadOrder(unchangedSet, inScopeSet, deleteSet) {
 				const skip = unchangedSet || new Set();
 				const deletes = deleteSet || new Set();
 				const recordsById = new Map();
-
-
-
-
 
 				canvasState.bulkRecords.forEach((r) => {
 					if (!r || r.id == null) {
@@ -378,8 +245,6 @@ return;
 }
 					recordsById.set(r.id, r);
 				});
-
-
 
 				const deps = new Map();
 				recordsById.forEach((_, id) => deps.set(id, new Set()));
@@ -418,8 +283,6 @@ m = v;
 					return m;
 				}
 				recordsById.forEach((_, id) => lvl(id, new Set()));
-
-
 
 				const buckets = new Map();
 				const deleteBuckets = new Map();
@@ -461,9 +324,6 @@ return a.level - b.level;
 }
 					return a.label.localeCompare(b.label);
 				});
-
-
-
 
 				const deletesLane = Array.from(deleteBuckets.values()).sort((a, b) => {
 					if (a.level !== b.level) {

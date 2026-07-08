@@ -1,73 +1,16 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import express from 'express';
 import { CAPABILITIES } from './capabilities.js';
 
-
-
-
-
-
-
-
-
-
 const _defaults = {
-
-
-
 
 	async getCurrentAccount(req) {
 		if (req && req.session && req.session.accountId) {
 
-
-
-
 			return { id: req.session.accountId };
 		}
 
-
-
-
 		return null;
 	},
-
-
-
-
 
 	async getCapability(account, capabilityName, _context) {
 		if (!CAPABILITIES[capabilityName]) {
@@ -76,42 +19,20 @@ const _defaults = {
 		return { allowed: true, plan: 'self-host', role: 'admin' };
 	},
 
-
-
-
 	async getQuota(_account, _dimension) {
 		return { cap: null, used: 0, remaining: Infinity };
 	},
-
-
-
 
 	async chargeQuota(_account, _dimension, _amount) {
 		return { allowed: true, remaining: Infinity };
 	},
 
-
-
-
-
-
-
-
-
 	async auditWrite(event) {
-
-
 
 		try {
 			const auditDb = await import('./database/audit.js');
 			return await auditDb.record(event);
 		} catch (err) {
-
-
-
-
-
-
 
 			try {
 				ext.captureException(err, {
@@ -123,27 +44,9 @@ const _defaults = {
 		}
 	},
 
-
-
 	async auditRetentionDays(_workspaceId) {
 		return null;
 	},
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	captureException(err, _context) {
 		try {
@@ -152,28 +55,13 @@ const _defaults = {
 		} catch (_) {                                                }
 	},
 
-
-
-
-
 	async getActiveWorkspace(_req) {
 		return null;
 	},
 
-
-
-
 	async getPlanInfo(_account) {
 		return { tier: 'self-host', label: 'Self-host' };
 	},
-
-
-
-
-
-
-
-
 
 	getDb() {
 		throw new Error(
@@ -184,10 +72,6 @@ const _defaults = {
 		);
 	},
 
-
-
-
-
 	getRawClient() {
 		throw new Error(
 			'No raw-client provider registered. Call ext.registerRawClientProvider() ' +
@@ -195,14 +79,6 @@ const _defaults = {
 		);
 	},
 };
-
-
-
-
-
-
-
-
 
 const _queues = {
 	routeMounts: [],
@@ -215,12 +91,7 @@ const _queues = {
 
 let _flushed = false;
 
-
-
-
-
 export const ext = {
-
 
 	getCurrentAccount: _defaults.getCurrentAccount,
 	getCapability:     _defaults.getCapability,
@@ -234,15 +105,7 @@ export const ext = {
 	getDb:             _defaults.getDb,
 	getRawClient:      _defaults.getRawClient,
 
-
-
-
-
-
-
 	saasMounted: false,
-
-
 
 	registerAuthProvider(fn) {
 		if (typeof fn !== 'function') {
@@ -310,11 +173,6 @@ throw new TypeError('registerRawClientProvider expects a function');
 		this.getRawClient = fn;
 	},
 
-
-
-
-
-
 	registerRoutes(mountFn) {
 		if (_flushed) {
 throw new Error('registerRoutes called after flush()');
@@ -324,11 +182,6 @@ throw new TypeError('registerRoutes expects a function');
 }
 		_queues.routeMounts.push(mountFn);
 	},
-
-
-
-
-
 
 	registerMigrationsDir(absoluteDir) {
 		if (_flushed) {
@@ -340,9 +193,6 @@ throw new Error('registerMigrationsDir called after flush()');
 		_queues.migrationsDirs.push(absoluteDir);
 	},
 
-
-
-
 	registerStaticDir(prefix, dir) {
 		if (_flushed) {
 throw new Error('registerStaticDir called after flush()');
@@ -352,9 +202,6 @@ throw new TypeError('registerStaticDir expects (prefix, dir)');
 }
 		_queues.staticDirs.push({ prefix, dir });
 	},
-
-
-
 
 	registerViewDir(absoluteDir) {
 		if (_flushed) {
@@ -366,10 +213,6 @@ throw new Error('registerViewDir called after flush()');
 		_queues.viewDirs.push(absoluteDir);
 	},
 
-
-
-
-
 	registerPartialOverride(name, absolutePath) {
 		if (_flushed) {
 throw new Error('registerPartialOverride called after flush()');
@@ -379,10 +222,6 @@ throw new TypeError('registerPartialOverride expects (name, path)');
 }
 		_queues.partialOverrides[name] = absolutePath;
 	},
-
-
-
-
 
 	registerNavLink(spec) {
 		if (_flushed) {
@@ -394,40 +233,17 @@ throw new Error('registerNavLink called after flush()');
 		_queues.navLinks.push({ position: 'right', ...spec });
 	},
 
-
-
-
-
-
 	getPartialPath(name) {
 		return _queues.partialOverrides[name] || null;
 	},
-
-
-
 
 	getNavLinks() {
 		return _queues.navLinks.slice();
 	},
 
-
-
 	getMigrationsDirs() {
 		return _queues.migrationsDirs.slice();
 	},
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	flush(app) {
 		if (_flushed) {
@@ -438,7 +254,6 @@ throw new TypeError('ext.flush(app) expects the Express app');
 }
 
 		for (const { prefix, dir } of _queues.staticDirs) {
-
 
 			app.use(prefix, _staticMiddleware(dir));
 		}
@@ -462,8 +277,6 @@ app.set('views', viewsArr);
 
 		_flushed = true;
 	},
-
-
 
 	_resetForTests() {
 		this.getCurrentAccount = _defaults.getCurrentAccount;

@@ -1,24 +1,7 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-
-
-
-
 
 const _src = readFileSync(
 	new URL('../src/public/js/migrate-annotate.js', import.meta.url),
@@ -28,7 +11,6 @@ const _sandbox = { window: {} };
 vm.createContext(_sandbox);
 vm.runInContext(_src, _sandbox);
 const annotate = _sandbox.window.Orgloom.migrateAnnotate;
-
 
 function describe_(fields, recordTypes) {
 	return { fields: fields || [], recordTypes: recordTypes || [] };
@@ -105,7 +87,6 @@ describe('computeMigrationStatus', () => {
 
 	test('non-required field (defaulted/optional) is not flagged', () => {
 
-
 		const d = describe_([field('Status', { required: false })]);
 		const rec = { objectName: 'Case', values: {} };
 		assert.equal(annotate.computeMigrationStatus(rec, d).status, 'ready');
@@ -120,7 +101,6 @@ describe('computeMigrationStatus', () => {
 		assert.equal(res.status, 'warning');
 		assert.equal(res.issues[0].kind, 'picklist-mismatch');
 
-
 		assert.deepEqual(Array.from(res.issues[0].invalidValues), ['Frozen']);
 	});
 
@@ -134,7 +114,6 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('value dropped from target picklist (e.g. inactive) is invalid', () => {
-
 
 		const d = describe_([
 			field('Stage', { type: 'picklist', picklistValues: [pv('Open')] }),
@@ -175,7 +154,6 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('record type absent from target (e.g. unavailable) -> blocked', () => {
-
 
 		const d = describe_([field('Name', { required: true })], []);
 		const rec = {
@@ -229,7 +207,6 @@ describe('computeMigrationStatus', () => {
 			values: { Phone: '555' },
 			loadedFromId: '001TARGET',
 		};
-
 
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.equal(res.status, 'warning');

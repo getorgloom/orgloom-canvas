@@ -1,53 +1,15 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
 	const HANDOFF_KEY = 'orgloom.playground.handoff';
 
-
-
 	const AUTOSAVE_KEY_PREFIX = 'orgloom:canvas-draft:v1';
 	const FIRST_ACTION_KEY = 'orgloom.playground.firstActionFired';
-
-
-
-
-
 
 	const NAGGED_SAVE_KEY = 'orgloom.playground.naggedSave';
 	const NAGGED_UPLOAD_KEY = 'orgloom.playground.naggedUpload';
 
-
-
 	function capture(eventName, props) {
-
 
 		try {
 			if (window.posthog && window.posthog.capture) {
@@ -74,38 +36,18 @@
 } catch (_) {}
 	}
 
-
-
 	function installSendSide() {
-
 
 		capture('playground_started', {
 			referrer: document.referrer || '',
 			source: 'mock',
 		});
 
-
-
-
-
-
-
-
-
-
-
 		document.addEventListener('click', (ev) => {
 			const target = ev.target;
 			if (!target || !target.closest) {
 return;
 }
-
-
-
-
-
-
-
 
 			const aiSubmitBtn = target.closest('#ai-gen-submit');
 			if (aiSubmitBtn) {
@@ -149,10 +91,6 @@ return;
 				return;
 			}
 
-
-
-
-
 			const signupCta = target.closest('.app-playground-signup-cta');
 			if (signupCta) {
 				ev.preventDefault();
@@ -164,8 +102,6 @@ return;
 				return;
 			}
 
-
-
 			const cta = target.closest('.app-playground-banner-cta');
 			if (cta) {
 				ev.preventDefault();
@@ -173,7 +109,6 @@ return;
 				stashHandoffAndRedirect();
 			}
 		}, true);
-
 
 		function sessionFlag(key) {
 			try {
@@ -189,16 +124,9 @@ return;
 		}
 		function clickThroughOriginal(el) {
 
-
-
-
 			el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 		}
 		function stashHandoffAndRedirect() {
-
-
-
-
 
 			safeRemoveLocalStorage(HANDOFF_KEY);
 			window.location.href = '/signup?from=playground';
@@ -253,11 +181,6 @@ return;
 				.replace(/"/g, '&quot;');
 		}
 
-
-
-
-
-
 		function showAiGenConversionPrompt() {
 			let scopeCount = 0;
 			let promptLen = 0;
@@ -293,9 +216,6 @@ return;
 			document.body.appendChild(modal);
 			const closeAiGenModalIfOpen = () => {
 
-
-
-
 				try {
 					document.querySelectorAll('.modal').forEach((m) => {
 						if (m === modal) {
@@ -329,10 +249,6 @@ m.classList.add('hidden');
 			});
 		}
 
-
-
-
-
 		const alreadyFired = (function () {
 			try {
  return window.sessionStorage.getItem(FIRST_ACTION_KEY); 
@@ -353,15 +269,11 @@ m.classList.add('hidden');
 				}
 			}, 1500);
 
-
 			setTimeout(() => clearInterval(interval), 5 * 60 * 1000);
 		}
 	}
 
-
 	function countCurrentRecords() {
-
-
 
 		try {
 			if (window.Orgloom && window.Orgloom.canvasState && typeof window.Orgloom.canvasState.snapshot === 'function') {
@@ -372,7 +284,6 @@ m.classList.add('hidden');
 			}
 		} catch (_) {}
 		try {
-
 
 			const ss = window.sessionStorage;
 			let raw = null;
@@ -393,26 +304,13 @@ return 0;
 		return 0;
 	}
 
-
-
-
-
-
-
-
-
 	function installReceiveSide() {
 		safeRemoveLocalStorage(HANDOFF_KEY);
 	}
 
-
-
 	if (window.ORGLOOM_MOCK) {
 		installSendSide();
 	} else if (window.ORGLOOM_ACCOUNT_ID) {
-
-
-
 
 		installReceiveSide();
 	}

@@ -1,4 +1,3 @@
-
 import crypto from "node:crypto";
 import { ext } from "../extensions.js";
 
@@ -9,11 +8,6 @@ export function normalizeEmail(email) {
 	return String(email).trim().toLowerCase();
 }
 
-
-
-
-
-
 export function normalizePromoCode(code) {
 	if (code == null) {
 		return null;
@@ -21,9 +15,6 @@ export function normalizePromoCode(code) {
 	const cleaned = String(code).trim().toUpperCase().slice(0, 64);
 	return cleaned.length > 0 ? cleaned : null;
 }
-
-
-
 
 export function normalizeEmailForCollisionCheck(email) {
 	const lower = normalizeEmail(email);
@@ -50,7 +41,6 @@ export function normalizeEmailForCollisionCheck(email) {
 	return local + "@" + canonicalDomain;
 }
 
-
 export async function findByCanonicalEmail(email) {
 	const canonical = normalizeEmailForCollisionCheck(email);
 	if (!canonical) {
@@ -66,7 +56,6 @@ export async function findByCanonicalEmail(email) {
 	if (direct) {
 		return direct;
 	}
-
 
 	const all = await db
 		.selectFrom("accounts")
@@ -105,13 +94,6 @@ export async function findByEmail(email) {
 		.executeTakeFirst();
 }
 
-
-
-
-
-
-
-
 export async function upsertByEmail({ email, displayName, promoCode }) {
 	const normalized = normalizeEmail(email);
 	if (!normalized) {
@@ -138,7 +120,6 @@ export async function upsertByEmail({ email, displayName, promoCode }) {
 		}
 		return { account: existing, created: false };
 	}
-
 
 	const aliasMatch = await findByCanonicalEmail(normalized);
 	if (aliasMatch) {
@@ -207,7 +188,6 @@ export async function softDelete(id) {
 	return findById(id);
 }
 
-
 export async function pseudonymize(id, pseudoEmail) {
 	if (!id) {
 		throw new Error("id is required");
@@ -243,7 +223,6 @@ export async function restore(id) {
 		.execute();
 	return findById(id);
 }
-
 
 export async function listForAdminView({
 	limit = 100,

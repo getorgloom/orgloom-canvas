@@ -1,22 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -197,7 +178,6 @@
 					showBulkToast(blocked);
 					return;
 				}
-
 
 				const xs = canvasState.bulkClipboard.records.map((r) => r.x);
 				const ys = canvasState.bulkClipboard.records.map((r) => r.y);

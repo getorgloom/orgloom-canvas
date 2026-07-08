@@ -1,9 +1,3 @@
-
-
-
-
-
-
 import crypto from "node:crypto";
 import { sql } from "kysely";
 import { ext } from "../extensions.js";
@@ -11,15 +5,6 @@ import { ext } from "../extensions.js";
 const DAY_MS = 1000 * 60 * 60 * 24;
 const EXPORT_MAX = 50_000;
 export const LIST_EXPORT_MAX = EXPORT_MAX;
-
-
-
-
-
-
-
-
-
 
 const _chainLocks = new Map();
 async function _acquireChainLock(key) {
@@ -33,9 +18,6 @@ async function _acquireChainLock(key) {
 	return release;
 }
 
-
-
-
 async function _getAnchor(db, workspaceId) {
 	return db
 		.selectFrom("audit_chain_anchors")
@@ -43,9 +25,6 @@ async function _getAnchor(db, workspaceId) {
 		.where("workspace_id", "=", workspaceId || "")
 		.executeTakeFirst();
 }
-
-
-
 
 export async function record(opts = {}) {
 	const { req, action, targetObject, targetId, targetSfOrgId, payload } =
@@ -96,22 +75,8 @@ export async function record(opts = {}) {
 		}
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
 	const chained = opts.chained !== false;
 	const payloadJson = payload ? JSON.stringify(payload) : null;
-
-
 
 	const release = chained ? await _acquireChainLock(workspaceId || "") : null;
 	try {
@@ -128,15 +93,9 @@ export async function record(opts = {}) {
 				.limit(1)
 				.executeTakeFirst();
 
-
-
-
-
-
 			if (prevRow && prevRow.created_at != null && prevRow.created_at >= now) {
 				now = prevRow.created_at + 1;
 			}
-
 
 			let prev = (prevRow && prevRow.chain_hash) || "";
 			if (!prev) {
@@ -220,8 +179,6 @@ export async function recordFailure(req, action, err, extras = {}) {
 
 	}
 }
-
-
 
 export async function recordFirstTime(
 	req,
@@ -347,7 +304,6 @@ export async function list({
 	}));
 }
 
-
 export async function findLatestByTarget({ workspaceId, action, targetId }) {
 	if (!workspaceId || !action || !targetId) {
 		return null;
@@ -408,15 +364,9 @@ function _canonicalForHash(row) {
 	]);
 }
 
-
-
-
 function _contentHash(row) {
 	return crypto.createHash("sha256").update(_canonicalForHash(row)).digest("hex");
 }
-
-
-
 
 function _computeChainHash(prevHash, contentHash) {
 	const h = crypto.createHash("sha256");
@@ -426,16 +376,11 @@ function _computeChainHash(prevHash, contentHash) {
 	return h.digest("hex");
 }
 
-
-
-
 export async function verifyChain({ workspaceId } = {}) {
 	const db = ext.getDb();
 	let q = db
 		.selectFrom("audit_log")
 		.selectAll()
-
-
 
 		.where("chain_hash", "is not", null)
 		.orderBy("created_at", "asc")
@@ -448,9 +393,6 @@ export async function verifyChain({ workspaceId } = {}) {
 		);
 	}
 	const rows = await q.execute();
-
-
-
 
 	const anchor =
 		workspaceId !== undefined ? await _getAnchor(db, workspaceId) : null;
@@ -480,8 +422,6 @@ export async function verifyChain({ workspaceId } = {}) {
 			},
 		});
 
-
-
 		if (r.redacted_at != null) {
 			redactedCount++;
 		} else {
@@ -491,8 +431,6 @@ export async function verifyChain({ workspaceId } = {}) {
 			}
 		}
 
-
-
 		const expectedChain = _computeChainHash(prev, r.content_hash);
 		if (r.chain_hash !== expectedChain) {
 			return _break("chain", expectedChain);
@@ -501,19 +439,6 @@ export async function verifyChain({ workspaceId } = {}) {
 	}
 	return { ok: true, totalRows: rows.length, purgedBefore, redactedCount, lastHash: prev };
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export async function redactPayloadByEmail(email, { now = Date.now() } = {}) {
 	if (!email || typeof email !== "string") {
@@ -552,9 +477,6 @@ export async function redactPayloadByEmail(email, { now = Date.now() } = {}) {
 	return count;
 }
 
-
-
-
 function _deepRedactEmail(node, needle) {
 	if (typeof node === "string") {
 		if (!node.toLowerCase().includes(needle)) {
@@ -588,27 +510,8 @@ function _deepRedactEmail(node, needle) {
 	return { changed: false, value: node };
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export async function purgeExpired(now = Date.now()) {
 	const db = ext.getDb();
-
 
 	const unchainedResult = await db
 		.deleteFrom("audit_log")
@@ -617,8 +520,6 @@ export async function purgeExpired(now = Date.now()) {
 		.where("expires_at", "<", now)
 		.execute();
 	let deleted = Number(unchainedResult?.[0]?.numDeletedRows || 0);
-
-
 
 	const wsRows = await db
 		.selectFrom("audit_log")
@@ -631,7 +532,6 @@ export async function purgeExpired(now = Date.now()) {
 
 	for (const { workspace_id: workspaceId } of wsRows) {
 
-
 		const chainedRows = await db
 			.selectFrom("audit_log")
 			.select(["id", "chain_hash", "expires_at"])
@@ -640,8 +540,6 @@ export async function purgeExpired(now = Date.now()) {
 			.orderBy("created_at", "asc")
 			.orderBy("id", "asc")
 			.execute();
-
-
 
 		const prefixIds = [];
 		let anchorHash = null;
@@ -656,8 +554,6 @@ export async function purgeExpired(now = Date.now()) {
 		if (prefixIds.length === 0) {
 			continue;
 		}
-
-
 
 		const anchorKey = workspaceId || "";
 		const existing = await _getAnchor(db, workspaceId);
@@ -675,7 +571,6 @@ export async function purgeExpired(now = Date.now()) {
 				.values({ workspace_id: anchorKey, anchor_hash: anchorHash, purged_count: purgedCount, updated_at: now })
 				.execute();
 		}
-
 
 		for (let i = 0; i < prefixIds.length; i += 500) {
 			const slice = prefixIds.slice(i, i + 500);

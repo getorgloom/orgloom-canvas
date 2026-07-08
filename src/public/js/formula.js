@@ -1,24 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -179,10 +158,6 @@ throw new Error('trailing tokens');
 		return tree;
 	}
 
-
-
-
-
 	function resolveFieldValue(path, vals, opts) {
 		if (vals && Object.prototype.hasOwnProperty.call(vals, path)) {
 			const raw = vals[path];
@@ -197,7 +172,6 @@ throw new Error('trailing tokens');
 		const tail = path.substring(dotIdx + 1);
 		const fields = (opts && opts.currentFields) || [];
 
-
 		const refField = fields.find(f => f.relationshipName === head)
 			|| fields.find(f => f.name === head)
 			|| fields.find(f => (f.relationshipName || '').toLowerCase() === head.toLowerCase())
@@ -206,10 +180,6 @@ throw new Error('trailing tokens');
 return null;
 }
 		const targetObjectName = refField.referenceTo[0];
-
-
-
-
 
 		if (opts && opts.currentRecord && Array.isArray(opts.bulkAssociations) && Array.isArray(opts.bulkRecords)) {
 			const assoc = opts.bulkAssociations.find(a => a.fromId === opts.currentRecord.id && a.fieldName === refField.name);

@@ -1,37 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 
 const ALGO = 'aes-256-gcm';
@@ -42,19 +8,11 @@ const MAGIC = Buffer.from('OLE2', 'ascii');
 const MAGIC_BYTES = MAGIC.length;
 const HEADER_BYTES = MAGIC_BYTES + IV_BYTES + AUTH_TAG_BYTES;
 
-
-
-
-
 const KEK_VERSION_SENTINEL_SF_APEX = 0;
-
 
 export function generateDataKey() {
 	return randomBytes(KEY_BYTES);
 }
-
-
-
 
 export function encryptPayload(plaintextJson, dataKey) {
 	if (typeof plaintextJson !== 'string') {
@@ -73,19 +31,12 @@ export function encryptPayload(plaintextJson, dataKey) {
 	return Buffer.concat([MAGIC, iv, authTag, ciphertext]);
 }
 
-
-
-
 export function isEncryptedEnvelope(blob) {
 	if (!Buffer.isBuffer(blob) || blob.length < HEADER_BYTES) {
 		return false;
 	}
 	return blob.slice(0, MAGIC_BYTES).equals(MAGIC);
 }
-
-
-
-
 
 export function decryptPayload(envelope, dataKey) {
 	if (!isEncryptedEnvelope(envelope)) {
@@ -105,21 +56,6 @@ export function decryptPayload(envelope, dataKey) {
 	]);
 	return plaintext.toString('utf8');
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export function makeSfApexKekProvider(conn) {
 	if (!conn || !conn.instanceUrl || !conn.accessToken) {
@@ -162,10 +98,6 @@ export function makeSfApexKekProvider(conn) {
 
 async function _apexKekRequest(conn, suffix, body) {
 
-
-
-
-
 	const url = conn.instanceUrl.replace(/\/+$/, '') + '/services/apexrest/orgloom/orgloom/kek' + suffix;
 	const res = await fetch(url, {
 		method: 'POST',
@@ -188,11 +120,6 @@ async function _apexKekRequest(conn, suffix, body) {
 	return res.json();
 }
 
-
-
-
-
-
 export async function ensureSfApexKek(conn) {
 	if (!conn || !conn.instanceUrl || !conn.accessToken) {
 		throw new Error('ensureSfApexKek: conn with instanceUrl + accessToken required');
@@ -203,20 +130,6 @@ export async function ensureSfApexKek(conn) {
 	}
 	return true;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 const CACHE_ENTRY_TTL_MS = 60 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 5000;
@@ -240,7 +153,6 @@ function _cacheGet(key) {
 
 function _cachePut(key, dek) {
 	if (_kekCache.size >= CACHE_MAX_ENTRIES) {
-
 
 		const firstKey = _kekCache.keys().next().value;
 		if (firstKey !== undefined) {
@@ -278,7 +190,6 @@ export function putCachedDek(sessionId, scope, id, dek) {
 	}
 	_cachePut(_cacheKey(sessionId, scope, id), dek);
 }
-
 
 export function __resetKekCacheForTests() {
 	_kekCache.clear();

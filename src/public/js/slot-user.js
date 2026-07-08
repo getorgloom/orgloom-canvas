@@ -1,24 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -51,17 +30,6 @@ return false;
 }
 				return true;
 			}
-			
-
-
-
-
-
-
-
-
-
-
 
 			function _slotAssignmentState(rec) {
 				if (!rec || !rec.slot || rec.slot.slotId == null) {
@@ -73,11 +41,6 @@ return 'generic';
 }
 				return (window.SF_USER_ID && assignee === window.SF_USER_ID) ? 'mine' : 'other';
 			}
-			
-
-
-
-
 
 			function _slotAssigneeBadgeHtml(rec) {
 				const state = _slotAssignmentState(rec);
@@ -90,24 +53,11 @@ return '';
 				const name = (rec.slot.assigneeName || rec.slot.assigneeEmail || 'someone else');
 				return '<span class="slot-assignee-badge slot-assignee-badge--other" title="Assigned to ' + escapeHtml(name) + ' — only they can fill this slot.">for ' + escapeHtml(name) + '</span>';
 			}
-			
-
-
 
 			function _slotAssignmentCardClass(rec) {
 				const state = _slotAssignmentState(rec);
 				return state === 'other' ? ' record-card--slot-locked' : '';
 			}
-			
-
-
-
-
-
-
-
-
-
 
 			function _slotProgress(rec) {
 				if (!rec || !rec.slot || rec.slot.slotId == null) {
@@ -128,8 +78,6 @@ filled++;
 					return { filled, total };
 				}
 
-
-
 				const loaded = !!rec.loadedFromId;
 				const hasValue = (() => {
 					const v = rec.values || {};
@@ -142,9 +90,6 @@ return true;
 				})();
 				return { filled: (loaded || hasValue) ? 1 : 0, total: 1 };
 			}
-			
-
-
 
 			function _aggregateSlotProgress() {
 				let filled = 0, total = 0, recordCount = 0;
@@ -162,9 +107,6 @@ continue;
 				}
 				return { filled, total, recordCount };
 			}
-			
-
-
 
 			function _slotProgressClass(progress) {
 				if (!progress || progress.total === 0) {
@@ -178,13 +120,6 @@ return 'slot-progress-empty';
 }
 				return 'slot-progress-partial';
 			}
-			
-
-
-
-
-
-
 
 			const _userNameCache = new Map();
 			async function _resolveUserName(userId) {
@@ -213,7 +148,7 @@ _userNameCache.set(userId, name);
  return null; 
 }
 			}
-			
+
 			function _formatRelativeTime(iso) {
 				if (!iso) {
 return '';
@@ -240,9 +175,6 @@ return day + ' day' + (day === 1 ? '' : 's') + ' ago';
 }
 				return new Date(iso).toLocaleDateString();
 			}
-			
-
-
 
 			const _slotInaccessibleObjects = new Set();
 			function _slotPreflightWarn(rec) {

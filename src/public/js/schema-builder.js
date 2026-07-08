@@ -1,57 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -77,9 +23,6 @@
 			const fetchGraphData = deps.fetchGraphData;
 			const ensureDescribe = deps.ensureDescribe;
 
-
-
-
 			const RECORDS_WORLD_SCALE = typeof deps.RECORDS_WORLD_SCALE === 'number' ? deps.RECORDS_WORLD_SCALE : 1.4;
 			const _canvasCapBlockReason = deps._canvasCapBlockReason;
 			const cloneRecord = deps.cloneRecord;
@@ -92,29 +35,12 @@
 			const getCySchemaInstance = deps.getCySchemaInstance;
 			const setCySchemaInstance = deps.setCySchemaInstance;
 
-
-
-
-
-
-
-
-			
 			const SCHEMA_NODE_W = 160;
 			const SCHEMA_NODE_H = 68;
-
-
-
 
 			const SCHEMA_NODE_W_EXPANDED = 280;
 			const SCHEMA_NODE_H_EXPANDED = 360;
 			const SCHEMA_SPAWN_BTN_SIZE = 22;
-
-
-
-
-
-
 
 			const SCHEMA_SATELLITE_INSET = 4;
 			const SCHEMA_SPAWN_OFFSET_X = -(SCHEMA_NODE_W / 2 - SCHEMA_SPAWN_BTN_SIZE / 2 - SCHEMA_SATELLITE_INSET);
@@ -123,26 +49,15 @@
 			const SCHEMA_EXPAND_OFFSET_X = SCHEMA_NODE_W / 2 - SCHEMA_EXPAND_BTN_SIZE / 2 - SCHEMA_SATELLITE_INSET;
 			const SCHEMA_EXPAND_OFFSET_Y = -(SCHEMA_NODE_H / 2 - SCHEMA_EXPAND_BTN_SIZE / 2 - SCHEMA_SATELLITE_INSET);
 
-
-
-
-
 			const SCHEMA_SPAWN_OFFSET_X_EXPANDED = SCHEMA_NODE_W_EXPANDED / 2 + SCHEMA_SPAWN_BTN_SIZE / 2 + 4;
 			const SCHEMA_SPAWN_OFFSET_Y_EXPANDED = -(SCHEMA_NODE_H_EXPANDED / 2 + SCHEMA_SPAWN_BTN_SIZE / 2 + 4);
 			const SCHEMA_EXPAND_OFFSET_X_EXPANDED = SCHEMA_NODE_W_EXPANDED / 2 + SCHEMA_EXPAND_BTN_SIZE / 2 + 4;
 			const SCHEMA_EXPAND_OFFSET_Y_EXPANDED = -(SCHEMA_NODE_H_EXPANDED / 2 + SCHEMA_EXPAND_BTN_SIZE / 2 + 4);
 
-
-
-
-
-
-
 			let _expandedObjectName = null;
 			let _expandedPanelEl = null;
 			let _expandedRenderHandler = null;
 			let _expandedCyNode = null;
-
 
 			let _expandedNeighborPositions = null;
 			function _hideSchemaFieldsPanel() {
@@ -157,21 +72,11 @@
 				if (_expandedCyNode && _expandedCyNode.length) {
 					_expandedCyNode.removeData('expanded');
 
-
-
-
-
-
-
 					const cy = getCySchemaInstance();
 					if (cy) {
 						try {
  cy.style().update(); 
 } catch (_) {}
-
-
-
-
 
 						const objName = _expandedCyNode.data('objectName');
 						const spawn = objName ? cy.getElementById('spawn_' + objName) : null;
@@ -182,7 +87,6 @@ spawn.removeData('expandedHidden');
 						if (expand && expand.length) {
 expand.removeData('expandedHidden');
 }
-
 
 						if (_expandedNeighborPositions) {
 							_expandedNeighborPositions.forEach((pos, id) => {
@@ -211,17 +115,6 @@ return;
 }
 				const cRect = container.getBoundingClientRect();
 				const bb = _expandedCyNode.renderedBoundingBox();
-
-
-
-
-
-
-
-
-
-
-
 
 				const BORDER = 2;
 				const AA_BUFFER = 2;
@@ -255,11 +148,6 @@ return;
 					const isPicklist = (typeRaw === 'picklist' || typeRaw === 'multipicklist')
 						&& Array.isArray(f.picklistValues) && f.picklistValues.length > 0;
 
-
-
-
-
-
 					let searchRaw = (labelRaw + ' ' + nameRaw + ' ' + typeRaw).toLowerCase();
 					if (isPicklist) {
 						searchRaw += ' ' + f.picklistValues
@@ -274,9 +162,6 @@ return;
 						const items = f.picklistValues.map((pv) => {
 							const pvLabel = escapeHtml(pv.label || pv.value || '');
 							const pvValue = escapeHtml(pv.value || '');
-
-
-
 
 							const showValue = (pv.label || '') !== (pv.value || '');
 							return (
@@ -315,11 +200,6 @@ return;
 				);
 			}
 
-
-
-
-
-
 			function _wireSchemaFieldsFilter(panel) {
 				if (!panel) {
 return;
@@ -352,16 +232,11 @@ return;
 				input.addEventListener('keydown', (e) => e.stopPropagation());
 				input.addEventListener('keyup', (e) => e.stopPropagation());
 
-
-
-
-
 				panel.addEventListener('click', (e) => {
 					const row = e.target && e.target.closest && e.target.closest('.schema-expand-field.is-picklist');
 					if (!row) {
 return;
 }
-
 
 					if (e.target.closest('a, input, select, textarea')) {
 return;
@@ -392,13 +267,8 @@ return;
 				_expandedObjectName = objectName;
 				_expandedCyNode = cyNode;
 
-
-
-
 				cyNode.data('expanded', '1');
 				const cy = getCySchemaInstance();
-
-
 
 				const spawn = cy ? cy.getElementById('spawn_' + objectName) : null;
 				if (spawn && spawn.length) {
@@ -408,15 +278,6 @@ spawn.data('expandedHidden', '1');
 				if (expand && expand.length) {
 expand.data('expandedHidden', '1');
 }
-
-
-
-
-
-
-
-
-
 
 				_expandedNeighborPositions = new Map();
 				if (cy) {
@@ -431,10 +292,6 @@ return;
 }
 						const kind = n.data('kind');
 
-
-
-
-
 						if (kind === 'spawn-btn') {
 return;
 }
@@ -448,8 +305,6 @@ return;
 }
 						const ux = dx / dist;
 						const uy = dy / dist;
-
-
 
 						const collapsedExt = Math.min(
 							halfWC / Math.max(0.001, Math.abs(ux)),
@@ -481,14 +336,10 @@ return;
 					'<div class="schema-expand-body">' + _renderSchemaFieldsPanelBody(objectName) + '</div>';
 				panel.addEventListener('mousedown', (e) => e.stopPropagation());
 
-
 				panel.addEventListener('dblclick', (e) => {
  e.stopPropagation(); _hideSchemaFieldsPanel(); 
 });
 				panel.querySelector('.schema-expand-close').addEventListener('click', _hideSchemaFieldsPanel);
-
-
-
 
 				panel.querySelector('.schema-expand-add').addEventListener('click', () => {
 					_spawnRecordFromSchemaObject(objectName);
@@ -526,10 +377,6 @@ body.innerHTML = '<div class="schema-expand-empty">Couldn’t load fields: ' + e
 			}
 			const SCHEMA_STYLE = [
 
-
-
-
-
 				{ selector: 'core', style: {
 					'active-bg-opacity': 0,
 					'active-bg-size': 0,
@@ -555,13 +402,6 @@ body.innerHTML = '<div class="schema-expand-empty">Couldn’t load fields: ' + e
 					'border-width': 2,
 				}},
 
-
-
-
-
-
-
-
 				{ selector: 'node[expanded = "1"]', style: {
 					width: SCHEMA_NODE_W_EXPANDED,
 					height: SCHEMA_NODE_H_EXPANDED,
@@ -579,14 +419,10 @@ body.innerHTML = '<div class="schema-expand-empty">Couldn’t load fields: ' + e
 					height: SCHEMA_NODE_H - 10,
 				}},
 
-
-
-
 				{ selector: 'node[kind = "spawn-btn"]', style: {
 					shape: 'ellipse',
 					width: SCHEMA_SPAWN_BTN_SIZE,
 					height: SCHEMA_SPAWN_BTN_SIZE,
-
 
 					'background-opacity': 0,
 					'border-width': 0,
@@ -601,7 +437,6 @@ body.innerHTML = '<div class="schema-expand-empty">Couldn’t load fields: ' + e
 				{ selector: 'node[kind = "spawn-btn"]:active', style: {
 					color: '#d68b3c',
 				}},
-
 
 				{ selector: 'node[kind = "expand-btn"]', style: {
 					shape: 'ellipse',
@@ -622,15 +457,9 @@ body.innerHTML = '<div class="schema-expand-empty">Couldn’t load fields: ' + e
 					color: '#d68b3c',
 				}},
 
-
-
-
 				{ selector: 'node[?expandedHidden]', style: {
 					display: 'none',
 				}},
-
-
-
 
 				{ selector: 'edge[kind = "spawn-link"]', style: {
 					'line-color': 'transparent',
@@ -656,15 +485,7 @@ body.innerHTML = '<div class="schema-expand-empty">Couldn’t load fields: ' + e
 					'text-rotation': 'autorotate',
 				}},
 
-
-
-
-
-
-
 				{ selector: 'edge[label]', style: { label: 'data(label)' } },
-
-
 
 				{ selector: 'edge[kind = "fk"]', style: {
 					'target-arrow-shape': 'none',
@@ -676,15 +497,6 @@ body.innerHTML = '<div class="schema-expand-empty">Couldn’t load fields: ' + e
 					color: '#6a7078',
 				}},
 			];
-			
-
-
-
-
-
-
-
-
 
 			function _resolveDescribeData(name) {
 				const sel = canvasState.selectedObjects.find((s) => s.name === name);
@@ -696,19 +508,6 @@ return canvasState.graphCache[name];
 }
 				return null;
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function _findSpawnLinkTargets(spawningName, newId) {
 				const focusedRecId = canvasState.bulkSelectedIds.size === 1
@@ -720,8 +519,6 @@ return canvasState.graphCache[name];
 				if (!focusedRec) {
 return [];
 }
-
-
 
 				const componentRecIds = new Set();
 				const queue = [focusedRec.id];
@@ -747,11 +544,6 @@ queue.push(a.fromId);
 					componentRecIds.has(r.id)
 				));
 
-
-
-
-
-
 				const expandMatch = (otherRecs, fromSide, toSide, field) => {
 					if (otherRecs.length === 0) {
 return [];
@@ -769,7 +561,6 @@ return [];
 					}));
 				};
 
-
 				for (let i = canvasState._schemaViewPathEdges.length - 1; i >= 0; i--) {
 					const step = canvasState._schemaViewPathEdges[i];
 					let otherName = null;
@@ -786,18 +577,10 @@ continue;
 continue;
 }
 
-
-
-
 					const fromSide = step.direction === 'parent' ? step.from : step.to;
 					const toSide = step.direction === 'parent' ? step.to : step.from;
 					return expandMatch(otherRecs, fromSide, toSide, step.field);
 				}
-
-
-
-
-
 
 				if (focusedRec.objectName !== spawningName) {
 					const byKey = new Map();
@@ -837,13 +620,6 @@ return links;
 				}
 				return [];
 			}
-			
-
-
-
-
-
-
 
 			function _spawnRecordFromSchemaObject(objectName) {
 				if (!objectName) {
@@ -879,16 +655,6 @@ return;
 					let x = focusedRec.x + (objSchemaPos.x - baseSchemaPos.x) * RECORDS_WORLD_SCALE;
 					let y = focusedRec.y + (objSchemaPos.y - baseSchemaPos.y) * RECORDS_WORLD_SCALE;
 
-
-
-
-
-
-
-
-
-
-
 					const SPAWN_CARD_W = 230;
 					const SPAWN_CARD_H = 90;
 					const SPAWN_STEP = 32;
@@ -917,16 +683,6 @@ return false;
 						fromSelectionId: selEntry.id,
 					};
 					canvasState.bulkRecords.push(newRec);
-
-
-
-
-
-
-
-
-
-
 
 					const links = _findSpawnLinkTargets(selEntry.name, newRec.id);
 					links.forEach((link) => {
@@ -958,12 +714,8 @@ return false;
 					});
 				}
 			}
-			
+
 			function _schemaViewFromSelection() {
-
-
-
-
 
 				let focusedRec = null;
 				if (canvasState.bulkSelectedIds.size === 1) {
@@ -978,15 +730,9 @@ focusedRec = r;
 return null;
 }
 
-
-
-
-
-
-
 				const isOverride = !!overrideName && (!focusedRec || overrideName !== focusedRec.objectName);
 				const activeName = isOverride ? overrideName : focusedRec.objectName;
-			
+
 				let componentRecIds;
 				let objectNames;
 				const seenNames = new Set();
@@ -994,9 +740,6 @@ return null;
 					componentRecIds = new Set();
 					objectNames = [activeName];
 					seenNames.add(activeName);
-
-
-
 
 					canvasState._schemaViewPath.forEach((name) => {
 						if (seenNames.has(name)) {
@@ -1006,7 +749,6 @@ return;
 						objectNames.push(name);
 					});
 				} else {
-
 
 					componentRecIds = new Set();
 					const queue = [focusedRec.id];
@@ -1038,14 +780,14 @@ return;
 						objectNames.push(r.objectName);
 					});
 				}
-			
+
 				const labelFor = (name) => {
 					const sel = canvasState.selectedObjects.find((s) => s.name === name);
 					return (sel && sel.label) || name;
 				};
 				const elements = [];
 				const nodeKindById = new Map();
-			
+
 				objectNames.forEach((name) => {
 					const id = 'o_' + name;
 					const kind = name === activeName ? 'sel-active' : 'sel';
@@ -1054,11 +796,6 @@ return;
 						group: 'nodes',
 						data: { id, kind, label: labelFor(name), objectName: name },
 					});
-
-
-
-
-
 
 					const spawnId = 'spawn_' + name;
 					nodeKindById.set(spawnId, 'spawn-btn');
@@ -1073,10 +810,6 @@ return;
 						data: { id: 'spawnedge_' + name, source: id, target: spawnId, kind: 'spawn-link' },
 					});
 
-
-
-
-
 					const expandId = 'expand_' + name;
 					nodeKindById.set(expandId, 'expand-btn');
 					elements.push({
@@ -1090,21 +823,6 @@ return;
 						data: { id: 'expandedge_' + name, source: id, target: expandId, kind: 'spawn-link' },
 					});
 				});
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const edgeKeys = [];
 				const seenEdges = new Set();
@@ -1143,10 +861,6 @@ return;
 						},
 					});
 				});
-			
-
-
-
 
 				if (isOverride && canvasState._schemaViewPathEdges.length) {
 					canvasState._schemaViewPathEdges.forEach((step) => {
@@ -1156,21 +870,13 @@ return;
 						let source, target;
 						if (step.direction === 'parent') {
 
-
 							source = 'o_' + step.from;
 							target = 'o_' + step.to;
 						} else {
 
-
 							source = 'o_' + step.to;
 							target = 'o_' + step.from;
 						}
-
-
-
-
-
-
 
 						if (seenEdges.has(source.slice(2) + '|' + target.slice(2) + '|' + step.field)) {
 return;
@@ -1181,8 +887,6 @@ return;
 }
 						seenEdges.add('pe_' + key);
 						edgeKeys.push('pe_' + key);
-
-
 
 						if (step.from === activeName || step.to === activeName) {
 							seenEdges.add(step.from + '|' + step.to + '|' + step.field);
@@ -1200,15 +904,6 @@ return;
 						});
 					});
 				}
-			
-
-
-
-
-
-
-
-
 
 				const allObjsByName = new Map((Array.isArray(canvasState.allObjects) ? canvasState.allObjects : []).map((o) => [o.name, o]));
 				const relFilter = canvasState.graphRelFilter || 'both';
@@ -1240,7 +935,6 @@ return;
 }
 						const peerIsSel = seenNames.has(peerObj);
 
-
 						if (!peerIsSel) {
 							if (relFilter === 'parent' && direction !== 'parent') {
 return;
@@ -1250,20 +944,13 @@ return;
 }
 						}
 
-
-
-
 						if (canvasState._systemFieldsFilter && SCHEMA_SYSTEM_FK_FIELDS.has(fieldName) && !peerIsSel) {
 return;
 }
 
-
-
 						if (!peerIsSel && !matchesFilterText(peerObj)) {
 return;
 }
-
-
 
 						if (isOverride && peerIsSel) {
 return;
@@ -1282,12 +969,6 @@ return;
 }
 						ringKeys.push(ringKey);
 
-
-
-
-
-
-
 						const nodeId = 'ring_' + activeName + '_' + ringKey;
 						nodeKindById.set(nodeId, 'ring');
 						elements.push({
@@ -1305,11 +986,6 @@ return;
 					(activeData.parents || []).forEach((p) => pushRing(p.object, p.field, 'parent'));
 					(activeData.children || []).forEach((c) => pushRing(c.object, c.field, 'child'));
 				}
-			
-
-
-
-
 
 				const sig = [
 					[].concat(objectNames).sort().join(','),
@@ -1321,7 +997,7 @@ return;
 				].join('||');
 				return { activeName, elements, nodeKindById, sig };
 			}
-			
+
 			function renderCanvas() {
 				const subbar = getGraph().querySelector('#graph-subbar');
 				if (subbar) {
@@ -1335,41 +1011,19 @@ picker.classList.add('hidden');
 				if (!container || typeof cytoscape !== 'function') {
 return;
 }
-			
-
-
-
-
-
-
 
 				const currentFocusId = canvasState.bulkSelectedIds.size === 1
 					? canvasState.bulkSelectedIds.values().next().value
 					: null;
 				if (currentFocusId !== canvasState._lastSchemaFocusRecId) {
 
-
-
-
-
-
-
-
 					canvasState._schemaViewPath = [];
 					canvasState._schemaViewPathEdges = [];
 				}
 				canvasState._lastSchemaFocusRecId = currentFocusId;
-			
+
 				const view = _schemaViewFromSelection();
 				if (!view) {
-
-
-
-
-
-
-
-
 
 					_hideSchemaFieldsPanel();
 					if (getCySchemaInstance()) {
@@ -1380,11 +1034,6 @@ return;
 					return;
 				}
 
-
-
-
-
-
 				if (typeof fetchGraphData === 'function' && !_resolveDescribeData(view.activeName)) {
 					const targetName = view.activeName;
 					fetchGraphData(targetName).then(() => {
@@ -1393,17 +1042,10 @@ renderCanvas();
 }
 					}).catch((err) => console.warn('schema render: fetchGraphData failed for', targetName, err));
 				}
-			
+
 				const sigChanged = view.sig !== canvasState._cySchemaSig;
 				canvasState._cySchemaSig = view.sig;
 				const SPOKE_RADIUS = 1.67 * SCHEMA_NODE_W;
-			
-
-
-
-
-
-
 
 				const startAngle = -Math.PI / 2;
 				const sortedSelNames = view.elements
@@ -1424,31 +1066,9 @@ renderCanvas();
 					});
 				});
 
-
-
-
-
-
-
-
-
-
-
-
-
 				const navOrigin = canvasState._pendingNavOriginPos
 					? { x: canvasState._pendingNavOriginPos.x, y: canvasState._pendingNavOriginPos.y }
 					: null;
-
-
-
-
-
-
-
-
-
-
 
 				let activePos;
 				if (navOrigin) {
@@ -1465,10 +1085,6 @@ renderCanvas();
 				const ringNodes = view.elements.filter((el) => el.group === 'nodes' && el.data.kind === 'ring');
 				const ringN = ringNodes.length;
 
-
-
-
-
 				view.elements.forEach((el) => {
 					if (el.group !== 'nodes') {
 return;
@@ -1484,22 +1100,6 @@ el.position = { x: pos.x, y: pos.y };
 }
 					}
 				});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				function _bestRingRotation(activePos, ringN, otherNodes) {
 					if (ringN === 0) {
@@ -1547,19 +1147,6 @@ minDist = d;
 					}
 					return bestRotation;
 				}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const otherPositionedNodes = [];
 				view.elements.forEach((el) => {
@@ -1624,26 +1211,11 @@ return;
 						y: parentPos.y + SCHEMA_EXPAND_OFFSET_Y,
 					};
 				});
-			
-
-
-
-
-
-
-
-
-
 
 				let activeNodeIsNewlyAdded = false;
 
-
-
-
-
-
 				let cyJustCreated = false;
-			
+
 				if (!getCySchemaInstance()) {
 					activeNodeIsNewlyAdded = true;
 					cyJustCreated = true;
@@ -1652,51 +1224,22 @@ return;
 						elements: view.elements,
 						style: SCHEMA_STYLE,
 
-
-
-
-
-
-
-
-
 						layout: { name: 'preset', fit: false },
 						boxSelectionEnabled: false,
 						userPanningEnabled: false,
 
-
-
 						zoom: 0.7,
 					}));
-
-
-
-
-
-
 
 					getCySchemaInstance().nodes('[kind = "spawn-btn"], [kind = "expand-btn"]').ungrabify().unselectify();
 
 					attachCyEdgeMarkers(getCySchemaInstance(), container);
 
-
-
-
 					attachCyMiddleClickPan(getCySchemaInstance(), container);
-
-
-
 
 					attachCyWheelZoom(getCySchemaInstance(), container);
 
-
-
-
-
-
 					container.addEventListener('contextmenu', (e) => e.preventDefault());
-			
-
 
 					getCySchemaInstance().on('position', 'node', (evt) => {
 						const target = evt.target;
@@ -1725,10 +1268,6 @@ return;
 							});
 						}
 					});
-			
-
-
-
 
 					getCySchemaInstance().on('dbltap', 'node', (evt) => {
 						const d = evt.target.data();
@@ -1746,20 +1285,14 @@ return;
 						_showSchemaFieldsPanel(objectName, evt.target);
 					});
 
-
-
 					getCySchemaInstance().on('tap', (evt) => {
 						if (evt.target === getCySchemaInstance()) {
 _hideSchemaFieldsPanel();
 }
 					});
 
-
-
-
 					getCySchemaInstance().on('tap', 'node', (evt) => {
 						const d = evt.target.data();
-
 
 						if (d && d.kind === 'spawn-btn') {
 							if (d.spawnFor) {
@@ -1767,9 +1300,6 @@ _spawnRecordFromSchemaObject(d.spawnFor);
 }
 							return;
 						}
-
-
-
 
 						if (d && d.kind === 'expand-btn') {
 							const objectName = d.expandFor;
@@ -1801,17 +1331,8 @@ return;
 						const ringField = d.ringField || null;
 						const ringDirection = d.ringDirection || null;
 
-
-
-
-
-
-
-
 						const tappedPos = evt.target.position();
 						canvasState._pendingNavOriginPos = { x: tappedPos.x, y: tappedPos.y };
-
-
 
 						_hideSchemaFieldsPanel();
 						const cached = _resolveDescribeData(targetName);
@@ -1844,10 +1365,6 @@ return;
 					});
 				} else if (sigChanged) {
 
-
-
-
-
 					canvasState._pendingNavOriginPos = null;
 					const wantedIds = new Set(view.elements.map((e) => e.data.id));
 					const obsolete = getCySchemaInstance().elements().filter((el) => !wantedIds.has(el.id()));
@@ -1858,8 +1375,6 @@ obsolete.remove();
 					view.elements.forEach((el) => {
 						const cyEl = getCySchemaInstance().getElementById(el.data.id);
 						if (!cyEl || !cyEl.length) {
-
-
 
 							if (el.data.id === activeId) {
 activeNodeIsNewlyAdded = true;
@@ -1875,15 +1390,11 @@ el.data('kind', kind);
 }
 					});
 
-
-
-
 					getCySchemaInstance().nodes('[kind = "spawn-btn"], [kind = "expand-btn"]').ungrabify().unselectify();
 					if (typeof redrawCyEdgeMarkers === 'function') {
 						redrawCyEdgeMarkers(getCySchemaInstance(), container);
 					}
 				} else {
-
 
 					view.nodeKindById.forEach((kind, id) => {
 						const el = getCySchemaInstance().getElementById(id);
@@ -1892,7 +1403,7 @@ el.data('kind', kind);
 }
 					});
 				}
-			
+
 				requestAnimationFrame(() => {
 					if (!getCySchemaInstance()) {
 return;
@@ -1903,13 +1414,6 @@ return;
 						getCySchemaInstance().fit(undefined, 60);
 						return;
 					}
-
-
-
-
-
-
-
 
 					if (cyJustCreated) {
 						const allNodes = getCySchemaInstance().nodes();
@@ -1925,41 +1429,6 @@ getCySchemaInstance().zoom(1);
 					}
 					getCySchemaInstance().elements().unselect();
 					activeNode.select();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 					if (activeNodeIsNewlyAdded) {
 						const targetActiveId = 'o_' + view.activeName;
@@ -1979,15 +1448,6 @@ return;
 					}
 				});
 			}
-			
-
-
-
-
-
-
-
-
 
 			function makeNode(label, name, relation, x, y, variant, onRemove, cloneOpts, loading) {
 				const div = document.createElement('div');
@@ -2002,15 +1462,10 @@ return;
 					html += '<button class="node-remove" data-node-remove title="' + title + '">\u00D7</button>';
 				}
 
-
-
-
 				html += '<div class="obj-label">' + escapeHtml(label) + '</div>';
 				if (name && name !== label) {
 html += '<div class="obj-name">' + escapeHtml(name) + '</div>';
 }
-
-
 
 				if (loading) {
 					html += '<div class="graph-node-loading" aria-label="Loading related objects">' +
@@ -2046,8 +1501,6 @@ cb.addEventListener('click', (e) => {
 				}
 				return div;
 			}
-			
-			
 
 			return {
 				renderCanvas: renderCanvas,

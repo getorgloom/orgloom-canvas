@@ -1,4 +1,3 @@
-
 import { ext } from "../extensions.js";
 
 const VALID_ROLES = new Set(["viewer", "contributor", "editor"]);

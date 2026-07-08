@@ -1,42 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -57,7 +18,6 @@
 			const escapeHtml = deps.escapeHtml;
 			const csrfFetch = deps.csrfFetch;
 
-
 			const canvasCapCheck = typeof deps.canvasCapCheck === 'function'
 				? deps.canvasCapCheck
 				: function () { return { ok: true, blocked: false, reason: null }; };
@@ -69,25 +29,12 @@
 			const setSkipNextCyAutoPan = deps.setSkipNextCyAutoPan;
 			const clearEmptyStarterCard = deps.clearEmptyStarterCard;
 
-
-
-
 			const captureUndoSnapshot = typeof deps.captureUndoSnapshot === 'function'
 				? deps.captureUndoSnapshot : null;
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction : null;
 
 			const _shared = window.OrgLoom.importShared;
-
-
-
-
-
-
-
-
-
-
 
 			function formatQueryError(body, status) {
 				const code = body && body.error ? String(body.error) : '';
@@ -104,18 +51,6 @@ return escapeHtml(code);
 				return 'HTTP ' + status;
 			}
 
-
-
-
-
-
-
-
-
-
-
-
-
 				const PLAYGROUND_PRESET_SOQL =
 					"SELECT Id, Name, Industry, Phone, Type,\n" +
 					"       (SELECT Id, FirstName, LastName, Email, Title FROM Contacts)\n" +
@@ -126,13 +61,6 @@ return escapeHtml(code);
 					opts = opts || {};
 					document.querySelectorAll('.soql-import-modal').forEach((el) => el.remove());
 					const isPlayground = !!window.ORGLOOM_MOCK;
-
-
-
-
-
-
-
 
 					const presetSoql = typeof opts.presetSoql === 'string' && opts.presetSoql.trim()
 						? opts.presetSoql.trim()
@@ -156,12 +84,6 @@ return escapeHtml(code);
 							'<div class="modal-content">' +
 								headerCopy +
 								'<textarea id="soql-query" rows="8"' + textareaAttrs + '>' + escapeHtml(textareaValue) + '</textarea>' +
-
-
-
-
-
-
 
 								'<label class="soql-full-fields-toggle" style="display:flex;align-items:center;gap:0.5em;margin-top:0.6em;font-size:0.88rem;color:var(--ink-soft)' + (isPlayground ? ';opacity:0.7;cursor:not-allowed' : '') + '">' +
 									'<input type="checkbox" id="soql-full-fields" checked' + (isPlayground ? ' disabled aria-disabled="true"' : '') + '>' +
@@ -196,11 +118,6 @@ close();
 					let lastResult = null;
 					setTimeout(() => textarea.focus(), 0);
 
-
-
-
-
-
 					let lastResultSoql = null;
 					let lastResultFullFields = null;
 
@@ -225,9 +142,6 @@ close();
 							.map(([n, c]) => escapeHtml(n) + ': ' + c)
 							.join(' \u00b7 ');
 
-
-
-
 						const truncationNote = body.capped
 							? '<div class="banner">Hit the ' + (body.cap || 500) + '-record import cap — showing the first ' + body.returned + '. There may be more; add a WHERE clause or a smaller LIMIT to narrow.</div>'
 							: body.truncated
@@ -235,7 +149,6 @@ close();
 							: '';
 
 						const sfBase = (window.SF_INSTANCE_URL || '').replace(/[/]+$/, '');
-
 
 						const ID_PRIORITY = ['Name', 'CaseNumber', 'Subject', 'Title', 'Label', 'DeveloperName', 'Username', 'Email', 'FullName', 'LastName'];
 						function pickIdentifier(values) {
@@ -252,10 +165,6 @@ close();
 							return null;
 						}
 						const MAX_PREVIEW_ROWS = 200;
-
-
-
-
 
 						const decorated = body.records.map((rec) => {
 							const id = rec.loadedFromId || (rec.values && rec.values.Id) || '';
@@ -331,9 +240,6 @@ close();
 						}
 					}
 
-
-
-
 					async function commit() {
 						const soql = (textarea.value || '').trim();
 						if (!soql) {
@@ -344,8 +250,6 @@ close();
 						previewBtn.disabled = true;
 						const originalLabel = commitBtn.textContent;
 						commitBtn.textContent = 'Adding\u2026';
-
-
 
 						let _undo = null;
 						try {
@@ -398,7 +302,6 @@ close();
 							close();
 						} catch (err) {
 
-
 							if (_undo) {
 								_undo();
 							}
@@ -415,11 +318,6 @@ close();
 					commitBtn.addEventListener('click', commit);
 					if (fullFieldsCb) {
 
-
-
-
-
-
 						fullFieldsCb.addEventListener('change', () => {
 							lastResult = null;
 							lastResultSoql = null;
@@ -428,20 +326,12 @@ close();
 					}
 					textarea.addEventListener('keydown', (e) => {
 
-
 						if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
 							e.preventDefault();
 							runPreview();
 						}
 					});
 				}
-
-
-
-
-
-
-
 
 				async function soqlImportCommitToCanvas(result, opts) {
 					const records = Array.isArray(result.records) ? result.records : [];
@@ -450,9 +340,6 @@ close();
 return { added: 0, skipped: 0 };
 }
 
-
-
-
 					const existingByKey = new Map();
 					canvasState.bulkRecords.forEach((br) => {
 						if (br.isTypeNode || !br.loadedFromId) {
@@ -460,7 +347,6 @@ return;
 }
 						existingByKey.set(br.objectName + '::' + br.loadedFromId, br.id);
 					});
-
 
 					const dupTempIds = new Set();
 					const newRecords = [];
@@ -473,23 +359,6 @@ newRecords.push(rec);
 }
 					});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 					const knownTotal = opts && typeof opts.knownTotal === 'number' ? opts.knownTotal : 0;
 					const reportedTotal = typeof result.totalSize === 'number' ? result.totalSize : records.length;
 					const totalMatch = Math.max(knownTotal, reportedTotal, records.length);
@@ -498,10 +367,6 @@ newRecords.push(rec);
 					if (_cap.blocked) {
 						return { added: 0, skipped: dupTempIds.size, blocked: true, capReason: _cap.reason };
 					}
-
-
-
-
 
 					const orderedObjectNames = [];
 					const seenObjects = new Set();
@@ -530,12 +395,7 @@ newRecords.push(rec);
 						selByName[objName] = sel;
 					}
 
-
-
-
-
 					clearEmptyStarterCard();
-
 
 					const canvasEl = getGraph().querySelector("#bulk-canvas");
 					const startX = (canvasEl ? canvasEl.clientWidth / 2 : 600) - 220;
@@ -544,9 +404,6 @@ newRecords.push(rec);
 					const colStep = 240;
 					const rowStep = 180;
 					const cols = 4;
-
-
-
 
 					const clientIdByTempId = {};
 					records.forEach((rec) => {
@@ -557,19 +414,7 @@ clientIdByTempId[rec.tempId] = existingId;
 }
 					});
 
-
-
-
-
-
-
-
-
-
 					const isCompact = result && result.fullFields === false;
-
-
-
 
 					const newBulkIds = new Set();
 					newRecords.forEach((rec, idx) => {
@@ -580,9 +425,6 @@ clientIdByTempId[rec.tempId] = existingId;
 							id: canvasState.bulkIdSeq++,
 							objectName: rec.objectName,
 							label: sel ? sel.label : rec.objectName,
-
-
-
 
 							x: startX + col * colStep,
 							y: startY + row * rowStep,
@@ -599,20 +441,9 @@ clientIdByTempId[rec.tempId] = existingId;
 						newBulkIds.add(newRec.id);
 					});
 
-
-
-
 					const existingAssocKey = new Set(
 						canvasState.bulkAssociations.map((a) => a.fromId + '->' + a.toId + '::' + a.fieldName),
 					);
-
-
-
-
-
-
-
-
 
 					const _admitAssociation = window.OrgLoom.importShared.admitAssociation;
 					const _usedFk = new Set();
@@ -641,11 +472,6 @@ continue;
 					}
 					clearBulkUserDeleted();
 
-
-
-
-
-
 					if (newBulkIds.size > 0) {
 setSkipNextCyAutoPan(true);
 }
@@ -653,23 +479,11 @@ setSkipNextCyAutoPan(true);
 renderBulkView();
 }
 
-
-
-
-
-
 					if (newBulkIds.size > 0) {
 relayoutNewRecords(newBulkIds);
 }
 					return { added: newRecords.length, skipped: dupTempIds.size, associationsAdded: assocsAdded, associationsSkippedFk: assocsSkippedFk };
 				}
-
-
-
-
-
-
-
 
 			async function runAndCommitSoql(soql, opts) {
 				opts = opts || {};

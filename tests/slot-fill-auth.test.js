@@ -1,18 +1,6 @@
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeSlotFills } from '../src/slot-helpers.js';
-
-
 
 function slotRec({ slotId, kind = 'whole-record', fields, assigneeSfUserId, values, objectName = 'Account' }) {
 	const slot = { slotId, kind };
@@ -99,11 +87,6 @@ describe('mergeSlotFills — assignment authorization', () => {
 
 	test('assigneeSfUserId comparison is strict-string (15 vs 18 char ids do NOT match)', () => {
 
-
-
-
-
-
 		const records = [slotRec({ slotId: 1, assigneeSfUserId: '005xx0000000001' })];
 		const out = mergeSlotFills({
 			records,
@@ -115,7 +98,6 @@ describe('mergeSlotFills — assignment authorization', () => {
 	});
 
 	test('empty-string assigneeSfUserId is treated as unassigned (generic)', () => {
-
 
 		const records = [{
 			objectName: 'Account',
@@ -132,9 +114,6 @@ describe('mergeSlotFills — assignment authorization', () => {
 	});
 
 	test('coerces non-string assigneeSfUserId via String() before comparing', () => {
-
-
-
 
 		const records = [{
 			objectName: 'Account',
@@ -289,8 +268,6 @@ describe('mergeSlotFills — purity / immutability', () => {
 			recipientSfUserId: '005me',
 		});
 
-
-
 		assert.deepEqual(original, snapshot);
 	});
 
@@ -372,9 +349,6 @@ describe('mergeSlotFills — input edge cases', () => {
 
 	test('slotId can be a number or string — index uses the same key type', () => {
 
-
-
-
 		const records = [slotRec({ slotId: 7 })];
 		const out = mergeSlotFills({
 			records,
@@ -387,9 +361,6 @@ describe('mergeSlotFills — input edge cases', () => {
 
 describe('mergeSlotFills — fieldCount accounting', () => {
 	test('fieldCount reflects the number of incoming keys, not the merged count', () => {
-
-
-
 
 		const records = [slotRec({
 			slotId: 1,

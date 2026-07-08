@@ -1,30 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -72,16 +45,6 @@ throw new Error('pending-spawn.mount: missing deps object');
 				}
 				cloneRecord(objectName);
 			}
-			
-
-
-
-
-
-
-
-
-
 
 			function spawnPendingRecord(worldX, worldY) {
 				let x, y;
@@ -96,12 +59,6 @@ throw new Error('pending-spawn.mount: missing deps object');
 					const st = (canvas && canvas.scrollTop) || 0;
 					const baseX = sl + cw / 2;
 					const baseY = st + ch / 2;
-
-
-
-
-
-
 
 					const STEP_X = 260;
 					const STEP_Y = 170;
@@ -128,7 +85,7 @@ throw new Error('pending-spawn.mount: missing deps object');
 				});
 				renderBulkView();
 			}
-			
+
 			async function resolvePendingRecord(recId, objectName) {
 				const rec = canvasState.bulkRecords.find((r) => r.id === recId);
 				if (!rec || !rec.isPending) {
@@ -155,14 +112,6 @@ return;
 				rec.values = {};
 				renderBulkView();
 			}
-			
-
-
-
-
-
-
-
 
 			async function resolvePendingRecordToLoad(recId, objectName) {
 				const rec = canvasState.bulkRecords.find((r) => r.id === recId);
@@ -183,16 +132,6 @@ return;
 					}
 				}
 
-
-
-
-
-
-
-
-
-
-
 				const cardEl = getGraph().querySelector('[data-rec-id="' + rec.id + '"]');
 				const loadBtn = cardEl && cardEl.querySelector('[data-pending-pick-load]');
 				pickRecordForFreeTypeNode({
@@ -203,16 +142,6 @@ return;
 					label: s.label,
 				}, loadBtn || cardEl || null);
 			}
-			
-
-
-
-
-
-
-
-
-
 
 			return {
 				spawnDraftRecord: spawnDraftRecord,

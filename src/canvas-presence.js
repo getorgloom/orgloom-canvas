@@ -1,51 +1,9 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import crypto from 'node:crypto';
-
 
 const _presenceByCanvas = new Map();
 
-
-
-
 const IDLE_THRESHOLD_MS = 90 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 1000;
-
-
-
-
 
 const _COLOR_PALETTE = [
 	'#e09240',
@@ -82,17 +40,9 @@ res.write('event: ' + event + '\n');
 		return true;
 	} catch (e) {
 
-
 		return false;
 	}
 }
-
-
-
-
-
-
-
 
 function _ownsConnection(entry, requestingAccountId) {
 	if (!requestingAccountId) {
@@ -112,9 +62,6 @@ function _toPeerPayload(entry) {
 	};
 }
 
-
-
-
 function _broadcast(canvasId, payload, excludeConnId) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
@@ -131,11 +78,6 @@ delivered++;
 	}
 	return delivered;
 }
-
-
-
-
-
 
 export function subscribe({ canvasId, workspaceId, accountId, displayName, sseRes }) {
 	if (!canvasId || !workspaceId || !accountId || !sseRes) {
@@ -158,13 +100,6 @@ _presenceByCanvas.set(canvasId, new Map());
 		lastSeenAt: Date.now(),
 		sseRes,
 	};
-
-
-
-
-
-
-
 
 	const peers = [];
 	for (const other of conns.values()) {
@@ -207,17 +142,6 @@ _presenceByCanvas.delete(canvasId);
 	return true;
 }
 
-
-
-
-
-
-
-
-
-
-
-
 export function updateCursor({ canvasId, connectionId, x, y, world, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
@@ -241,18 +165,6 @@ return false;
 	}, connectionId);
 	return true;
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 export function updateDraft({ canvasId, connectionId, tempId, fields, kind, objectName, x, y, position, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
@@ -280,14 +192,6 @@ return false;
 		fields,
 	};
 
-
-
-
-
-
-
-
-
 	if (kind === 'create') {
 		payload.kind = 'create';
 		if (typeof objectName === 'string') {
@@ -309,17 +213,6 @@ payload.y = y;
 	_broadcast(canvasId, payload, connectionId);
 	return true;
 }
-
-
-
-
-
-
-
-
-
-
-
 
 export function updateDraftLink({ canvasId, connectionId, kind, fromSyncId, toSyncId, fieldName, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
@@ -351,19 +244,6 @@ return false;
 	return true;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 export function removeLoadedRecord({ canvasId, connectionId, sfId, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
@@ -388,10 +268,6 @@ return false;
 	return true;
 }
 
-
-
-
-
 export function updateFocus({ canvasId, connectionId, focus, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
@@ -414,13 +290,6 @@ return false;
 	return true;
 }
 
-
-
-
-
-
-
-
 export function broadcastCanvasSaved({ canvasId, savedByAccountId, savedByDisplayName, versionId, title }) {
 	if (!canvasId) {
 return 0;
@@ -435,9 +304,6 @@ return 0;
 	}, null);
 }
 
-
-
-
 export function summary({ canvasId }) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
@@ -445,8 +311,6 @@ return { count: 0 };
 }
 	return { count: conns.size };
 }
-
-
 
 function _sweep() {
 	const now = Date.now();

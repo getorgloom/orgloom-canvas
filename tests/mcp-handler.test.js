@@ -1,10 +1,3 @@
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -12,7 +5,6 @@ import { initTestDb, clearTestDb } from './helpers/db.js';
 
 before(initTestDb);
 beforeEach(clearTestDb);
-
 
 const ERR_PARSE = -32700;
 const ERR_INVALID_REQUEST = -32600;
@@ -61,13 +53,11 @@ async function makeWorkspace(ownerAccountId, name = 'W') {
 		created_at: now, updated_at: now,
 	}).execute();
 
-
 	await db.insertInto('workspace_members').values({
 		workspace_id: id, account_id: ownerAccountId, role: 'admin', joined_at: now,
 	}).execute();
 	return { id };
 }
-
 
 async function makeMcpFixture() {
 	const account = await makeAccount();
@@ -96,7 +86,6 @@ describe('envelope validation', () => {
 
 	test('notification (id == null) → 204, no body, no auth attempted', async () => {
 
-
 		const res = await callMcp({ body: { jsonrpc: '2.0', method: 'ping' }, token: null });
 		assert.equal(res.statusCode, 204);
 		assert.equal(res.body, undefined);
@@ -113,7 +102,6 @@ describe('auth resolution', () => {
 	test('missing Authorization header → ERR_AUTH with HTTP 401', async () => {
 		const res = await callMcp({ body: rpc('ping'), token: null });
 		assert.equal(res.body.error.code, ERR_AUTH);
-
 
 		assert.equal(res.statusCode, 401);
 	});
@@ -229,8 +217,6 @@ describe('tools/call', () => {
 	test('capability denial → ERR_FORBIDDEN with the resolver reason; no mcp_tool_call row', async () => {
 		const { ext } = await import('../src/extensions.js');
 		const { ws, token } = await makeMcpFixture();
-
-
 
 		const originalResolver = ext.getCapability;
 		ext.registerCapabilityResolver(async () => ({ allowed: false, reason: 'workspace-toggle-off' }));

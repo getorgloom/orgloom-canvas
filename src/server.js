@@ -1,33 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
@@ -52,20 +22,6 @@ import { mcpHandler } from './mcp/server.js';
 const { Connection } = jsforce;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 try {
 	ext.getDb();
 } catch (err) {
@@ -73,13 +29,6 @@ try {
 	throw err;
 }
 console.log('[db] ready:', process.env.DATABASE_URL || 'sqlite:./data/orgloom.db');
-
-
-
-
-
-
-
 
 const LOCAL_ACCOUNT_ID = 'local';
 
@@ -101,10 +50,6 @@ async function ensureLocalAccount() {
 	return { id: LOCAL_ACCOUNT_ID, email: 'self-host@local', display_name: 'Self-host user' };
 }
 
-
-
-
-
 ext.registerAuthProvider(async (req) => {
 	if (!req || !req.session || !req.session.accountId) {
 return null;
@@ -114,8 +59,6 @@ return null;
 }
 	return { id: LOCAL_ACCOUNT_ID, email: 'self-host@local', display_name: 'Self-host user' };
 });
-
-
 
 const _rawDb = ext.getRawClient();
 let _sessionStore = null;
@@ -133,12 +76,7 @@ if (_rawDb.dialect === 'sqlite') {
 const app = express();
 app.set('trust proxy', 1);
 
-
-
 app.disable('x-powered-by');
-
-
-
 
 app.use((req, res, next) => {
 	res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
@@ -151,19 +89,9 @@ app.use(helmet({
 		directives: {
 			'default-src': ["'self'"],
 
-
-
-
-
-
-
-
 			'script-src': ["'self'", 'https://*.posthog.com', 'https://browser.sentry-cdn.com', (req, res) => `'nonce-${res.locals.cspNonce}'`],
 
 			'style-src': ["'self'"],
-
-
-
 
 			'style-src-elem': [
 				"'self'",
@@ -173,26 +101,11 @@ app.use(helmet({
 			'img-src': ["'self'", 'data:', 'https://*.posthog.com'],
 			'font-src': ["'self'", 'data:'],
 
-
-
-
-
-
-
-
-
-
-
-
-
 			'connect-src': ["'self'", 'https://*.posthog.com', 'https://browser.sentry-cdn.com', ...(process.env.SENTRY_INGEST_HOST ? ['https://' + process.env.SENTRY_INGEST_HOST] : [])],
 			'frame-src': ["'self'", 'https://www.youtube.com', 'https://www.youtube-nocookie.com'],
 			'frame-ancestors': ["'self'"],
 			'object-src': ["'none'"],
 			'base-uri': ["'self'"],
-
-
-
 
 			'form-action': [
 				"'self'",
@@ -209,10 +122,6 @@ app.use(helmet({
 	},
 	crossOriginEmbedderPolicy: false,
 }));
-
-
-
-
 
 app.use(['/img/brand', '/.well-known'], (req, res, next) => {
 	res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -234,9 +143,6 @@ app.use(session({
 		maxAge: 1000 * 60 * 60 * 24 * 30,
 	},
 }));
-
-
-
 
 function _regenerateSession(req) {
 	return new Promise((resolve, reject) => {
@@ -263,9 +169,6 @@ return reject(saveErr);
 		});
 	});
 }
-
-
-
 
 app.use(cookieParser(config.sessionSecret));
 
@@ -324,16 +227,12 @@ app.use((err, req, res, next) => {
 	next(err);
 });
 
-
-
 app.locals.jsonForScript = (value) => {
 	return JSON.stringify(value)
 		.replace(/</g, '\\u003c')
 		.replace(/\u2028/g, '\\u2028')
 		.replace(/\u2029/g, '\\u2029');
 };
-
-
 
 app.use((req, res, next) => {
 	const _send = res.send.bind(res);
@@ -348,9 +247,6 @@ app.use((req, res, next) => {
 			}
 		} catch (err) {
 
-
-
-
 			try {
 				ext.captureException(err, {
 					where: 'server/csrfMetaInjection',
@@ -363,8 +259,6 @@ app.use((req, res, next) => {
 	next();
 });
 
-
-
 app.set('view engine', 'ejs');
 app.set('views', [path.join(__dirname, 'views')]);
 app.use('/css', express.static(path.join(__dirname, 'public/css')));
@@ -373,29 +267,18 @@ app.use('/img', express.static(path.join(__dirname, 'public/img')));
 app.use('/vendor', express.static(fileURLToPath(new URL('../../../node_modules', import.meta.url))));
 app.use(express.static(path.join(__dirname, 'public')));
 
-
-
 ext.flush(app);
 
-
-
 mountSetupWizard(app);
-
-
 
 app.use((req, res, next) => {
 	res.locals.currentPath = req.path;
 	res.locals.saasEnabled = false;
 
-
-
 	res.locals.posthogKey = process.env.POSTHOG_KEY || '';
 	res.locals.posthogHost = process.env.POSTHOG_HOST || 'https://app.posthog.com';
 	next();
 });
-
-
-
 
 app.get('/', async (req, res, next) => {
 	try {
@@ -452,8 +335,6 @@ connection = null;
 }
 });
 
-
-
 app.get('/connect', async (req, res, next) => {
 	try {
 		const account = await ext.getCurrentAccount(req);
@@ -480,11 +361,6 @@ return res.redirect('/');
  next(err); 
 }
 });
-
-
-
-
-
 
 const _SF_HOST_PATTERN = /^https:\/\/[a-z0-9.-]+\.(salesforce|force)\.com(\/.*)?$/i;
 function _resolveSfLoginUrl(req) {
@@ -532,19 +408,12 @@ authParams.prompt = 'login';
 	res.redirect(oauth2.getAuthorizationUrl(authParams));
 });
 
-
-
-
-
 app.get('/auth/callback', async (req, res, next) => {
 	try {
 		const code = req.query.code;
 		if (!code) {
 return res.status(400).send('Missing OAuth code.');
 }
-
-
-
 
 		const state = typeof req.query.state === 'string' ? req.query.state : null;
 		if (!state || !req.session?.id || state !== req.session.id) {
@@ -578,23 +447,10 @@ return res.status(400).send('Missing OAuth code.');
 		};
 		req.session.sfAuth = _sfAuth;
 
-
-
-
-
 		req.session.sfAuthByConnection = req.session.sfAuthByConnection || {};
 		req.session.sfAuthByConnection[connection.id] = _sfAuth;
 
-
-
-
-
-
 		await _regenerateSession(req);
-
-
-
-
 
 		if (conn.refreshToken) {
 			putRefreshToken(req.session.id, connection.id, conn.refreshToken);
@@ -608,7 +464,6 @@ return res.status(400).send('Missing OAuth code.');
 			action: 'sf_org_connected',
 			targetSfOrgId: userInfo.organizationId || identity.organization_id || null,
 
-
 			payload: { sfUserId: userInfo.id },
 		}).catch(() => {});
 
@@ -617,12 +472,6 @@ return res.status(400).send('Missing OAuth code.');
  next(err); 
 }
 });
-
-
-
-
-
-
 
 app.post('/auth/sf-signout', (req, res) => {
 	if (req.session) {
@@ -637,38 +486,18 @@ app.post('/auth/sf-signout', (req, res) => {
 	res.redirect('/');
 });
 
-
-
 app.post('/auth/logout', (req, res) => {
 	dropSessionRefreshTokens(req.session && req.session.id);
 	req.session.destroy(() => res.redirect('/'));
 });
 
-
-
-
-
-
-
-
-
 app.post('/mcp/v1', mcpHandler);
 
-
-
 mountCanvasRoutes(app);
-
-
-
-
-
 
 app.use((req, res) => {
 	res.status(404).type('text/plain').send('Not Found');
 });
-
-
-
 
 app.use((err, req, res, next) => {
 	if (err && (err.errorCode === 'INVALID_SESSION_ID' || err.name === 'INVALID_SESSION_ID')) {
@@ -683,7 +512,6 @@ app.use((err, req, res, next) => {
 	console.error('[server] unhandled error:', err);
 	if (req.path && req.path.startsWith('/api/')) {
 
-
 		const body = { error: 'internal' };
 		if (!config.isProduction && err && err.message) {
 body.message = err.message;
@@ -692,8 +520,6 @@ body.message = err.message;
 	}
 	res.status(500).send('Internal error');
 });
-
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

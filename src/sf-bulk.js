@@ -1,11 +1,4 @@
-
-
-
-
-
-
 function csvEscape(value) {
-
 
 	if (value === null || value === undefined) {
 return '';
@@ -23,12 +16,8 @@ export function buildCsv(rows, columns) {
 		out.push(columns.map((c) => csvEscape(row[c])).join(','));
 	}
 
-
 	return out.join('\n');
 }
-
-
-
 
 export function parseResultsCsv(text) {
 	if (!text) {
@@ -89,22 +78,6 @@ break;
 	return rows;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export async function runBulkJob({ conn, apiBase, objectName, operation, records, columns, onEvent, externalIdFieldName }) {
 	if (records.length === 0) {
 return { successes: [], failures: [] };
@@ -112,9 +85,6 @@ return { successes: [], failures: [] };
 	if (operation === 'upsert' && !externalIdFieldName) {
 		throw new Error('runBulkJob upsert requires externalIdFieldName');
 	}
-
-
-
 
 	const jobSpec = {
 		object: objectName,
@@ -153,7 +123,6 @@ onEvent({ phase: 'created', jobId, objectName, operation, count: records.length 
 		headers: { 'Content-Type': 'application/json' },
 	});
 
-
 	const deadline = Date.now() + 5 * 60 * 1000;
 	let status;
 	while (Date.now() < deadline) {
@@ -179,8 +148,6 @@ break;
 		throw new Error('Bulk job ' + jobId + ' (' + objectName + ') did not complete in time. State=' + (status && status.state));
 	}
 
-
-
 	async function fetchCsv(path) {
 		const url = (conn.instanceUrl || '').replace(/\/+$/, '') + apiBase + '/jobs/ingest/' + jobId + path;
 		const resp = await fetch(url, {
@@ -204,11 +171,6 @@ break;
 });
 	const successRows = parseResultsCsv(successCsv);
 	const failedRows = parseResultsCsv(failedCsv);
-
-
-
-
-
 
 	function looseEq(a, b) {
 		const aN = (a == null || a === '') ? '' : String(a).trim();
@@ -273,11 +235,6 @@ failedById.set(id, r);
 		});
 	} else if (operation === 'upsert') {
 
-
-
-
-
-
 		const successByExtId = new Map();
 		successRows.forEach((r) => {
 			const k = r[externalIdFieldName];
@@ -304,10 +261,6 @@ failedByExtId.set(k, r);
 					tempId: rec.tempId,
 					sfId: r['sf__Id'] || r.Id,
 
-
-
-
-
 					created: r['sf__Created'] === 'true',
 				});
 				return;
@@ -330,10 +283,6 @@ failedByExtId.set(k, r);
 				failures.push({ tempId: records[i].tempId, error: 'No result row returned by Salesforce.' });
 				continue;
 			}
-
-
-
-
 
 			if (sScore >= fScore && successHead) {
 				successes.push({ tempId: records[i].tempId, sfId: successHead['sf__Id'] || successHead.Id });

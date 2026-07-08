@@ -1,17 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -40,11 +26,6 @@ throw new Error('upload-modal.mount: missing deps object');
 			const csrfFetch = deps.csrfFetch;
 			const escapeHtml = deps.escapeHtml;
 
-
-
-
-
-
 			const safeLoginHref = (u) => {
 				if (typeof u === 'string' && /^\/(?![/\\])/.test(u)) {
 					return escapeHtml(u);
@@ -61,9 +42,6 @@ throw new Error('upload-modal.mount: missing deps object');
 			const renderBulkView = deps.renderBulkView;
 			const startElapsedTicker = deps.startElapsedTicker;
 			const ensureDescribe = deps.ensureDescribe;
-
-
-
 
 			const _isLinkedCsvQuickUploadMode = deps.isLinkedCsvQuickUploadMode;
 
@@ -95,23 +73,12 @@ closeUploadModal();
 				if (canvasState.bulkRecords.length === 0) {
 					showBulkToast('No records to upload.');
 
-
-
-
-
 					_runPendingUploadCleanup();
 					return;
 				}
 
-
-
 				_preflightOverride = false;
 				_bulkSwitchAcknowledged = false;
-
-
-
-
-
 
 				const _allRealCount = canvasState.bulkRecords.filter((r) => !r.isTypeNode).length;
 				const _selectedRealCount = canvasState.bulkRecords.filter((r) => !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id)).length;
@@ -128,23 +95,15 @@ closeUploadModal();
 				if (cancelBtn) {
  cancelBtn.style.display = ''; cancelBtn.textContent = 'Cancel'; 
 }
-			
-
-
-
 
 				const content = uploadModal.querySelector('#upload-modal-content');
 				content.innerHTML = '<p class="center tag">Running pre-flight checks\u2026</p>';
 				uploadModal.classList.remove('hidden');
 				const uniqObjs = Array.from(new Set(canvasState.bulkRecords.map((r) => r.objectName)));
 				await Promise.all(uniqObjs.map((n) => ensureDescribe(n).catch(() => null)));
-			
+
 				_renderUploadModalSummary();
 			}
-			
-
-
-
 
 			function _renderUploadModalSummary() {
 				const content = uploadModal.querySelector('#upload-modal-content');
@@ -153,7 +112,7 @@ return;
 }
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
 				const cancelBtn = uploadModal.querySelector('#upload-cancel');
-			
+
 				const allReal = canvasState.bulkRecords.filter((r) => !r.isTypeNode);
 				const selectedRealCount = allReal.filter((r) => canvasState.bulkSelectedIds.has(r.id)).length;
 				const canScope = selectedRealCount > 0 && selectedRealCount < allReal.length;
@@ -161,18 +120,9 @@ return;
 _uploadScopeSelected = false;
 }
 
-
-
-
 				const scopedRecords = _scopedRealRecords();
 				const scopedIds = new Set(scopedRecords.map((r) => r.id));
 				const autoExtendCount = _uploadScopeSelected ? _scopedAutoExtendCount() : 0;
-
-
-
-
-
-
 
 				const _mig = window.Orgloom && window.Orgloom.canvasMigrate;
 				const _migActive = !!(_mig && _mig.isActive());
@@ -202,10 +152,8 @@ _uploadScopeSelected = false;
 						' <button type="button" class="link-button" data-migrate-match>Match existing records…</button>' +
 						'</span></div>'
 					: '';
-			
+
 				const { issues: rawIssues, byRecordId: rawByRecordId, missingDescribes } = validateBulkRecords();
-
-
 
 				const issues = rawIssues.filter((i) => !i.recordId || scopedIds.has(i.recordId));
 				const byRecordId = new Map();
@@ -216,12 +164,6 @@ byRecordId.set(rid, rIssues);
 				});
 				const errorCount = issues.filter((i) => i.severity === 'error').length;
 				const warningCount = issues.filter((i) => i.severity === 'warning').length;
-			
-
-
-
-
-
 
 				const realRecordsForCount = scopedRecords;
 				const deleteIdSet = new Set(
@@ -233,14 +175,6 @@ byRecordId.set(rid, rIssues);
 				const unchangedSet = new Set(unchangedTempIds);
 				const willUploadCount = realRecordsForCount.length - unchangedSet.size - deleteIdSet.size;
 				const willDeleteCount = deleteIdSet.size;
-
-
-
-
-
-
-
-
 
 				const orderResult = computeUploadOrder(unchangedSet, scopedIds, deleteIdSet);
 				const orderEntries = orderResult.creates.filter((e) => e.upload > 0);
@@ -256,22 +190,16 @@ byRecordId.set(rid, rIssues);
 					);
 				}).join('');
 
-
-
 				const deleteRowsHtml = deleteEntries.map((entry, idx) => (
 					'<div class="us-step us-step-delete">' + (orderEntries.length + idx + 1) + '</div>' +
 					'<div class="us-label">' + escapeHtml(entry.label) + ' <span class="us-detail tag tag-danger">DELETE</span></div>' +
 					'<div class="us-count">' + entry.count + '</div>'
 				)).join('');
 
-
-
 				const totalRecords = scopedRecords.length;
 				const totalAssoc = canvasState.bulkAssociations.filter((a) => (
 					scopedIds.has(a.fromId) && scopedIds.has(a.toId)
 				)).length;
-
-
 
 				const scopeToggleHtml = canScope
 					? '<div class="upload-scope-toggle">' +
@@ -283,8 +211,6 @@ byRecordId.set(rid, rIssues);
 						'</button>' +
 					'</div>'
 					: '';
-			
-
 
 				let preflightHtml = '';
 				if (issues.length === 0 && missingDescribes.size === 0) {
@@ -349,20 +275,14 @@ summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
 							'</span>' +
 						'</div>';
 				}
-			
+
 				const unchangedNote = unchangedSet.size > 0
 					? '<p class="tag" style="margin-top:0.4em">' + unchangedSet.size + ' loaded record' + (unchangedSet.size === 1 ? '' : 's') + ' ' + (unchangedSet.size === 1 ? 'has' : 'have') + ' no local changes and will be skipped \u2014 only modified or new records will sync.</p>'
 					: '';
 
-
-
-
-
 				const autoExtendNote = autoExtendCount > 0
 					? '<p class="tag" style="margin-top:0.4em">Also uploading ' + autoExtendCount + ' record' + (autoExtendCount === 1 ? '' : 's') + ' you didn’t select that your chosen records link to — without ' + (autoExtendCount === 1 ? 'it, that link' : 'them, those links') + ' would be blank in Salesforce.</p>'
 					: '';
-
-
 
 				const deletesBlock = deleteEntries.length > 0
 					? '<div class="upload-section-head upload-section-head--danger">Then delete <span class="tag tag-danger">irreversible</span></div>' +
@@ -393,9 +313,6 @@ summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
 						'<div class="ut-row"><span>Associations (FK links)</span><strong>' + totalAssoc + '</strong></div>' +
 					'</div>';
 
-
-
-
 				const _matchBtn = content.querySelector('[data-migrate-match]');
 				if (_matchBtn) {
 					_matchBtn.addEventListener('click', () => {
@@ -416,18 +333,9 @@ return;
 						_renderUploadModalSummary();
 					});
 				});
-			
-
-
-
-
-
 
 				const hasWork = willUploadCount > 0 || willDeleteCount > 0;
 				if (_migActive && _migBlocked > 0) {
-
-
-
 
 					confirmBtn.style.display = '';
 					confirmBtn.disabled = true;
@@ -451,11 +359,6 @@ cancelBtn.textContent = 'Cancel';
 }
 					const scopeLabel = _uploadScopeSelected ? 'selected' : '';
 
-
-
-
-
-
 					const deletesOnly = willUploadCount === 0 && willDeleteCount > 0;
 					if (errorCount > 0) {
 						confirmBtn.textContent = deletesOnly
@@ -473,33 +376,12 @@ cancelBtn.textContent = 'Cancel';
 					}
 				}
 			}
-			
-
-
-
-
-
 
 			let _pendingUploadCleanup = null;
 
-
-
-
 			let _pendingCsvImportMeta = null;
 
-
-
-
-
-
-
-
 			function _runPendingUploadCleanup() {
-
-
-
-
-
 
 				_pendingCsvImportMeta = null;
 				if (!_pendingUploadCleanup) {
@@ -517,29 +399,12 @@ return;
 				uploadModal.classList.add('hidden');
 				_runPendingUploadCleanup();
 			}
-			
-
 
 			let _preflightOverride = false;
 
-
-
-
 			let _bulkSwitchAcknowledged = false;
 
-
-
 			let _uploadScopeSelected = false;
-			
-
-
-
-
-
-
-
-
-
 
 			function _scopedRealRecords() {
 				const real = canvasState.bulkRecords.filter((r) => !r.isTypeNode);
@@ -553,11 +418,6 @@ return real;
 scope.add(r.id);
 } 
 });
-
-
-
-
-
 
 				let added = true;
 				let safety = real.length + 1;
@@ -583,9 +443,6 @@ continue;
 				}
 				return real.filter((r) => scope.has(r.id));
 			}
-			
-
-
 
 			function _scopedAutoExtendCount() {
 				if (!_uploadScopeSelected || canvasState.bulkSelectedIds.size === 0) {
@@ -600,11 +457,6 @@ extended++;
 				}
 				return extended;
 			}
-			
-
-
-
-
 
 			function _migrateUploadValues(r) {
 				const base = (r && r.values) || {};
@@ -653,30 +505,15 @@ extended++;
 				return out;
 			}
 
-
-
-
-
-
 			let _uploadAttemptId = null;
-
-
-
 
 			let _allowDuplicates = false;
 			async function confirmUpload() {
-
-
-
-
-
 
 				const realRecords = _scopedRealRecords();
 				if (realRecords.length === 0) {
 return;
 }
-
-
 
 				const userRecords = realRecords.filter((r) => r.objectName === 'User' && !r.loadedFromId);
 				if (userRecords.length > 0) {
@@ -693,27 +530,12 @@ return;
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
 				const cancelBtn = uploadModal.querySelector('[data-upload-close]');
 				const content = uploadModal.querySelector('#upload-modal-content');
-			
-
-
-
-
-
-
 
 				const skipTempIds = realRecords
 					.filter((r) => r.loadedFromId && !isRecordModified(r) && !r.pendingDelete)
 					.map((r) => r.id);
 				const recordsForPayload = realRecords.filter((r) => !r.pendingDelete);
 				const deletesForPayload = realRecords.filter((r) => isRecordPendingDelete(r));
-
-
-
-
-
-
-
-
 
 				const scopedIds = new Set(recordsForPayload.map((r) => r.id));
 				const payload = {
@@ -723,30 +545,11 @@ return;
 						values: _migrateUploadValues(r),
 						loadedFromId: r.loadedFromId || null,
 
-
-
-
-
-
-
-
-
-
-
 						loadedValues: (r.loadedFromId && r.loadedValues) ? r.loadedValues : undefined,
-
-
-
-
-
 
 						_csvOperation: r._csvOperation || undefined,
 						_csvExternalIdField: r._csvExternalIdField || undefined,
 					})),
-
-
-
-
 
 					deletes: deletesForPayload.map(r => ({
 						tempId: r.id,
@@ -762,16 +565,8 @@ return;
 						})),
 					skipTempIds,
 
-
-
-
-
-
-
-
 					directUpload: _isLinkedCsvQuickUploadMode(),
 				};
-
 
 				if (!_uploadAttemptId) {
 					_uploadAttemptId = (window.crypto && typeof crypto.randomUUID === 'function')
@@ -780,36 +575,15 @@ return;
 				}
 				payload.attemptId = _uploadAttemptId;
 
-
-
-
-
-
 				if (_allowDuplicates) {
 					payload.allowDuplicates = true;
 				}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const uploadingCountForGate = recordsForPayload.length - skipTempIds.length;
 				const PER_COMPONENT_CAP = 75;
 				const TOTAL_NODES_CAP = 500;
 				const BYTE_CAP = 5 * 1024 * 1024;
 				const components = (() => {
-
-
 
 					const submitted = new Set(recordsForPayload
 						.filter((r) => !(r.loadedFromId && skipTempIds.indexOf(r.id) !== -1))
@@ -853,27 +627,6 @@ queue.push(n);
 				})();
 				const maxComponentSize = components.reduce((m, g) => Math.max(m, g.length), 0);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 				const _UPLOAD_SYSTEM_FIELDS = new Set([
 					'Id',
 					'CreatedDate', 'CreatedById',
@@ -885,14 +638,6 @@ queue.push(n);
 					'RecordTypeId',
 					'MasterRecordId',
 				]);
-
-
-
-
-
-
-
-
 
 				let _orphanStrippedCount = 0;
 				let _orphanStrippedRecordCount = 0;
@@ -914,14 +659,11 @@ return;
 }
 							if (_UPLOAD_SYSTEM_FIELDS.has(k)) {
 
-
 								delete r.values[k];
 								return;
 							}
 							if (!known.has(k)) {
 								delete r.values[k];
-
-
 
 								if (isCrossOrgCarryover) {
 stripped++;
@@ -950,13 +692,6 @@ stripped++;
 					&& maxComponentSize <= PER_COMPONENT_CAP
 					&& uploadingCountForGate <= TOTAL_NODES_CAP
 					&& payloadJson.length <= BYTE_CAP;
-
-
-
-
-
-
-
 
 				if (!_preflightOverride && !fitsGraph && uploadingCountForGate > 0) {
 					confirmBtn.disabled = false;
@@ -1026,15 +761,6 @@ stripped++;
 						const allResults = (body && body.results) || [];
 						const hasCommitted = allResults.some((r) => r && r.success && r.mode !== 'unchanged');
 
-
-
-
-
-
-
-
-
-
 						if (body && (body.atomicSuccess || hasCommitted)) {
 							displayUploadResults(allResults, body.instanceUrl || '', body.deletes || [], body.canonicalValues || {});
 							return;
@@ -1059,23 +785,11 @@ stripped++;
 						return;
 					} catch (err) {
 
-
-
 						console.warn('[graph upload] failed, falling back:', err);
-
-
 
 						try { await reconcileLostUpload(payload.records); } catch (_e) {                   }
 					}
 				}
-			
-
-
-
-
-
-
-
 
 				if (!_bulkSwitchAcknowledged && !fitsGraph && realRecords.length > BULK_THRESHOLD) {
 					const reasons = [];
@@ -1100,9 +814,6 @@ stripped++;
 					}
 					_bulkSwitchAcknowledged = true;
 				}
-			
-
-
 
 				if (!_preflightOverride) {
 					confirmBtn.disabled = true;
@@ -1128,7 +839,6 @@ stripped++;
 						}
 					} catch (err) {
 
-
 						console.warn('[preflight] request failed, allowing upload:', err);
 						pf = { ok: true, sampled: 0, skipped: true };
 					}
@@ -1137,23 +847,14 @@ stripped++;
 						return;
 					}
 
-
 					const skippedNote = pf.skipped
 						? ' <span class="tag">(no new records to validate)</span>'
 						: ' <span class="tag">(' + pf.sampled + ' record' + (pf.sampled === 1 ? '' : 's') + ' sampled)</span>';
 					content.innerHTML = '<p class="center">Pre-flight passed' + skippedNote + ' \u2014 starting upload\u2026</p>';
 				}
-			
+
 				confirmBtn.disabled = true;
 				confirmBtn.textContent = 'Uploading\u2026';
-			
-
-
-
-
-
-
-
 
 				const hasUpsert = realRecords.some((r) => r._csvOperation === 'upsert');
 				const useBulk = hasUpsert || realRecords.length > BULK_THRESHOLD;
@@ -1161,9 +862,6 @@ stripped++;
 					try {
 						await runBulkUploadSSE(payload, content);
 					} catch (err) {
-
-
-
 
 						let recovered = 0;
 						try { recovered = await reconcileLostUpload(payload.records); } catch (_e) { recovered = 0; }
@@ -1177,14 +875,6 @@ stripped++;
 					}
 					return;
 				}
-			
-
-
-
-
-
-
-
 
 				const uploadingCount = recordsForPayload.length - skipTempIds.length;
 				const deleteCount = deletesForPayload.length;
@@ -1234,11 +924,6 @@ throw new Error((body && body.error) || 'Upload failed');
 				} catch (err) {
 					stopElapsed();
 
-
-
-
-
-
 					let recovered = 0;
 					try {
 						recovered = await reconcileLostUpload(payload.records);
@@ -1254,20 +939,8 @@ throw new Error((body && body.error) || 'Upload failed');
 					confirmBtn.textContent = 'Retry';
 				}
 			}
-			
-
-
-
-
-
-
-
-
 
 			const BULK_THRESHOLD = 150;
-			
-
-
 
 			function humanizeState(s) {
 				if (!s) {
@@ -1276,10 +949,7 @@ return '';
 				const out = String(s).replace(/([a-z])([A-Z])/g, '$1 $2');
 				return out.charAt(0).toUpperCase() + out.slice(1).toLowerCase();
 			}
-			
 
-
-			
 			async function runBulkUploadSSE(payload, contentEl) {
 				contentEl.innerHTML =
 					'<div class="bulk-progress">' +
@@ -1293,14 +963,14 @@ return '';
 				const summaryEl = contentEl.querySelector('#bp-summary');
 				const levelsEl = contentEl.querySelector('#bp-levels');
 				const stopElapsed = startElapsedTicker(contentEl.querySelector('#bp-elapsed'));
-			
+
 				let plan = null;
 
 				const jobState = new Map();
 				function jobKey(level, operation, objectName) {
  return level + '|' + operation + '|' + objectName; 
 }
-			
+
 				function renderLevels() {
 					if (!plan) {
 return;
@@ -1315,9 +985,6 @@ return;
 							const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
 							const rawState = st.state || st.phase || 'queued';
 							const stateLabel = humanizeState(rawState);
-
-
-
 
 							const terminal = rawState === 'JobComplete' || rawState === 'Failed' || rawState === 'Aborted' || rawState === 'done';
 							const active = !terminal && rawState !== 'queued';
@@ -1346,7 +1013,7 @@ return;
 					}).join('');
 					levelsEl.innerHTML = html;
 				}
-			
+
 				const resp = await csrfFetch('/api/upload/bulk', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
@@ -1364,7 +1031,6 @@ return;
 				}
 				if (resp.status === 402) {
 
-
 					const body = await resp.json().catch(() => ({}));
 					contentEl.innerHTML =
 						'<div class="banner error">' + escapeHtml((body && body.error) || 'Upload cap reached.') + '</div>' +
@@ -1381,7 +1047,7 @@ return;
 					const t = await resp.text().catch(() => '');
 					throw new Error(t || ('HTTP ' + resp.status));
 				}
-			
+
 				const reader = resp.body.getReader();
 				const decoder = new TextDecoder();
 				let buffer = '';
@@ -1431,8 +1097,6 @@ txt += ' \u00b7 ' + data.unchangedCount + ' unchanged (skipped)';
 							renderLevels();
 						} else if (evName === 'job-event') {
 
-
-
 							if (plan) {
 								for (const lvl of plan.levels) {
 									const match = lvl.groups.find((g) => g.objectName === data.objectName && g.operation === data.operation);
@@ -1477,15 +1141,8 @@ throw streamErr;
 throw new Error('Bulk upload ended without results.');
 }
 
-
-
 				displayUploadResults(finalResults, finalInstanceUrl, finalDeletes, finalCanonicalValues);
 			}
-			
-
-
-
-
 
 			function renderPreflightFailure(pf) {
 				const content = uploadModal.querySelector('#upload-modal-content');
@@ -1540,8 +1197,6 @@ throw new Error('Bulk upload ended without results.');
 				confirmBtn.classList.add('confirm-anyway');
 				_preflightOverride = true;
 			}
-			
-
 
 			function _applyRecoveredIds(realIdByTempId) {
 				canvasState.bulkRecords.forEach((rec) => {
@@ -1556,14 +1211,6 @@ throw new Error('Bulk upload ended without results.');
 					renderBulkView();
 				}
 			}
-
-
-
-
-
-
-
-
 
 			async function reconcileLostUpload(attemptedRecords) {
 				try {
@@ -1584,10 +1231,6 @@ throw new Error('Bulk upload ended without results.');
 					const batches = Array.isArray(listBody.batches) ? listBody.batches : [];
 					const cutoff = Date.now() - 15 * 60 * 1000;
 
-
-
-
-
 					const tokenMatches = _uploadAttemptId
 						? batches.filter((b) => b && b.id && b.attemptId === _uploadAttemptId)
 						: [];
@@ -1607,8 +1250,6 @@ throw new Error('Bulk upload ended without results.');
 							continue;
 						}
 
-
-
 						if (!byToken
 							&& !inserted.every((ins) => ins && ins.tempId != null && wantObjByTempId.get(ins.tempId) === ins.objectName)) {
 							continue;
@@ -1624,13 +1265,6 @@ throw new Error('Bulk upload ended without results.');
 					}
 					_applyRecoveredIds(realIdByTempId);
 
-
-
-
-
-
-
-
 					(attemptedRecords || []).forEach((r) => {
 						if (r && r.tempId != null && !r.loadedFromId && realIdByTempId.has(r.tempId)) {
 							r.loadedFromId = realIdByTempId.get(r.tempId);
@@ -1645,13 +1279,6 @@ throw new Error('Bulk upload ended without results.');
 				}
 			}
 
-
-
-
-
-
-
-
 			function renderAttemptIncomplete(body) {
 				const content = uploadModal.querySelector('#upload-modal-content');
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
@@ -1664,8 +1291,6 @@ throw new Error('Bulk upload ended without results.');
 						'<p class="tag" style="margin-top:0.5em">Open <strong>Upload History</strong> (the ↻ button in the toolbar) to see what landed, or refresh the affected records from Salesforce. Close this dialog once you’ve reconciled — a fresh upload then starts a new attempt.</p>';
 				}
 
-
-
 				_uploadAttemptId = null;
 				if (confirmBtn) {
 					confirmBtn.disabled = true;
@@ -1674,15 +1299,10 @@ throw new Error('Bulk upload ended without results.');
 
 			function displayUploadResults(results, instanceUrl, deletesResults, canonicalValues) {
 
-
-
 				_uploadAttemptId = null;
 				_allowDuplicates = false;
 				const content = uploadModal.querySelector('#upload-modal-content');
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
-
-
-
 
 				const synced = results.filter(r => r.success && r.mode !== 'unchanged');
 				const unchanged = results.filter(r => r.success && r.mode === 'unchanged');
@@ -1690,11 +1310,6 @@ throw new Error('Bulk upload ended without results.');
 				const deletesArr = Array.isArray(deletesResults) ? deletesResults : [];
 				const deleted = deletesArr.filter((d) => d && d.success);
 				const deleteFailed = deletesArr.filter((d) => d && !d.success);
-
-
-
-
-
 
 				if (_pendingCsvImportMeta) {
 					const _csvMeta = _pendingCsvImportMeta;
@@ -1715,24 +1330,11 @@ throw new Error('Bulk upload ended without results.');
 					});
 				}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 				const sfBase = (instanceUrl || '').replace(/\/+$/, '');
 				const recordUrl = (objectName, id) => sfBase
 					? sfBase + '/lightning/r/' + encodeURIComponent(objectName) + '/' + encodeURIComponent(id) + '/view'
 					: null;
-			
+
 				const summaryParts = [];
 				if (synced.length > 0) {
 summaryParts.push(synced.length + ' synced');
@@ -1744,7 +1346,7 @@ summaryParts.push(unchanged.length + ' unchanged');
 summaryParts.push(failed.length + ' failed');
 }
 				const summaryText = summaryParts.join(', ') || 'No records to sync';
-			
+
 				let html = '';
 				if (failed.length === 0 && synced.length > 0) {
 					html += '<div class="banner success">' + escapeHtml(summaryText) + '.</div>';
@@ -1755,11 +1357,6 @@ summaryParts.push(failed.length + ' failed');
 				} else {
 					html += '<div class="banner">' + escapeHtml(summaryText) + '.</div>';
 				}
-
-
-
-
-
 
 				if (synced.length > 0) {
 					html += '<div class="upload-section-head upload-section-head--ok">Synced</div>' +
@@ -1805,11 +1402,6 @@ summaryParts.push(failed.length + ' failed');
 						'</div>';
 					});
 
-
-
-
-
-
 					if (dupFailed.length > 0) {
 						html += '<div class="banner" style="margin-top:0.6em">' +
 							'<strong>' + dupFailed.length + ' record' + (dupFailed.length === 1 ? '' : 's') + ' blocked by Salesforce duplicate rules.</strong> ' +
@@ -1818,11 +1410,6 @@ summaryParts.push(failed.length + ' failed');
 						'</div>';
 					}
 				}
-
-
-
-
-
 
 				if (deleted.length > 0) {
 					html += '<div class="upload-section-head upload-section-head--danger">Deleted in Salesforce</div>' +
@@ -1846,11 +1433,6 @@ summaryParts.push(failed.length + ' failed');
 				}
 				content.innerHTML = html;
 
-
-
-
-
-
 				const _allowDupsBtn = content.querySelector('#upload-allow-dups');
 				if (_allowDupsBtn) {
 					_allowDupsBtn.onclick = () => {
@@ -1863,13 +1445,6 @@ summaryParts.push(failed.length + ' failed');
 					};
 				}
 
-
-
-
-
-
-
-
 				if (deleted.length > 0) {
 					const deletedTempIds = new Set(deleted.map((d) => d.tempId));
 					canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => !deletedTempIds.has(r.id));
@@ -1878,21 +1453,10 @@ summaryParts.push(failed.length + ' failed');
 					);
 					deletedTempIds.forEach((id) => canvasState.bulkSelectedIds.delete(id));
 				}
-			
-
 
 				// idempotent update, and (c) cross-object rule evaluation on
 
-
-
-
 				const realIdByTempId = new Map(synced.map(r => [r.tempId, r.id]));
-
-
-
-
-
-
 
 				const realIdByRuntimeId = new Map(realIdByTempId);
 				canvasState.bulkRecords.forEach((rec) => {
@@ -1900,17 +1464,6 @@ summaryParts.push(failed.length + ' failed');
 						realIdByRuntimeId.set(rec.id, rec.loadedFromId);
 					}
 				});
-
-
-
-
-
-
-
-
-
-
-
 
 				(canvasState.bulkAssociations || []).forEach((a) => {
 					if (!a || !a.fieldName) {
@@ -1927,35 +1480,15 @@ return;
 					child.values[a.fieldName] = parentRealId;
 				});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 				const canonicalMap = canonicalValues && typeof canonicalValues === 'object' ? canonicalValues : {};
 				canvasState.bulkRecords.forEach(rec => {
 					if (realIdByTempId.has(rec.id)) {
 						rec.loadedFromId = realIdByTempId.get(rec.id);
 
-
-
 						rec.values = rec.values || {};
 						rec.values.Id = realIdByTempId.get(rec.id);
 						const canonical = canonicalMap[rec.id];
 						if (canonical && typeof canonical === 'object') {
-
-
-
-
 
 							for (const fieldName of Object.keys(canonical)) {
 								if (!fieldName || fieldName.startsWith('_')) {
@@ -1968,14 +1501,6 @@ continue;
 					}
 				});
 				renderBulkView();
-
-
-
-
-
-
-
-
 
 				try {
 					const _mig = window.Orgloom && window.Orgloom.canvasMigrate;
@@ -2001,7 +1526,6 @@ continue;
 					}
 				} catch (_e) {}
 
-
 				confirmBtn.disabled = false;
 				confirmBtn.textContent = failed.length > 0 ? 'Retry failed' : 'Close';
 				confirmBtn.onclick = failed.length > 0
@@ -2011,7 +1535,6 @@ continue;
 						confirmUpload();
 					})
 					: closeUploadModal;
-
 
 				const cancelBtn = uploadModal.querySelector('#upload-cancel');
 				if (cancelBtn) {
@@ -2024,12 +1547,6 @@ cancelBtn.style.display = failed.length === 0 ? 'none' : '';
 				closeUploadModal: closeUploadModal,
 				confirmUpload: confirmUpload,
 				_runPendingUploadCleanup: _runPendingUploadCleanup,
-
-
-
-
-
-
 
 				setPendingUploadCleanup: function (fn) {
  _pendingUploadCleanup = fn; 

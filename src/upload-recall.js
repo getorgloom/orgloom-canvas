@@ -1,32 +1,8 @@
-
-
-
-
-
-
-
-
-
-
-
 import { escapeSoqlLiteral } from './sf-soql.js';
-
-
 
 const _SF_OBJECT_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
-
-
-
 const _SF_FIELD_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_.]*$/;
-
-
-
-
-
-
-
-
 
 async function _queryAll(conn, soql) {
 	const apiVersion = conn.version || '60.0';
@@ -34,18 +10,6 @@ async function _queryAll(conn, soql) {
 		'/queryAll/?q=' + encodeURIComponent(soql);
 	return conn.request({ method: 'GET', url });
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 export function planDeleteOrder(insertedIds, associations) {
 	if (!Array.isArray(insertedIds) || insertedIds.length === 0) {
@@ -62,7 +26,6 @@ return [];
 		if (!a || a.fromTempId == null || a.toTempId == null) {
 return;
 }
-
 
 		if (dependents.has(a.toTempId)) {
 dependents.get(a.toTempId).add(a.fromTempId);
@@ -103,58 +66,11 @@ byLevel.set(lvl, []);
 	return Array.from(byLevel.keys()).sort((a, b) => a - b).map((l) => byLevel.get(l));
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export async function classifyBatchDrift({ conn, batch, uploaderSfUserId, uploadTimeMs, gracePeriodMs = 60 * 60 * 1000 }) {
 	const insertedIds = (batch && batch.insertedIds) || [];
 	if (insertedIds.length === 0) {
 		return { clean: [], drifted: [], alreadyDeleted: [], updates: [], unverified: [] };
 	}
-
-
-
-
-
-
-
-
 
 	const createRows = [];
 	const updateRows = [];
@@ -170,10 +86,8 @@ createRows.push(r);
 	}
 	if (createRows.length === 0) {
 
-
 		return { clean: [], drifted: [], alreadyDeleted: [], updates: updateRows, unverified: [] };
 	}
-
 
 	const byObject = new Map();
 	for (const r of createRows) {
@@ -186,29 +100,10 @@ byObject.set(r.objectName, []);
 		byObject.get(r.objectName).push(r);
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	const idKey = (id) => (id ? String(id).slice(0, 15) : '');
 	const sfStateById = new Map();
 	const queryErrorByObject = new Map();
 	for (const [objName, recs] of byObject) {
-
-
-
 
 		if (!_SF_OBJECT_NAME_RE.test(objName)) {
 continue;
@@ -231,11 +126,6 @@ continue;
 				});
 			} catch (e) {
 
-
-
-
-
-
 				const msg = (e && (e.errorCode ? e.errorCode + ': ' : '') + (e.message || String(e))) || 'queryAll failed';
 				if (!queryErrorByObject.has(objName)) {
 queryErrorByObject.set(objName, msg);
@@ -244,9 +134,6 @@ queryErrorByObject.set(objName, msg);
 			}
 		}
 	}
-
-
-
 
 	const norm = (id) => (id ? String(id).slice(0, 15) : '');
 	const uploaderShort = norm(uploaderSfUserId);
@@ -262,12 +149,6 @@ queryErrorByObject.set(objName, msg);
 continue;
 }
 		const state = sfStateById.get(idKey(r.sfId));
-
-
-
-
-
-
 
 		if (!state && queryErrorByObject.has(r.objectName)) {
 			unverified.push(Object.assign({}, r, {
@@ -293,72 +174,17 @@ continue;
 			continue;
 		}
 
-
 		if (cutoffTime > 0 && modifiedAt > cutoffTime) {
 			enriched.driftReason = 'modified_after_upload_window';
 			drifted.push(enriched);
 			continue;
 		}
 
-
 		clean.push(enriched);
 	}
 
 	return { clean, drifted, alreadyDeleted, updates: updateRows, unverified };
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export async function classifyValueDrift({ conn, batch }) {
 	const insertedIds = (batch && batch.insertedIds) || [];
@@ -382,9 +208,6 @@ export async function classifyValueDrift({ conn, batch }) {
 		};
 	}
 
-
-
-
 	const byObject = new Map();
 	for (const r of updateRows) {
 		if (!byObject.has(r.objectName)) {
@@ -398,8 +221,6 @@ entry.fieldSet.add(f);
 }
 		}
 	}
-
-
 
 	const idKey = (id) => (id ? String(id).slice(0, 15) : '');
 	const sfCurrentById = new Map();
@@ -427,13 +248,9 @@ continue;
 				});
 			} catch (e) {
 
-
-
-
 			}
 		}
 	}
-
 
 	const recordsOut = [];
 	let totalClean = 0;
@@ -465,11 +282,8 @@ continue;
 			const prior = row.priorValues ? row.priorValues[fieldName] : null;
 			const current = sfRec[fieldName];
 
-
-
-			 
 			const matchesUploaded = uploaded == current;
-			 
+
 			const matchesPrior = prior == current;
 			const cell = { fieldName, prior, uploaded, current };
 			if (matchesPrior) {
@@ -515,15 +329,6 @@ export async function detectCascadeConflicts({ conn, batch, classification }) {
 return [];
 }
 
-
-
-
-
-
-
-
-
-
 	const cleanSfIds = new Set((classification.clean || []).map((r) => r.sfId));
 	const driftedSfIds = new Set((classification.drifted || []).map((r) => r.sfId));
 	const updatesSfIds = new Set((classification.updates || []).map((r) => r.sfId));
@@ -537,8 +342,6 @@ return [];
 insertedByTempId.set(r.tempId, r);
 }
 	}
-
-
 
 	const fieldsToCheck = new Map();
 	for (const a of associations) {
@@ -555,7 +358,6 @@ fieldsToCheck.set(child.objectName, new Set());
 		fieldsToCheck.get(child.objectName).add(a.fieldName);
 	}
 
-
 	const masterDetailByObj = new Map();
 	for (const [objName, fieldSet] of fieldsToCheck) {
 		try {
@@ -571,13 +373,6 @@ md.add(f.name);
 
 		}
 	}
-
-
-
-
-
-
-
 
 	const conflicts = [];
 	for (const a of associations) {
@@ -617,8 +412,6 @@ continue;
 	return conflicts;
 }
 
-
-
 async function deleteChunk(conn, apiBase, ids) {
 	if (ids.length === 0) {
 return [];
@@ -627,20 +420,6 @@ return [];
 	const resp = await conn.request({ method: 'DELETE', url });
 	return Array.isArray(resp) ? resp : [];
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export async function executeRecall({ conn, batch, skipSfIds, revertSelections }) {
 	if (!conn) {
@@ -651,10 +430,6 @@ throw new Error('executeRecall requires a jsforce Connection');
 	const skipSet = skipSfIds instanceof Set
 		? skipSfIds
 		: new Set(Array.isArray(skipSfIds) ? skipSfIds : []);
-
-
-
-
 
 	const revertMap = new Map();
 	if (Array.isArray(revertSelections)) {
@@ -670,24 +445,9 @@ continue;
 		}
 	}
 
-
-
-
-
-
-
-
-
 	const rawRows = batch.insertedIds || [];
 	const preservedUpdates = rawRows.filter((r) => r && r.mode === 'update');
 	const recallableRows = rawRows.filter((r) => r && r.mode !== 'update');
-
-
-
-
-
-
-
 
 	let revertedCount = 0;
 	let revertFailedCount = 0;
@@ -718,10 +478,6 @@ revertByObject.set(row.objectName, []);
 					if (!fieldName || fieldName.startsWith('_')) {
 continue;
 }
-
-
-
-
 
 					patch[fieldName] = row.priorValues[fieldName] == null
 						? null
@@ -760,18 +516,11 @@ continue;
 		}
 	}
 
-
-
-
 	const insertedToRecall = recallableRows.filter(
 		(r) => !(r && r.sfId && skipSet.has(r.sfId)),
 	);
 	const filteredBatch = Object.assign({}, batch, { insertedIds: insertedToRecall });
 	const levels = planDeleteOrder(filteredBatch.insertedIds, filteredBatch.associations || []);
-
-
-
-
 
 	const idsByObject = new Map();
 	insertedToRecall.forEach((r) => {
@@ -783,10 +532,6 @@ idsByObject.set(r.objectName, []);
 }
 		idsByObject.get(r.objectName).push(r.sfId);
 	});
-
-
-
-
 
 	const preDeletedKey = (id) => (id ? String(id).slice(0, 15) : '');
 	const preDeletedSfIds = new Set();
@@ -833,8 +578,6 @@ continue;
 				const rec = chunk[idx];
 				if (r && r.success) {
 
-
-
 					if (preDeletedSfIds.has(preDeletedKey(rec.sfId))) {
 						results.push({
 							tempId: rec.tempId, sfId: rec.sfId, objectName: rec.objectName,
@@ -854,10 +597,6 @@ continue;
 				const errCode = (errs[0] && errs[0].statusCode) || null;
 				const errMsg = errs.map((e) => e.message || e.statusCode || 'Unknown error').join('; ') || 'Delete failed';
 
-
-
-
-
 				if (errCode === 'ENTITY_IS_DELETED') {
 					results.push({
 						tempId: rec.tempId, sfId: rec.sfId, objectName: rec.objectName,
@@ -876,8 +615,6 @@ continue;
 		}
 	}
 
-
-
 	const intentSatisfied = succeeded + alreadyDeleted;
 	let status;
 	if (failed === 0) {
@@ -888,23 +625,12 @@ status = 'recall_failed';
 status = 'recall_partial';
 }
 
-
-
-
-
-
 	return {
 		results,
 		succeeded,
 		alreadyDeleted,
 		failed,
 		preservedUpdatesCount: preservedUpdates.length,
-
-
-
-
-
-
 
 		revertedCount,
 		revertFailedCount,

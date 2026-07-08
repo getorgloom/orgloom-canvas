@@ -1,46 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -72,23 +29,12 @@ throw new Error('find-duplicates-modal.mount: missing deps object');
 			const showBulkToast = deps.showBulkToast;
 			const getCyInstance = deps.getCyInstance;
 
-
-
-
-
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction : null;
 			const undoStackSize = typeof deps.undoStackSize === 'function'
 				? deps.undoStackSize : null;
 			const trimUndoStack = typeof deps.trimUndoStack === 'function'
 				? deps.trimUndoStack : null;
-
-
-
-
-
-
-
 
 			function _jumpToRecord(recordId) {
 				const cy = getCyInstance && getCyInstance();
@@ -121,11 +67,6 @@ overlay.classList.remove('fdm-peek');
 				}, 1400);
 			}
 
-
-
-
-
-
 			const MATCH_RULES = {
 				Contact: [['Email'], ['FirstName', 'LastName']],
 				Lead:    [['Email'], ['FirstName', 'LastName', 'Company']],
@@ -148,12 +89,6 @@ return '';
 				return String(v).trim().toLowerCase().replace(/\s+/g, ' ');
 			}
 
-
-
-
-
-
-
 			function _matchKey(rec, rules) {
 				const v = rec.values || {};
 				for (const fieldSet of rules) {
@@ -173,16 +108,10 @@ return { fields: fieldSet, key: parts.join('||') };
 				return null;
 			}
 
-
-
-
 			function _formatFieldSet(fields, op) {
 				const joiner = op === 'or' ? ' or ' : ' + ';
 				return fields.join(joiner);
 			}
-
-
-
 
 			function _displayName(rec) {
 				const v = rec.values || {};
@@ -191,10 +120,6 @@ return { fields: fieldSet, key: parts.join('||') };
 				return guess || ('(no name)');
 			}
 
-
-
-
-
 			function _matchExcerpt(rec, fields) {
 				const v = rec.values || {};
 				return fields
@@ -202,10 +127,6 @@ return { fields: fieldSet, key: parts.join('||') };
 					.filter((s) => s.endsWith(': ') === false)
 					.join(' · ');
 			}
-
-
-
-
 
 			function _sortGroupRecords(arr) {
 				arr.sort((a, b) => {
@@ -216,26 +137,6 @@ return aLoaded ? -1 : 1;
 					return recordOrdinal(a) - recordOrdinal(b);
 				});
 			}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function _scanForObject(objectName, fields, op) {
 				if (!objectName || !Array.isArray(fields) || fields.length === 0) {
@@ -284,9 +185,6 @@ return null;
 }
 					return { objectName, groups, defaultFields: fields, op };
 				}
-
-
-
 
 				const parent = recs.map((_, i) => i);
 				const find = (i) => {
@@ -346,18 +244,6 @@ return null;
 				return { objectName, groups, defaultFields: fields, op };
 			}
 
-
-
-
-
-
-
-
-
-
-
-
-
 			const SYSTEM_FIELDS = new Set([
 				'Id',
 				'CreatedDate', 'CreatedById',
@@ -366,10 +252,6 @@ return null;
 				'LastReferencedDate', 'LastViewedDate',
 				'IsDeleted',
 			]);
-
-
-
-
 
 			function _availableFieldsForObject(objectName) {
 				const recs = canvasState.bulkRecords.filter(
@@ -393,17 +275,10 @@ continue;
 					}
 				}
 
-
-
-
 				return Array.from(counts.entries())
 					.map(([name, populated]) => ({ name, populated, total: recs.length }))
 					.sort((a, b) => a.name.localeCompare(b.name));
 			}
-
-
-
-
 
 			function _defaultFieldsFor(objectName, availableFields) {
 				const rules = _matchRulesFor(objectName);
@@ -415,9 +290,6 @@ return fieldSet.slice();
 				}
 				return null;
 			}
-
-
-
 
 			function _eligibleObjects() {
 				const counts = new Map();
@@ -435,11 +307,6 @@ continue;
 					.map(([objectName, recordCount]) => ({ objectName, recordCount }))
 					.sort((a, b) => a.objectName.localeCompare(b.objectName));
 			}
-
-
-
-
-
 
 			function _renderBody(overlay, sections) {
 				const body = overlay.querySelector('.fdm-body');
@@ -465,11 +332,6 @@ return;
 							const badge = rec.loadedFromId
 								? '<span class="fdm-badge fdm-badge--loaded" title="Loaded from Salesforce — will be marked for delete on Apply">loaded</span>'
 								: '<span class="fdm-badge fdm-badge--draft" title="Draft record — will be removed from canvas on Apply">draft</span>';
-
-
-
-
-
 
 							const gotoBtn = '<button type="button" class="fdm-row-goto" data-fdm-goto="' + rec.id + '" title="Pan the canvas to this record and flash it" aria-label="Go to this record on the canvas">' +
 								'<span aria-hidden="true">&#8689;</span>' +
@@ -502,7 +364,6 @@ losersTotal++;
 						? 'Nothing to remove'
 						: 'Remove ' + losersTotal + ' duplicate' + (losersTotal === 1 ? '' : 's');
 				}
-
 
 				body.querySelectorAll('[data-fdm-winner]').forEach((input) => {
 					input.addEventListener('change', () => {
@@ -570,22 +431,11 @@ losers.push(rec);
 					});
 				});
 
-
-
-
-
-
 				const _snapBulk = canvasState.bulkRecords.slice();
 				const _snapAssoc = canvasState.bulkAssociations.slice();
 				const _snapSelected = new Set(canvasState.bulkSelectedIds);
 				const _undoSizeBefore = undoStackSize ? undoStackSize() : 0;
 				const _markedLoserIds = [];
-
-
-
-
-
-
 
 				let drafts = 0, marked = 0;
 				losers.forEach((rec) => {
@@ -602,7 +452,6 @@ losers.push(rec);
 						drafts++;
 					}
 				});
-
 
 				if (trimUndoStack && undoStackSize) {
 					trimUndoStack(undoStackSize() - _undoSizeBefore);
@@ -622,8 +471,6 @@ parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for 
 					canvasState.bulkRecords = _snapBulk;
 					canvasState.bulkAssociations = _snapAssoc;
 					canvasState.bulkSelectedIds = _snapSelected;
-
-
 
 					_markedLoserIds.forEach((id) => {
 						const r = canvasState.bulkRecords.find((x) => x.id === id);
@@ -671,16 +518,7 @@ parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for 
 };
 				document.addEventListener('keydown', onEsc, true);
 
-
-
-
-
-
-
 				const _fieldMemory = new Map();
-
-
-
 
 				const _modeRef = { op: 'and' };
 
@@ -692,8 +530,6 @@ parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for 
 				const initial = eligible[0].objectName;
 				_renderConfig(overlay, initial, eligible, _fieldMemory, _modeRef, cleanup);
 			}
-
-
 
 			function _renderNoEligible(overlay) {
 				const intro = overlay.querySelector('.fdm-intro-wrap');
@@ -714,9 +550,6 @@ intro.innerHTML = '';
 				}
 			}
 
-
-
-
 			function _renderConfig(overlay, objectName, eligible, fieldMemory, modeRef, cleanup) {
 				const intro = overlay.querySelector('.fdm-intro-wrap');
 				const body = overlay.querySelector('.fdm-body');
@@ -731,8 +564,6 @@ intro.innerHTML = '';
 					if (defaults && defaults.length > 0) {
 						selected = new Set(defaults);
 					} else {
-
-
 
 						const top = available.slice().sort((a, b) => b.populated - a.populated)[0];
 						selected = new Set(top ? [top.name] : []);
@@ -778,13 +609,6 @@ intro.innerHTML = '';
 								'<div class="fdm-fields">' + fieldRows + '</div>' +
 							'</div>' +
 
-
-
-
-
-
-
-
 							'<div class="fdm-config-row fdm-config-row--block">' +
 								'<span class="fdm-config-label">Match when…</span>' +
 								'<div class="fdm-mode">' +
@@ -817,12 +641,9 @@ scanBtn.disabled = selected.size === 0;
 				};
 				updateScanEnabled();
 
-
-
 				const objSel = body && body.querySelector('#fdm-object');
 				if (objSel) {
 					objSel.addEventListener('change', () => {
-
 
 						fieldMemory.set(objectName, Array.from(selected));
 						_renderConfig(overlay, objSel.value, eligible, fieldMemory, modeRef, cleanup);
@@ -869,7 +690,6 @@ return;
 					});
 				}
 			}
-
 
 			function _renderResultsFooter(overlay, sections, objectName, eligible, fieldMemory, modeRef, cleanup) {
 				const footer = overlay.querySelector('.fdm-footer');

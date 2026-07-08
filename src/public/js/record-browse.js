@@ -1,44 +1,7 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
-
-
-
-
 
 	const STRING_TYPES = new Set(['string', 'textarea', 'phone', 'url', 'email', 'encryptedstring']);
 	const NUMERIC_TYPES = new Set(['int', 'double', 'currency', 'percent']);
@@ -103,8 +66,6 @@ return [{ op: 'equals', label: 'equals' }];
 		return [{ op: 'equals', label: 'equals' }];
 	}
 
-
-
 	function _opTakesValue(op) {
 		return op !== 'isNull' && op !== 'isNotNull';
 	}
@@ -132,11 +93,6 @@ throw new Error('record-browse.mount: missing deps object');
 			const runAndCommitSoql = deps.runAndCommitSoql;
 			const canvasCapCheck = deps.canvasCapCheck;
 
-
-
-
-
-
 			const captureUndoSnapshot = typeof deps.captureUndoSnapshot === 'function'
 				? deps.captureUndoSnapshot : null;
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
@@ -146,20 +102,11 @@ throw new Error('record-browse.mount: missing deps object');
 
 			const _shared = window.OrgLoom.importShared;
 
-
-
-
-
-
-
-
-
 			let _objectsCache = null;
 			async function _loadObjects() {
 				if (_objectsCache) {
 return _objectsCache;
 }
-
 
 				const r = await csrfFetch('/api/objects', { credentials: 'same-origin' });
 				const data = await r.json().catch(() => null);
@@ -171,15 +118,8 @@ throw new Error((data && data.error) || 'HTTP ' + r.status);
 				return _objectsCache;
 			}
 
-
-
-
 			let _state = null;
 			let _fetchTimer = null;
-
-
-
-
 
 			let _fetchSeq = 0;
 			function _newState(initialObjectName) {
@@ -192,26 +132,11 @@ throw new Error((data && data.error) || 'HTTP ' + r.status);
 					filterIdSeq: 1,
 					lastResult: null,
 
-
-
-
-
-
-
 					basket: new Map(),
 				};
 			}
 
-
-
-
-
 			const SELECTION_CAP = 500;
-
-
-
-
-
 
 			function _currentSel() {
 				if (!_state.objectName) {
@@ -251,13 +176,6 @@ throw new Error((data && data.error) || 'HTTP ' + r.status);
 return [];
 }
 
-
-
-
-
-
-
-
 				const UNUSABLE_TYPES = new Set(['base64', 'address', 'location', 'anyType', 'complexvalue']);
 				return desc.fields
 					.filter((f) => f && f.name && f.type && !UNUSABLE_TYPES.has(f.type))
@@ -271,13 +189,6 @@ return null;
 }
 				return desc.fields.find((f) => f && f.name === fieldName) || null;
 			}
-
-
-
-
-
-
-
 
 			function _renderValueInput(filter, field) {
 				const id = 'filter-' + filter.id + '-value';
@@ -344,10 +255,6 @@ return null;
 				'</div>';
 			}
 
-
-
-
-
 			function _onCanvasIds() {
 				const set = new Set();
 				const recs = (canvasState && canvasState.bulkRecords) || [];
@@ -365,30 +272,18 @@ return null;
 				}
 				const fields = result.previewFields || ['Id'];
 
-
-
-
-
-
-
 				const pageRecords = result.records || [];
 				const pageIds = pageRecords.map((r) => r.Id).filter(Boolean);
 				const onCanvas = _onCanvasIds();
 				const sel = _currentSel();
 
-
-
 				const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
-
-
 
 				const _desc = canvasState.describeCache[_state.objectName];
 				const _nameField = _desc && Array.isArray(_desc.fields)
 					? (_desc.fields.find((fl) => fl && fl.nameField) || null) : null;
 				const linkField = (_nameField && _nameField.name && fields.indexOf(_nameField.name) !== -1)
 					? _nameField.name : 'Id';
-
-
 
 				const selectablePageIds = pageIds.filter((id) => !onCanvas.has(id));
 				const allPageSelected = selectablePageIds.length > 0 && selectablePageIds.every((id) => sel.has(id));
@@ -408,11 +303,6 @@ return null;
 					const cells = fields.map((f) => {
 						const v = rec[f];
 						const s = v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
-
-
-
-
-
 
 						if (f === linkField && s && rec.Id && sfBase) {
 							const url = sfBase + '/lightning/r/' + encodeURIComponent(_state.objectName) + '/' + encodeURIComponent(rec.Id) + '/view';
@@ -459,13 +349,10 @@ return null;
 							limit: _state.limit,
 							offset: _state.offset,
 
-
-
 							onCanvasIds: Array.from(_onCanvasIds()),
 						}),
 					});
 					const body = await r.json().catch(() => ({}));
-
 
 					if (_seq !== _fetchSeq) {
 						return;
@@ -516,10 +403,6 @@ clearTimeout(_fetchTimer);
 
 			function _updateLoadButton(content) {
 
-
-
-
-
 				const overlay = content.closest('.record-browse-modal');
 				const loadBtn = overlay && overlay.querySelector('.rb-load-btn');
 				if (!loadBtn) {
@@ -527,14 +410,10 @@ return;
 }
 				const count = (_state.lastResult && _state.lastResult.count) || 0;
 
-
 				const loadable = _state.lastResult && typeof _state.lastResult.loadableCount === 'number'
 					? _state.lastResult.loadableCount : count;
 				const basketTotal = _basketTotal();
 				const basketObjects = _basketEntries().length;
-
-
-
 
 				const hasBasket = basketTotal > 0;
 				loadBtn.disabled = hasBasket ? false : (!_state.objectName || loadable === 0);
@@ -551,10 +430,6 @@ return;
 					loadBtn.textContent = 'Load to canvas';
 				}
 			}
-
-
-
-
 
 			function _renderSelectionSummary(content) {
 				const summary = content.querySelector('.rb-selection-summary');
@@ -586,11 +461,6 @@ return;
 					'</div>';
 			}
 
-
-
-
-
-
 			function _renderNoConnection(content) {
 				content.innerHTML =
 					'<div class="rb-empty-state">' +
@@ -615,8 +485,6 @@ return;
 				const objectPicker = content.querySelector('.rb-object-picker');
 				const filterArea = content.querySelector('.rb-filters');
 
-
-
 				if (!objectPicker.dataset.populated) {
 					_loadObjects().then((objs) => {
 						const opts = objs.map((o) =>
@@ -627,8 +495,6 @@ return;
 					}).catch((e) => {
 						const msg = (e && e.message) || String(e);
 
-
-
 						if (/no-active-connection|not-connected/i.test(msg)) {
 							_renderNoConnection(content);
 							return;
@@ -637,15 +503,10 @@ return;
 					});
 				}
 
-
-
 				filterArea.innerHTML = _state.filters.map(_renderFilterChip).join('') +
 					(_state.objectName
 						? '<button type="button" class="rb-add-filter" data-rb-add-filter>+ Add filter</button>'
 						: '<p class="tag">Pick an object above to start filtering.</p>');
-
-
-
 
 				const resultsHead = content.querySelector('.rb-results-head');
 				if (resultsHead) {
@@ -662,9 +523,6 @@ return;
 					_state.filters = [];
 					_state.offset = 0;
 					_state.lastResult = null;
-
-
-
 
 					content.querySelector('.rb-count').textContent = name ? 'Loading describe…' : '';
 					content.querySelector('.rb-preview').innerHTML = '';
@@ -684,18 +542,8 @@ return;
 					_renderBody(content);
 					content.querySelector('.rb-count').textContent = '';
 
-
-
 					_scheduleFetch(content);
 				});
-
-
-
-
-
-
-
-
 
 				content.querySelector('.rb-filters').addEventListener('input', (ev) => {
 					const t = ev.target;
@@ -730,7 +578,6 @@ return;
 						const fieldDef = _fieldByName(_state.objectName, filt.field);
 						const ops = _operatorsFor(fieldDef);
 
-
 						if (!ops.find((o) => o.op === filt.op)) {
 filt.op = ops[0] ? ops[0].op : 'equals';
 }
@@ -740,7 +587,6 @@ filt.op = ops[0] ? ops[0].op : 'equals';
 						_scheduleFetch(content);
 					} else if (t.classList.contains('rb-filter-op')) {
 						filt.op = t.value;
-
 
 						if (!_opTakesValue(filt.op)) {
 filt.value = '';
@@ -772,7 +618,6 @@ filt.value = '';
 					}
 				});
 
-
 				content.querySelector('.rb-page-info').addEventListener('click', (ev) => {
 					if (ev.target.disabled) {
 return;
@@ -786,19 +631,11 @@ return;
 					}
 				});
 
-
-
-
-
-
-
-
 				content.querySelector('.rb-preview').addEventListener('change', (ev) => {
 					const t = ev.target;
 					if (!t || t.type !== 'checkbox') {
 return;
 }
-
 
 					const _capNotice = (msg) => {
 						const statusEl = content.querySelector('.rb-count');
@@ -812,7 +649,6 @@ return;
 						const id = t.dataset.rbRowCheckbox;
 						if (t.checked) {
 
-
 							if (_basketTotal() >= SELECTION_CAP) {
 								t.checked = false;
 								_capNotice('Selection cap is ' + SELECTION_CAP + ' records. Load these first, then come back to pick more.');
@@ -825,9 +661,6 @@ return;
 						_renderSelectionSummary(content);
 						_updateLoadButton(content);
 
-
-
-
 						const headerCb = content.querySelector('.rb-select-all');
 						if (headerCb) {
 							const pageRecords = (_state.lastResult && _state.lastResult.records) || [];
@@ -838,7 +671,6 @@ return;
 					} else if (t.dataset && t.dataset.rbSelectPage !== undefined) {
 						const pageRecords = (_state.lastResult && _state.lastResult.records) || [];
 						const onCanvas = _onCanvasIds();
-
 
 						const pageIds = pageRecords.map((r) => r.Id).filter((id) => id && !onCanvas.has(id));
 						if (t.checked) {
@@ -860,9 +692,6 @@ sel.delete(id);
 						_updateLoadButton(content);
 					}
 				});
-
-
-
 
 				content.querySelector('.rb-selection-summary').addEventListener('click', (ev) => {
 					const t = ev.target;
@@ -895,23 +724,12 @@ sel.delete(id);
 					}
 				});
 
-
-
-
-
-
-
-
-
 				const overlay = content.closest('.record-browse-modal');
 				const loadBtn = overlay && overlay.querySelector('.rb-load-btn');
 				if (loadBtn) {
 					loadBtn.addEventListener('click', async () => {
 						const entries = _basketEntries();
 						const basketTotal = _basketTotal();
-
-
-
 
 						let jobs;
 						if (basketTotal > 0) {
@@ -927,7 +745,6 @@ sel.delete(id);
 							}
 							jobs = [{
 								objectName: _state.objectName,
-
 
 								count: (typeof _state.lastResult.loadableCount === 'number'
 									? _state.lastResult.loadableCount
@@ -946,8 +763,6 @@ sel.delete(id);
 							}
 						};
 
-
-
 						const attempt = jobs.reduce((sum, j) => sum + j.count, 0);
 						const cap = canvasCapCheck(attempt);
 						if (cap.blocked) {
@@ -958,7 +773,6 @@ sel.delete(id);
 						loadBtn.disabled = true;
 						loadBtn.textContent = 'Loading…';
 
-
 						const _undo = captureUndoSnapshot ? captureUndoSnapshot() : null;
 						let added = 0;
 						let skipped = 0;
@@ -966,7 +780,6 @@ sel.delete(id);
 							for (const job of jobs) {
 								const summary = await runAndCommitSoql(job.soql, { knownTotal: job.count });
 								if (summary.blocked) {
-
 
 									showErr(summary.capReason || 'Canvas is at the record limit.');
 									showBulkToast(summary.capReason || 'Canvas is at the record limit.', 'error');
@@ -977,9 +790,6 @@ sel.delete(id);
 							}
 						} catch (err) {
 
-
-
-
 							const rolledBack = added > 0 && _undo;
 							if (rolledBack) {
 								_undo();
@@ -989,12 +799,9 @@ sel.delete(id);
 							_shared.captureImportFailure('browse', 'load', err.message || String(err));
 							showErr(_msg);
 
-
 							showBulkToast(_msg, 'error');
 							return;
 						}
-
-
 
 						if (pingAuditEvent && (added > 0 || skipped > 0)) {
 							pingAuditEvent('canvas_browse_load', {
@@ -1081,8 +888,6 @@ cleanup();
 
 				_renderBody(content);
 				_wireBodyHandlers(content);
-
-
 
 				if (initialObjectName) {
 					ensureDescribe(initialObjectName).then(() => {

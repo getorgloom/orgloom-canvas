@@ -1,60 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -146,14 +89,6 @@ return;
 					container.innerHTML = '<div class="bulk-empty" style="padding:1em">Cytoscape failed to load (check /vendor/cytoscape route).</div>';
 					return;
 				}
-			
-
-
-
-
-
-
-
 
 				const _cyCardHtml = (rec) => {
 					if (rec.isPending) {
@@ -171,26 +106,12 @@ pcls += ' selected';
 						'</div></div>';
 					}
 
-
-
-
-
-
-
-
 					if (rec._inaccessible) {
 						let ncls = 'record-card record-card-noaccess';
 						if (canvasState.bulkSelectedIds.has(rec.id)) {
 ncls += ' selected';
 }
 						const objLabel = rec.label || rec.objectName;
-
-
-
-
-
-
-
 
 						if (_isRecordStale(rec)) {
 							return '<div class="cy-card-shell"><div class="' + ncls + ' record-card-stale" data-rec-id="' + rec.id + '" ' +
@@ -208,9 +129,6 @@ ncls += ' selected';
 							'<div class="record-noaccess-note">Referenced record not returned by Salesforce</div>' +
 						'</div></div>';
 					}
-
-
-
 
 					if (_isEmptySlot(rec)) {
 						let scls = 'record-card record-card-slot';
@@ -252,13 +170,6 @@ scls += ' selected';
 					const isPendingDelete = isExisting && !!rec.pendingDelete;
 					let cls = 'record-card';
 
-
-
-
-
-
-
-
 					if (isPendingDelete) {
 cls += ' has-pending-delete';
 } else if (isModified) {
@@ -277,9 +188,6 @@ cls += ' connect-source';
 					if (getCyPendingEdge() && getCyPendingEdge().hoverTargetId === rec.id) {
 cls += ' connect-target';
 }
-
-
-
 
 					if (rec._refreshPulse) {
 cls += ' record-card-just-refreshed';
@@ -305,8 +213,6 @@ return String(rec.values[nf.name]);
 }
 							}
 
-
-
 							const generic = rec.values.Name || rec.values.CaseNumber || rec.values.OrderNumber || rec.values.WorkOrderNumber || rec.values.Subject || rec.values.Title;
 							if (generic) {
 return String(generic);
@@ -325,12 +231,6 @@ badge = '<span class="record-existing-badge" title="Loaded from Salesforce id ' 
 badge = '<span class="record-draft-badge">draft</span>';
 }
 
-
-
-
-
-
-
 					const _mig = window.Orgloom && window.Orgloom.canvasMigrate;
 					if (_mig && _mig.isActive()) {
 						const _ann = _mig.annotationFor(rec.id);
@@ -347,42 +247,15 @@ badge = '<span class="record-draft-badge">draft</span>';
 						}
 					}
 
-
-
-
-
 					if (_isRecordStale(rec)) {
 						badge += '<span class="record-stale-badge" title="This record was deleted in Salesforce — or your access to it was removed — after it was loaded onto the canvas. Uploading changes to it will fail until you resolve it.">deleted in SF</span>';
 						badge += '<button type="button" class="record-stale-action" data-stale-menu="' + rec.id + '" title="Choose how to handle this stale reference">fix ▾</button>';
 					}
 
-
-
-
-
-
 					if (Array.isArray(rec._loadedFieldNames)) {
 						const n = rec._loadedFieldNames.length;
 						badge += '<span class="record-partial-badge" title="Loaded with ' + n + ' field' + (n === 1 ? '' : 's') + ' only — the rest are preserved on Salesforce, not editable here. Re-import via SOQL with Load all fields checked to see them.">partial</span>';
 					}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 					if (rec.values && rec._wasLoadedFromOrgId) {
 						const _desc = canvasState.describeCache && canvasState.describeCache[rec.objectName];
@@ -428,12 +301,6 @@ badge = '<span class="record-draft-badge">draft</span>';
 					const assigneeBadge = _slotAssigneeBadgeHtml(rec);
 					badge = badge + slotBadge + slotProgressBadge + assigneeBadge;
 
-
-
-
-
-
-
 					const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
 					const lightningUrl = (isExisting && rec.loadedFromId && sfBase)
 						? sfBase + '/lightning/r/' + encodeURIComponent(rec.objectName) + '/' + encodeURIComponent(rec.loadedFromId) + '/view'
@@ -442,16 +309,6 @@ badge = '<span class="record-draft-badge">draft</span>';
 						? '<a class="record-title-link" href="' + escapeHtml(lightningUrl) + '" target="_blank" rel="noopener" title="Open in Salesforce \u2197">' + escapeHtml(titleText) + '</a>'
 						: escapeHtml(titleText);
 
-
-
-
-
-
-
-
-
-
-
 					let chipHtml = '';
 					if (isExisting) {
 						chipHtml = '<button class="record-related-chip" data-related-pick title="See records related to this one">' +
@@ -459,17 +316,7 @@ badge = '<span class="record-draft-badge">draft</span>';
 						'</button>';
 					}
 
-
-
-
-
-
-
 				const moreBtn = '<button class="record-more" data-card-more title="More actions">\u22EE</button>';
-
-
-
-
 
 				const keepBtn = isPendingDelete
 					? '<button class="record-keep" data-card-keep title="Unmark \u2014 cancels the delete">Keep</button>'
@@ -486,10 +333,6 @@ badge = '<span class="record-draft-badge">draft</span>';
 						chipHtml +
 					'</div></div>';
 				};
-			
-
-
-
 
 				const titleFor = (rec) => {
 					if (rec.isPending) {
@@ -524,10 +367,6 @@ return String(generic);
 					return rec.loadedFromId ? '(no title)' : '(no name yet)';
 				};
 
-
-
-
-
 				const labelFor = (rec) => {
 					if (rec.isPending) {
 return 'Blank record';
@@ -542,17 +381,6 @@ return rec.label || rec.objectName;
 					const tag = (rec.label || rec.objectName) + ' #' + recordOrdinal(rec);
 					return title + '\n' + tag;
 				};
-			
-
-
-
-
-
-
-
-
-
-
 
 				const _hiddenRecIds = new Set();
 				if (getObjectFilterHidden() && getObjectFilterHidden().size > 0) {
@@ -562,7 +390,7 @@ return rec.label || rec.objectName;
 						}
 					});
 				}
-			
+
 				const elements = [];
 				canvasState.bulkRecords.forEach((r) => {
 					if (_hiddenRecIds.has(r.id)) {
@@ -594,10 +422,6 @@ kind = 'tn-parent';
 					elements.push({
 						group: 'nodes',
 
-
-
-
-
 						data: { id: 'r' + r.id, recId: r.id, kind, label: labelFor(r), boxW: 220, boxH: 110, pendingDelete: r.pendingDelete ? 1 : 0 },
 						position: { x: typeof r.x === 'number' ? r.x : 0, y: typeof r.y === 'number' ? r.y : 0 },
 						grabbable: true,
@@ -613,16 +437,6 @@ return;
 						data: { id: 'a' + a.id, source: 'r' + a.fromId, target: 'r' + a.toId, label: a.fieldName || '', kind: 'fk' },
 					});
 				});
-
-
-
-
-
-
-
-
-
-
 
 				{
 					const idKey15 = (i) => (i ? String(i).slice(0, 15) : '');
@@ -673,16 +487,6 @@ return;
 }
 					if (r.isTypeNode && r.hostRecordId != null) {
 
-
-
-
-
-
-
-
-
-
-
 						const fieldName = r.fieldOnOther || r.fieldOnThis || '';
 						const manyIsTypeNode = r.direction === 'child';
 						const sourceId = manyIsTypeNode ? 'r' + r.id : 'r' + r.hostRecordId;
@@ -693,7 +497,7 @@ return;
 						});
 					}
 				});
-			
+
 				const isFirstRender = !getCyInstance();
 				const newRealNodeIds = [];
 				if (!getCyInstance()) {
@@ -702,11 +506,6 @@ return;
 						elements,
 						style: [
 							{
-
-
-
-
-
 
 								selector: 'core',
 								style: {
@@ -726,22 +525,10 @@ return;
 									'font-family': 'system-ui, sans-serif',
 									color: '#e8e6e1',
 
-
-
 									'overlay-opacity': 0,
 								},
 							},
 							{
-
-
-
-
-
-
-
-
-
-
 
 								selector: 'node[kind ^= "card"]',
 								style: {
@@ -769,10 +556,6 @@ return;
 							{ selector: 'node[kind = "tn-child"]', style: { 'border-color': '#6fa9d6' } },
 							{ selector: 'node[kind = "tn-free"]', style: { 'border-color': '#d68b3c', 'border-style': 'dashed' } },
 							{ selector: 'node:selected', style: { 'border-color': '#d68b3c', 'border-width': 3 } },
-
-
-
-
 
 							{
 								selector: 'node.csr-flash',
@@ -805,9 +588,6 @@ return;
 							},
 							{
 
-
-
-
 								selector: 'edge[kind = "fk"]',
 								style: { 'target-arrow-shape': 'none' },
 							},
@@ -834,33 +614,10 @@ return;
 						],
 						layout: { name: 'preset' },
 
-
-
-
 						userZoomingEnabled: false,
-
-
-
-
-
-
-
-
-
 
 						userPanningEnabled: false,
 						boxSelectionEnabled: false,
-
-
-
-
-
-
-
-
-
-
-
 
 						autounselectify: true,
 					}));
@@ -868,49 +625,11 @@ return;
 					attachCyMiddleClickPan(getCyInstance(), container);
 					attachCySpacePan(getCyInstance(), container);
 					attachCyEdgeMarkers(getCyInstance(), container);
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 					document.addEventListener('wheel', (ev) => {
 						if (!getCyInstance()) {
 return;
 }
-
-
-
-
-
-
-
-
 
 						if (!container.contains(ev.target)) {
 return;
@@ -921,16 +640,9 @@ return;
 return;
 }
 
-
-
-
 						if (ev.ctrlKey) {
 ev.preventDefault();
 }
-
-
-
-
 
 						if (ev.deltaY === 0) {
 return;
@@ -948,13 +660,6 @@ return;
 }
 						getCyInstance().zoom({ level: next, renderedPosition: { x: rx, y: ry } });
 					}, { passive: false, capture: true });
-			
-
-
-
-
-
-
 
 					getCyInstance().on('tap', 'node', (evt) => {
 						const recId = evt.target.data('recId');
@@ -990,14 +695,6 @@ return false;
 							return;
 						}
 						if (rec.isPending) {
-
-
-
-
-
-
-
-
 
 							const oe = evt.originalEvent;
 							const cardEl = container.querySelector('.record-card-pending[data-rec-id="' + rec.id + '"]');
@@ -1045,17 +742,6 @@ openTypeNode(rec);
 							return;
 						}
 
-
-
-
-
-
-
-
-
-
-
-
 						{
 							const oe = evt.originalEvent;
 							const cardEl = container.querySelector('.record-card[data-rec-id="' + rec.id + '"]');
@@ -1073,19 +759,11 @@ return false;
 								return;
 							}
 
-
-
-
-
 							const staleBtn = cardEl && cardEl.querySelector('[data-stale-menu]');
 							if (_hitsRect(staleBtn)) {
 								_showStaleRefMenu(staleBtn, rec);
 								return;
 							}
-
-
-
-
 
 							if (rec.loadedFromId) {
 								const chip = cardEl && cardEl.querySelector('[data-related-pick]');
@@ -1117,9 +795,6 @@ return;
 						openInsertModal(rec.objectName, { record: rec });
 					});
 
-
-
-
 					getCyInstance().on('tap', 'edge', (evt) => {
 						const edge = evt.target;
 						if (edge.data('kind') !== 'fk') {
@@ -1143,9 +818,6 @@ return;
 							showBulkToast('Selected ' + fieldLabel + ' \u2014 press Delete to unlink.');
 						} else if (eid[0] === 'd') {
 
-
-
-
 							const recId = edge.data('holderRecId');
 							const fieldName = edge.data('fkFieldName');
 							if (recId == null || !fieldName) {
@@ -1166,31 +838,11 @@ return;
 						}
 					});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 					let _cyDragGroup = null;
 					getCyInstance().on('grab', 'node', (evt) => {
 						const anchor = evt.target;
 						const akind = anchor.data('kind') || '';
 						const arecId = anchor.data('recId');
-
-
-
 
 						if (akind.indexOf('card') !== 0 || arecId == null || !canvasState.bulkSelectedIds.has(arecId)) {
 							_cyDragGroup = null;
@@ -1223,10 +875,6 @@ return;
 							others,
 						};
 
-
-
-
-
 						others.forEach((o) => {
  try {
  o.node.scratch('_dragFollower', true); 
@@ -1247,11 +895,6 @@ return;
 							o.node.position({ x: o.start.x + dx, y: o.start.y + dy });
 						});
 					});
-
-
-
-
-
 
 					getCyInstance().on('free', 'node', (evt) => {
 						const recId = evt.target.data('recId');
@@ -1278,10 +921,6 @@ return;
 							_cyDragGroup = null;
 						}
 					});
-			
-
-
-
 
 					attachCyMarqueeSelect(getCyInstance(), container, (hits, additive) => {
 						const next = additive ? new Set(canvasState.bulkSelectedIds) : new Set();
@@ -1295,21 +934,6 @@ next.add(recId);
 						canvasState.bulkSelectedEdgeId = null;
 						renderBulkView();
 					});
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 					if (!container._ctaInterceptInstalled) {
 						container._ctaInterceptInstalled = true;
@@ -1319,9 +943,6 @@ next.add(recId);
 							'[data-slot-fill-load], [data-slot-fill-blank], [data-stale-menu]';
 						container.addEventListener('mousedown', (ev) => {
 							if (ev.target && ev.target.closest && ev.target.closest(_CTA_SELECTOR)) {
-
-
-
 
 								ev.stopPropagation();
 							}
@@ -1384,14 +1005,6 @@ return;
 								return;
 							}
 
-
-
-
-
-
-
-
-
 							if (cta.matches('[data-related-pick]')) {
 								if (rec.loadedFromId) {
 showRelatedPopover(cta, rec);
@@ -1399,23 +1012,7 @@ showRelatedPopover(cta, rec);
 								return;
 							}
 
-
-
 						});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 						container.addEventListener('dblclick', (ev) => {
 							const stack = document.elementsFromPoint(ev.clientX, ev.clientY);
@@ -1453,13 +1050,6 @@ return;
 						});
 					}
 
-
-
-
-
-
-
-
 					if (typeof getCyInstance().nodeHtmlLabel === 'function') {
 						getCyInstance().nodeHtmlLabel([
 							{
@@ -1474,12 +1064,6 @@ return;
 								},
 							},
 							{
-
-
-
-
-
-
 
 								query: 'node[kind ^= "tn-"]',
 								valign: 'center',
@@ -1499,34 +1083,8 @@ return '';
 							},
 						]);
 					}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 					const CARD_EDGE_THRESHOLD = 10;
-
-
-
-
-
-
-
-
 
 					const CARD_EDGE_OUTSET = 15;
 					const _setConnectClass = (on) => {
@@ -1541,11 +1099,6 @@ container.classList.toggle('cy-connecting', !!on);
 return;
 }
 
-
-
-
-
-
 						const rp = pe.srcCyNode.renderedPosition();
 						const ox = typeof pe.anchorOffsetX === 'number' ? pe.anchorOffsetX : 0;
 						const oy = typeof pe.anchorOffsetY === 'number' ? pe.anchorOffsetY : 0;
@@ -1553,60 +1106,18 @@ return;
 						pe.line.setAttribute('y1', rp.y + oy);
 					};
 
-
-
-
-
-
-
 					const _CTA_EDGE_SKIP_SEL =
 						'[data-record-delete], [data-card-more], ' +
 						'[data-related-pick], [data-pending-pick-blank], [data-pending-pick-load], ' +
 						'[data-slot-fill-load], [data-slot-fill-blank], [data-stale-menu]';
 
-
-
-
-
-
-
-
-
-
-
-
 					const _findEdgeTargetAt = (x, y) => {
-
-
-
-
-
-
-
-
-
-
-
-
 
 						const containerRect = container.getBoundingClientRect();
 						const inContainer =
 							x >= containerRect.left && x <= containerRect.right &&
 							y >= containerRect.top && y <= containerRect.bottom;
 						if (inContainer) {
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 							const cards = container.querySelectorAll('.record-card[data-rec-id]');
 							for (let i = cards.length - 1; i >= 0; i--) {
@@ -1628,20 +1139,6 @@ continue;
 						if (modalBody) {
 							const r = modalBody.getBoundingClientRect();
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 							let rightAdjusted = r.right;
 							const modal = modalBody.parentElement;
 							const content = modal && modal.querySelector('.modal-content');
@@ -1656,9 +1153,6 @@ rightAdjusted = r.right - sbW - 2;
 								x >= r.left - CARD_EDGE_OUTSET && x <= r.right + CARD_EDGE_OUTSET &&
 								y >= r.top - CARD_EDGE_OUTSET && y <= r.bottom + CARD_EDGE_OUTSET;
 
-
-
-
 							const onScrollbarStrip = x > rightAdjusted && x <= r.right && y >= r.top && y <= r.bottom;
 							if (r.width > 0 && r.height > 0 && (inside || (inOutsetBox && !onScrollbarStrip))) {
 								return {
@@ -1671,10 +1165,6 @@ rightAdjusted = r.right - sbW - 2;
 						}
 						return null;
 					};
-
-
-
-
 
 					const _isOnRectEdge = (rect, x, y) => {
 						const insideX = x >= rect.left && x <= rect.right;
@@ -1707,10 +1197,6 @@ modal.classList.add('is-edge-link');
 						}
 					};
 
-
-
-
-
 					document.addEventListener('mousemove', (ev) => {
 						if (getCyPendingEdge()) {
 return;
@@ -1734,8 +1220,6 @@ container.classList.remove('cy-edge-hover');
 						_setEdgeHoverCard(onEdge ? hit.recId : null);
 					});
 
-
-
 					document.addEventListener('mousedown', (ev) => {
 						if (ev.button !== 0) {
 return;
@@ -1746,8 +1230,6 @@ return;
 						if (ev.target && ev.target.closest && ev.target.closest(_CTA_EDGE_SKIP_SEL)) {
 return;
 }
-
-
 
 						if (ev.target && ev.target.closest && ev.target.closest('input, textarea, select, button, a, [contenteditable="true"]')) {
 return;
@@ -1775,25 +1257,7 @@ return;
 						const line = document.createElementNS(_ns, 'line');
 						line.setAttribute('class', 'cy-pending-edge-line');
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 						const _containerRect = container.getBoundingClientRect();
-
-
-
-
 
 						const _r = hit.rect;
 						const _cx = Math.max(_r.left, Math.min(ev.clientX, _r.right));
@@ -1843,11 +1307,6 @@ _clientAnchorY = _r.bottom;
 						cyNode.data('rev', (cyNode.data('rev') || 0) + 1);
 					}, true                              );
 
-
-
-
-
-
 					document.addEventListener('mousemove', (ev) => {
 						const pe = getCyPendingEdge();
 						if (!pe || !pe.line) {
@@ -1873,13 +1332,6 @@ hoverId = hit.recId;
 							_bumpRev(hoverId);
 						}
 					});
-
-
-
-
-
-
-
 
 					document.addEventListener('mouseup', (ev) => {
 						const pe = getCyPendingEdge();
@@ -1929,16 +1381,6 @@ n.data('rev', (n.data('rev') || 0) + 1);
 }
 					};
 
-
-
-
-
-
-
-
-
-
-
 					getCyInstance().on('mousemove', (evt) => {
 						if (!getCyPendingEdge() || !getCyPendingEdge().line) {
 return;
@@ -1953,8 +1395,6 @@ return;
 						getCyPendingEdge().line.setAttribute('x2', px);
 						getCyPendingEdge().line.setAttribute('y2', py);
 						_updatePendingLine();
-
-
 
 						let hit = null;
 						getCyInstance().nodes('node[kind ^= "card"]').forEach((n) => {
@@ -1977,8 +1417,6 @@ return;
 							_bumpRev(hit);
 						}
 					});
-
-
 
 					getCyInstance().on('render', _updatePendingLine);
 					getCyInstance().on('mouseup tap', (evt) => {
@@ -2005,11 +1443,8 @@ return;
 						_setConnectClass(false);
 						container.classList.remove('cy-edge-hover');
 
-
-
 						getCyInstance().userPanningEnabled(false);
 						getCyInstance().nodes().forEach((n) => n.grabify());
-
 
 						const srcCyNode = getCyInstance().getElementById('r' + srcId);
 						if (srcCyNode && srcCyNode.length) {
@@ -2031,8 +1466,6 @@ tgtCyNode.data('rev', (tgtCyNode.data('rev') || 0) + 1);
 					});
 				} else {
 
-
-
 					const wantedIds = new Set(elements.map((e) => e.data.id));
 					getCyInstance().elements().forEach((el) => {
  if (!wantedIds.has(el.id())) {
@@ -2043,11 +1476,6 @@ el.remove();
 					elements.forEach((el) => {
 						if (!haveIds.has(el.data.id)) {
 							getCyInstance().add(el);
-
-
-
-
-
 
 							if (el.group === 'nodes' && el.data.kind && el.data.kind.indexOf('card') === 0) {
 								newRealNodeIds.push(el.data.id);
@@ -2066,25 +1494,6 @@ existing.data('kind', el.data.kind);
 }
 						if (el.position) {
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 							if (!existing.grabbed() && !existing.scratch('_dragFollower')) {
 								const p = existing.position();
 								if (Math.abs(p.x - el.position.x) > 0.5 || Math.abs(p.y - el.position.y) > 0.5) {
@@ -2093,22 +1502,11 @@ existing.data('kind', el.data.kind);
 							}
 						}
 
-
-
-
-
-
-
-
-
-
 						if (el.data.kind && (el.data.kind.indexOf('card') === 0 || el.data.kind.indexOf('tn-') === 0)) {
 							existing.data('rev', (existing.data('rev') || 0) + 1);
 						}
 					});
 				}
-			
-
 
 				getCyInstance().elements('node:selected').unselect();
 				canvasState.bulkSelectedIds.forEach((id) => {
@@ -2117,10 +1515,6 @@ existing.data('kind', el.data.kind);
 n.select();
 }
 				});
-
-
-
-
 
 				getCyInstance().edges('.edge-picked').removeClass('edge-picked');
 				if (canvasState.bulkSelectedEdgeId != null) {
@@ -2134,15 +1528,6 @@ e.addClass('edge-picked');
 e.addClass('edge-picked');
 }
 				}
-			
-
-
-
-
-
-
-
-
 
 				requestAnimationFrame(() => requestAnimationFrame(() => {
 					if (!getCyInstance() || !container) {
@@ -2164,17 +1549,6 @@ return;
 return;
 }
 
-
-
-
-
-
-
-
-
-
-
-
 						if (node.data('_inlineLocked')) {
 return;
 }
@@ -2186,21 +1560,8 @@ node.data('boxH', h);
 }
 					});
 				}));
-			
-
-
-
-
-
-
-
 
 				if (isFirstRender) {
-
-
-
-
-
 
 					requestAnimationFrame(() => {
 						if (!getCyInstance() || getCyInstance().elements().length === 0) {
@@ -2230,11 +1591,8 @@ return;
 					}
 				}
 
-
-
 				setSkipNextCyAutoPan(false);
 			}
-			
 
 			return {
 				renderBulkCanvasCy: renderBulkCanvasCy,

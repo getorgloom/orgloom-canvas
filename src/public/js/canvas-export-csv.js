@@ -1,30 +1,7 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
-
-
-
-
-
-
 
 	const SYSTEM_FIELDS = new Set([
 		'CreatedDate', 'CreatedById',
@@ -33,11 +10,6 @@
 		'LastReferencedDate', 'LastViewedDate',
 		'IsDeleted',
 	]);
-
-
-
-
-
 
 	const FIELD_PRIORITY = [
 		'Id',
@@ -67,19 +39,6 @@ throw new Error('canvas-export-csv.mount: missing deps object');
 					.slice(0, 80) || 'canvas';
 			}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 			function csvEscape(v) {
 				if (v == null) {
 return '';
@@ -94,10 +53,6 @@ return '';
 				return s;
 			}
 
-
-
-
-
 			function orderFields(names) {
 				const set = new Set(names);
 				const head = FIELD_PRIORITY.filter((f) => set.has(f));
@@ -107,8 +62,6 @@ return '';
 					.sort();
 				return head.concat(tail);
 			}
-
-
 
 			function selectScopedRecords(scope) {
 				const all = (canvasState.bulkRecords || []).filter(
@@ -120,8 +73,6 @@ return '';
 				}
 				return all;
 			}
-
-
 
 			function collectFieldUnion(records) {
 				const set = new Set();
@@ -140,10 +91,6 @@ return;
 				return Array.from(set);
 			}
 
-
-
-
-
 			function buildCsv(records, fields, leadingColumns) {
 				const lead = Array.isArray(leadingColumns) ? leadingColumns : [];
 				const headerCells = lead.map((c) => csvEscape(c.header)).concat(
@@ -156,8 +103,6 @@ return;
 					const fieldCells = fields.map((f) => csvEscape(values[f]));
 					lines.push(leadCells.concat(fieldCells).join(','));
 				});
-
-
 
 				return '﻿' + lines.join('\r\n');
 			}
@@ -174,8 +119,6 @@ return;
  URL.revokeObjectURL(url); a.remove(); 
 }, 0);
 			}
-
-
 
 			const modal = document.createElement('div');
 			modal.className = 'modal canvas-export-csv-modal hidden';
@@ -293,9 +236,6 @@ return;
 					filenameEl.addEventListener('input', () => {
 						_state.filename = filenameEl.value;
 
-
-
-
 						const preview = body.querySelector('.cec-section .cec-meta code');
 						if (preview) {
 							preview.textContent = objectNames.length > 1
@@ -321,11 +261,6 @@ return;
 				}
 				const stem = sanitizeFilename(_state.filename || 'canvas');
 
-
-
-
-
-
 				const byObject = new Map();
 				records.forEach((r) => {
 					const key = r.objectName || 'Unknown';
@@ -336,8 +271,6 @@ byObject.set(key, []);
 				});
 				const entries = Array.from(byObject.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 				const single = entries.length === 1;
-
-
 
 				let i = 0;
 				const fireNext = () => {
@@ -358,8 +291,6 @@ byObject.set(key, []);
 
 			return {
 				openModal: openModal,
-
-
 
 				_test: {
 					csvEscape: csvEscape,

@@ -1,18 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -23,7 +8,6 @@ beforeEach(clearTestDb);
 
 const SF_ORG = '00Dxx0000000001';
 const CANVAS = '069xx0000000001';
-
 
 function identityKek() {
 	return {
@@ -56,14 +40,11 @@ describe('getOrMint concurrent-mint safety', () => {
 		const canvasKeys = await import('../src/database/canvas-keys.js');
 		const db = ext.getDb();
 
-
 		const winnerKey = crypto.randomBytes(32);
 		let injected = false;
 
 		const racingKek = {
 			async wrapDataKey(dataKey) {
-
-
 
 				if (!injected) {
 					injected = true;
@@ -80,12 +61,8 @@ describe('getOrMint concurrent-mint safety', () => {
 			sfOrgId: SF_ORG, canvasId: CANVAS, kekProvider: racingKek, sessionId: 'race-session',
 		});
 
-
-
 		assert.ok(Buffer.isBuffer(returned), 'returns a Buffer key');
 		assert.ok(returned.equals(winnerKey), 'returns the concurrently-stored winner key, not the losing fresh mint');
-
-
 
 		const reread = await canvasKeys.get({
 			sfOrgId: SF_ORG, canvasId: CANVAS, kekProvider: identityKek(), sessionId: 'reader-session',

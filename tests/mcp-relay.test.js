@@ -1,15 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -23,8 +11,6 @@ import {
 	purgeWorkspace,
 	workspaceLiveSummary,
 } from '../src/mcp/relay.js';
-
-
 
 function mockSseRes() {
 	const writes = [];
@@ -55,13 +41,7 @@ return JSON.parse(m[1]);
 	};
 }
 
-
-
-
 beforeEach(() => {
-
-
-
 
 });
 

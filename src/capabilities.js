@@ -1,60 +1,10 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export const CAPABILITIES = Object.freeze({
 	'create-slot-canvas': {
-
 
 		workspaceToggle: null,
 		scope: 'workspace',
 	},
 	'run-script': {
-
-
-
-
 
 		workspaceToggle: null,
 		memberOverride: true,
@@ -63,21 +13,10 @@ export const CAPABILITIES = Object.freeze({
 	},
 	'invite-members': {
 
-
-
 		workspaceToggle: null,
 		scope: 'workspace',
 	},
 	'share-canvas': {
-
-
-
-
-
-
-
-
-
 
 		workspaceToggle: null,
 		memberOverride: true,
@@ -87,8 +26,6 @@ export const CAPABILITIES = Object.freeze({
 
 	'browse-records': {
 
-
-
 		workspaceToggle: null,
 		memberOverride: true,
 		defaultGranted: false,
@@ -96,16 +33,12 @@ export const CAPABILITIES = Object.freeze({
 	},
 	'soql-import': {
 
-
-
 		workspaceToggle: null,
 		memberOverride: true,
 		defaultGranted: false,
 		scope: 'workspace',
 	},
 	'open-saved-canvas': {
-
-
 
 		workspaceToggle: null,
 		memberOverride: true,
@@ -115,19 +48,12 @@ export const CAPABILITIES = Object.freeze({
 
 	'save-canvas': {
 
-
 		workspaceToggle: null,
 		memberOverride: true,
 		defaultGranted: false,
 		scope: 'workspace',
 	},
 	'upload-records': {
-
-
-
-
-
-
 
 		workspaceToggle: null,
 		memberOverride: true,
@@ -136,21 +62,12 @@ export const CAPABILITIES = Object.freeze({
 	},
 	'recall-upload': {
 
-
-
-
-
-
-
-
 		workspaceToggle: null,
 		memberOverride: true,
 		defaultGranted: false,
 		scope: 'workspace',
 	},
 	'bulk-edit-records': {
-
-
 
 		workspaceToggle: null,
 		memberOverride: true,
@@ -160,10 +77,6 @@ export const CAPABILITIES = Object.freeze({
 
 	'auto-fill-records': {
 
-
-
-
-
 		workspaceToggle: null,
 		memberOverride: true,
 		defaultGranted: false,
@@ -172,9 +85,6 @@ export const CAPABILITIES = Object.freeze({
 
 	'export-canvas': {
 
-
-
-
 		workspaceToggle: null,
 		memberOverride: true,
 		defaultGranted: false,
@@ -182,26 +92,12 @@ export const CAPABILITIES = Object.freeze({
 	},
 	'export-records': {
 
-
-
 		workspaceToggle: null,
 		memberOverride: true,
 		defaultGranted: false,
 		scope: 'workspace',
 	},
 	'receive-canvas': {
-
-
-
-
-
-
-
-
-
-
-
-
 
 		workspaceToggle: null,
 		scope: 'workspace',
@@ -213,34 +109,12 @@ export const CAPABILITIES = Object.freeze({
 	},
 	'ai-edit-on-canvas': {
 
-
-
-
-
-
 		workspaceToggle: 'ai_on_canvas_data_enabled',
 		memberOverride: true,
 		defaultGranted: false,
 		scope: 'workspace',
 	},
 	'connect-sf-org': {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 		workspaceToggle: null,
 		scope: 'connection',
@@ -249,17 +123,9 @@ export const CAPABILITIES = Object.freeze({
 return false;
 }
 
-
-
-
-
-
 			if (orgType === 'production') {
 				return !!settings.prod_org_allowlist_enabled;
 			}
-
-
-
 
 			if (orgType !== 'sandbox' && orgType !== 'developer') {
 				return !!settings.prod_org_allowlist_enabled || !!settings.nonprod_org_allowlist_enabled;
@@ -269,30 +135,8 @@ return false;
 	},
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const _BASE_DATA_CAPS = [
 	'connect-sf-org',
-
-
 
 	'browse-records',
 	'soql-import',
@@ -304,13 +148,6 @@ const _BASE_DATA_CAPS = [
 	'export-records',
 	'export-canvas',
 ];
-
-
-
-
-
-
-
 
 const _LOCKED_CAPS = [
 	'connect-sf-org',
@@ -334,9 +171,6 @@ const _TEAM_ADDS = [
 
 export const PLANS = Object.freeze({
 
-
-
-
 	free: Object.freeze({
 		id: 'free',
 		label: 'Inactive',
@@ -344,8 +178,6 @@ export const PLANS = Object.freeze({
 		monthly_ai_tokens: 0,
 		monthly_ai_spend_cents: 0,
 		monthly_upload_cap: 0,
-
-
 
 		monthly_share_cap: 0,
 		saved_canvas_cap: 0,
@@ -359,12 +191,6 @@ export const PLANS = Object.freeze({
 		monthly_ai_tokens: 500_000,
 		monthly_ai_spend_cents: 500,
 		monthly_upload_cap: null,
-
-
-
-
-
-
 
 		monthly_share_cap: 10,
 		saved_canvas_cap: null,
@@ -385,9 +211,6 @@ export const PLANS = Object.freeze({
 	}),
 });
 
-
-
-
 export function planMeetsRequirement(planOrId, requirement) {
 	if (!requirement) {
 return true;
@@ -399,9 +222,6 @@ return false;
 }
 	return plan.rank >= required.rank;
 }
-
-
-
 
 export function planById(planId) {
 	return PLANS[planId] || PLANS.free;

@@ -1,15 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { initTestDb, clearTestDb } from './helpers/db.js';
@@ -190,8 +178,6 @@ describe('getActiveSfConnection — identity-mismatch lockout', () => {
 	});
 
 	test('sfAuth missing sfUserId does NOT trigger mismatch (legacy session)', async () => {
-
-
 
 		const a = await makeAccount();
 		const conn = await makeConnection(a.id);

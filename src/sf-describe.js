@@ -1,8 +1,3 @@
-
-
-
-
-
 import { withSfRetry } from './sf-upload.js';
 
 export function cleanLabel(label, fallback) {
@@ -11,10 +6,6 @@ export function cleanLabel(label, fallback) {
 	}
 	return label;
 }
-
-
-
-
 
 export function inferScpController(fieldName, allFields) {
 	if (!/State/.test(fieldName)) {
@@ -26,11 +17,6 @@ return null;
 }
 	return allFields.some((f) => f.name === candidate) ? candidate : null;
 }
-
-
-
-
-
 
 export function decodeValidForBitmap(validFor) {
 	if (!validFor || typeof validFor !== 'string') {
@@ -54,10 +40,6 @@ indices.push(byteIdx * 8 + bitIdx);
 	return indices;
 }
 
-
-
-
-
 const _queryableCache = new Map();
 const QUERYABLE_TTL_MS = 30 * 60 * 1000;
 
@@ -73,9 +55,6 @@ set.add(o.name);
 
 function _primeQueryableCache(orgId, describeGlobalResult) {
 	const set = _buildQueryableSet(describeGlobalResult);
-
-
-
 
 	if (orgId) {
 		_queryableCache.set(orgId, { set, expiresAt: Date.now() + QUERYABLE_TTL_MS });
@@ -101,9 +80,6 @@ export async function getQueryableSObjects(conn, orgId) {
 	}
 }
 
-
-
-
 export async function listObjects(conn, orgId) {
 	const result = await withSfRetry(() => conn.describeGlobal());
 	_primeQueryableCache(orgId, result);
@@ -116,22 +92,10 @@ export async function listObjects(conn, orgId) {
 			queryable: o.queryable,
 			custom: o.custom,
 
-
 			createable: !!o.createable,
 		}))
 		.sort((a, b) => a.label.localeCompare(b.label));
 }
-
-
-
-
-
-
-
-
-
-
-
 
 const _NOISE_SOBJECT_SUFFIX =
 	/(Feed|History|Share|ChangeEvent|Vote|Tag|RelationshipFor|OwnerSharingRule|EventStore|FlowInterview|Definition|Settings|Setting|Metrics|Localization|Bundle|CleanInfo)$/;
@@ -179,11 +143,6 @@ const _NOISE_SOBJECT_NAMES = new Set([
 	'EntitySubscription', 'ProcessException', 'OperatingHours',
 	'OperatingHoursHoliday',
 
-
-
-
-
-
 	'Document', 'Image', 'EnhancedLetterhead', 'GroupMember', 'RecordAction',
 	'Topic', 'QuickText', 'CampaignMemberStatus', 'EmailMessageRelation',
 	'CaseSubjectParticle', 'CaseExternalDocument', 'CaseArticle', 'LinkedArticle',
@@ -212,13 +171,6 @@ export function isNoiseSObject(name) {
 	return false;
 }
 
-
-
-
-
-
-
-
 export async function loadDescribeForObject(conn, objectName) {
 	const describe = await conn.sobject(objectName).describe();
 
@@ -233,9 +185,6 @@ export async function loadDescribeForObject(conn, objectName) {
 		const objectInfo = await conn.request(base + '/ui-api/object-info/' + encodeURIComponent(objectName));
 		defaultRecordTypeId = (objectInfo && objectInfo.defaultRecordTypeId) || null;
 
-
-
-
 		if (objectInfo && objectInfo.fields) {
 			Object.entries(objectInfo.fields).forEach(([fname, finfo]) => {
 				if (Array.isArray(finfo && finfo.controllingFields) && finfo.controllingFields.length > 0) {
@@ -243,10 +192,6 @@ export async function loadDescribeForObject(conn, objectName) {
 				}
 			});
 		}
-
-
-
-
 
 		const rawRtDevName = {};
 		for (const info of describe.recordTypeInfos || []) {
@@ -284,21 +229,11 @@ export async function loadDescribeForObject(conn, objectName) {
 			}
 		}));
 
-
-
-
-
 		const dependentFieldNames = describe.fields
 			.filter((f) => {
 				if (!f.createable) {
 return false;
 }
-
-
-
-
-
-
 
 				if (f.type !== 'picklist' && f.type !== 'multipicklist') {
 return false;
@@ -341,21 +276,10 @@ picklistByRt[rt.id] = {};
 	} catch (e) {
 		const msg = (e && e.message) || String(e);
 
-
-
-
-
-
-
 		if (!/not supported in UI API|UNSUPPORTED_API|not supported/i.test(msg)) {
 			console.warn('UI API object-info fetch failed for', objectName, '-', msg);
 		}
 	}
-
-
-
-
-
 
 	const controllerIndexMap = {};
 	describe.fields.forEach((f) => {
@@ -432,19 +356,12 @@ return;
 				picklistValuesByRecordType,
 				controllerName: resolvedControllerName,
 
-
-
-
-
 				controllerValues: describeCtrlMap,
 				controllerValuesByRecordType,
 				referenceTo: f.referenceTo,
 				relationshipName: f.relationshipName,
 				defaultValue: f.defaultValue,
 				helpText: f.inlineHelpText,
-
-
-
 
 				externalId: !!f.externalId,
 				idLookup: !!f.idLookup,
@@ -455,10 +372,6 @@ return;
 	return {
 		name: describe.name,
 		label: cleanLabel(describe.label, describe.name),
-
-
-
-
 
 		createable: !!describe.createable,
 		updateable: !!describe.updateable,

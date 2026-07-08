@@ -1,62 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -83,16 +24,9 @@ throw new Error('record-diff-modal.mount: missing deps object');
 			const renderBulkView = deps.renderBulkView;
 			const isRecordPendingDelete = deps.isRecordPendingDelete;
 
-
-
-
-
 			const pushUndo = typeof deps.pushUndo === 'function' ? deps.pushUndo : null;
 			const showBulkToast = typeof deps.showBulkToast === 'function'
 				? deps.showBulkToast : function () {};
-
-
-
 
 			function _snapField(rec, fieldName) {
 				const had = !!(rec.values && Object.prototype.hasOwnProperty.call(rec.values, fieldName));
@@ -108,13 +42,6 @@ throw new Error('record-diff-modal.mount: missing deps object');
 					delete rec.values[fieldName];
 				}
 			}
-
-
-
-
-
-
-
 
 			function _pairKey(idA, idB) {
 				const a = Number(idA), b = Number(idB);
@@ -147,10 +74,6 @@ canvasState.diffSuppressions[key] = Array.from(set);
 				_writeSuppressedSet(idA, idB, set);
 			}
 
-
-
-
-
 			function _titleFor(rec) {
 				if (!rec) {
 return '(missing record)';
@@ -182,9 +105,6 @@ return String(generic);
 				return rec.loadedFromId ? '(no title)' : '(no name yet)';
 			}
 
-
-
-
 			function _fieldLabel(objectName, fieldName) {
 				const desc = objectName && canvasState.describeCache[objectName];
 				if (desc && Array.isArray(desc.fields)) {
@@ -196,8 +116,6 @@ return f.label;
 				return fieldName;
 			}
 
-
-
 			function _fieldDef(objectName, fieldName) {
 				const desc = objectName && canvasState.describeCache[objectName];
 				if (!desc || !Array.isArray(desc.fields)) {
@@ -205,14 +123,6 @@ return null;
 }
 				return desc.fields.find((x) => x && x.name === fieldName) || null;
 			}
-
-
-
-
-
-
-
-
 
 			function _isFieldWritable(field, targetRec) {
 				if (!field) {
@@ -227,11 +137,6 @@ return field.updateable !== false;
 				return field.createable !== false;
 			}
 
-
-
-
-
-
 			function _buildFkResolver() {
 				const m = new Map();
 				for (const r of canvasState.bulkRecords) {
@@ -244,22 +149,11 @@ continue;
 				return m;
 			}
 
-
-
-
-
-
-
-
-
-
 			function _renderTypedValue(v, fieldDef, fkResolver) {
 				if (v == null || v === '') {
 return '<span class="rdm-empty">—</span>';
 }
 				const type = fieldDef && fieldDef.type;
-
-
 
 				if ((type === 'picklist' || type === 'combobox') && Array.isArray(fieldDef.picklistValues)) {
 					const p = fieldDef.picklistValues.find((x) => x && x.value === v);
@@ -267,7 +161,6 @@ return '<span class="rdm-empty">—</span>';
 						return escapeHtml(p.label) + ' <code class="rdm-val-suffix">' + escapeHtml(String(v)) + '</code>';
 					}
 				}
-
 
 				if (type === 'multipicklist' && Array.isArray(fieldDef.picklistValues)) {
 					const parts = String(v).split(';').map((s) => s.trim()).filter(Boolean);
@@ -278,8 +171,6 @@ return '<span class="rdm-empty">—</span>';
 					return escapeHtml(labels.join(' · '));
 				}
 
-
-
 				if (type === 'reference' && fkResolver) {
 					const key = String(v).slice(0, 15);
 					const title = fkResolver.get(key);
@@ -289,16 +180,10 @@ return '<span class="rdm-empty">—</span>';
 					return '<code>' + escapeHtml(String(v)) + '</code>';
 				}
 
-
-
 				if (type === 'boolean' || typeof v === 'boolean') {
 					const b = v === true || v === 'true' || v === 1 || v === '1';
 					return b ? '<span class="rdm-val-bool">Yes</span>' : '<span class="rdm-val-bool">No</span>';
 				}
-
-
-
-
 
 				if (type === 'date' && typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) {
 					const t = Date.parse(v);
@@ -315,7 +200,6 @@ return '<span class="rdm-empty">—</span>';
 					}
 				}
 
-
 				if (typeof v === 'string') {
 return escapeHtml(v);
 }
@@ -329,18 +213,6 @@ return escapeHtml(String(v));
 }
 			}
 
-
-
-
-
-
-
-
-
-
-
-
-
 			function _renderRow(fieldName, recA, recB, variant, ctx) {
 				const objectName = recA.objectName || recB.objectName;
 				const label = _fieldLabel(objectName, fieldName);
@@ -348,15 +220,6 @@ return escapeHtml(String(v));
 				const b = (recB && recB.values) ? recB.values[fieldName] : undefined;
 				const isResolvable = variant === 'diff' || variant === 'a-only' || variant === 'b-only';
 				const isSuppressed = variant === 'suppressed';
-
-
-
-
-
-
-
-
-
 
 				const fieldDefForA = ctx.fieldDefForA(fieldName);
 				const fieldDefForB = ctx.fieldDefForB(fieldName);
@@ -375,12 +238,6 @@ return 'auto-number';
 					return 'read-only';
 				};
 
-
-
-
-
-
-
 				let leftBtn = '';
 				if (variant === 'diff' || variant === 'b-only') {
 					if (!ctx.aIsTargetable) {
@@ -392,7 +249,6 @@ return 'auto-number';
 					}
 				}
 				let rightBtn = '';
-
 
 				if (!ctx.incoming && (variant === 'diff' || variant === 'a-only')) {
 					if (!ctx.bIsTargetable) {
@@ -407,13 +263,6 @@ return 'auto-number';
 					? '<div class="rdm-mid-actions">' + leftBtn + rightBtn + '</div>'
 					: '<div class="rdm-mid-actions rdm-mid-actions-empty"></div>';
 
-
-
-
-
-
-
-
 				const rowAction = ctx.incoming
 					? ''
 					: (isResolvable
@@ -424,9 +273,6 @@ return 'auto-number';
 				const rowActionsContent = rowAction
 					? '<div class="rdm-row-actions">' + rowAction + '</div>'
 					: '<div class="rdm-row-actions rdm-row-actions-empty"></div>';
-
-
-
 
 				let readOnlyBadge = '';
 				if (isResolvable && (!aIsWritable || !bIsWritable)) {
@@ -458,18 +304,8 @@ return 'auto-number';
 				);
 			}
 
-
-
-
-
-
-
-
 			function _renderBody(content, recA, recB) {
 				const scroll = content ? content.scrollTop : 0;
-
-
-
 
 				const overlay = content && content.closest('.record-diff-modal');
 				const incoming = !!(overlay && overlay.dataset.rdmIncoming === '1');
@@ -481,23 +317,13 @@ return 'auto-number';
 				const titleB = _titleFor(recB);
 				const subtitleA = (recA.label || recA.objectName) + ' #' + recordOrdinal(recA);
 
-
 				const subtitleB = incoming
 					? labelB
 					: (recB.label || recB.objectName) + ' #' + recordOrdinal(recB);
 
-
-
-
 				const fkResolver = _buildFkResolver();
 				const fieldDefForA = (name) => _fieldDef(recA.objectName, name);
 				const fieldDefForB = (name) => _fieldDef(recB.objectName, name);
-
-
-
-
-
-
 
 				const suppressedSet = _readSuppressedSet(recA.id, recB.id);
 				function _partitionBySuppressed(arr) {
@@ -517,17 +343,8 @@ kept.push(f);
 				const _pBOnly = _partitionBySuppressed(diff.bOnly);
 				const differing = _pDiff.kept;
 
-
-
-
-
 				const aOnly = incoming ? [] : _pAOnly.kept;
 				const bOnly = _pBOnly.kept;
-
-
-
-
-
 
 				const suppressed = _pDiff.suppressed
 					.concat(_pAOnly.suppressed)
@@ -538,16 +355,8 @@ kept.push(f);
 				const sharedCount = diff.shared.length;
 				const suppressedCount = suppressed.length;
 
-
-
-
-
-
 				const aIsTargetable = !isRecordPendingDelete(recA) && !recA._inaccessible;
 				const bIsTargetable = !isRecordPendingDelete(recB) && !recB._inaccessible;
-
-
-
 
 				const rowCtx = {
 					fieldDefForA,
@@ -567,9 +376,6 @@ kept.push(f);
 							' — comparison shows shared field names but values may not be semantically comparable.' +
 						'</div>'
 					: '';
-
-
-
 
 				const pendingDeleteBanner = (!aIsTargetable || !bIsTargetable)
 					? '<div class="rdm-banner rdm-banner-warn">' +
@@ -604,15 +410,6 @@ kept.push(f);
 							: '') +
 					'</div>';
 
-
-
-
-
-
-
-
-
-
 				const _isWritableTo = (fieldName, targetRec, getFieldDef) =>
 					_isFieldWritable(getFieldDef(fieldName), targetRec);
 				const aToBCount =
@@ -621,7 +418,6 @@ kept.push(f);
 				const bToACount =
 					differing.filter((f) => _isWritableTo(f, recA, fieldDefForA)).length +
 					bOnly.filter((f) => _isWritableTo(f, recA, fieldDefForA)).length;
-
 
 				const hasAnyBulk = incoming ? (bToACount > 0) : (aToBCount > 0 || bToACount > 0);
 				const aToBDisabled = aToBCount === 0 || !bIsTargetable;
@@ -651,12 +447,6 @@ kept.push(f);
 						'</div>'
 					: '';
 
-
-
-
-
-
-
 				const rowsHtml =
 					differing.map((f) => _renderRow(f, recA, recB, 'diff', rowCtx)).join('') +
 					aOnly.map((f) => _renderRow(f, recA, recB, 'a-only', rowCtx)).join('') +
@@ -673,12 +463,6 @@ kept.push(f);
 							: '<p class="rdm-empty-state">These records are identical on every field they share.</p>')
 						: '');
 
-
-
-
-
-
-
 				const countsBreakdownParts = [];
 				countsBreakdownParts.push('<span class="rdm-count rdm-count-diff">' + diffCount + '</span> differ');
 				if (aOnlyCount > 0) {
@@ -691,11 +475,6 @@ countsBreakdownParts.push('<span class="rdm-count rdm-count-b-only">' + bOnlyCou
 countsBreakdownParts.push('<span class="rdm-count rdm-count-suppressed">' + suppressedCount + '</span> ignored');
 }
 				const countsBreakdown = countsBreakdownParts.join(' · ');
-
-
-
-
-
 
 				const tableHead =
 					'<div class="rdm-table-head">' +
@@ -714,13 +493,6 @@ countsBreakdownParts.push('<span class="rdm-count rdm-count-suppressed">' + supp
 						'</div>' +
 						'<div class="rdm-th rdm-th-row-actions"></div>' +
 					'</div>';
-
-
-
-
-
-
-
 
 				const incomingBanner = incoming
 					? '<div class="rdm-banner">' +
@@ -744,22 +516,10 @@ countsBreakdownParts.push('<span class="rdm-count rdm-count-suppressed">' + supp
 						: tableHead + '<div class="rdm-rows">' + rowsHtml + '</div>') +
 					'<p class="rdm-search-empty" style="display:none">No fields match your search.</p>';
 
-
-
-
-
 				if (content) {
 content.scrollTop = scroll;
 }
 			}
-
-
-
-
-
-
-
-
 
 			function _applyCopy(side, fieldName, recA, recB, content) {
 				const source = side === 'a-to-b' ? recA : recB;
@@ -775,7 +535,6 @@ target.values = {};
 }
 
 				const _snap = pushUndo ? _snapField(target, fieldName) : null;
-
 
 				const newValue = source.values ? source.values[fieldName] : undefined;
 				target.values[fieldName] = newValue == null ? '' : newValue;
@@ -796,17 +555,6 @@ target.values = {};
 				_wireBodyHandlers(content, recA, recB);
 			}
 
-
-
-
-
-
-
-
-
-
-
-
 			function _applyBulkCopy(direction, recA, recB, content) {
 				const source = direction === 'a-to-b' ? recA : recB;
 				const target = direction === 'a-to-b' ? recB : recA;
@@ -818,13 +566,6 @@ return;
 }
 				const diff = computeRecordDiff(recA, recB);
 				const suppressedSet = _readSuppressedSet(recA.id, recB.id);
-
-
-
-
-
-
-
 
 				const eligible = [];
 				const getTargetFieldDef = (name) => _fieldDef(target.objectName, name);
@@ -853,7 +594,6 @@ return;
 target.values = {};
 }
 
-
 				const _snaps = pushUndo ? eligible.map((f) => ({ f: f, snap: _snapField(target, f) })) : null;
 				for (const f of eligible) {
 					const v = source.values ? source.values[f] : undefined;
@@ -876,15 +616,6 @@ target.values = {};
 				_wireBodyHandlers(content, recA, recB);
 			}
 
-
-
-
-
-
-
-
-
-
 			function _applyIgnore(fieldName, recA, recB, content) {
 				_suppressField(recA.id, recB.id, fieldName);
 				_renderBody(content, recA, recB);
@@ -895,20 +626,6 @@ target.values = {};
 				_renderBody(content, recA, recB);
 				_wireBodyHandlers(content, recA, recB);
 			}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function _applySearchFilter(content, query) {
 				const q = String(query || '').trim().toLowerCase();
@@ -929,9 +646,6 @@ target.values = {};
 						row.classList.add('rdm-row-hidden-by-search');
 					}
 				});
-
-
-
 
 				if (emptyMsg && rowsContainer) {
 					if (!q || anyVisible) {
@@ -1003,10 +717,6 @@ return;
 					});
 				});
 
-
-
-
-
 				const searchInput = content.querySelector('.rdm-search');
 				if (searchInput) {
 					searchInput.addEventListener('input', () => {
@@ -1015,16 +725,6 @@ return;
 					_applySearchFilter(content, searchInput.value);
 				}
 			}
-
-
-
-
-
-
-
-
-
-
 
 			function openRecordDiffModal(recA, recB, opts) {
 				if (!recA || !recB) {
@@ -1036,8 +736,6 @@ return;
 				const overlay = document.createElement('div');
 				overlay.className = 'modal record-diff-modal';
 				overlay.dataset.rdmFilter = 'diffs';
-
-
 
 				if (incoming) {
 					overlay.dataset.rdmIncoming = '1';

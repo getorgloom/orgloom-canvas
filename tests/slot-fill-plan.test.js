@@ -1,14 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { planSlotFills } from '../src/slot-helpers.js';
@@ -98,10 +87,6 @@ describe('planSlotFills — draft handling', () => {
 
 	test('skip-reason precedence: assignment is checked before loadedFromId presence', () => {
 
-
-
-
-
 		const out = planSlotFills({
 			records: [slotRec({
 				slotId: 1,
@@ -118,8 +103,6 @@ describe('planSlotFills — draft handling', () => {
 
 describe('planSlotFills — record coalescing', () => {
 	test('two slots on the same loadedFromId merge into one update row', () => {
-
-
 
 		const out = planSlotFills({
 			records: [
@@ -210,10 +193,6 @@ describe('planSlotFills — field allowlist enforcement', () => {
 	});
 
 	test('field-level slot with empty allowlist drops all incoming keys but still counts as applied', () => {
-
-
-
-
 
 		const out = planSlotFills({
 			records: [slotRec({
@@ -328,8 +307,6 @@ describe('planSlotFills — applied bookkeeping', () => {
 	});
 
 	test('fieldCount reflects attempted keys (pre-allowlist), not landed keys', () => {
-
-
 
 		const out = planSlotFills({
 			records: [slotRec({

@@ -1,9 +1,3 @@
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { escapeSoqlLiteral } from '../src/sf-soql.js';
@@ -34,17 +28,12 @@ describe('escapeSoqlLiteral — backslash', () => {
 
 	test('escapes a trailing backslash (would otherwise escape the closing quote)', () => {
 
-
-
-
 		assert.equal(escapeSoqlLiteral('foo\\'), 'foo\\\\');
 	});
 });
 
 describe('escapeSoqlLiteral — combined', () => {
 	test('escapes backslash before quote (order matters: \\ first, then \')', () => {
-
-
 
 		assert.equal(escapeSoqlLiteral("a\\'b"), "a\\\\\\'b");
 	});
@@ -57,9 +46,6 @@ describe('escapeSoqlLiteral — combined', () => {
 	});
 
 	test('idempotent on already-escaped input doubles the escapes (NOT a no-op)', () => {
-
-
-
 
 		const once = escapeSoqlLiteral("O'Brien");
 		const twice = escapeSoqlLiteral(once);
@@ -98,11 +84,6 @@ describe('escapeSoqlLiteral — null / undefined / non-string inputs', () => {
 describe('escapeSoqlLiteral — wildcards passed through (NOT escaped)', () => {
 	test('% is preserved (used as LIKE wildcard by callers)', () => {
 
-
-
-
-
-
 		assert.equal(escapeSoqlLiteral('100%'), '100%');
 	});
 
@@ -118,30 +99,20 @@ describe('escapeSoqlLiteral — wildcards passed through (NOT escaped)', () => {
 describe('escapeSoqlLiteral — defends against the classic injection attempts', () => {
 	test('OR injection: quote-break + clause-append', () => {
 
-
-
 		const malicious = "x' OR Id != null --";
 		const out = escapeSoqlLiteral(malicious);
 		assert.equal(out, "x\\' OR Id != null --");
-
-
 
 		assert.equal(out.match(/(?<!\\)'/g), null);
 	});
 
 	test('UNION injection attempt with terminating backslash + quote', () => {
 
-
-
-
 		const malicious = "a\\";
 		const out = escapeSoqlLiteral(malicious);
 
-
-
 		assert.equal(out, 'a\\\\');
 		const literal = "'" + out + "'";
-
 
 		assert.equal((literal.match(/'/g) || []).length, 2);
 	});

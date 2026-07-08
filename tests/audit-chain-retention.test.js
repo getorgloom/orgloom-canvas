@@ -1,13 +1,3 @@
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -57,7 +47,6 @@ describe('unchained (data-touching) rows', () => {
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
-
 
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created' });
 		const dataId = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'upload', chained: false });
@@ -110,8 +99,6 @@ describe('purgeExpired — chain-safe retention', () => {
 		const ws = await makeWorkspace(a.id);
 		const past = Date.now() - 1000;
 		const future = Date.now() + 1_000_000;
-
-
 
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: future });
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', expiresAt: past });
@@ -220,8 +207,6 @@ describe('concurrent chained writes', () => {
 		const { audit } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
-
-
 
 		await Promise.all(
 			Array.from({ length: 20 }, (_, i) =>

@@ -1,35 +1,7 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
-
-
-
-
-
 
 	const SYSTEM_FIELDS = new Set([
 		'Id',
@@ -39,10 +11,6 @@
 		'LastReferencedDate', 'LastViewedDate',
 		'IsDeleted',
 	]);
-
-
-
-
 
 	const MAX_RESULTS = 100;
 
@@ -98,8 +66,6 @@ throw new Error('canvas-search.mount: missing deps object');
 				}
 				renderResults();
 
-
-
 				requestAnimationFrame(() => {
 					input.focus();
 					input.select();
@@ -114,11 +80,6 @@ throw new Error('canvas-search.mount: missing deps object');
 					closeModal();
 				}
 			});
-
-
-
-
-
 
 			function recordLabel(rec) {
 				const v = (rec && rec.values) || {};
@@ -142,9 +103,6 @@ return String(v.CaseNumber);
 				return rec && rec.objectName ? '(unnamed ' + rec.objectName + ')' : '(unnamed)';
 			}
 
-
-
-
 			function search(query) {
 				const q = String(query || '').trim().toLowerCase();
 				if (!q) {
@@ -161,8 +119,6 @@ continue;
 					const label = recordLabel(rec);
 					const labelLower = label.toLowerCase();
 					const labelHit = labelLower.indexOf(q) !== -1;
-
-
 
 					let perRecordFieldHits = 0;
 					const values = (rec && rec.values) || {};
@@ -199,11 +155,6 @@ continue;
 						perRecordFieldHits++;
 					}
 
-
-
-
-
-
 					if (perRecordFieldHits === 0 && matches.length < MAX_RESULTS) {
 						if (labelHit) {
 							matches.push({
@@ -239,9 +190,6 @@ break;
 				}
 				return { matches, recordsScanned };
 			}
-
-
-
 
 			function renderMatchedValue(value, matchStart, matchLen) {
 				if (matchStart < 0) {
@@ -304,9 +252,6 @@ return;
 				});
 			}
 
-
-
-
 			let _debounce = null;
 			input.addEventListener('input', () => {
 				if (_debounce) {
@@ -324,11 +269,6 @@ return;
 first.click();
 }
 			});
-
-
-
-
-
 
 			function jumpToRecord(recordId) {
 				const cy = getCyInstance && getCyInstance();

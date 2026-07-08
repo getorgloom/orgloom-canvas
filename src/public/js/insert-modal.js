@@ -1,62 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -98,13 +39,8 @@
 			const showConfirmDialog = deps.showConfirmDialog;
 			const pushPresenceFocus = deps.pushPresenceFocus;
 
-
-
-
-
 			const _getCyInstance = typeof deps.getCyInstance === 'function' ? deps.getCyInstance : null;
 			const _getCyContainer = typeof deps.getCyContainer === 'function' ? deps.getCyContainer : null;
-
 
 			const modal = document.createElement('div');
 			modal.className = 'modal hidden';
@@ -114,15 +50,7 @@
 					'<div class="modal-header">' +
 						'<h3 id="modal-title">New record</h3>' +
 
-
-
-
-
-
 						'<div class="modal-subtitle" id="modal-subtitle"></div>' +
-
-
-
 
 						'<button class="modal-close" data-close title="Collapse to card" aria-label="Collapse to card">' +
 							'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">' +
@@ -133,13 +61,6 @@
 					'<div class="modal-content" id="modal-content"><p class="center">Loading…</p></div>' +
 					'<div class="modal-toast" id="modal-toast" hidden></div>' +
 					'<div class="modal-footer">' +
-
-
-
-
-
-
-
 
 						'<button class="button danger" id="modal-mark-delete" hidden style="margin-right:auto" title="Stages a Salesforce DELETE that ships with your next upload">Mark for delete</button>' +
 						'<button class="button secondary" data-close>Cancel</button>' +
@@ -153,14 +74,6 @@
 closeModal();
 } 
 });
-
-
-
-
-
-
-
-
 
 			const _markDeleteBtn = modal.querySelector('#modal-mark-delete');
 			function _updateMarkDeleteButton() {
@@ -219,19 +132,11 @@ return;
 				});
 			}
 
-
-
-
-
 			(function _installResizeHandles() {
 				const body = modal.querySelector('.modal-body');
 				if (!body) {
 return;
 }
-
-
-
-
 
 				const dirs = ['nw', 'ne', 'sw', 'se'];
 				dirs.forEach((dir) => {
@@ -276,16 +181,12 @@ newH = startH - dy;
 					modal.style.setProperty('--inline-width', newW + 'px');
 					modal.style.setProperty('--inline-height', newH + 'px');
 
-
-
 					_syncCyNodeSizeToModal();
 				};
 				const onUp = () => {
 					modal.classList.remove('is-resizing');
 					document.removeEventListener('mousemove', onMove);
 					document.removeEventListener('mouseup', onUp);
-
-
 
 					if (_inlineRenderHandler) {
 _inlineRenderHandler();
@@ -294,19 +195,6 @@ _inlineRenderHandler();
 				document.addEventListener('mousemove', onMove);
 				document.addEventListener('mouseup', onUp);
 			}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			let _inlineRecId = null;
 			let _inlineOutsideClickHandler = null;
@@ -329,37 +217,14 @@ return false;
 				_inlineRecId = rec.id;
 				_inlineCyNode = cyNode;
 
-
-
-
-
 				const _body = modal.querySelector('.modal-body');
 				if (_body) {
 _body.setAttribute('data-inline-rec-id', String(rec.id));
 }
 
-
-
-
-
-
-
-
-
 				cyNode.data('_inlineLocked', true);
 				_syncCyNodeSizeToModal();
 				_inlinePinToNode(cy, cyNode, container);
-
-
-
-
-
-
-
-
-
-
-
 
 				const _syncSelected = () => {
 					const card = container.querySelector(
@@ -370,30 +235,14 @@ _body.setAttribute('data-inline-rec-id', String(rec.id));
 				_inlineRenderHandler = () => _inlinePinToNode(cy, cyNode, container);
 				cy.on('render position', _inlineRenderHandler);
 
-
-
-
-
-
 				_inlineSelectObserver = new MutationObserver(_syncSelected);
 				_inlineSelectObserver.observe(container, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
 				_syncSelected();
-
 
 				const header = modal.querySelector('.modal-header');
 				if (header) {
 _attachInlineDrag(header, cy, cyNode, container);
 }
-
-
-
-
-
-
-
-
-
-
 
 				_inlineOutsideClickHandler = (ev) => {
 					if (!modal.classList.contains('is-inline')) {
@@ -408,16 +257,9 @@ return;
 return;
 }
 
-
-
-
-
 					if (t.closest('.fill-menu-popup, .find-object-popup, .anchored-popup')) {
 return;
 }
-
-
-
 
 					if (t.closest('.modal') && !t.closest('.modal').classList.contains('hidden')) {
 						const closestModal = t.closest('.modal');
@@ -432,8 +274,6 @@ return;
 				}, 0);
 				return true;
 			}
-
-
 
 			let _inlineCyNode = null;
 			function _syncCyNodeSizeToModal() {
@@ -464,10 +304,6 @@ return;
 				const rect = container.getBoundingClientRect();
 				let left = rect.left + rp.x;
 				let top = rect.top + rp.y;
-
-
-
-
 
 				const body = modal.querySelector('.modal-body');
 				const bodyW = body ? body.offsetWidth : 460;
@@ -500,7 +336,6 @@ top = vpH - margin - halfH;
 				let startNodeY = 0;
 				const onDown = (ev) => {
 
-
 					if (ev.target && ev.target.closest && ev.target.closest('[data-close]')) {
 return;
 }
@@ -524,7 +359,6 @@ return;
 					const dx = (ev.clientX - startClientX) / zoom;
 					const dy = (ev.clientY - startClientY) / zoom;
 					cyNode.position({ x: startNodeX + dx, y: startNodeY + dy });
-
 
 					const rec = canvasState.bulkRecords.find((r) => r.id === _inlineRecId);
 					if (rec) {
@@ -583,15 +417,6 @@ _body2.removeAttribute('data-inline-rec-id');
 }
 				modal.classList.remove('is-edge-link');
 
-
-
-
-
-
-
-
-
-
 				if (_inlineCyNode && _inlineRecId != null) {
 					_inlineCyNode.removeData('_inlineLocked');
 					const card = document.querySelector(
@@ -609,12 +434,6 @@ _body2.removeAttribute('data-inline-rec-id');
 				_inlineCyNode = null;
 				_inlineRecId = null;
 			}
-			
-
-
-
-
-
 
 			let _modalToastTimer = null;
 			function showModalToast(message, variant) {
@@ -630,7 +449,6 @@ return;
 				toastEl.textContent = message;
 				toastEl.hidden = false;
 
-
 				void toastEl.offsetWidth;
 				toastEl.classList.add('is-visible');
 				_modalToastTimer = setTimeout(() => {
@@ -642,7 +460,7 @@ toastEl.hidden = true;
 					}, 280);
 				}, 2800);
 			}
-			
+
 			let currentObject = null;
 			let currentFields = [];
 			let currentRules = [];
@@ -652,10 +470,6 @@ toastEl.hidden = true;
 			let currentRecordTypeId = null;
 			let currentLayout = null;
 			const layoutCache = {};
-
-
-
-
 
 			const _prefetchedLayoutKeys = new Set();
 			function _layoutCacheKey(objectName, recordTypeId, recordId) {
@@ -702,37 +516,11 @@ params.set('recordId', recordId);
 				}
 			}
 
-
-
 			let currentFormValues = {};
-
 
 			const sectionCollapsed = { optional: true, rules: true };
 
-
-
-
-
 			let modalEditMode = 'new';
-			
-
-
-
-			
-
-
-
-
-			
-
-
-
-
-
-
-
-
-
 
 			var _formula = (window.OrgLoom && window.OrgLoom.formula) || null;
 			if (!_formula) {
@@ -740,10 +528,6 @@ throw new Error('formula.js must load before app.js');
 }
 			var parseFormula = _formula.parseFormula;
 			var evalNode = _formula.evalNode;
-
-
-
-
 
 			function tryFixValidationRules(values, fieldList, rules) {
 				if (!Array.isArray(rules) || rules.length === 0) {
@@ -782,7 +566,7 @@ break;
 }
 				}
 			}
-			
+
 			function flipCmpOp(op) {
 				switch (op) {
 					case '>': return '<';
@@ -792,7 +576,7 @@ break;
 					default: return op;
 				}
 			}
-			
+
 			function extendStringTo(s, targetLen, cap) {
 				let out = s || '';
 				while (out.length < targetLen) {
@@ -803,7 +587,6 @@ out = out.slice(0, cap);
 }
 				return out;
 			}
-			
 
 			function tryMakeRuleFalse(node, values, fieldList) {
 				if (!node) {
@@ -852,13 +635,11 @@ return true;
 				}
 				return false;
 			}
-			
 
 			function tryMakeRuleTrue(node, values, fieldList) {
 				if (!node) {
 return false;
 }
-
 
 				if (node.k === 'call' && (node.name === 'ISBLANK' || node.name === 'ISNULL')) {
 					const arg = node.args[0];
@@ -869,7 +650,7 @@ return false;
 				}
 				return false;
 			}
-			
+
 			function tryFixComparison(node, values, fieldList) {
 				const { left, right, op } = node;
 				const isLen = (n) => n.k === 'call' && n.name === 'LEN' && n.args[0] && n.args[0].k === 'field';
@@ -941,7 +722,7 @@ return false;
 				}
 				return false;
 			}
-			
+
 			function tryParseRule(rule) {
 				try {
 					const tree = parseFormula(rule.formula || 'FALSE');
@@ -950,7 +731,7 @@ return false;
 					return { tree: null, error: e.message };
 				}
 			}
-			
+
 			function openInsertModal(objectName, opts) {
 				opts = opts || {};
 				currentObject = objectName;
@@ -962,19 +743,10 @@ return false;
 				sectionCollapsed.optional = true;
 				sectionCollapsed.rules = true;
 
-
 				modalEditMode = (canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId) ? 'existing' : 'new';
-
 
 				_exitInlineMode();
 				modal.classList.remove('hidden');
-
-
-
-
-
-
-
 
 				if (canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId) {
 					try {
@@ -986,11 +758,6 @@ return false;
 					} catch (_) {                               }
 				}
 
-
-
-
-
-
 				if (opts.record) {
 _enterInlineMode(opts.record);
 }
@@ -998,24 +765,18 @@ _enterInlineMode(opts.record);
 				modal.querySelector('#modal-submit').disabled = true;
 				modal.querySelector('#modal-content').innerHTML = '<p class="center">Loading fields…</p>';
 
-
-
-
 				_updateMarkDeleteButton();
-			
+
 				const encoded = encodeURIComponent(objectName);
-
-
 
 				const describePromise = ensureDescribe(objectName);
 				const rulesPromise = csrfFetch('/api/objects/' + encoded + '/validation-rules')
 					.then(r => r.ok ? r.json() : []);
-			
+
 				Promise.all([describePromise, rulesPromise])
 					.then(([describe, rules]) => {
 						currentFields = describe.fields;
 						currentRecordTypes = describe.recordTypes || [];
-
 
 						const draftRt = canvasState.currentRecordRef && canvasState.currentRecordRef.values && canvasState.currentRecordRef.values.RecordTypeId;
 						const savedRt = !canvasState.currentRecordRef && canvasState.savedRecords[currentObject] && canvasState.savedRecords[currentObject].RecordTypeId;
@@ -1034,13 +795,6 @@ _enterInlineMode(opts.record);
 							rulesUnavailable = null;
 						}
 
-
-
-
-
-
-
-
 						const _resolveTitle = () => {
 							if (!canvasState.currentRecordRef || !canvasState.currentRecordRef.values) {
 return null;
@@ -1058,12 +812,6 @@ return composed;
 return String(v[nf.name]);
 }
 
-
-
-
-
-
-
 							return v.Name || v.CaseNumber || v.OrderNumber || v.WorkOrderNumber || v.Subject || v.Title || null;
 						};
 						let titlePrefix;
@@ -1071,10 +819,6 @@ return String(v[nf.name]);
 						if (canvasState.currentRecordRef) {
 							const resolvedName = _resolveTitle();
 							titlePrefix = resolvedName || (describe.label + ' #' + recordOrdinal(canvasState.currentRecordRef));
-
-
-
-
 
 							const isExisting = !!canvasState.currentRecordRef.loadedFromId;
 							const isModified = isExisting && (typeof isRecordModified === 'function') && isRecordModified(canvasState.currentRecordRef);
@@ -1091,19 +835,10 @@ subtitleEl.textContent = subtitleText;
 }
 						_updateMarkDeleteButton();
 
-
-
-
 						const recId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
 						return fetchEditLayout(currentObject, currentRecordTypeId, recId)
 							.then((layout) => {
 								currentLayout = layout;
-
-
-
-
-
-
 
 								if (layout && layout.picklistValues && currentFields) {
 									currentFields.forEach((f) => {
@@ -1130,8 +865,6 @@ subtitleEl.textContent = subtitleText;
 								submitBtn.disabled = false;
 								if (getCanvasShareRole() === 'viewer') {
 
-
-
 									submitBtn.disabled = true;
 									submitBtn.title = 'View only — you can’t make changes to this canvas.';
 								} else if (canvasState.currentRecordRef && canvasState.currentRecordRef._recipientSlot
@@ -1140,11 +873,6 @@ subtitleEl.textContent = subtitleText;
 									submitBtn.title = 'Reserved for the assigned teammate — read-only for you.';
 								}
 
-
-
-
-
-
 								let initialValues = canvasState.currentRecordRef
 									? canvasState.currentRecordRef.values
 									: canvasState.savedRecords[currentObject];
@@ -1152,15 +880,12 @@ subtitleEl.textContent = subtitleText;
 								if (!hasExplicit && currentLayout && currentLayout.defaults && Object.keys(currentLayout.defaults).length > 0) {
 									initialValues = Object.assign({}, currentLayout.defaults);
 
-
 									if (canvasState.currentRecordRef) {
 										canvasState.currentRecordRef.values = Object.assign({}, initialValues, canvasState.currentRecordRef.values || {});
 									}
 								}
 								if (initialValues && Object.keys(initialValues).length > 0) {
 									populateForm(initialValues);
-
-
 
 									const hasDependents = currentFields.some(f => f.controllerName);
 									if (hasDependents) {
@@ -1175,11 +900,8 @@ rerenderFormPreservingValues();
 							'<div class="banner error">Failed to load fields: ' + escapeHtml(err.message) + '</div>';
 					});
 			}
-			
+
 			function closeModal() {
-
-
-
 
 				_exitInlineMode();
 				modal.classList.add('hidden');
@@ -1189,38 +911,21 @@ rerenderFormPreservingValues();
 				currentRecordTypes = [];
 				currentRecordTypeId = null;
 
-
 				try {
  pushPresenceFocus(null); 
 } catch (_) {                   }
 			}
-			
+
 			function renderForm(banner) {
 				const byLabel = (a, b) => a.label.localeCompare(b.label);
 				const isCompound = (f) => f && (f.type === 'address' || f.type === 'location');
 				const isWritable = (f) => modalEditMode === 'new' ? !!f.createable : !!f.updateable;
-
-
-
-
-
-
-
 
 				const partialFieldSet = (canvasState.currentRecordRef && Array.isArray(canvasState.currentRecordRef._loadedFieldNames))
 					? new Set(canvasState.currentRecordRef._loadedFieldNames)
 					: null;
 				const isPartialLoad = !!partialFieldSet;
 				const inPartial = (name) => !partialFieldSet || partialFieldSet.has(name);
-
-
-
-
-
-
-
-
-
 
 				const isStateCountryTextLegacy = (f) => {
 					if (!f || f.type !== 'string') {
@@ -1229,31 +934,12 @@ return false;
 					return currentFields.some(cf => cf.name === f.name + 'Code' && isPicklistLikeField(cf));
 				};
 
-
-
-
-
-
 				const regular = currentFields.filter(f =>
 					f.name !== 'RecordTypeId' && !isCompound(f) && !isStateCountryTextLegacy(f) && isWritable(f)
 					&& inPartial(f.name)
 				);
 				const required = regular.filter(f => f.required).sort(byLabel);
 				const optional = regular.filter(f => !f.required).sort(byLabel);
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const slotFieldNames = (() => {
 					const rec = canvasState.currentRecordRef;
@@ -1267,14 +953,6 @@ return null;
 					return new Set(Array.isArray(rec.slot.fields) ? rec.slot.fields : []);
 				})();
 				const slotLockNonSlot = !!(slotFieldNames && canvasState.currentRecordRef && canvasState.currentRecordRef._recipientSlot);
-
-
-
-
-
-
-
-
 
 				const slotFieldsInaccessible = (() => {
 					if (!slotFieldNames || slotFieldNames.size === 0) {
@@ -1290,29 +968,13 @@ n++;
 					return n;
 				})();
 
-
-
-
-
-
-
-
 				const slotAssignedToOther = !!(canvasState.currentRecordRef && canvasState.currentRecordRef._recipientSlot
 					&& _slotAssignmentState(canvasState.currentRecordRef) === 'other');
 
-
-
-
-
-
 				const viewerReadOnly = getCanvasShareRole() === 'viewer';
 				const forceReadOnly = slotAssignedToOther || viewerReadOnly;
-			
+
 				let html = banner ? banner : '';
-
-
-
-
 
 				if (isPartialLoad) {
 					const n = partialFieldSet.size;
@@ -1323,7 +985,6 @@ n++;
 						'To edit other fields, re-import via SOQL with <strong>Load all fields</strong> checked.' +
 						'</div>';
 				}
-
 
 				const _bannerProgressChip = (() => {
 					if (!slotFieldNames || slotFieldNames.size === 0) {
@@ -1336,9 +997,6 @@ return '';
 					return ' <span class="slot-progress ' + _slotProgressClass(sp) + '">' +
 						sp.filled + '/' + sp.total + '</span>';
 				})();
-
-
-
 
 				const _bannerLastModifiedHtml = (() => {
 					if (!slotFieldNames || slotFieldNames.size === 0) {
@@ -1370,8 +1028,6 @@ return '';
 					'</div>';
 				} else if (viewerReadOnly && slotFieldNames && slotFieldNames.size > 0) {
 
-
-
 					html += '<div class="banner info slot-banner">' +
 						'<strong>View only.</strong>' + _bannerProgressChip + ' ' +
 						'These fields were marked as slots, but this canvas was shared with you as view-only — they’re read-only for you.' +
@@ -1391,9 +1047,6 @@ return '';
 							(inaccessible === 1 ? "it can't" : "they can't") + ' be filled here.'
 						: '';
 					if (fillable <= 0) {
-
-
-
 
 						html += '<div class="banner warn slot-banner">' +
 							'<strong>' + (count === 1 ? 'The field marked for you isn’t' : 'None of the ' + count + ' fields marked for you are') +
@@ -1424,12 +1077,6 @@ return '';
 					'</div>';
 				}
 				html += '<form id="insert-form">';
-			
-
-
-
-
-
 
 				const loadedId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
 				if (modalEditMode === 'existing' && loadedId) {
@@ -1445,7 +1092,6 @@ return '';
 						'<button type="button" class="link-button" data-unlink-existing>Unlink</button>' +
 					'</div>';
 				}
-			
 
 				if (currentRecordTypes.length > 1) {
 					html += '<div class="field-section">' +
@@ -1465,11 +1111,6 @@ return '';
 						'</div>' +
 					'</div>';
 				}
-			
-
-
-
-
 
 				const useLayout = currentLayout && currentLayout.available && Array.isArray(currentLayout.sections) && currentLayout.sections.length > 0;
 				if (useLayout) {
@@ -1492,19 +1133,12 @@ return '';
 return '';
 }
 
-
-
-
 								if (!inPartial(cell.apiName)) {
 return '';
 }
 								renderedNames.add(cell.apiName);
 								const layoutEditable = modalEditMode === 'new' ? cell.editableForNew : cell.editableForUpdate;
 								const isSlotField = !!(slotFieldNames && slotFieldNames.has(cell.apiName));
-
-
-
-
 
 								const readOnly = !(layoutEditable && isWritable(f))
 									|| forceReadOnly
@@ -1524,9 +1158,6 @@ return;
 							'<div class="layout-rows">' + rowsHtml + '</div>' +
 						'</div>';
 					});
-
-
-
 
 					const remaining = regular.filter((f) => !renderedNames.has(f.name));
 					if (remaining.length > 0) {
@@ -1557,7 +1188,7 @@ return;
 							}).join('')) +
 					'</div>' +
 				'</div>';
-			
+
 				if (optional.length > 0) {
 					const optClass = sectionCollapsed.optional ? ' collapsed' : '';
 					html += '<div class="field-section collapsible' + optClass + '" data-section="optional">' +
@@ -1574,24 +1205,6 @@ return;
 					'</div>';
 				}
 				}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const _SYSTEM_FIELDS = new Set([
 					'Id',
@@ -1605,18 +1218,6 @@ return;
 					'MasterRecordId',
 				]);
 				const _orphanRecord = canvasState.currentRecordRef;
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const _isCrossOrgCarryover = !!(_orphanRecord && _orphanRecord._wasLoadedFromOrgId);
 				const _orphanValues = (_orphanRecord && _orphanRecord.values) || {};
@@ -1674,14 +1275,6 @@ return false;
 					'</div>';
 				}
 
-
-
-
-
-
-
-
-
 				const _migApi = window.Orgloom && window.Orgloom.canvasMigrate;
 				const _migRec = canvasState.currentRecordRef;
 				if (_migApi && _migApi.isActive() && _migRec) {
@@ -1692,7 +1285,6 @@ return false;
 					const _rtResolved = !!(_migRec._migrateRecordTypeId || _migRec._migrateClearRecordType);
 					if (_rtIssue || _plIssues.length || _rtResolved) {
 						let _migRows = '';
-
 
 						if (_rtIssue || _rtResolved) {
 							const _rtOpts = (currentRecordTypes || [])
@@ -1761,12 +1353,6 @@ return false;
 				html += renderRulesSectionHtml();
 
 				modal.querySelector('#modal-content').innerHTML = html;
-			
-
-
-
-
-
 
 				modal.querySelectorAll('[data-slot-lastmod-userid]').forEach((el) => {
 					const userId = el.dataset.slotLastmodUserid;
@@ -1781,7 +1367,7 @@ return;
 						placeholder.textContent = name;
 					});
 				});
-			
+
 				modal.querySelectorAll('[data-toggle]').forEach(h => {
 					h.addEventListener('click', () => {
 						const section = h.parentElement;
@@ -1797,23 +1383,12 @@ return;
 						e.preventDefault();
 						const assocId = parseInt(btn.dataset.disconnectAssoc, 10);
 
-
 						deleteAssociation(assocId);
 						rerenderFormPreservingValues();
 					});
 				});
 
-
-
-
-
-
-
 				modal.querySelectorAll('.lookup-picker').forEach(_wireLookupPicker);
-
-
-
-
 
 				const unlinkBtn = modal.querySelector('[data-unlink-existing]');
 				if (unlinkBtn) {
@@ -1832,7 +1407,6 @@ renderBulkView();
 				if (rtSelect) {
 					rtSelect.addEventListener('change', () => {
 						currentRecordTypeId = rtSelect.value;
-
 
 						const recId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
 						fetchEditLayout(currentObject, currentRecordTypeId, recId)
@@ -1856,12 +1430,6 @@ return;
 						b.textContent = hidden ? 'Hide formula' : 'Show formula';
 					});
 				});
-
-
-
-
-
-
 
 				modal.querySelectorAll('[data-orphan-target]').forEach((sel) => {
 					sel.addEventListener('change', () => {
@@ -1912,10 +1480,6 @@ renderBulkView();
 					});
 				});
 
-
-
-
-
 				function _afterMigrateRemap() {
 					const _m = window.Orgloom && window.Orgloom.canvasMigrate;
 					if (_m && _m.recompute) {
@@ -1961,14 +1525,13 @@ return;
 							delete rec._migratePicklistRemap[field][source];
 						} else {
 
-
 							rec._migratePicklistRemap[field][source] = v;
 						}
 						_afterMigrateRemap();
 					});
 				});
 			}
-			
+
 			function renderRulesSectionHtml() {
 				const count = currentRules.length;
 				const collapsedClass = (sectionCollapsed.rules && count > 0) ? ' collapsed' : '';
@@ -1978,11 +1541,6 @@ return;
 				} else if (count === 0) {
 					inner = '<div class="field-section-empty">No active validation rules for this object.</div>';
 				} else {
-
-
-
-
-
 
 					const disclaimer = '<div class="field-section-note">'
 						+ 'Predictions are client-side based on the values in this form. '
@@ -1998,17 +1556,6 @@ return;
 					'<div class="fields">' + inner + '</div>' +
 				'</div>';
 			}
-			
-
-
-
-
-
-
-
-
-
-
 
 			function renderRuleHtml(r, i) {
 				const formulaId = 'formula-' + i;
@@ -2041,15 +1588,13 @@ return;
 					errorMessage + description + formula +
 				'</div>';
 			}
-			
+
 			function wireLiveValidation() {
 				const form = modal.querySelector('#insert-form');
 				if (!form) {
 return;
 }
 				form.addEventListener('input', (e) => {
-
-
 
 					const div = e.target.closest && e.target.closest('.field[data-type="reference"]');
 					if (div) {
@@ -2059,10 +1604,6 @@ div.classList.remove('field-invalid-ref');
 				});
 				form.addEventListener('change', (e) => {
 					evaluateAllRules();
-
-
-
-
 
 					if (e.target.tagName !== 'SELECT') {
 return;
@@ -2075,7 +1616,6 @@ return;
 					const fieldDiv = e.target.closest('.field');
 					const changedName = fieldDiv && fieldDiv.dataset.field;
 
-
 					if (changedName === 'RecordTypeId') {
 return;
 }
@@ -2084,27 +1624,8 @@ return;
 
 				evaluateAllRules();
 			}
-			
-
-
-
-
-
-			
-
-
-
-
 
 			function rerenderFormPreservingValues() {
-
-
-
-
-
-
-
-
 
 				const recValues = (canvasState.currentRecordRef && canvasState.currentRecordRef.values) || {};
 				currentFormValues = Object.assign({}, recValues, collectFormValues());
@@ -2113,9 +1634,6 @@ return;
 				populateForm(currentFormValues);
 				evaluateAllRules();
 			}
-			
-
-
 
 			function updateRequiredFieldStyles() {
 				const form = modal.querySelector('#insert-form');
@@ -2137,7 +1655,7 @@ return;
 					div.classList.toggle('is-empty', empty);
 				});
 			}
-			
+
 			function evaluateAllRules() {
 				updateRequiredFieldStyles();
 				if (!currentRules.length) {
@@ -2156,23 +1674,6 @@ sb.style.display = 'none';
 					bulkRecords: canvasState.bulkRecords,
 					bulkAssociations: canvasState.bulkAssociations,
 				};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				let passing = 0, failing = 0, unknown = 0;
 				currentRules.forEach((r, i) => {
@@ -2241,9 +1742,6 @@ unknown++;
 						title = failing + ' rule' + (failing === 1 ? '' : 's') + ' would block upload on these values';
 					} else if (unknown > 0) {
 
-
-
-
 						cls = 'status-unknown';
 						text = unknown + ' to verify';
 						title = unknown + ' rule' + (unknown === 1 ? '' : 's') + " the engine can't evaluate client-side — Salesforce will check on upload";
@@ -2262,7 +1760,7 @@ unknown++;
 					summaryBadge.style.display = text ? '' : 'none';
 				}
 			}
-			
+
 			function renderFieldHtml(f, opts) {
 				const readOnly = !!(opts && opts.readOnly);
 				const isSlotField = !!(opts && opts.isSlotField);
@@ -2282,7 +1780,6 @@ unknown++;
 						'<button type="button" class="link-button" data-disconnect-assoc="' + lock.association.id + '">Disconnect</button> to edit manually.</div>'
 					: '';
 
-
 				const fullWidth = f.type === 'textarea' || f.type === 'multipicklist';
 				const classes = 'field'
 					+ (f.required ? ' required' : '')
@@ -2292,21 +1789,10 @@ unknown++;
 				const roAttr = readOnly ? ' data-readonly="true"' : '';
 				return '<div class="' + classes + '" data-field="' + escapeHtml(f.name) + '" data-type="' + escapeHtml(f.type) + '"' + roAttr + '>' + labelBlock + input + help + assocHelp + '</div>';
 			}
-			
-
-
-
-
-
 
 			function readOnlyInputForField(f) {
 				const id = 'f_' + escapeHtml(f.name);
 				const name = escapeHtml(f.name);
-
-
-
-
-
 
 				let targetAttr = '';
 				if (f.type === 'reference' && Array.isArray(f.referenceTo) && f.referenceTo[0]) {
@@ -2314,20 +1800,6 @@ unknown++;
 				}
 				return '<input type="text" id="' + id + '" name="' + name + '" disabled aria-readonly="true" value=""' + targetAttr + '>';
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function picklistValuesForField(f, ctxValues, rtIdOverride) {
 				const rtId = rtIdOverride || currentRecordTypeId;
@@ -2342,10 +1814,6 @@ unknown++;
 					const controllerVal = (ctxValues && ctxValues[f.controllerName])
 						|| (currentFormValues && currentFormValues[f.controllerName])
 						|| getControllerFieldValue(f.controllerName);
-
-
-
-
 
 					const ctrlMap = (f.controllerValuesByRecordType && rtId
 							&& f.controllerValuesByRecordType[rtId]
@@ -2369,8 +1837,6 @@ state = 'not-applicable';
 				}
 				return { values, state };
 			}
-			
-
 
 			function getControllerFieldValue(fieldName) {
 				const div = modal.querySelector('.field[data-field="' + CSS.escape(fieldName) + '"]');
@@ -2383,9 +1849,6 @@ return null;
 }
 				return el.value || null;
 			}
-			
-
-
 
 			function associationLockForField(fieldName) {
 				if (!canvasState.currentRecordRef) {
@@ -2398,7 +1861,7 @@ return null;
 				const target = canvasState.bulkRecords.find(r => r.id === assoc.toId);
 				return { association: assoc, target };
 			}
-			
+
 			function describeLinkedTarget(target) {
 				if (!target) {
 return '';
@@ -2408,20 +1871,6 @@ return '';
 					? String(nameVal) + ' \u00b7 ' + target.label + ' #' + recordOrdinal(target)
 					: target.label + ' #' + recordOrdinal(target);
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			const _lookupSearchCache = new Map();
 			function _wireLookupPicker(picker) {
@@ -2441,7 +1890,7 @@ return;
 				if (!hidden || !searchInput || !resultsBox || !selectedBox) {
 return;
 }
-			
+
 				function _showSearchMode() {
 					selectedBox.hidden = true;
 					searchInput.hidden = false;
@@ -2456,10 +1905,6 @@ return;
 					resultsBox.innerHTML = '';
 				}
 
-
-
-
-
 				if (hidden.value) {
 					_showSelectedMode(hidden.value);
 					_resolveLookupDisplay(targetObject, hidden.value).then((name) => {
@@ -2468,20 +1913,12 @@ return;
 						}
 					}).catch(() => {});
 				}
-			
+
 				clearBtn.addEventListener('click', () => {
 					hidden.value = '';
 					_showSearchMode();
 					setTimeout(() => searchInput.focus(), 0);
 				});
-			
-
-
-
-
-
-
-
 
 				const MIN_QUERY_LEN = 2;
 				let _searchTimer = null;
@@ -2508,22 +1945,13 @@ clearTimeout(_searchTimer);
 _runLookupSearch(q);
 }
 				});
-			
+
 				async function _runLookupSearch(q) {
-
-
-
-
-
-
 
 					const editing = canvasState.currentRecordRef;
 					const sourceRecordId = (editing && editing.loadedFromId && /^[a-zA-Z0-9]{15,18}$/.test(editing.loadedFromId))
 						? editing.loadedFromId
 						: null;
-
-
-
 
 					const cacheKey = sourceObject + '|' + fieldName + '|' + q + '|' + (sourceRecordId || '');
 					if (_lookupSearchCache.has(cacheKey)) {
@@ -2548,7 +1976,7 @@ _runLookupSearch(q);
 						_renderResults([]);
 					}
 				}
-			
+
 				function _renderResults(records) {
 					if (!records || records.length === 0) {
 						resultsBox.innerHTML = '<div class="lookup-result lookup-result--empty">No matches</div>';
@@ -2570,7 +1998,6 @@ _runLookupSearch(q);
 						});
 					});
 				}
-			
 
 				document.addEventListener('mousedown', (ev) => {
 					if (!picker.contains(ev.target)) {
@@ -2583,10 +2010,6 @@ resultsBox.hidden = true;
 }
 				});
 			}
-			
-
-
-
 
 			const _lookupDisplayCache = new Map();
 			async function _resolveLookupDisplay(targetObject, recordId) {
@@ -2611,9 +2034,6 @@ return _lookupDisplayCache.get(key);
 					return null;
 				}
 			}
-			
-
-
 
 			function fieldBounds(f) {
 				if (!f) {
@@ -2639,10 +2059,6 @@ return { min: -2147483648, max: 2147483647, stepAny: false };
 }
 				return null;
 			}
-			
-
-
-
 
 			function isPicklistLikeField(f) {
 				if (f.type === 'picklist' || f.type === 'multipicklist' || f.type === 'combobox') {
@@ -2660,7 +2076,7 @@ return true;
 				}
 				return false;
 			}
-			
+
 			function inputForField(f) {
 				const id = 'f_' + escapeHtml(f.name);
 				const name = escapeHtml(f.name);
@@ -2672,9 +2088,6 @@ return true;
 					const opts = picklistValues.map(pv => '<option value="' + escapeHtml(pv.value) + '"' + (pv.defaultValue ? ' selected' : '') + '>' + escapeHtml(pv.label) + '</option>').join('');
 					return '<select multiple size="4" id="' + id + '" name="' + name + '">' + opts + '</select>';
 				}
-
-
-
 
 				if (isPicklistLikeField(f)) {
 					const controllerField = f.controllerName ? currentFields.find(cf => cf.name === f.controllerName) : null;
@@ -2718,22 +2131,12 @@ return true;
 						return '<input type="email" id="' + id + '" name="' + name + '"' + maxlenAttr + def + '>';
 					case 'phone':
 
-
-
-
-
 						return '<input type="tel" id="' + id + '" name="' + name + '"' +
 							' placeholder="(555) 555-1234"' +
 							' pattern=".*\\d.*"' +
 							' title="Enter a phone number containing at least one digit."' +
 							maxlenAttr + def + '>';
 					case 'url':
-
-
-
-
-
-
 
 						return '<input type="text" inputmode="url" id="' + id + '" name="' + name + '"' + maxlenAttr + def + '>';
 					case 'textarea':
@@ -2744,26 +2147,6 @@ return true;
 							const display = describeLinkedTarget(lock.target);
 							return '<input type="text" id="' + id + '" name="' + name + '" value="' + escapeHtml(display) + '" readonly data-locked-assoc="' + lock.association.id + '">';
 						}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 						const targetObject = Array.isArray(f.referenceTo) && f.referenceTo[0] ? f.referenceTo[0] : '';
 						const sourceObject = currentObject || (canvasState.currentRecordRef && canvasState.currentRecordRef.objectName) || '';
@@ -2784,27 +2167,13 @@ return true;
 						return '<input type="text" id="' + id + '" name="' + name + '"' + maxlenAttr + def + '>';
 				}
 			}
-			
-
-
-
-
-
-
-
 
 			function sampleValueForField(f, fieldList, ctxValues, rtIdOverride, objectName) {
-
-
 
 				const randomDigits = String(Math.floor(Math.random() * 1e10)).padStart(10, '0');
 				const longSample = 'Auto-filled sample value ' + randomDigits;
 				const capped = (s) => (f.length && f.length > 0 && s.length > f.length) ? s.slice(0, f.length) : s;
 				const list = (Array.isArray(fieldList) && fieldList.length > 0) ? fieldList : (Array.isArray(currentFields) ? currentFields : []);
-
-
-
-
 
 				if (f.type === 'string' && list.length > 0) {
 					const codeSibling = list.find(cf => cf.name === f.name + 'Code' && isPicklistLikeField(cf));
@@ -2812,8 +2181,6 @@ return true;
 return null;
 }
 				}
-
-
 
 				const pv = picklistValuesForField(f, ctxValues, rtIdOverride).values;
 				if (Array.isArray(pv) && pv.length > 0) {
@@ -2856,16 +2223,12 @@ v = Math.trunc(v);
 					}
 					case 'reference':
 
-
-
 						return null;
 					case 'string':
 					default:
 						return capped(longSample);
 				}
 			}
-			
-
 
 			function isCustomField(f) {
 				if (!f) {
@@ -2876,7 +2239,6 @@ return true;
 }
 				return typeof f.name === 'string' && f.name.endsWith('__c');
 			}
-			
 
 			function fieldTypeFilter(fieldType) {
 				if (fieldType === 'standard') {
@@ -2887,11 +2249,6 @@ return (f) => isCustomField(f);
 }
 				return () => true;
 			}
-			
-
-
-
-
 
 			function showSeedMenu(triggerEl, onPick) {
 				document.querySelectorAll('.fill-menu-popup').forEach(el => el.remove());
@@ -2944,7 +2301,7 @@ cleanup();
 					document.addEventListener('keydown', onEsc, true);
 				}, 0);
 			}
-			
+
 			function showFillScopeMenu(triggerEl, onPick) {
 				document.querySelectorAll('.fill-menu-popup').forEach(el => el.remove());
 				const pop = document.createElement('div');
@@ -2987,7 +2344,7 @@ cleanup();
 					document.addEventListener('keydown', onEsc, true);
 				}, 0);
 			}
-			
+
 			function autoFillFields(scope, fieldType) {
 				const pick = scope === 'required'
 					? (f) => f.required
@@ -2995,7 +2352,6 @@ cleanup();
 						? (f) => !f.required
 						: () => true;
 				const typePick = fieldTypeFilter(fieldType);
-
 
 				const ordered = [
 					...currentFields.filter(f => !f.controllerName),
@@ -3014,13 +2370,11 @@ return;
 				populateForm(values);
 				evaluateAllRules();
 			}
-			
+
 			modal.querySelector('#modal-submit').addEventListener('click', () => {
 				if (!currentObject) {
 return;
 }
-
-
 
 				const form = modal.querySelector('#insert-form');
 				if (form && typeof form.checkValidity === 'function' && !form.checkValidity()) {
@@ -3029,9 +2383,6 @@ form.reportValidity();
 }
 					return;
 				}
-
-
-
 
 				const SF_ID_RE = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
 				const refErrors = [];
@@ -3079,12 +2430,6 @@ showBulkToast(msg, 'error');
 				if (canvasState.currentRecordRef) {
 					target = canvasState.currentRecordRef.label + ' #' + recordOrdinal(canvasState.currentRecordRef);
 
-
-
-
-
-
-
 					const isLoaded = !!canvasState.currentRecordRef.loadedFromId && canvasState.currentRecordRef.loadedValues;
 					if (isLoaded) {
 						const formFields = new Set();
@@ -3097,24 +2442,8 @@ formFields.add(div.dataset.field);
 						Object.keys(canvasState.currentRecordRef.loadedValues || {}).forEach(k => {
 							if (!formFields.has(k)) {
 
-
 								hidden[k] = canvasState.currentRecordRef.loadedValues[k];
 							} else {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 								const div = modal.querySelector('.field[data-field="' + CSS.escape(k) + '"]');
 								if (!div) {
@@ -3132,13 +2461,6 @@ return;
 						});
 						payload = Object.assign({}, hidden, payload);
 					}
-
-
-
-
-
-
-
 
 					const previousValues = canvasState.currentRecordRef.values || {};
 					const changed = changedFieldNames(payload, previousValues);
@@ -3175,7 +2497,7 @@ renderChips();
 renderBulkView();
 }
 			});
-			
+
 			function populateForm(values) {
 				if (!values) {
 return;
@@ -3202,11 +2524,6 @@ cb.checked = val === true || val === 'true';
 						}
 					} else if (ftype === 'reference') {
 
-
-
-
-
-
 						const picker = div.querySelector('.lookup-picker');
 						if (!picker) {
 							const lockedEl = div.querySelector('input[data-locked-assoc]');
@@ -3218,20 +2535,11 @@ return;
 return;
 }
 
-
-
-
-
-
-
-
 							const initial = val == null ? '' : val;
 							fallbackEl.value = initial;
 							const targetObject = fallbackEl.dataset && fallbackEl.dataset.targetObject;
 							if (targetObject && initial) {
 								_resolveLookupDisplay(targetObject, initial).then((name) => {
-
-
 
 									if (name && fallbackEl.value === initial) {
 										fallbackEl.value = name;
@@ -3262,9 +2570,6 @@ searchInput.hidden = false;
 }
 							return;
 						}
-
-
-
 
 						if (selectedLabel) {
 selectedLabel.textContent = hidden.value;
@@ -3304,13 +2609,10 @@ display = m[1];
 					}
 				});
 			}
-			
+
 			function collectFormValues() {
 				const out = {};
 				modal.querySelectorAll('.field').forEach(div => {
-
-
-
 
 					if (div.dataset.readonly === 'true') {
 return;
@@ -3335,13 +2637,10 @@ out[fname] = vals.join(';');
 return;
 }
 
-
-
 					if (el.dataset.lockedAssoc) {
 return;
 }
 					let v = el.value;
-
 
 					if (ftype === 'datetime' && typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) {
 						v = v + ':00.000Z';
@@ -3358,10 +2657,6 @@ out[fname] = v;
 				closeModal: closeModal,
 				showModalToast: showModalToast,
 				_prefetchLayoutForRecord: _prefetchLayoutForRecord,
-
-
-
-
 
 				tryParseRule: tryParseRule,
 				tryFixValidationRules: tryFixValidationRules,

@@ -1,19 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -91,8 +75,6 @@ describe('_buildBatchEntryFromResult — canonical-values preference', () => {
 
 	test('UPDATE with all values matching loadedValues → no entry (nothing changed)', () => {
 
-
-
 		const r = { tempId: 1, id: '001abc', objectName: 'Account', mode: 'update', success: true };
 		const rec = {
 			values: { Industry: 'Tech' },
@@ -104,9 +86,6 @@ describe('_buildBatchEntryFromResult — canonical-values preference', () => {
 		assert.equal(entry.uploadedValues, undefined);
 	});
 });
-
-
-
 
 function makeQueryConn(stateById) {
 	const calls = { queries: [] };
@@ -244,15 +223,10 @@ describe('_fetchCanonicalValuesForUpload', () => {
 		]);
 		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
 
-
-
 		assert.equal(out.size, 0);
 	});
 
 	test('field names from both rec.values AND rec.loadedValues are included in the SELECT', async () => {
-
-
-
 
 		const conn = makeQueryConn({
 			'001a': { Id: '001a' },
@@ -285,11 +259,6 @@ describe('_fetchCanonicalValuesForUpload', () => {
 		assert.equal(conn.calls.queries.length, 0);
 	});
 });
-
-
-
-
-
 
 import { _orderDeletesChildrenFirst } from '../src/canvas-routes.js';
 

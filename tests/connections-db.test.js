@@ -1,10 +1,3 @@
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { initTestDb, clearTestDb } from './helpers/db.js';
@@ -109,4 +102,3 @@ describe('connectionsDb.disable', () => {
 		assert.equal(all.length, 1, 'but is retained for history / audit references');
 	});
 });
-

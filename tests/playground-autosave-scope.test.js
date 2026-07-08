@@ -1,15 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -28,9 +16,6 @@ function makeStorage() {
 	};
 }
 
-
-
-
 function harness() {
 	const sessionStorage = makeStorage();
 	const localStorage = makeStorage();
@@ -45,8 +30,6 @@ function harness() {
 		window: win,
 		document: { addEventListener() {} },
 		console,
-
-
 
 		sessionStorage,
 		localStorage,
@@ -74,8 +57,6 @@ function harness() {
 	return { api, win, sessionStorage, canvasState };
 }
 
-
-
 function setScope(win, canvasState, { account, org, user }) {
 	win.ORGLOOM_ACCOUNT_ID = account;
 	win.SF_ORG_ID = org;
@@ -90,23 +71,19 @@ describe('autosave scope-namespacing (playground vs real)', () => {
 	test('opening the playground scope does NOT clear the real draft', () => {
 		const { api, win, sessionStorage, canvasState } = harness();
 
-
 		setScope(win, canvasState, REAL);
 		canvasState.bulkRecords = [{ id: 'r1', objectName: 'Account', values: { Name: 'Real Co' } }];
 		api.autosaveSchedule();
 		const realKeys = sessionStorage._dump().filter((k) => k.indexOf('orgloom:canvas-draft:v1') === 0);
 		assert.equal(realKeys.length, 1, 'one scoped draft key written');
 
-
 		setScope(win, canvasState, DEMO);
 		canvasState.bulkRecords = [];
 		const restoredDemo = api.autosaveRestore();
 		assert.equal(restoredDemo, false, 'no demo draft to restore');
 
-
 		const afterDemo = sessionStorage._dump().filter((k) => k.indexOf('orgloom:canvas-draft:v1') === 0);
 		assert.ok(afterDemo.includes(realKeys[0]), 'real scoped draft survives the playground visit');
-
 
 		setScope(win, canvasState, REAL);
 		canvasState.bulkRecords = [];
@@ -129,7 +106,6 @@ describe('autosave scope-namespacing (playground vs real)', () => {
 
 		const keys = sessionStorage._dump().filter((k) => k.indexOf('orgloom:canvas-draft:v1') === 0);
 		assert.equal(keys.length, 2, 'real and demo drafts under separate keys');
-
 
 		setScope(win, canvasState, REAL);
 		canvasState.bulkRecords = [];

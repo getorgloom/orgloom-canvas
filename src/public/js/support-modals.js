@@ -1,50 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -61,9 +14,6 @@
 			const csrfFetch = deps.csrfFetch;
 			const _RELATED_HARD_THRESHOLD = deps.relatedHardThreshold;
 			const _RELATED_BULK_LOAD_CAP = deps.relatedBulkLoadCap;
-
-
-
 
 			const promptModal = document.createElement('div');
 			promptModal.className = 'modal hidden';
@@ -116,8 +66,6 @@ return;
 				}
 			});
 
-
-
 			function showPromptModal({ title, label, placeholder, defaultValue, submitText, helpText } = {}) {
 				promptModal.querySelector('#prompt-modal-title').textContent = title || 'Enter a value';
 				promptModal.querySelector('#prompt-modal-label').textContent = label || 'Value';
@@ -139,17 +87,6 @@ return;
  promptResolver = resolve; 
 });
 			}
-
-
-
-
-
-
-
-
-
-
-
 
 			function showReplaceOrMergeDialog(info) {
 				return new Promise((resolve) => {
@@ -205,14 +142,6 @@ overlay.remove();
 					document.addEventListener('keydown', onEsc, true);
 				});
 			}
-
-
-
-
-
-
-
-
 
 			function showLargeRelatedConfirm({ targetLabel, count, hostLabel }) {
 				return new Promise((resolve) => {
@@ -277,11 +206,6 @@ overlay.remove();
 					document.addEventListener('keydown', onEsc, true);
 				});
 			}
-
-
-
-
-
 
 			function showRelatedSearchModal({ targetType, targetLabel, fkField, hostId, hostLabel, onPick }) {
 				const overlay = document.createElement('div');
@@ -382,11 +306,6 @@ status.textContent = 'Search failed: ' + (e.message || e);
 					timer = setTimeout(() => runSearch(q), 220);
 				});
 			}
-
-
-
-
-
 
 			function showBulkSwitchWarning({ recordCount, reasons }) {
 				return new Promise((resolve) => {

@@ -61,10 +61,6 @@ function csrfFetch(url, options) {
 		_autoSpawnedPending: false,
 		diffSuppressions: {},
 
-
-
-
-
 		migrateMode: {
 			active: false,
 			sourceSfOrgId: null,
@@ -73,11 +69,6 @@ function csrfFetch(url, options) {
 			summary: null,
 		},
 	};
-
-
-
-
-
 
 	const _autosave = window.OrgLoom.canvasAutosave.mount({
 		canvasState: canvasState,
@@ -166,7 +157,6 @@ function csrfFetch(url, options) {
 	const csvGuessObjectFromFilename = _csvi.csvGuessObjectFromFilename;
 	const csvAutoMapHeaders = _csvi.csvAutoMapHeaders;
 	const pingAuditEvent = _csvi.pingAuditEvent;
-
 
 	let basePickerFilter = {
 		text: "",
@@ -550,7 +540,6 @@ function csrfFetch(url, options) {
 			_loadCaps();
 		}
 	});
-
 
 	let _canvasShareCanvasId = null;
 	let _canvasShareRecipientHasAccount = false;
@@ -939,7 +928,6 @@ function csrfFetch(url, options) {
 			_meInfo = me;
 			const orgType = me.orgType || "unknown";
 
-
 			if (me.workspace && me.workspace.id) {
 				try {
 					const r = await csrfFetch(
@@ -1113,10 +1101,6 @@ function csrfFetch(url, options) {
 			.apply(this, args)
 			.then((res) => {
 
-
-
-
-
 				return res;
 			})
 			.finally(() => {
@@ -1126,7 +1110,6 @@ function csrfFetch(url, options) {
 				}
 			});
 	};
-
 
 	const GRAPH_ZOOM_MIN = 0.3;
 	const GRAPH_ZOOM_MAX = 1.5;
@@ -1139,8 +1122,6 @@ function csrfFetch(url, options) {
 	const RING_CLICK_DEBOUNCE_MS = 280;
 	const PAN_DURATION_MS = 850;
 	let _skipNextAutoFit = false;
-
-
 
 	let slotIdSeq = 1;
 	let _selectedDerivedEdge = null;
@@ -1227,14 +1208,6 @@ function csrfFetch(url, options) {
 				: "bec-step bec-step--active";
 			var _qDis = _sfOff ? ' disabled aria-disabled="true"' : "";
 			return (
-
-
-
-
-
-
-
-
 
 				'<div class="bulk-empty-placeholder" id="bulk-empty-placeholder" style="display:none">' +
 				'<div class="bulk-empty-card' +
@@ -2243,7 +2216,6 @@ function csrfFetch(url, options) {
 		renderAll();
 	}
 
-
 	function renderStepper() {}
 	function renderBaseChip() {}
 
@@ -2340,12 +2312,6 @@ function csrfFetch(url, options) {
 			});
 	}
 
-
-
-
-
-
-
 	function enterMigrateMode(opts) {
 		opts = opts || {};
 		canvasState.migrateMode.active = true;
@@ -2365,11 +2331,6 @@ function csrfFetch(url, options) {
 			renderBulkView();
 		}
 	}
-
-
-
-
-
 
 	function _renderMigrateBar() {
 		const bar = graph.querySelector("#migrate-mode-bar");
@@ -2432,12 +2393,6 @@ function csrfFetch(url, options) {
 		}
 	}
 
-
-
-
-
-
-
 	function recomputeMigrationAnnotationsSync() {
 		const engine = window.Orgloom && window.Orgloom.migrateAnnotate;
 		if (!engine || !canvasState.migrateMode.active) {
@@ -2467,10 +2422,6 @@ function csrfFetch(url, options) {
 		canvasState.migrateMode.summary = engine.summarize(anns);
 	}
 
-
-
-
-
 	function refreshMigrationAnnotations() {
 		const engine = window.Orgloom && window.Orgloom.migrateAnnotate;
 		if (!engine) {
@@ -2488,7 +2439,6 @@ function csrfFetch(url, options) {
 			names.map((n) => ensureDescribe(n).catch(() => null)),
 		).then(() => {
 			recomputeMigrationAnnotationsSync();
-
 
 			if (typeof renderBulkView === "function") {
 				renderBulkView();
@@ -2511,7 +2461,6 @@ function csrfFetch(url, options) {
 		}
 		return _smartDefaults[objectName + "." + fieldName] || null;
 	}
-
 
 	const rulesCache = {};
 	function ensureRules(name) {
@@ -2542,10 +2491,6 @@ function csrfFetch(url, options) {
 				return [];
 			});
 	}
-
-
-
-
 
 	const _assoc = window.OrgLoom.canvasAssociations.mount({
 		canvasState: canvasState,
@@ -2705,8 +2650,6 @@ function csrfFetch(url, options) {
 	function renderBulkView() {
 		_autosaveSchedule();
 
-
-
 		recomputeMigrationAnnotationsSync();
 		_renderMigrateBar();
 		const container = graph.querySelector("#graph-bulk");
@@ -2850,7 +2793,7 @@ function csrfFetch(url, options) {
 			panel.innerHTML = "";
 			return;
 		}
-	
+
 		const counts = new Map();
 		canvasState.bulkRecords.forEach((r) => {
 			if (!r || !r.isTypeNode) {
@@ -3354,24 +3297,16 @@ function csrfFetch(url, options) {
 		},
 	};
 
-
-
-
 	window.Orgloom.canvasMigrate = {
 		isActive: () => !!canvasState.migrateMode.active,
 		annotationFor: (recId) =>
 			canvasState.migrateMode.annotationsById[recId] || null,
 		summary: () => canvasState.migrateMode.summary,
 
-
-
 		recompute: () => recomputeMigrationAnnotationsSync(),
 		refresh: () => refreshMigrationAnnotations(),
 		exit: () => exitMigrateMode(),
 	};
-
-
-
 
 	if (window.OrgLoom && window.OrgLoom.migrateMatch && window.OrgLoom.migrateMatch.mount) {
 		const _mm = window.OrgLoom.migrateMatch.mount({
@@ -3445,10 +3380,6 @@ function csrfFetch(url, options) {
 		});
 		renderBulkView();
 	}
-
-
-
-
 
 	function _importFileSummary(parsed, isSavedCanvas) {
 		const lines = [];
@@ -3527,9 +3458,6 @@ function csrfFetch(url, options) {
 		return lines;
 	}
 
-
-
-
 	const _importShared = window.OrgLoom.importShared;
 	const _JSON_IMPORT_GATE = {
 		extRe: /\.json$/i,
@@ -3543,7 +3471,6 @@ function csrfFetch(url, options) {
 	function _gateCanvasImportFile(file) {
 		return _importShared.gateImportFile(file, _JSON_IMPORT_GATE);
 	}
-
 
 	const _captureCanvasUndoSnapshot = _importShared.makeUndoCapture({
 		canvasState: canvasState,
@@ -3564,26 +3491,16 @@ function csrfFetch(url, options) {
 			try {
 				const parsed = JSON.parse(String(reader.result || ""));
 
-
-
-
 				const isSavedCanvas =
 					parsed &&
 					(Array.isArray(parsed.loadedRecords) ||
 						Array.isArray(parsed.drafts));
-
-
-
-
 
 				if (isSavedCanvas) {
 					validateCanvasPayload(parsed);
 				} else {
 					validateTemplate(parsed);
 				}
-
-
-
 
 				let _mode = "replace";
 				const _hasContent =
@@ -3598,9 +3515,7 @@ function csrfFetch(url, options) {
 					}
 				}
 
-
 				const _undoImport = _captureCanvasUndoSnapshot();
-
 
 				const _opts = Object.assign(
 					{
@@ -3610,9 +3525,6 @@ function csrfFetch(url, options) {
 					},
 					opts || {},
 				);
-
-
-
 
 				if (
 					!isSavedCanvas &&
@@ -3640,8 +3552,6 @@ function csrfFetch(url, options) {
 			}
 		};
 
-
-
 		reader.onerror = () => {
 			_captureImportFailure("unreadable");
 			showBulkToast(
@@ -3653,10 +3563,6 @@ function csrfFetch(url, options) {
 		};
 		reader.readAsText(file);
 	}
-
-
-
-
 
 	function triggerTemplateFileInput(opts) {
 		opts = opts || {};
@@ -3700,9 +3606,6 @@ function csrfFetch(url, options) {
 			if (!file) {
 				return;
 			}
-
-
-
 
 			const gateError = _gateCanvasImportFile(file);
 			if (gateError) {
@@ -3748,13 +3651,6 @@ function csrfFetch(url, options) {
 			} catch (_e) {}
 		}, 0);
 	}
-
-
-
-
-
-
-
 
 	(function _mountCanvasFileDrop() {
 		const host = document.getElementById("graph-bulk");
@@ -3803,15 +3699,6 @@ function csrfFetch(url, options) {
 	var isRecordPendingCreate = _vc.isRecordPendingCreate;
 	var hasPendingChange = _vc.hasPendingChange;
 	var computeRecordDiff = _vc.computeRecordDiff;
-
-
-
-
-
-
-
-
-
 
 	function _hasUnsavedCanvasWork() {
 		if (_modifiedLoadedCount() > 0) {
@@ -3873,8 +3760,6 @@ function csrfFetch(url, options) {
 			ev.preventDefault();
 			const href = link.getAttribute("href") || "/workspace";
 			const modCount = _modifiedLoadedCount();
-
-
 
 			const message =
 				modCount > 0
@@ -4255,8 +4140,6 @@ function csrfFetch(url, options) {
 		}
 	}
 
-
-
 	const _marquee = window.OrgLoom.canvasMarquee.mount({
 		canvasState: canvasState,
 		getGraph: function () {
@@ -4270,8 +4153,6 @@ function csrfFetch(url, options) {
 		},
 		_canvasCapBlockReason: _canvasCapBlockReason,
 		showBulkToast: showBulkToast,
-
-
 
 		showPromptModal: function (opts) {
 			return showPromptModal(opts);
@@ -4292,10 +4173,6 @@ function csrfFetch(url, options) {
 			undoStack.shift();
 		}
 	}
-
-
-
-
 
 	function trimUndoStack(n) {
 		for (let i = 0; i < n && undoStack.length > 0; i++) {
@@ -4442,19 +4319,6 @@ function csrfFetch(url, options) {
 		return true;
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 	async function refreshRecordFromSf(rec) {
 		if (!rec || !rec.loadedFromId || !rec.objectName || rec.isPending || rec.pendingDelete) {
 			return;
@@ -4517,12 +4381,6 @@ function csrfFetch(url, options) {
 			return;
 		}
 
-
-
-
-
-
-
 		rec.values = Object.assign({}, result.values);
 		rec.loadedValues = Object.assign({}, result.values);
 		rec._deletedInSf = false;
@@ -4532,19 +4390,12 @@ function csrfFetch(url, options) {
 		renderBulkView();
 		showBulkToast("Refreshed " + (rec.objectName || "record") + ".");
 
-
 		setTimeout(() => {
 			if (rec._refreshPulse) {
 				rec._refreshPulse = false;
 			}
 		}, 1600);
 	}
-
-
-
-
-
-
 
 	async function openBulkRefreshFlow() {
 		const selectedIds = canvasState.bulkSelectedIds;
@@ -4626,7 +4477,6 @@ function csrfFetch(url, options) {
 					rec.values = Object.assign({}, result.values);
 					rec.loadedValues = Object.assign({}, result.values);
 					rec._deletedInSf = false;
-
 
 					rec._inaccessible = false;
 					rec._lastRefreshedAt = Date.now();
@@ -4854,10 +4704,6 @@ function csrfFetch(url, options) {
 		clearMarqueeElement();
 		canvasState.bulkMarquee = null;
 	});
-
-
-
-
 
 	const _cm = window.OrgLoom.canvasCardMenu.mount({
 		canvasState: canvasState,
@@ -5338,7 +5184,6 @@ function csrfFetch(url, options) {
 		_openSlotRecordPicker(rec, anchorEl);
 	}
 
-
 	async function _runSlotPreflight() {
 		_slotInaccessibleObjects.clear();
 		const slotObjects = new Set();
@@ -5801,18 +5646,15 @@ function csrfFetch(url, options) {
 		return { active, componentSelIds };
 	}
 
-
 	const _bs = window.OrgLoom.bulkScript.mount({
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
-
 
 		showBulkToastWithAction: showBulkToastWithAction,
 		renderBulkView: renderBulkView,
 		showConfirmDialog: showConfirmDialog,
 	});
 	const openBulkScriptModal = _bs.openModal;
-
 
 	const _rc = window.OrgLoom.relatedCounts.mount({
 		canvasState: canvasState,
@@ -6281,7 +6123,6 @@ function csrfFetch(url, options) {
 	const attachSfUserPicker = _csh.attachSfUserPicker;
 	const _shareDisclosureRecords = _csh._shareDisclosureRecords;
 
-
 	const _um = window.OrgLoom.uploadModal.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -6436,7 +6277,6 @@ function csrfFetch(url, options) {
 	const showUploadHistoryModal = _uh.openModal;
 	const _uh_testConfirmAndRecall = _uh._testConfirmAndRecall;
 
-
 	const _treeLayout = window.OrgLoom.treeLayout.mount({
 		canvasState: canvasState,
 		getCyInstance: function () {
@@ -6480,14 +6320,11 @@ function csrfFetch(url, options) {
 		relayoutNewRecords: relayoutNewRecords,
 		clearEmptyStarterCard: clearEmptyStarterCard,
 
-
-
 		openRecordDiffModal: openRecordDiffModal,
 	});
 	const openLinkedCsvModal = _lcsv.openModal;
 	const closeLinkedCsvModal = _lcsv.closeModal;
 	const _isLinkedCsvQuickUploadMode = _lcsv.isQuickUploadMode;
-
 
 	const _soql = window.OrgLoom.soqlImport.mount({
 		canvasState: canvasState,
@@ -6514,7 +6351,6 @@ function csrfFetch(url, options) {
 	const openSoqlImportModal = _soql.openModal;
 	const runAndCommitSoql = _soql.runAndCommitSoql;
 
-
 	const _rb = window.OrgLoom.recordBrowse.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -6530,7 +6366,6 @@ function csrfFetch(url, options) {
 		},
 	});
 	const openBrowseModal = _rb.openBrowseModal;
-
 
 	const _tpl = window.OrgLoom.templates.mount({
 		canvasState: canvasState,
@@ -6559,7 +6394,6 @@ function csrfFetch(url, options) {
 	const validateCanvasPayload = _tpl.validateCanvasPayload;
 	const applyTemplate = _tpl.applyTemplate;
 	const applyCanvasPayload = _tpl.applyCanvasPayload;
-
 
 	const _sd = window.OrgLoom.sessionDrafts.mount({
 		canvasState: canvasState,
@@ -6697,7 +6531,6 @@ function csrfFetch(url, options) {
 	});
 	const pushPresenceFocus = _presence.pushFocus;
 
-
 	const _aip = window.OrgLoom.aiProposals.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -6715,7 +6548,6 @@ function csrfFetch(url, options) {
 	const _refreshProposals = _aip.refreshProposals;
 	const _watchProposalsForCurrentCanvas = _aip.watchProposalsForCurrentCanvas;
 
-
 	if (window.OrgLoom.aiClarifications) {
 		window.OrgLoom.aiClarifications.mount({
 			canvasState: canvasState,
@@ -6724,7 +6556,6 @@ function csrfFetch(url, options) {
 			showBulkToast: showBulkToast,
 		});
 	}
-
 
 	const _bem = window.OrgLoom.bulkEditModal.mount({
 		canvasState: canvasState,
@@ -6822,23 +6653,14 @@ function csrfFetch(url, options) {
 
 	}
 
-
-
-
-
-
 	const _migrationResumed = _migrationResume ? _migrationResume() : false;
 	if (_migrationResumed) {
-
 
 		enterMigrateMode({
 			sourceSfOrgId: _migrationResumed.sourceSfOrgId || null,
 			targetSfOrgId:
 				_migrationResumed.targetSfOrgId || window.SF_ORG_ID || null,
 		});
-
-
-
 
 		const _msg = _migrationResumed.justArrived
 			? "Migration canvas restored — review, then upload to the destination org."
@@ -6884,7 +6706,6 @@ function csrfFetch(url, options) {
 	renderStepper();
 	renderAll();
 
-
 	document.addEventListener("click", (e) => {
 		const trigger =
 			e.target &&
@@ -6905,7 +6726,6 @@ function csrfFetch(url, options) {
 		setTimeout(() => openLinkedCsvModal({ quickUpload: true }), 0);
 	}
 
-
 	document.addEventListener("click", (e) => {
 		const trigger =
 			e.target &&
@@ -6917,7 +6737,6 @@ function csrfFetch(url, options) {
 		e.preventDefault();
 		showUploadHistoryModal();
 	});
-
 
 	document.addEventListener("click", (e) => {
 		const trigger =

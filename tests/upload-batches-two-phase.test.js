@@ -1,20 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { uploadBatchesStoreFromSfConnection } from '../src/storage/upload-batches-store.js';
@@ -29,8 +12,6 @@ const USER_ID = '005TESTUploader';
 
 before(initTestDb);
 beforeEach(clearTestDb);
-
-
 
 async function decodeWithKey(conn, versionDataB64, batchId) {
 	const buf = Buffer.from(versionDataB64, 'base64');
@@ -53,8 +34,6 @@ describe('upload-batches store — layer 4: VersionData-as-URL', () => {
 				deletedIds: [], associations: null,
 			});
 			const envBuf = Buffer.from(wConn.calls.sobjectCreates[0].payload.VersionData, 'base64');
-
-
 
 			const vdUrl = '/services/data/v60.0/sobjects/ContentVersion/068A/VersionData';
 			const rConn = makeKekConn({
@@ -85,7 +64,6 @@ describe('upload-batches store — two-phase write', () => {
 			const conn = makeKekConn({ creates: [{ success: true, id: '068O400000S8kK5IAJ' }], retrieves: [{ ContentDocumentId: DOC_ID }] });
 			const store = await uploadBatchesStoreFromSfConnection(conn, USER_ID, ORG_ID);
 
-
 			await store.createPending({
 				source: 'canvas-graph',
 				attemptId: 'att-xyz',
@@ -97,8 +75,6 @@ describe('upload-batches store — two-phase write', () => {
 			assert.equal(pending.attemptId, 'att-xyz');
 			assert.equal(pending.insertedIds.length, 0);
 			assert.deepEqual(pending.intendedRecords, [{ tempId: 1, objectName: 'Account' }]);
-
-
 
 			conn._queues.queries.push(
 				{ records: [{ Id: DOC_ID, Title: 't', OwnerId: USER_ID, CreatedDate: '2026-06-01T00:00:00Z' }] },

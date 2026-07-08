@@ -1,36 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -75,14 +42,6 @@ throw new Error('canvas-cap.mount: missing deps object');
 				return canvasState.bulkRecords.filter(r => !r.isTypeNode).length;
 			}
 
-
-
-
-
-
-
-
-
 			function canvasCapCheck(addCount) {
 				const current = _realRecordCount();
 				const n = Math.max(0, addCount || 0);
@@ -97,7 +56,6 @@ throw new Error('canvas-cap.mount: missing deps object');
 				}
 				return { ok: true, blocked: false, attempted: n, headroom: headroom, cap: _CANVAS_RECORD_CAP, reason: null };
 			}
-
 
 			function _canvasCapBlockReason(addCount) {
 				return canvasCapCheck(addCount).reason;

@@ -1,33 +1,7 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { execSync } from 'node:child_process';
 import jsforce from 'jsforce';
 
 const TEST_RULE_PREFIX = 'OrgLoomTest_';
-
-
-
-
-
-
-
-
-
-
-
 
 export function connectViaSfCli(alias) {
 	if (!alias) {
@@ -43,14 +17,8 @@ throw new Error('alias required');
 				env: {
 					...process.env,
 
-
 					SF_AUTO_UPDATE_DISABLE: 'true',
 					SF_AUTOUPDATE_DISABLE: 'true',
-
-
-
-
-
 
 					FORCE_COLOR: '0',
 					NO_COLOR: '1',
@@ -61,8 +29,6 @@ throw new Error('alias required');
 		const stderr = err.stderr ? err.stderr.toString() : '';
 		throw new Error(`sf org display failed for alias "${alias}": ${stderr || err.message}`);
 	}
-
-
 
 	const stripped = stdout.replace(/\[[0-9;]*m/g, '');
 	const startIdx = stripped.indexOf('{');
@@ -94,24 +60,15 @@ throw new Error('alias required');
 	});
 }
 
-
-
-
 let _ruleCounter = 0;
 export function nextTestRuleName() {
 	_ruleCounter += 1;
 	return `${TEST_RULE_PREFIX}${Date.now()}_${_ruleCounter}`;
 }
 
-
-
-
 export function sentinelErrorMessage(ruleName) {
 	return `SENTINEL_${ruleName}_FAILED`;
 }
-
-
-
 
 export async function deployValidationRule(conn, { objectName, ruleName, formula, errorMessage, description = 'OrgLoom integration test' }) {
 	const result = await conn.tooling.sobject('ValidationRule').create({
@@ -131,9 +88,6 @@ export async function deployValidationRule(conn, { objectName, ruleName, formula
 	return result.id;
 }
 
-
-
-
 export async function deleteValidationRule(conn, ruleId) {
 	if (!ruleId) {
 return;
@@ -147,9 +101,6 @@ return;
 		throw e;
 	}
 }
-
-
-
 
 export async function cleanupTestRules(conn, objectName) {
 	const soql = `SELECT Id, FullName FROM ValidationRule WHERE EntityDefinition.QualifiedApiName = '${objectName}'`;
@@ -166,19 +117,11 @@ await deleteValidationRule(conn, id);
 	return ids.length;
 }
 
-
-
-
-
-
-
-
 export async function tryInsert(conn, objectName, values) {
 	let result;
 	try {
 		result = await conn.sobject(objectName).create(values);
 	} catch (err) {
-
 
 		const errs = err && err.errors
 			? err.errors
@@ -191,7 +134,6 @@ return { ok: true, id: result.id };
 	const errs = (result && result.errors) || [];
 	return { ok: false, errors: errs };
 }
-
 
 export async function deleteRecord(conn, objectName, recordId) {
 	if (!recordId) {
@@ -207,17 +149,12 @@ return;
 	}
 }
 
-
-
-
-
 export async function waitForRuleActive(conn, objectName, failingValues, sentinel, { tries = 8, delayMs = 500 } = {}) {
 	for (let attempt = 0; attempt < tries; attempt++) {
 		const r = await tryInsert(conn, objectName, failingValues);
 		if (!r.ok && r.errors.some((e) => (e.message || '').includes(sentinel))) {
 			return;
 		}
-
 
 		if (r.ok) {
 await deleteRecord(conn, objectName, r.id);

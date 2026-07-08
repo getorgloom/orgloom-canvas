@@ -1,38 +1,7 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
-
-
 
 	const KEYABLE_TYPES = new Set([
 		'string', 'email', 'phone', 'url', 'textarea',
@@ -52,8 +21,6 @@
 		});
 		return map;
 	}
-
-
 
 	function _keyCandidates(describe) {
 		const fields = ((describe && describe.fields) || []).filter(
@@ -147,10 +114,7 @@
 				const rowsEl = overlay.querySelector('.mm-rows');
 				const summaryEl = overlay.querySelector('.mm-summary');
 
-
 				const _seqByObject = {};
-
-
 
 				const names = Array.from(objects.keys());
 				Promise.all(
@@ -189,8 +153,6 @@
 						'</div>';
 					}).join('');
 
-
-
 					overlay.querySelectorAll('.mm-row').forEach((row) => {
 						const name = row.getAttribute('data-mm-object');
 						const sel = row.querySelector('.mm-key-select');
@@ -206,10 +168,6 @@
 						});
 					});
 				}
-
-
-
-
 
 				async function _runMatchForObject(name, keyField, resultEl) {
 					const recs = objects.get(name) || [];
@@ -286,7 +244,6 @@
 					valByRec.forEach((val, rec) => {
 						if (Object.prototype.hasOwnProperty.call(matchesByValue, val)) {
 
-
 							rec.loadedFromId = matchesByValue[val];
 							rec._migrateMatchedId = matchesByValue[val];
 							rec._migrateMatchKey = keyField;
@@ -302,8 +259,6 @@
 							: (ambiguous.size ? ambiguous.size + ' ambiguous (left as new)' : 'no matches — all insert as new');
 					}
 				}
-
-
 
 				function _recomputeSummary() {
 					let updates = 0;
@@ -330,7 +285,6 @@
 						'</div>';
 				}
 			}
-
 
 			function _lookup(values, fieldName) {
 				if (!values || !fieldName) {

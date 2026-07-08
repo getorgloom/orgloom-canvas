@@ -1,13 +1,6 @@
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { transformToolingRecords } from '../src/validation-rules.js';
-
 
 function row({ id = '03dxxx', fullName = 'Account.Rule', name, active = true,
 	description = null, errorMessage = null, errorDisplayField = null,
@@ -42,7 +35,6 @@ describe('transformToolingRecords — input shapes', () => {
 
 	test('drops rows whose Metadata is null', () => {
 
-
 		const out = transformToolingRecords([
 			row({ name: 'real_rule' }),
 			row({ metadataNull: true }),
@@ -76,10 +68,6 @@ describe('transformToolingRecords — active filter', () => {
 	});
 
 	test('drops rules where active is missing (treats as false)', () => {
-
-
-
-
 
 		const rec = row({ name: 'string_active' });
 		rec.Metadata.active = 'true';
@@ -142,7 +130,6 @@ describe('transformToolingRecords — field mapping', () => {
 
 	test('falls back to FullName-derived name when Metadata.name is missing', () => {
 
-
 		const out = transformToolingRecords([
 			row({ name: undefined, fullName: 'Account.SSN_Validation' }),
 		]);
@@ -150,7 +137,6 @@ describe('transformToolingRecords — field mapping', () => {
 	});
 
 	test('handles multi-dot FullName by joining everything after the first segment', () => {
-
 
 		const out = transformToolingRecords([
 			row({ name: undefined, fullName: 'Account.Sub.Rule' }),
@@ -189,8 +175,6 @@ describe('transformToolingRecords — sorting', () => {
 	});
 
 	test('sort is stable across the active filter', () => {
-
-
 
 		const out = transformToolingRecords([
 			row({ name: 'gamma', active: false }),

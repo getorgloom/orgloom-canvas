@@ -1,6 +1,4 @@
-
 import crypto from "node:crypto";
-
 
 const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
@@ -117,7 +115,6 @@ export async function markRejected({ id }) {
 	_proposals.delete(id);
 	return true;
 }
-
 
 export async function markWithdrawn({ id }) {
 	if (!id) {

@@ -1,20 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function jsonRes(obj) {
 	return { ok: true, status: 200, async json() { return obj; } };
 }
@@ -56,9 +39,6 @@ export function installSfFetchStub() {
 	};
 }
 
-
-
-
 export function makeKekConn(initial = {}) {
 	const INSTANCE_URL = 'https://test.my.salesforce.com';
 	const calls = { queries: [], sobjectCreates: [], sobjectRetrieves: [], sobjectDestroys: [] };
@@ -71,8 +51,6 @@ export function makeKekConn(initial = {}) {
 		accessToken: 'TEST_TOKEN',
 		version: '60.0',
 		calls,
-
-
 
 		_queues: { queries: queryQueue, creates: createQueue, retrieves: retrieveQueue, destroys: destroyQueue },
 		async query(soql) {

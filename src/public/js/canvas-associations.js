@@ -1,30 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -191,12 +164,6 @@
 							renderBulkView();
 							return;
 						}
-
-
-
-
-
-
 
 						const remaining = all.filter((o) => {
 							const holderId = o.direction === 'fwd' ? srcRec.id : targetRec.id;

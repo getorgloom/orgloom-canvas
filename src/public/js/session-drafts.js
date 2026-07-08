@@ -1,52 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -58,10 +9,6 @@
 				throw new Error('session-drafts.mount: missing canvasState');
 			}
 			const canvasState = deps.canvasState;
-
-
-
-
 
 			function _storageKey(canvasId) {
 				return 'orgloom:draftValues:' + canvasId;
@@ -95,13 +42,8 @@ return;
 					}
 				} catch (_) {
 
-
 				}
 			}
-
-
-
-
 
 			function persistDraftValues(canvasId) {
 				if (!canvasId) {
@@ -130,9 +72,6 @@ continue;
 continue;
 }
 
-
-
-
 					const safe = {};
 					for (const k of Object.keys(values)) {
 						const v = values[k];
@@ -150,10 +89,6 @@ map[String(tid)] = safe;
 				}
 				_writeMap(canvasId, map);
 			}
-
-
-
-
 
 			function rehydrateDraftValues(canvasId) {
 				if (!canvasId) {
@@ -208,12 +143,6 @@ return;
  window.sessionStorage.removeItem(_storageKey(canvasId)); 
 } catch (_) {}
 			}
-
-
-
-
-
-
 
 			function _persistedTempIdOf(rec) {
 				if (rec._persistedTempId != null) {

@@ -1,22 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { uploadBatchesStoreFromSfConnection } from '../src/storage/upload-batches-store.js';
@@ -35,27 +16,15 @@ const BATCH_EXT = '.orgloom-batch.json';
 const ORG_ID = '00DTEST00000001';
 const USER_ID = '005TESTUploader';
 
-
-
-
-
 let _stub;
 before(initTestDb);
 before(() => { _stub = installSfFetchStub(); });
 after(() => { if (_stub) { _stub.restore(); } });
 beforeEach(clearTestDb);
 
-
-
-
 const TEST_KEK = makeSfApexKekProvider(makeKekConn());
 
-
-
 const mockConn = makeKekConn;
-
-
-
 
 async function decryptStoredBlob(versionDataB64, batchId) {
 	const buf = Buffer.from(versionDataB64, 'base64');
@@ -86,7 +55,6 @@ describe('upload-batches store — encryption on create', () => {
 		});
 		assert.equal(result.id, '069NEW');
 
-
 		const created = conn.calls.sobjectCreates[0];
 		const rawBuf = Buffer.from(created.payload.VersionData, 'base64');
 		assert.equal(isEncryptedEnvelope(rawBuf), true);
@@ -96,7 +64,6 @@ describe('upload-batches store — encryption on create', () => {
 			/insertedIds|integration smoke|LastName/,
 			'plaintext payload markers leaked into ciphertext',
 		);
-
 
 		const decrypted = await decryptStoredBlob(created.payload.VersionData, '069NEW');
 		assert.equal(decrypted.source, 'canvas');
@@ -122,7 +89,6 @@ describe('upload-batches store — encryption on create', () => {
 			/Upload-batch persist failed/,
 		);
 
-
 		const stranded = await batchKeys.get({ sfOrgId: ORG_ID, batchId: '069NEW', kekProvider: TEST_KEK });
 		assert.equal(stranded, null);
 	});
@@ -143,7 +109,6 @@ describe('upload-batches store — decryption on list / get', () => {
 			associations: null,
 		});
 		const writtenVersionData = writeConn.calls.sobjectCreates[0].payload.VersionData;
-
 
 		const readConn = mockConn({
 			queries: [{
@@ -166,7 +131,6 @@ describe('upload-batches store — decryption on list / get', () => {
 
 	test('list silently skips a row whose key has been wiped (returns 0 items, no crash)', async () => {
 
-
 		const dataKey = generateDataKey();
 		const envelope = encryptPayload(JSON.stringify({
 			externalId: 'x', source: 'canvas', recordCount: 0,
@@ -185,7 +149,6 @@ describe('upload-batches store — decryption on list / get', () => {
 			}],
 		});
 		const readStore = await uploadBatchesStoreFromSfConnection(readConn, USER_ID, ORG_ID);
-
 
 		const items = await readStore.list();
 		assert.equal(items.length, 0);
@@ -223,8 +186,6 @@ describe('upload-batches store — remove drops the wrapped key', () => {
 		await batchKeys.persist({ sfOrgId: ORG_ID, batchId: '069DELXXXXXXXXX', dataKey: generateDataKey(), kekProvider: TEST_KEK });
 		const before = await batchKeys.get({ sfOrgId: ORG_ID, batchId: '069DELXXXXXXXXX', kekProvider: TEST_KEK });
 		assert.ok(before, 'precondition: key should exist before remove');
-
-
 
 		const conn = mockConn({
 			queries: [

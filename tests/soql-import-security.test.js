@@ -1,17 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -22,17 +8,11 @@ let app;
 let server;
 let baseUrl;
 
-
-
-
-
 let injectFakeSf = false;
 let activeMock = null;
 
-
 let resetRateLimit = null;
 let RATE_LIMIT = null;
-
 
 let currentAccountId = 'acc_test';
 
@@ -61,8 +41,6 @@ function makeChildRows(n, type = 'Contact') {
 	return out;
 }
 
-
-
 function makeMockConn() {
 	const captured = { queries: [], retrieves: [] };
 	let nextQueryResult = { records: [], totalSize: 0, done: true };
@@ -77,7 +55,6 @@ function makeMockConn() {
 				{ relationshipName: 'Contacts', childSObject: 'Contact', field: 'AccountId' },
 
 				{ relationshipName: 'Tasks', childSObject: 'Task', field: 'WhatId' },
-
 
 				{ relationshipName: 'SetupAuditTrails', childSObject: 'SetupAuditTrail', field: 'CreatedById' },
 			],
@@ -115,7 +92,6 @@ function makeMockConn() {
 				captured.retrieves.push({ name, ids: Array.isArray(ids) ? ids.slice() : [ids] });
 				const arr = Array.isArray(ids) ? ids : [ids];
 
-
 				return arr.map((id) => ({ Id: id, Name: 'Full ' + id, Industry: 'Tech', attributes: { type: name } }));
 			},
 		}),
@@ -143,17 +119,12 @@ before(async () => {
 	ext.registerDbProvider(() => dbProvider());
 	ext.registerRawClientProvider(() => rawProvider());
 
-
-
 	ext.registerAuthProvider(async () => ({ id: currentAccountId, email: 'test@x.com' }));
 	ext.registerCapabilityResolver(async () => ({ allowed: true, role: 'admin', plan: 'team' }));
 
 	app = express();
 	app.use(express.json());
 	app.use((req, _res, next) => { req.session = {}; next(); });
-
-
-
 
 	app.use('/api/query', (req, _res, next) => {
 		if (injectFakeSf && activeMock) {
@@ -191,17 +162,10 @@ beforeEach(() => {
 	activeMock = makeMockConn();
 	currentAccountId = 'acc_test';
 
-
-
 	if (resetRateLimit) {
 		resetRateLimit();
 	}
 });
-
-
-
-
-
 
 describe('Finding #1 — safety LIMIT append is robust to string/subquery LIMITs', () => {
 	test('control: a query with no LIMIT gets " LIMIT 500" appended', async () => {
@@ -219,7 +183,6 @@ describe('Finding #1 — safety LIMIT append is robust to string/subquery LIMITs
 		const r = await post({ soql, fullFields: false });
 		assert.equal(r.status, 200);
 		const sent = activeMock.captured.queries[0];
-
 
 		assert.equal(sent, soql + ' LIMIT 500', 'safety LIMIT 500 appended despite the in-string LIMIT');
 	});
@@ -254,11 +217,6 @@ describe('Finding #1 — safety LIMIT append is robust to string/subquery LIMITs
 	});
 });
 
-
-
-
-
-
 describe('Finding #2 — silent truncation is now surfaced via `capped`', () => {
 	test('a capped 500-row result reports capped:true + truncated:true', async () => {
 		activeMock.setNextQueryResult({ records: makeRows(500), totalSize: 500, done: true });
@@ -288,9 +246,6 @@ describe('Finding #2 — silent truncation is now surfaced via `capped`', () => 
 		assert.equal(body.truncated, false);
 	});
 });
-
-
-
 
 describe('500-row cap boundary', () => {
 	test('exactly 500 records is accepted', async () => {
@@ -322,10 +277,6 @@ describe('500-row cap boundary', () => {
 		assert.equal(body.error, 'result-exceeds-cap');
 	});
 });
-
-
-
-
 
 describe('Finding #3 — denylist scope', () => {
 	test('control: ApexClass is blocked before any query runs', async () => {
@@ -370,10 +321,6 @@ describe('Finding #3 — denylist scope', () => {
 	});
 });
 
-
-
-
-
 describe('Finding #5 — full-fields rehydration amplifies the fetch', () => {
 	test('default fullFields=true triggers a retrieve() beyond the projection', async () => {
 		activeMock.setNextQueryResult({ records: makeRows(3), totalSize: 3, done: true });
@@ -385,11 +332,6 @@ describe('Finding #5 — full-fields rehydration amplifies the fetch', () => {
 		assert.ok('Industry' in body.records[0].values, 'rehydrated record gained a non-projected field');
 	});
 });
-
-
-
-
-
 
 describe('Finding #4 — sliding-window rate limit', () => {
 	test('requests up to the limit pass, then 429 with Retry-After', async () => {
@@ -430,10 +372,6 @@ describe('Finding #4 — sliding-window rate limit', () => {
 	});
 });
 
-
-
-
-
 describe('regex guards behave as intended', () => {
 	test('non-SELECT verb is rejected', async () => {
 		const r = await post({ soql: 'UPDATE Account SET Name = 1', fullFields: false });
@@ -468,8 +406,6 @@ describe('regex guards behave as intended', () => {
 
 	test('polymorphic subquery (Task via WhatId) is allowed and wires the edge', async () => {
 
-
-
 		const parent = makeRows(1)[0];
 		parent.Tasks = {
 			records: [{ Id: '00T000000000001AAA', Subject: 'Call', attributes: { type: 'Task' } }],
@@ -492,10 +428,6 @@ describe('regex guards behave as intended', () => {
 		assert.equal((await r.json()).error, 'soql-too-long');
 	});
 });
-
-
-
-
 
 describe('authz — no SF connection means no execution', () => {
 	test('POST with no active connection returns 409 and runs nothing', async () => {

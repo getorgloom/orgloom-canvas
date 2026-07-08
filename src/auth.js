@@ -1,23 +1,9 @@
-
-
-
-
 import jsforce from 'jsforce';
 import { config } from 'orgloom-canvas/config';
 
 const { OAuth2 } = jsforce;
 
-
-
-
-
-
-
 export function createOAuth2(loginUrlOverride) {
-
-
-
-
 
 	const cleaned = (loginUrlOverride || config.salesforce.loginUrl || '').trim();
 	return new OAuth2({

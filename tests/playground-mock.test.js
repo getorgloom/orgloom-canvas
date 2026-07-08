@@ -1,19 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -45,7 +29,6 @@ before(() => {
 		SF_USER_ID: '005DEMO000000000AAA',
 	};
 
-
 	windowShim.fetch = (input) => {
 		realFetchCalls.push(typeof input === 'string' ? input : input.url);
 		return Promise.resolve(new Response('{}', { status: 200 }));
@@ -66,7 +49,6 @@ before(() => {
 	assert.ok(W.OrgLoomMock, 'mock dataset loaded');
 	assert.equal(W.fetch.name, 'mockFetch', 'fetch interceptor installed');
 });
-
 
 async function call(method, path, body) {
 	const res = await W.fetch(ORIGIN + path, {
@@ -120,7 +102,6 @@ describe('dataset integrity — describes vs records', () => {
 					continue;
 				}
 				for (const target of f.referenceTo) {
-
 
 					assert.ok(
 						objectNames.has(target) || target === 'User',

@@ -1,11 +1,4 @@
-
-
-
-
 //     rejects (a) wrong secret, (b) revoked token, (c) expired token,
-
-
-
 
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -81,7 +74,6 @@ describe('mcpTokens.authenticate', () => {
 		const { mcpTokens } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const issued = await mcpTokens.issue({ accountId: a.id, name: 'cli' });
-
 
 		const stripped = issued.plaintext.slice('ol_mcp_'.length);
 		assert.equal(await mcpTokens.authenticate(stripped), null);

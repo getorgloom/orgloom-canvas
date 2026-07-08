@@ -1,18 +1,8 @@
-
-
-
-
-
-
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { ext } from '../src/extensions.js';
 
 beforeEach(() => ext._resetForTests());
-
-
-
-
 
 function mockApp() {
 	const calls = { use: [], set: {} };

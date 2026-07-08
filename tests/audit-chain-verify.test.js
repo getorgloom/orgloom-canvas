@@ -1,12 +1,3 @@
-
-
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -42,10 +33,6 @@ async function writeN(workspaceId, actorAccountId, n) {
 			action: 'test_event_' + i,
 			payload: { i },
 		}));
-
-
-
-
 
 		await new Promise((r) => setTimeout(r, 2));
 	}
@@ -96,7 +83,6 @@ describe('verifyChain — tamper detection', () => {
 		const ws = await makeWorkspace(a.id);
 		const ids = await writeN(ws.id, a.id, 5);
 
-
 		await ext.getDb()
 			.updateTable('audit_log')
 			.set({ payload_json: JSON.stringify({ i: 99, tampered: true }) })
@@ -133,14 +119,11 @@ describe('verifyChain — tamper detection', () => {
 		const ws = await makeWorkspace(a.id);
 		const ids = await writeN(ws.id, a.id, 5);
 
-
-
 		await ext.getDb().deleteFrom('audit_log').where('id', '=', ids[2]).execute();
 		const { audit } = await import('../src/database/index.js');
 		const result = await audit.verifyChain({ workspaceId: ws.id });
 		assert.equal(result.ok, false);
 		assert.equal(result.totalRows, 4);
-
 
 		assert.equal(result.brokenIndex, 2);
 	});
@@ -162,9 +145,6 @@ describe('verifyChain — tamper detection', () => {
 	});
 
 	test('mutating row N also surfaces a break — break propagates downstream', async () => {
-
-
-
 
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();

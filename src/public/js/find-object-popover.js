@@ -1,28 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -40,19 +15,10 @@
 			const addToSelection = deps.addToSelection;
 			const renderAll = deps.renderAll;
 
-
-
-
-
-
 			let _activeCleanup = null;
 
 			function showFindObjectPopover(triggerEl, opts) {
 				opts = opts || {};
-
-
-
-
 
 				const onPick = opts.onPick || (async (name) => {
 					await addToSelection(name);
@@ -61,7 +27,6 @@
 				const isAdded = opts.isAdded || ((name) => canvasState.selectedObjects.some((s) => s.name === name));
 				const headerText = opts.header || 'Find an object';
 				const subText = opts.sub || 'Adds any object to the schema, related or not. Use this to pick standalone objects alongside your FK-driven selections.';
-
 
 				if (_activeCleanup) {
 					try { _activeCleanup(); } catch (_) {                    }
@@ -73,15 +38,10 @@
 				const viewportW = window.innerWidth;
 				const viewportH = window.innerHeight;
 
-
-
 				const width = Math.min(360, viewportW - 16);
 				const left = Math.min(rect.left, viewportW - width - 8);
 				pop.style.left = Math.max(8, left) + 'px';
 				pop.style.width = width + 'px';
-
-
-
 
 				pop.style.top = '0px';
 				pop.innerHTML =
@@ -96,34 +56,13 @@
 						'</div>' +
 					'</div>' +
 
-
-
-
-
-
-
 					'<div class="fop-list" id="fop-list"><div class="fop-empty">Loading objects…</div></div>';
 				document.body.appendChild(pop);
 
-
-
-
-
-
-
 				{
-
-
-
-
 
 					const popH = Math.min(480, viewportH * 0.7) + 22;
 					const gap = 12;
-
-
-
-
-
 
 					const aboveExtraGap = 12;
 					const aboveExtraLeft = 100;
@@ -145,7 +84,7 @@ top = Math.max(8, viewportH - popH - 8);
 						pop.style.left = Math.max(8, shifted) + 'px';
 					}
 				}
-			
+
 				let typeFilter = 'all';
 				const search = pop.querySelector('#fop-search');
 				const list = pop.querySelector('#fop-list');
@@ -176,10 +115,6 @@ return true;
 						return;
 					}
 
-
-
-
-
 					if (canvasState.allObjects.length === 0 && canvasState._allObjectsError) {
 						var errMsg = (canvasState._allObjectsError.status === 409 || canvasState._allObjectsError.bodyError === 'no-active-connection')
 							? 'Salesforce session lost \u2014 reconnect from the SF chip above.'
@@ -191,15 +126,6 @@ return true;
 						list.innerHTML = '<div class="fop-empty">No matching objects.</div>';
 					} else {
 						list.innerHTML = capped.map((o) => {
-
-
-
-
-
-
-
-
-
 
 							const already = isAdded(o.name);
 							const onCanvas = canvasState.selectedObjects.some((s) => s.name === o.name);
@@ -213,16 +139,9 @@ return true;
 						}).join('');
 					}
 				};
-			
+
 				renderList();
 				setTimeout(() => search.focus(), 0);
-
-
-
-
-
-
-
 
 				let _lastSnap = canvasState.allObjects;
 				const _refreshTimer = setInterval(() => {
@@ -253,7 +172,7 @@ return;
 						showBulkToast('Failed to add ' + name + ': ' + (err.message || err), 'error');
 					}
 				});
-			
+
 				const cleanup = () => {
 					if (pop.parentNode) {
 pop.remove();

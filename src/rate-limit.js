@@ -1,21 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export function makeLimiter({ windowMs, max }) {
 	if (!Number.isFinite(windowMs) || windowMs <= 0) {
 throw new Error('windowMs required (positive number of ms)');
@@ -33,7 +15,6 @@ throw new Error('max required (positive number of attempts)');
 		if (!times) {
  times = []; buckets.set(k, times); 
 }
-
 
 		let drop = 0;
 		while (drop < times.length && times[drop] <= cutoff) {
@@ -58,7 +39,6 @@ buckets.set(k, times);
 }
 		return true;
 	}
-
 
 	function reset() {
  buckets.clear(); 

@@ -1,48 +1,7 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
 	if (!window.ORGLOOM_MOCK || !window.OrgLoomMock) {
-
-
 
 		return;
 	}
@@ -54,8 +13,6 @@
 		MOCK.records.Account.length + ' Accounts, ' +
 		MOCK.records.Contact.length + ' Contacts, ' +
 		MOCK.records.Opportunity.length + ' Opportunities loaded.');
-
-
 
 	function jsonResponse(body, init) {
 		const status = (init && init.status) || 200;
@@ -82,11 +39,6 @@
 		}, { status: 403 });
 	}
 
-
-
-
-
-
 	function idMatches(a, b) {
 		if (!a || !b) {
 return false;
@@ -94,47 +46,15 @@ return false;
 		return String(a).slice(0, 15) === String(b).slice(0, 15);
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 	const STORAGE_KEY = {
 		canvases: 'orgloom.playground.canvases',
 		uploads: 'orgloom.playground.uploads',
 		records: 'orgloom.playground.records',
 
-
-
 		preseedDeleted: 'orgloom.playground.preseedDeleted',
-
-
-
-
-
 
 		deletedSfIds: 'orgloom.playground.deletedSfIds',
 	};
-
-
-
-
-
-
-
-
-
-
-
-
 
 	const PRESEED_CANVAS_ID = '069PRESEED000000AAA';
 	const PRESEED_CANVAS_VERSION = '068PRESEED000000AAA';
@@ -156,17 +76,6 @@ return false;
 				preseed: true,
 			},
 
-
-
-
-
-
-
-
-
-
-
-
 			schema: {
 				objects: [
 					{ idx: 0, name: 'Account', label: 'Account', addedFromIdx: null, addedVia: null, worldPos: { x: 0, y: 0 } },
@@ -186,8 +95,6 @@ return false;
 
 				{ from: { kind: 'loaded', ref: '003000000000001AAA' }, to: { kind: 'loaded', ref: '001000000000001AAA' }, fieldName: 'AccountId' },
 				{ from: { kind: 'loaded', ref: '003000000000002AAA' }, to: { kind: 'loaded', ref: '001000000000001AAA' }, fieldName: 'AccountId' },
-
-
 
 				{ from: { kind: 'loaded', ref: '00T000000000001AAA' }, to: { kind: 'loaded', ref: '003000000000001AAA' }, fieldName: 'WhoId' },
 				{ from: { kind: 'loaded', ref: '00T000000000002AAA' }, to: { kind: 'loaded', ref: '003000000000002AAA' }, fieldName: 'WhoId' },
@@ -235,20 +142,6 @@ return false;
 } catch (_) {}
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	function _readTombstones() {
 		try {
 			const raw = window.localStorage.getItem(STORAGE_KEY.deletedSfIds);
@@ -289,9 +182,6 @@ return;
 		const overlay = readStore(STORAGE_KEY.records)[objectName] || [];
 		const tombstones = _readTombstones();
 
-
-
-
 		const notDeleted = (rec) => !(rec && rec.Id && tombstones.has(_idKey15(rec.Id)));
 		const liveCanned = canned.filter(notDeleted);
 		const liveOverlay = overlay.filter(notDeleted);
@@ -312,8 +202,6 @@ return rec;
 			return ov || rec;
 		});
 
-
-
 		const cannedIds = new Set();
 		for (const rec of liveCanned) {
 			if (rec && rec.Id) {
@@ -332,7 +220,6 @@ merged.push(rec);
 		return recordsFor(objectName).find((r) => idMatches(r.Id, id)) || null;
 	}
 
-
 	function appendRecord(objectName, record) {
 		const store = readStore(STORAGE_KEY.records);
 		if (!store[objectName]) {
@@ -342,9 +229,6 @@ store[objectName] = [];
 		writeStore(STORAGE_KEY.records, store);
 	}
 
-
-
-
 	function removeUserRecord(objectName, id) {
 		const store = readStore(STORAGE_KEY.records);
 		const list = store[objectName] || [];
@@ -353,11 +237,6 @@ store[objectName] = [];
 		writeStore(STORAGE_KEY.records, store);
 		return store[objectName].length < before;
 	}
-
-
-
-
-
 
 	function nextUploadIdSuffix() {
 		const meta = readStore('orgloom.playground.meta');
@@ -378,8 +257,6 @@ store[objectName] = [];
 		return MOCK.describes[objectName] || null;
 	}
 
-
-
 	function nameFieldFor(objectName) {
 		const desc = findDescribe(objectName);
 		if (!desc) {
@@ -389,14 +266,7 @@ return 'Name';
 		return (nf && nf.name) || 'Name';
 	}
 
-
-
 	function handleMe() {
-
-
-
-
-
 
 		return jsonResponse({
 			account: {
@@ -414,7 +284,6 @@ return 'Name';
 				displayName: 'Acme Demo Sandbox',
 				email: 'demo@orgloom.local',
 				orgType: 'sandbox',
-
 
 				sf_org_id: MOCK.demoOrgId,
 				sf_user_id: MOCK.demoUserId,
@@ -442,19 +311,6 @@ return 'Name';
 		return jsonResponse({ capabilities: buildPlaygroundCapabilities() });
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 	function buildPlaygroundCapabilities() {
 		return {
 			'connect-sf-org': true,
@@ -480,8 +336,6 @@ return 'Name';
 
 	function handleObjectsList() {
 
-
-
 		const list = MOCK.objects.map((o) => ({
 			name: o.name,
 			label: o.label,
@@ -500,19 +354,8 @@ return 'Name';
 			return jsonResponse({ error: 'unknown-object', message: 'No describe for ' + objectName + ' in the demo dataset.' }, { status: 404 });
 		}
 
-
-
 		return jsonResponse(desc);
 	}
-
-
-
-
-
-
-
-
-
 
 	function handleLayout(objectName, params) {
 		const layout = MOCK.layouts && MOCK.layouts[objectName];
@@ -522,8 +365,6 @@ return 'Name';
 		}
 		const recordId = (params && params.get) ? params.get('recordId') : null;
 		const recordTypeId = (params && params.get) ? params.get('recordTypeId') : null;
-
-
 
 		const picklistValues = {};
 		if (desc && Array.isArray(desc.fields)) {
@@ -543,9 +384,6 @@ return;
 			});
 		}
 
-
-
-
 		const defaults = {};
 		if (recordId) {
 			const rec = findRecord(objectName, recordId);
@@ -557,8 +395,6 @@ defaults[k] = rec[k];
 				});
 			}
 		}
-
-
 
 		const resolvedRecordTypeId = recordTypeId
 			|| (desc && Array.isArray(desc.recordTypeInfos) && desc.recordTypeInfos[0] && desc.recordTypeInfos[0].recordTypeId)
@@ -573,9 +409,6 @@ defaults[k] = rec[k];
 			picklistValues,
 		});
 	}
-
-
-
 
 	function handleGraph(objectName) {
 		const desc = findDescribe(objectName);
@@ -650,13 +483,9 @@ return jsonResponse({ records: [], nameField: 'Name' });
 
 	function handleLookup(objectName, params) {
 
-
-
 		const fieldName = params.get('fieldName');
 		const q = (params.get('q') || '').toLowerCase().trim();
 		const sourceRecordId = params.get('sourceRecordId');
-
-
 
 		const sourceDesc = findDescribe(objectName);
 		if (!sourceDesc) {
@@ -723,13 +552,6 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 
 	function handleAiStatus() {
 
-
-
-
-
-
-
-
 		return jsonResponse({
 			enabled: true,
 			model: 'mock',
@@ -738,21 +560,8 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		});
 	}
 
-
-
-
-
-
-
-
-
-
 	function handleSfUsersSearch(params) {
 		const q = (params && params.get && params.get('q')) || '';
-
-
-
-
 
 		const demoUsers = [
 			{ id: '005DEMO000000001', name: 'Alex Chen', email: 'alex@example.com', username: 'alex.chen@example.com' },
@@ -768,12 +577,8 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 
 	function handleCanvasShareLinks() {
 
-
-
 		return jsonResponse({ shares: [], directShares: [] });
 	}
-
-
 
 	function handleCanvasList() {
 		const store = readStore(STORAGE_KEY.canvases);
@@ -789,9 +594,6 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 				createdAt: c.createdAt,
 				updatedAt: c.updatedAt,
 			}));
-
-
-
 
 		const userHasPreseed = !!store[PRESEED_CANVAS.id];
 		const items = userItems.slice();
@@ -811,8 +613,6 @@ return jsonResponse({ error: 'name-required' }, { status: 400 });
 			return jsonResponse({ error: 'payload-required' }, { status: 400 });
 		}
 
-
-
 		const id = '069' + String(nextUploadIdSuffix()).padStart(12, '0') + 'AAA';
 		const versionId = '068' + String(nextUploadIdSuffix()).padStart(12, '0') + 'AAA';
 		const now = Date.now();
@@ -831,8 +631,6 @@ return jsonResponse({ error: 'name-required' }, { status: 400 });
 		const body = await req.json().catch(() => ({}));
 		const store = readStore(STORAGE_KEY.canvases);
 		let existing = store[canvasId];
-
-
 
 		if (!existing && canvasId === PRESEED_CANVAS.id && !preseedIsDeleted()) {
 			existing = {
@@ -882,27 +680,17 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		});
 	}
 
-
-
-
-
-
-
 	function handleCanvasClarifications() {
 		return jsonResponse({ clarifications: [] });
 	}
-
 
 	function handleCanvasProposals() {
 		return jsonResponse({ proposals: [] });
 	}
 
-
 	function handleAuditEvent() {
 		return jsonResponse({ ok: true });
 	}
-
-
 
 	function handleMcpRelay() {
 		return jsonResponse({ ok: true });
@@ -920,26 +708,17 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 			writeStore(STORAGE_KEY.canvases, store);
 		}
 
-
-
-
 		if (isPreseed) {
 markPreseedDeleted();
 }
 		return jsonResponse({ ok: true });
 	}
 
-
-
-
-
-
 	function processUploadedRecord(rec, idMap) {
 		if (!rec || !rec.objectName) {
 			return { tempId: rec && rec.tempId, success: false, error: 'no-object' };
 		}
 		const newId = rec.loadedFromId || mockNewId(rec.objectName);
-
 
 		const resolved = {};
 		Object.keys(rec.values || {}).forEach((k) => {
@@ -953,7 +732,6 @@ markPreseedDeleted();
 				resolved[k] = v;
 			}
 		});
-
 
 		const overlay = Object.assign({}, resolved, {
 			Id: newId,
@@ -975,22 +753,12 @@ markPreseedDeleted();
 		};
 	}
 
-
-
-
-
-
-
-
 	function processDelete(del) {
 		if (!del || !del.sfId) {
 			return { tempId: del && del.tempId, success: false, error: 'Missing sfId' };
 		}
 		tombstone(del.sfId);
 		if (del.objectName) {
-
-
-
 
 			removeUserRecord(del.objectName, del.sfId);
 		}
@@ -1013,8 +781,6 @@ markPreseedDeleted();
 				mode: r.mode || 'create',
 				label: null,
 			}));
-
-
 
 		const deletedIds = (deletes || [])
 			.filter((d) => d && d.success && d.sfId)
@@ -1059,8 +825,6 @@ return null;
 		const idMap = {};
 		const results = records.map((rec) => processUploadedRecord(rec, idMap));
 
-
-
 		const deleteResults = deletes.map(processDelete);
 		const batchId = recordBatch(results, associations, directUpload ? 'csv-direct' : 'canvas', body.note, deleteResults);
 		return jsonResponse({
@@ -1094,8 +858,6 @@ return null;
 
 	async function handleUploadBulk(req) {
 
-
-
 		const body = await req.json().catch(() => ({}));
 		const records = Array.isArray(body.records) ? body.records : [];
 		const deletes = Array.isArray(body.deletes) ? body.deletes : [];
@@ -1115,11 +877,6 @@ return null;
 		const body = await req.json().catch(() => ({}));
 		const records = Array.isArray(body.records) ? body.records : [];
 
-
-
-
-
-
 		return jsonResponse({
 			ok: true,
 			results: records.map((r) => ({ tempId: r.tempId, success: true, objectName: r.objectName })),
@@ -1127,8 +884,6 @@ return null;
 			total: records.length,
 		});
 	}
-
-
 
 	function handleBatchesList() {
 		const store = readStore(STORAGE_KEY.uploads);
@@ -1139,9 +894,6 @@ return null;
 				createdAt: b.createdAt, status: b.status, source: b.source,
 				recordCount: b.recordCount, note: b.note,
 				recalledAt: b.recalledAt, sfOrgId: b.sfOrgId,
-
-
-
 
 				insertedCount: Array.isArray(b.insertedIds) ? b.insertedIds.length : 0,
 				deletedCount: Array.isArray(b.deletedIds) ? b.deletedIds.length : 0,
@@ -1186,11 +938,6 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 return jsonResponse({ error: 'already-recalled' }, { status: 409 });
 }
 
-
-
-
-
-
 		const results = [];
 		let succeeded = 0;
 		for (const ins of (b.insertedIds || [])) {
@@ -1205,9 +952,6 @@ return jsonResponse({ error: 'already-recalled' }, { status: 409 });
 				});
 				succeeded++;
 			} else {
-
-
-
 
 				results.push({
 					tempId: ins.tempId,
@@ -1244,12 +988,7 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		return jsonResponse({ ok: true });
 	}
 
-
-
 	async function handleAiPlan(req) {
-
-
-
 
 		const body = await req.json().catch(() => ({}));
 		const objectCounts = body.recordCounts || body.objectCounts || {};
@@ -1271,8 +1010,6 @@ continue;
 				const tempId = tempCounter.n++;
 				const values = {};
 
-
-
 				Object.keys(template).forEach((k) => {
 					if (k === 'Id' || k === 'CreatedDate' || k === 'LastModifiedDate' || k === 'SystemModstamp') {
 return;
@@ -1285,7 +1022,6 @@ return;
 }
 					values[k] = template[k];
 				});
-
 
 				const tag = '-G' + String(Math.floor(Math.random() * 9000) + 1000);
 				if (values.Name) {
@@ -1301,10 +1037,6 @@ values.Company = values.Company + tag;
 				tempIdsByObject[objectName].push(tempId);
 			}
 		}
-
-
-
-
 
 		const accountTempIds = tempIdsByObject.Account || [];
 		if (accountTempIds.length > 0) {
@@ -1324,30 +1056,10 @@ values.Company = values.Company + tag;
 		});
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	async function handleQuery(req) {
 		const body = await req.json().catch(() => ({}));
 		const fullFields = body.fullFields === false ? false : true;
 		const soql = String(body.soql || '');
-
-
-
 
 		const fromMatch = soql.match(/FROM\s+([A-Za-z][A-Za-z0-9_]*)/i);
 		const queryObject = fromMatch ? fromMatch[1] : 'Account';
@@ -1356,10 +1068,6 @@ values.Company = values.Company + tag;
 			? Array.from(inMatch[1].matchAll(/'([^']+)'/g)).map((m) => m[1])
 			: null;
 		const hasContactsSubquery = /\(\s*SELECT[\s\S]*FROM\s+Contacts\s*\)/i.test(soql);
-
-
-
-
 
 		function projectValues(source, fieldList) {
 			if (fullFields) {
@@ -1383,9 +1091,6 @@ v[f] = source[f];
 			return v;
 		}
 
-
-
-
 		if (explicitIds && explicitIds.length > 0) {
 			const allRecords = recordsFor(queryObject);
 			const wanted = new Set(explicitIds);
@@ -1407,13 +1112,6 @@ v[f] = source[f];
 				fullFields,
 			});
 		}
-
-
-
-
-
-
-
 
 		if (hasContactsSubquery && queryObject === 'Account') {
 			const PARENT_OBJECT = 'Account';
@@ -1468,9 +1166,6 @@ v[f] = source[f];
 			});
 		}
 
-
-
-
 		const allRecords = recordsFor(queryObject);
 		const tempCounter = { n: 1 };
 		const records = allRecords.map((rec) => ({
@@ -1490,11 +1185,6 @@ v[f] = source[f];
 		});
 	}
 
-
-
-
-
-
 	async function handleBrowse(req) {
 		const body = await req.json().catch(() => ({}));
 		const objectName = String(body.objectName || '').trim();
@@ -1506,8 +1196,6 @@ v[f] = source[f];
 			return jsonResponse({ error: 'invalid-object-name' }, { status: 400 });
 		}
 		const allRecords = recordsFor(objectName);
-
-
 
 		function _matches(rec, filt) {
 			if (!filt || !filt.field) {
@@ -1537,8 +1225,6 @@ return true;
 		}
 		let matching = allRecords.filter((rec) => filters.every((f) => _matches(rec, f)));
 
-
-
 		if (sort && sort.field) {
 			const dir = sort.direction === 'desc' ? -1 : 1;
 			matching = matching.slice().sort((a, b) => {
@@ -1560,18 +1246,14 @@ return dir * (av - bv);
 		}
 		const count = matching.length;
 
-
 		const onCanvasSet = new Set(Array.isArray(body.onCanvasIds) ? body.onCanvasIds : []);
 		const loadableCount = onCanvasSet.size
 			? matching.filter((rec) => !onCanvasSet.has(rec.Id)).length
 			: count;
 		const page = matching.slice(offset, offset + limit);
 
-
-
 		const previewFields = ['Id'];
 		const sample = page[0] || matching[0] || {};
-
 
 		const nameCandidate = ['Name', 'Subject', 'Title', 'CaseNumber'].find((n) => sample[n] !== undefined);
 		if (nameCandidate) {
@@ -1586,7 +1268,6 @@ break;
 			}
 		}
 
-
 		const projected = page.map((rec) => {
 			const out = {};
 			previewFields.forEach((fn) => {
@@ -1596,11 +1277,6 @@ out[fn] = rec[fn];
 });
 			return out;
 		});
-
-
-
-
-
 
 		const orderClause = sort && sort.field
 			? ' ORDER BY ' + sort.field + ' ' + (sort.direction === 'desc' ? 'DESC' : 'ASC')
@@ -1618,91 +1294,60 @@ out[fn] = rec[fn];
 		});
 	}
 
-
-
-
-
-
-
-
-
-
 	const ROUTES = [
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/me' && handleMe() },
 
-
 		{ method: 'GET', match: (u) => u.pathname === '/api/me/capabilities' && handleMeCapabilities() },
 
-
 		{ method: 'GET', match: (u) => u.pathname === '/api/objects' && handleObjectsList() },
-
 
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/describe$/);
 			return m && handleDescribe(decodeURIComponent(m[1]));
 		}},
 
-
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/graph$/);
 			return m && handleGraph(decodeURIComponent(m[1]));
 		}},
-
 
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/layout$/);
 			return m && handleLayout(decodeURIComponent(m[1]), u.searchParams);
 		}},
 
-
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/search$/);
 			return m && handleSearch(decodeURIComponent(m[1]), u.searchParams.get('q'));
 		}},
-
 
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/lookup$/);
 			return m && handleLookup(decodeURIComponent(m[1]), u.searchParams);
 		}},
 
-
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/records\/([^/]+)$/);
 			return m && handleRecord(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
 		}},
-
 
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/related-count$/);
 			return m && handleRelatedCount(decodeURIComponent(m[1]), u.searchParams);
 		}},
 
-
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/related-counts' && handleRelatedCountsPost(req) },
-
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/limits' && handleLimits() },
 
-
 		{ method: 'GET', match: (u) => u.pathname === '/api/ai/status' && handleAiStatus() },
-
-
-
-
-
-
-
-
-
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/sf/users/search' && handleSfUsersSearch(u.searchParams) },
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/canvas\/[^/]+\/share-links$/);
 			return m && handleCanvasShareLinks();
 		}},
-
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/canvas' && handleCanvasList() },
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/canvas' && handleCanvasCreate(req) },
@@ -1719,7 +1364,6 @@ out[fn] = rec[fn];
 			return m && handleCanvasDelete(decodeURIComponent(m[1]));
 		}},
 
-
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/canvas\/[^/]+\/clarifications$/);
 			return m && handleCanvasClarifications();
@@ -1732,16 +1376,13 @@ out[fn] = rec[fn];
 
 		{ method: 'POST', match: (u) => u.pathname === '/api/audit-event' && handleAuditEvent() },
 
-
 		{ method: 'POST', match: (u) => u.pathname === '/api/mcp/relay/register' && handleMcpRelay() },
 		{ method: 'POST', match: (u) => u.pathname === '/api/mcp/relay/unregister' && handleMcpRelay() },
-
 
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/upload' && handleUpload(req) },
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/upload/graph' && handleUploadGraph(req) },
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/upload/bulk' && handleUploadBulk(req) },
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/upload/preflight' && handleUploadPreflight(req) },
-
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/upload-batches' && handleBatchesList() },
 		{ method: 'GET', match: (u) => {
@@ -1761,17 +1402,12 @@ out[fn] = rec[fn];
 			return m && handleBatchDelete(decodeURIComponent(m[1]));
 		}},
 
-
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/ai/plan' && handleAiPlan(req) },
-
 
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/query' && handleQuery(req) },
 
-
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/browse' && handleBrowse(req) },
 	];
-
-
 
 	window.fetch = function mockFetch(input, init) {
 		const method = ((init && init.method) || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
@@ -1784,14 +1420,9 @@ out[fn] = rec[fn];
 			return _realFetch(input, init);
 		}
 
-
-
 		if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) {
 			return _realFetch(input, init);
 		}
-
-
-
 
 		for (const route of ROUTES) {
 			if (route.method !== method) {
@@ -1808,8 +1439,6 @@ continue;
 return Promise.resolve(result);
 }
 		}
-
-
 
 		return Promise.resolve(notImplemented(method, url.pathname));
 	};

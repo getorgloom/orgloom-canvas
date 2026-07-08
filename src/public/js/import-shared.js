@@ -1,26 +1,7 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
-
-
-
-
 
 	function gateImportFile(file, opts) {
 		const extRe = opts.extRe;
@@ -36,10 +17,6 @@
 		return null;
 	}
 
-
-
-
-
 	function captureImportFailure(flow, reason, message) {
 		try {
 			if (window.posthog && window.posthog.capture) {
@@ -51,11 +28,6 @@
 			}
 		} catch (_e) {}
 	}
-
-
-
-
-
 
 	function admitAssociation(usedFk, fromId, toId, fieldName) {
 		if (fromId == null || toId == null) {
@@ -72,7 +44,6 @@
 		return true;
 	}
 
-
 	function skipSuffix(skippedRecords, skippedAssoc) {
 		const dropped = [];
 		if (skippedRecords > 0) {
@@ -85,11 +56,6 @@
 			? ' Skipped ' + dropped.join(' and ') + " that couldn't be read or resolved."
 			: '';
 	}
-
-
-
-
-
 
 	function makeUndoCapture(deps) {
 		const canvasState = deps.canvasState;
@@ -110,7 +76,6 @@
 				canvasState.selectedObjects = snap.selectedObjects;
 				canvasState.selectedIdSeq = snap.selectedIdSeq;
 				canvasState.activeIndex = snap.activeIndex;
-
 
 				canvasState.hiddenObjects.clear();
 				snap.hiddenObjects.forEach(function (v) {

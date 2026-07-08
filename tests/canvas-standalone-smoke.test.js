@@ -1,19 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -27,8 +11,6 @@ let baseUrl;
 before(async () => {
 	await initTestDb();
 
-
-
 	const dbProvider = ext.getDb;
 	const rawProvider = ext.getRawClient;
 	ext._resetForTests();
@@ -37,7 +19,6 @@ before(async () => {
 
 	app = express();
 	app.use(express.json());
-
 
 	app.use((req, _res, next) => {
  req.session = {}; next(); 
@@ -68,8 +49,6 @@ describe('canvas-only routes mount and respond', () => {
 
 	test('GET /api/setup → 200 or 404 (page route, not 500)', async () => {
 		const r = await fetch(baseUrl + '/api/setup');
-
-
 
 		assert.ok(r.status === 200 || r.status === 401 || r.status === 404);
 	});

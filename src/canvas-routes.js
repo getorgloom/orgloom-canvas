@@ -1,22 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { ext } from './extensions.js';
 import { connections as connectionsDb } from './database/index.js';
 import { audit as auditDb } from './database/index.js';
@@ -33,16 +14,6 @@ import { canvasStoreFromSfConnection } from './storage/canvas-store.js';
 import { uploadBatchesStoreFromSfConnection } from './storage/upload-batches-store.js';
 import { stripDraftsForNonOwner, planSlotFills } from './slot-helpers.js';
 import { recordsToShareFromManifest } from './sf-record-share.js';
-
-
-
-
-
-
-
-
-
-
 
 let workspacesDb = null;
 let usageDb = null;
@@ -64,10 +35,7 @@ try {
 	_saasAvailable = true;
 } catch (_e) {
 
-
-
 }
-
 
 import { isEnabled as anthropicEnabled, getClient as getAnthropicClient, ANTHROPIC_MODEL } from './anthropic-client.js';
 import {
@@ -103,12 +71,6 @@ import { makeLimiter } from './rate-limit.js';
 
 import { withSfRetry } from './sf-upload.js';
 
-
-
-
-
-
-
 function _summarizeCanvasPayload(payload) {
 	if (!payload || typeof payload !== 'object') {
 		return { cardCount: 0, draftCount: 0, objectCounts: {} };
@@ -135,18 +97,6 @@ function _summarizeCanvasPayload(payload) {
 	return summary;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 async function _findCanvasShareGrant(req, canvasId) {
 	if (!req.sf || !req.sf.sfUserId || !req.sf.sfOrgId) {
 return null;
@@ -172,11 +122,6 @@ return null;
 	}
 }
 
-
-
-
-
-
 async function _removeSfShareForRecipient(store, canvasId, recipientSfUserId) {
 	if (!recipientSfUserId || typeof store.listShares !== 'function' || typeof store.removeShare !== 'function') {
 		return 0;
@@ -192,23 +137,14 @@ async function _removeSfShareForRecipient(store, canvasId, recipientSfUserId) {
 	return removed;
 }
 
-
-
-
-
 async function requireSfConnection(req, res, next) {
 	try {
-
-
-
 
 		if (req.sf && req.sf.conn) {
 			return next();
 		}
 		const bundle = await getActiveSfConnection(req);
 		if (!bundle) {
-
-
 
 			return res.status(409).json({
 				error: 'no-active-connection',
@@ -222,11 +158,6 @@ async function requireSfConnection(req, res, next) {
 }
 }
 
-
-
-
-
-
 async function requireSfConnectionUnlessDraft(req, res, next) {
 	const id = req.params && req.params.id;
 	if (id && /^draft-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
@@ -235,18 +166,7 @@ async function requireSfConnectionUnlessDraft(req, res, next) {
 	return requireSfConnection(req, res, next);
 }
 
-
-
-
-
-
-
-
-
 async function _writeEnvUpdates(updates) {
-
-
-
 
 	for (const [key, value] of Object.entries(updates)) {
 		if (/[\r\n]/.test(String(value))) {
@@ -255,7 +175,6 @@ async function _writeEnvUpdates(updates) {
 	}
 	const fs = await import('node:fs/promises');
 	const path = await import('node:path');
-
 
 	const envPath = path.resolve(process.cwd(), '.env');
 	let existing = '';
@@ -286,23 +205,6 @@ continue;
 	const out = updated.join('\n').replace(/\n+$/, '') + '\n';
 	await fs.writeFile(envPath, out, 'utf8');
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export function mountSetupWizard(app) {
 	const _setupNeeded = () => !ext.saasMounted && !process.env.SF_CLIENT_ID;
@@ -341,8 +243,6 @@ return res.redirect('/');
 			});
 		}
 
-
-
 		if (!/^[A-Za-z0-9._-]{20,200}$/.test(sfClientId)) {
 			return res.status(400).render('setup', {
 				appUrl,
@@ -369,26 +269,10 @@ return res.redirect('/');
 	});
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 export async function requireAccount(req, res, next) {
 	try {
 		const account = await ext.getCurrentAccount(req);
 		if (!account) {
-
-
-
-
 
 			if (!req.session || !req.session.accountId) {
 				return res.status(401).json({ error: 'not-signed-in' });
@@ -402,10 +286,6 @@ export async function requireAccount(req, res, next) {
  next(err); 
 }
 }
-
-
-
-
 
 export function requireWorkspaceAdmin(extractWorkspaceId = (req) => req.params.id) {
 	return async (req, res, next) => {
@@ -430,9 +310,6 @@ return res.status(403).json({ error: 'admin-only' });
 	};
 }
 
-
-
-
 export function requireWorkspaceMember(extractWorkspaceId = (req) => req.params.id) {
 	return async (req, res, next) => {
 		try {
@@ -452,18 +329,6 @@ return res.status(403).json({ error: 'not-a-member' });
 }
 	};
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 async function _gateCapability(req, res, capability, auditAction, opts = {}) {
 	const cap = await ext.getCapability(req.account, capability, {
@@ -485,10 +350,6 @@ async function _gateCapability(req, res, capability, auditAction, opts = {}) {
 	return true;
 }
 
-
-
-
-
 async function _auditCrossAccountConnAccess(req, attemptedConnectionId, ownerAccountId, route) {
 	try {
 		const view = await viewStateDb.get(req.account.id);
@@ -506,14 +367,6 @@ async function _auditCrossAccountConnAccess(req, attemptedConnectionId, ownerAcc
  console.warn('[audit] cross-account conn access failed:', e && e.message);
 }
 }
-
-
-
-
-
-
-
-
 
 async function _auditConnectionActivated(req, c, mode) {
 	try {
@@ -536,33 +389,7 @@ async function _auditConnectionActivated(req, c, mode) {
 	}
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const _SF_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_.]*$/;
-
-
-
-
-
-
-
-
-
 
 function _maskSoqlSkeleton(soql) {
 	const out = String(soql).split('');
@@ -595,8 +422,6 @@ function _maskSoqlSkeleton(soql) {
 		i++;
 	}
 
-
-
 	let depth = 0;
 	for (let j = 0; j < n; j++) {
 		const c = out[j];
@@ -619,17 +444,6 @@ function _maskSoqlSkeleton(soql) {
 	return out.join('');
 }
 
-
-
-
-
-
-
-
-
-
-
-
 const SOQL_OBJECT_DENYLIST = new Set([
 
 	'apexclass', 'apextrigger', 'apexcomponent', 'apexpage',
@@ -646,14 +460,6 @@ const SOQL_OBJECT_DENYLIST = new Set([
 	'setupaudittrail', 'apianomalyeventstore', 'credentialstuffingeventstore',
 ]);
 
-
-
-
-
-
-
-
-
 export const SF_READ_RATE_LIMIT = { windowMs: 60_000, max: 60 };
 const _sfReadLimiter = makeLimiter(SF_READ_RATE_LIMIT);
 function _rateLimitSfReads(req, res, next) {
@@ -668,46 +474,15 @@ function _rateLimitSfReads(req, res, next) {
 	next();
 }
 
-
 export function _resetSfReadRateLimitForTests() {
 	_sfReadLimiter.reset();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export async function _fetchCanonicalValuesForUpload({ conn, results, recordsById }) {
 	const out = new Map();
 	if (!conn || !Array.isArray(results) || results.length === 0) {
 return out;
 }
-
-
-
-
 
 	const byObject = new Map();
 	for (const r of results) {
@@ -752,8 +527,6 @@ continue;
 		const fieldList = ['Id', ...Array.from(entry.fields)].join(', ');
 		const ids = entry.rows.map((r) => r.sfId);
 
-
-
 		for (let i = 0; i < ids.length; i += 200) {
 			const slice = ids.slice(i, i + 200);
 			const inList = slice.map((id) => "'" + escapeSoqlLiteral(id) + "'").join(',');
@@ -776,8 +549,6 @@ continue;
 continue;
 }
 
-
-
 					const canonical = {};
 					for (const k of Object.keys(sfRec)) {
 						if (k === 'attributes' || k === 'Id') {
@@ -793,25 +564,11 @@ continue;
 				}
 			} catch (e) {
 
-
-
 			}
 		}
 	}
 	return out;
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 export function _orderDeletesChildrenFirst(deletesIn, associations) {
 	if (!Array.isArray(deletesIn) || deletesIn.length <= 1) {
@@ -819,8 +576,6 @@ export function _orderDeletesChildrenFirst(deletesIn, associations) {
 	}
 	const plannable = deletesIn.filter((d) => d && d.tempId != null && d.sfId);
 	const unplannable = deletesIn.filter((d) => !(d && d.tempId != null && d.sfId));
-
-
 
 	const deletingIds = new Set(plannable.map((d) => d.tempId));
 	const assoc = (associations || [])
@@ -835,7 +590,6 @@ export function _orderDeletesChildrenFirst(deletesIn, associations) {
 	}
 	return ordered.concat(unplannable);
 }
-
 
 export function _buildBatchEntryFromResult(r, rec, canonical) {
 	const entry = {
@@ -856,21 +610,10 @@ continue;
 			const cur = rec.values[k];
 			const prior = rec.loadedValues[k];
 
-
-
-
-
-			 
 			if (cur == prior) {
 continue;
 }
 			priorValues[k] = prior == null ? null : prior;
-
-
-
-
-
-
 
 			uploadedValues[k] = canonicalValues && k in canonicalValues
 				? canonicalValues[k]
@@ -886,30 +629,6 @@ continue;
 
 export function mountCanvasRoutes(app) {
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	app.get('/api/canvas', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
@@ -919,9 +638,6 @@ export function mountCanvasRoutes(app) {
  next(err); 
 }
 	});
-
-
-
 
 	app.get('/api/canvas/:id', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -935,27 +651,11 @@ export function mountCanvasRoutes(app) {
 return res.status(404).json({ error: 'not-found' });
 }
 
-
-
 			if (item.ownedByMe) {
 				if (!await _gateCapability(req, res, 'open-saved-canvas', 'open_saved_canvas', { auditPayload: { canvasId: id } })) {
 return;
 }
 			}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			let grant = null;
 			if (!item.ownedByMe) {
@@ -978,18 +678,6 @@ return;
 			}
 
 			const payload = item.ownedByMe ? item.payload : stripDraftsForNonOwner(item.payload);
-
-
-
-
-
-
-
-
-
-
-
-
 
 			let recipientRole = null;
 			let recipientHasAccount = false;
@@ -1014,28 +702,8 @@ recipientRole = 'viewer';
 }
 				}
 
-
-
 				recipientHasAccount = !!req.session.accountId;
 			}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			let staleRefs = [];
 			try {
@@ -1052,8 +720,6 @@ byObject.set(r.objectName, new Set());
 					const _STALE_OBJ_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 					for (const [objName, idSet] of byObject) {
 
-
-
 						if (!_STALE_OBJ_NAME_RE.test(objName)) {
 continue;
 }
@@ -1064,20 +730,12 @@ continue;
 							const slice = ids.slice(i, i + 200);
 							const inList = slice.map((id) => "'" + escapeSoqlLiteral(id) + "'").join(',');
 
-
-
-
-
-
 							const soql = 'SELECT Id FROM ' + objName + ' WHERE Id IN (' + inList + ')';
 							try {
 								const url = '/services/data/v' + apiVersion + '/query/?q=' + encodeURIComponent(soql);
 								const r = await req.sf.conn.request({ method: 'GET', url });
 								(r.records || []).forEach((rec) => liveIds.add(idKey(rec.Id)));
 							} catch (e) {
-
-
-
 
 								console.warn('[canvas-load] stale-ref probe failed for', objName + ':', (e && e.message) || String(e));
 								slice.forEach((id) => liveIds.add(idKey(id)));
@@ -1091,38 +749,8 @@ continue;
 					}
 				}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 				if (staleRefs.length > 0) {
 					const apiVersion = req.sf.conn.version || '60.0';
-
-
-
-
-
-
-
-
-
-
 
 					const _ownerCanDistinguishDeletion = !!item.ownedByMe;
 					const _classify = async (ref) => {
@@ -1132,16 +760,8 @@ continue;
 								+ '/' + encodeURIComponent(ref.sfId);
 							await req.sf.conn.request({ method: 'GET', url });
 
-
-
-
-
 							return null;
 						} catch (e) {
-
-
-
-
 
 							const codes = [];
 							const codeFrom = (v) => {
@@ -1173,12 +793,6 @@ codeFrom(e.body);
 								|| has('MALFORMED_ID')
 								|| status === 404) {
 
-
-
-
-
-
-
 								return _ownerCanDistinguishDeletion ? 'deleted' : 'no-access';
 							}
 							console.warn('[stale-classify] unrecognized error shape for', ref.objectName, ref.sfId, '- status:', status, 'codes:', codes, 'message:', (e && e.message) || String(e));
@@ -1202,19 +816,8 @@ continue;
 				}
 			} catch (_eProbe) {                   }
 
-
-
-
-
-
-
 			res.json({
 				id: item.id,
-
-
-
-
-
 
 				versionId: item.versionId,
 				title: item.title,
@@ -1232,7 +835,6 @@ continue;
 }
 	});
 
-
 	app.post('/api/canvas', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (!await _gateCapability(req, res, 'save-canvas', 'save_canvas')) {
@@ -1247,12 +849,6 @@ return res.status(400).json({ error: 'name-required' });
 				return res.status(400).json({ error: 'payload-required' });
 			}
 			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
-
-
-
-
-
-
 
 			if (_saasAvailable && workspacesDb && viewStateDb) {
 				try {
@@ -1296,8 +892,6 @@ return res.status(400).json({ error: 'name-required' });
 				payload: { name, ..._summarizeCanvasPayload(payload) },
 			});
 
-
-
 			auditDb.recordFirstTime(req, {
 				actorAccountId: req.account.id,
 				action: 'canvas_first_save',
@@ -1314,10 +908,6 @@ return res.status(400).json({ error: 'name-required' });
 				payload: { attemptedName: String((req.body && req.body.name) || '').trim(), sfError: err && err.sfError },
 			});
 
-
-
-
-
 			if (err && err.statusCode === 403 && err.code) {
 				return res.status(403).json({
 					error: err.code,
@@ -1328,21 +918,6 @@ return res.status(400).json({ error: 'name-required' });
 			next(err);
 		}
 	});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	app.put('/api/canvas/:id', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -1368,8 +943,6 @@ return res.status(404).json({ error: 'not-found' });
 }
 			if (!existing.ownedByMe) {
 
-
-
 				const grant = await _findCanvasShareGrant(req, id);
 				if (!grant || grant.role !== 'editor') {
 					return res.status(403).json({
@@ -1386,15 +959,6 @@ return res.status(404).json({ error: 'not-found' });
 				}),
 			});
 
-
-
-
-
-
-
-
-
-
 			const result = await store.update(id, { payload: safePayload, expectedVersionId });
 			await ext.auditWrite({
 				req,
@@ -1404,13 +968,6 @@ return res.status(404).json({ error: 'not-found' });
 				targetSfOrgId: req.sf.sfOrgId,
 				payload: _summarizeCanvasPayload(safePayload),
 			});
-
-
-
-
-
-
-
 
 			try {
 				const me = req.account || {};
@@ -1434,9 +991,6 @@ return res.status(404).json({ error: 'not-found' });
 				payload: { sfError: err && err.sfError },
 			});
 
-
-
-
 			if (err && err.statusCode && err.code) {
 				return res.status(err.statusCode).json({
 					error: err.code,
@@ -1448,9 +1002,6 @@ return res.status(404).json({ error: 'not-found' });
 			next(err);
 		}
 	});
-
-
-
 
 	app.delete('/api/canvas/:id', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -1467,10 +1018,6 @@ return res.status(404).json({ error: 'not-found' });
 				return res.status(403).json({ error: 'not-owner' });
 			}
 			await store.remove(id);
-
-
-
-
 
 			await ext.auditWrite({
 				req,
@@ -1493,37 +1040,6 @@ return res.status(404).json({ error: 'not-found' });
 			next(err);
 		}
 	});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	app.post('/api/canvas/:id/direct-share', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -1551,23 +1067,9 @@ return res.status(404).json({ error: 'not-found' });
 			}
 			const rawRole = String((req.body && req.body.role) || '').trim();
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 			const role = rawRole === 'editor' ? 'editor'
 				: rawRole === 'contributor' ? 'contributor'
 				: 'viewer';
-
 
 			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
 			const item = await store.get(id);
@@ -1580,8 +1082,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 					message: 'Only the canvas owner can share.',
 				});
 			}
-
-
 
 			let recipientRecord;
 			try {
@@ -1604,13 +1104,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 			const recipientSfEmail = String(recipientRecord.Email).trim().toLowerCase();
 			const recipientSfName = recipientRecord.Name || null;
 
-
-
-
-
-
-
-
 			const accessLevel = role === 'editor' ? 'Edit' : 'Read';
 			let shareResult = null;
 			try {
@@ -1623,11 +1116,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 			}
 			const shareWasUpdated = !!(shareResult && shareResult.updated);
 
-
-
-
-
-
 			try {
 				await canvasRoleGrantsDb.set({
 					sfOrgId: req.sf.sfOrgId,
@@ -1638,22 +1126,8 @@ return res.status(404).json({ error: 'canvas-not-found' });
 				});
 			} catch (e) {
 
-
-
-
 				console.warn('[canvas-direct-share] role-grant persist failed:', e.message || e);
 			}
-
-
-
-
-
-
-
-
-
-
-
 
 			let recipientHasAccount = false;
 			let recipientHasConnection = false;
@@ -1666,10 +1140,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 				}
 			} catch (_eLookup) {                                                  }
 
-
-
-
-
 			let sfOrgLabel = null;
 			try {
 				const u = new URL(req.sf.instanceUrl || (req.sf.connectionRow && req.sf.connectionRow.instance_url) || '');
@@ -1677,8 +1147,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 			} catch (_eUrl) {
  sfOrgLabel = null; 
 }
-
-
 
 			const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
 			const host = req.get('host');
@@ -1688,11 +1156,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 				await sendDirectCanvasShareNotification({
 					to: recipientSfEmail,
 					appUrl,
-
-
-
-
-
 
 					canvasId: id,
 					senderName: req.account.display_name || req.account.email,
@@ -1704,10 +1167,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 				});
 			} catch (e) {
 				console.error('[canvas-direct-share] email send failed:', e.message || e);
-
-
-
-
 
 				try {
 					await ext.auditWrite({
@@ -1742,9 +1201,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 				targetSfOrgId: req.sf.sfOrgId,
 				payload: {
 
-
-
-
 					mechanism: 'direct',
 					recipientSfUserId,
 					role,
@@ -1777,12 +1233,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 		}
 	});
 
-
-
-
-
-
-
 	app.get('/api/canvas/:id/share-links', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const id = req.params.id;
@@ -1795,19 +1245,9 @@ return res.status(404).json({ error: 'canvas-not-found' });
 return res.status(404).json({ error: 'canvas-not-found' });
 }
 
-
 			if (!item.ownedByMe) {
 return res.json({ shares: [], directShares: [] });
 }
-
-
-
-
-
-
-
-
-
 
 			let directShares = [];
 			let roleByRecipient = {};
@@ -1838,20 +1278,11 @@ return res.json({ shares: [], directShares: [] });
 				console.warn('[canvas-share] listShares failed for', id + ':', e.message || e);
 			}
 
-
-
 			res.json({ shares: [], directShares });
 		} catch (err) {
  next(err); 
 }
 	});
-
-
-
-
-
-
-
 
 	app.delete('/api/canvas/:id/direct-shares/:sfUserId', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -1872,8 +1303,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 				return res.status(403).json({ error: 'revoke-owner-only' });
 			}
 
-
-
 			if (recipientSfUserId === req.sf.sfUserId) {
 				return res.status(400).json({ error: 'cannot-revoke-self' });
 			}
@@ -1886,11 +1315,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 					message: (e && e.message) || String(e),
 				});
 			}
-
-
-
-
-
 
 			try {
 				await canvasRoleGrantsDb.remove({
@@ -1920,32 +1344,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 		}
 	});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	app.post('/api/canvas/:id/slot-fill', async (req, res, next) => {
 		try {
 			const id = req.params.id;
@@ -1967,12 +1365,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 					message: 'No active share grant for this canvas. Ask the canvas owner to share it with you.',
 				});
 			}
-
-
-
-
-
-
 
 			if (grant.role === 'viewer') {
 				return res.status(403).json({
@@ -2018,10 +1410,6 @@ return res.status(404).json({ error: 'canvas-not-found' });
 					skipped,
 				});
 			}
-
-
-
-
 
 			const successes = [];
 			const failures = [];
@@ -2070,11 +1458,6 @@ continue;
 				},
 			});
 
-
-
-
-
-
 			try {
 				let ownerEmail = null;
 				if (item.ownerId && /^[a-zA-Z0-9]{15,18}$/.test(item.ownerId)) {
@@ -2120,14 +1503,6 @@ ownerEmail = String(owner.Email).trim();
 		}
 	});
 
-
-
-
-
-
-
-
-
 	app.get('/api/ai/status', async (req, res) => {
 		const base = {
 			enabled: anthropicEnabled(),
@@ -2159,22 +1534,10 @@ ownerEmail = String(owner.Email).trim();
 			}
 		} catch (e) {
 
-
 			console.warn('[ai/status] usage lookup failed:', e.message || e);
 		}
 		res.json(base);
 	});
-
-
-
-
-
-
-
-
-
-
-
 
 	app.post('/api/ai/plan', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -2218,31 +1581,15 @@ return;
 				}
 			}
 
-
-
-
-
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
 				return res.status(409).json({ error: 'no-active-workspace' });
 			}
 
-
-
-
-
-
-
-
-
 			const quota = await ext.getQuota(req.account, 'ai_tokens');
 			const inCreditMode = quota.cap != null && quota.used >= quota.cap && !quota.blocked;
 			if (quota.blocked) {
-
-
-
-
 
 				try {
 					await ext.auditWrite({
@@ -2265,19 +1612,6 @@ return;
 					currentPlan: quota.planId,
 				});
 			}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			const conn = req.sf.conn;
 			let describes;
@@ -2307,10 +1641,6 @@ return;
 						});
 					} catch (_eAudit) {                   }
 
-
-
-
-
 					return res.status(401).json({
 						error: 'sf-session-expired',
 						message: 'Your Salesforce session has expired. Reconnect Salesforce and try again.',
@@ -2337,9 +1667,6 @@ continue;
 				model: ANTHROPIC_MODEL,
 				max_tokens: 4096,
 
-
-
-
 				system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
 				tools: [AI_PLAN_TOOL],
 				tool_choice: { type: 'tool', name: 'create_plan' },
@@ -2347,9 +1674,6 @@ continue;
 			});
 			const toolUse = (response.content || []).find((b) => b.type === 'tool_use' && b.name === 'create_plan');
 			if (!toolUse) {
-
-
-
 
 				try {
 					await ext.auditWrite({
@@ -2368,7 +1692,6 @@ continue;
 			const validated = validateAiPlan(toolUse.input || {}, describes);
 			if (validated.records.length === 0) {
 
-
 				console.warn('[ai/plan] empty plan after validation', {
 					promptLength: typeof text === 'string' ? text.length : 0,
 					objectNames,
@@ -2376,13 +1699,6 @@ continue;
 					warnings: validated.warnings,
 				});
 			}
-
-
-
-
-
-
-
 
 			const tokensSpent = usageDb.totalTokensFromUsage(response.usage);
 			const costCents = usageDb.costCentsFromUsage(response.usage);
@@ -2395,10 +1711,6 @@ continue;
 			} catch (e) {
  console.warn('[usage] chargeQuota failed:', e.message || e); 
 }
-
-
-
-
 
 			if (chargeResult.chargedToCredits > 0) {
 				try {
@@ -2450,11 +1762,6 @@ continue;
 		} catch (err) {
 			console.error('[ai/plan] failed:', err);
 
-
-
-
-
-
 			try {
 				let _wsId = null;
 				try {
@@ -2476,30 +1783,6 @@ continue;
 		}
 	});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	app.post('/api/upload', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
@@ -2508,9 +1791,6 @@ return;
 			if (!await _gateCapability(req, res, 'upload-records', 'upload')) {
 return;
 }
-
-
-
 
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
 				sfOrgId: req.sf.sfOrgId,
@@ -2535,22 +1815,10 @@ return;
 			const skipTempIds = new Set(Array.isArray(req.body?.skipTempIds) ? req.body.skipTempIds : []);
 			const directUpload = !!req.body?.directUpload;
 
-
-
-
-
 			const allowDuplicates = !!req.body?.allowDuplicates;
 			const _writeOpts = allowDuplicates
 				? { headers: { 'Sforce-Duplicate-Rule-Header': 'allowSave=true' } }
 				: undefined;
-
-
-
-
-
-
-
-
 
 			const deletesIn = _orderDeletesChildrenFirst(
 				Array.isArray(req.body?.deletes) ? req.body.deletes : [],
@@ -2559,11 +1827,6 @@ return;
 			if (records.length === 0 && deletesIn.length === 0) {
 				return res.status(400).json({ error: 'no-records' });
 			}
-
-
-
-
-
 
 			const _attemptId = (req.body && typeof req.body.attemptId === 'string') ? req.body.attemptId : null;
 			let _twoPhaseStore = null;
@@ -2590,16 +1853,11 @@ return;
 				}
 			}
 
-
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
 return res.status(409).json({ error: 'no-active-workspace' });
 }
-
-
-
-
 
 			if (!directUpload) {
 				const uploadQuota = await ext.getQuota(req.account, 'uploads');
@@ -2613,13 +1871,6 @@ return res.status(409).json({ error: 'no-active-workspace' });
 					});
 				}
 			}
-
-
-
-
-
-
-
 
 			if (_twoPhaseStore) {
 				try {
@@ -2656,16 +1907,11 @@ continue;
 					continue;
 				}
 
-
-
-
-
 				if (skipTempIds.has(tempId) && rec.loadedFromId) {
 					realIdByTempId.set(tempId, rec.loadedFromId);
 					results.push({ tempId, objectName: rec.objectName, success: true, id: rec.loadedFromId, mode: 'unchanged' });
 					continue;
 				}
-
 
 				let parentFailure = null;
 				for (const pid of (deps.get(tempId) || [])) {
@@ -2714,22 +1960,11 @@ continue;
 				}
 			}
 
-
-
 			const byId = new Map(results.map((r) => [r.tempId, r]));
 			const orderedResults = records.map((r) => byId.get(r.tempId)).filter(Boolean);
 
 			const successCount = orderedResults.filter((r) => r && r.success).length;
 			const failureCount = orderedResults.length - successCount;
-
-
-
-
-
-
-
-
-
 
 			const deleteResults = [];
 			for (const d of deletesIn) {
@@ -2778,8 +2013,6 @@ continue;
 			const deleteSuccessCount = deleteResults.filter((r) => r.success).length;
 			const deleteFailureCount = deleteResults.length - deleteSuccessCount;
 
-
-
 			if (!directUpload && successCount > 0) {
 				try {
 					await ext.chargeQuota(req.account, 'uploads', 1);
@@ -2787,14 +2020,6 @@ continue;
  console.warn('[usage] upload increment failed:', e.message || e); 
 }
 			}
-
-
-
-
-
-
-
-
 
 			try {
 				const uploadRequestId = auditDb.newRequestId();
@@ -2821,10 +2046,6 @@ continue;
 						},
 					});
 				}
-
-
-
-
 
 				for (const d of deleteResults) {
 					if (!d) {
@@ -2907,17 +2128,12 @@ continue;
 						requestedDeletes: deletesIn.length,
 						directUpload,
 
-
 						allowDuplicates: allowDuplicates || undefined,
 						objectBreakdown: uploadObjectBreakdown,
 						errorCodeCounts: Object.keys(uploadErrorCodes).length ? uploadErrorCodes : undefined,
 						associations: Object.keys(uploadAssocCounts).length ? uploadAssocCounts : undefined,
 					},
 				});
-
-
-
-
 
 				if (successCount > 0) {
 					auditDb.recordFirstTime(req, {
@@ -2932,18 +2148,7 @@ continue;
  console.warn('[audit] upload log failed:', e.message || e); 
 }
 
-
-
-
-
-
 			let batchId = null;
-
-
-
-
-
-
 
 			let canonicalByTempId;
 			try {
@@ -3000,16 +2205,9 @@ continue;
 }
 			}
 
-
 			if (_pendingBatchId && successCount === 0 && successfulDeletes.length === 0) {
 				try { await _twoPhaseStore.remove(_pendingBatchId); } catch (e) {                   }
 			}
-
-
-
-
-
-
 
 			const canonicalForResponse = {};
 			for (const [tempId, info] of canonicalByTempId) {
@@ -3026,14 +2224,6 @@ continue;
  next(err); 
 }
 	});
-
-
-
-
-
-
-
-
 
 	app.post('/api/upload-batches', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -3076,16 +2266,11 @@ return res.status(409).json({ error: 'no-active-workspace' });
 }
 	});
 
-
-
-
 	app.get('/api/upload-batches', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
 			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
 			const batches = await batchStore.list({ limit });
-
-
 
 			res.json({ batches });
 		} catch (err) {
@@ -3093,14 +2278,9 @@ return res.status(409).json({ error: 'no-active-workspace' });
 }
 	});
 
-
-
 	app.get('/api/upload-batches/:id', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
-
-
-
 
 			const batch = await batchStore.get(req.params.id);
 			if (!batch) {
@@ -3111,10 +2291,6 @@ return res.status(404).json({ error: 'not-found' });
  next(err); 
 }
 	});
-
-
-
-
 
 	app.post('/api/upload-batches/:id/recall', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -3129,8 +2305,6 @@ return res.status(404).json({ error: 'not-found' });
 			if (batch.recalledAt) {
 				return res.status(409).json({ error: 'already-recalled' });
 			}
-
-
 
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
 				sfOrgId: req.sf.sfOrgId,
@@ -3147,24 +2321,11 @@ return res.status(404).json({ error: 'not-found' });
 				});
 			}
 
-
-
-
-
-
 			const skipSfIds = Array.isArray(req.body && req.body.skipSfIds) ? req.body.skipSfIds : [];
-
-
-
-
-
-
-
 
 			const revertSelections = Array.isArray(req.body && req.body.revertSelections)
 				? req.body.revertSelections
 				: [];
-
 
 			try {
  await batchStore.markRecalling(batch.id); 
@@ -3185,11 +2346,6 @@ return res.status(404).json({ error: 'not-found' });
 				return res.status(500).json({ error: 'recall-failed', message: e.message });
 			}
 
-
-
-
-
-
 			const succeeded = recallResult.succeeded || 0;
 			const alreadyDeleted = recallResult.alreadyDeleted || 0;
 			const failed = recallResult.failed || 0;
@@ -3199,17 +2355,11 @@ return res.status(404).json({ error: 'not-found' });
  await batchStore.markRecallResult(batch.id, { status, recallResult }); 
 } catch (_e) {                   }
 
-
-
-
-
 			let _recallWorkspaceId = null;
 			try {
 				const _view = await viewStateDb.get(req.account.id);
 				_recallWorkspaceId = (_view && _view.current_workspace_id) || null;
 			} catch (_eVs) {                  }
-
-
 
 			const recallObjectBreakdown = {};
 			const recallErrorCodes = {};
@@ -3268,13 +2418,6 @@ return res.status(404).json({ error: 'not-found' });
 }
 	});
 
-
-
-
-
-
-
-
 	app.post('/api/upload/graph', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
@@ -3305,17 +2448,7 @@ return;
 			const skipTempIds = new Set(Array.isArray(req.body?.skipTempIds) ? req.body.skipTempIds : []);
 			const directUpload = !!req.body?.directUpload;
 
-
-
-
-
-
 			const allowDuplicates = !!req.body?.allowDuplicates;
-
-
-
-
-
 
 			const deletesIn = _orderDeletesChildrenFirst(
 				Array.isArray(req.body?.deletes) ? req.body.deletes : [],
@@ -3324,15 +2457,6 @@ return;
 			if (records.length === 0 && deletesIn.length === 0) {
 				return res.status(400).json({ error: 'no-records' });
 			}
-
-
-
-
-
-
-
-
-
 
 			const _attemptId = (req.body && typeof req.body.attemptId === 'string') ? req.body.attemptId : null;
 			let _twoPhaseStore = null;
@@ -3367,11 +2491,6 @@ return;
 return res.status(409).json({ error: 'no-active-workspace' });
 }
 
-
-
-
-
-
 			if (!directUpload) {
 				const uploadQuota = await ext.getQuota(req.account, 'uploads');
 				if (uploadQuota.blocked) {
@@ -3397,12 +2516,6 @@ recordsById.set(r.tempId, r);
 } 
 });
 			const { order, cycleIds } = topoSortRecords(records, associations);
-
-
-
-
-
-
 
 			const submittedIds = new Set();
 			for (const id of order) {
@@ -3435,12 +2548,6 @@ continue;
 				});
 			}
 
-
-
-
-
-
-
 			if (_twoPhaseStore) {
 				try {
 					const pendingB = await _twoPhaseStore.createPending({
@@ -3452,8 +2559,6 @@ continue;
 					_pendingBatchId = pendingB.id;
 				} catch (e) { console.warn('[two-phase pending/graph]:', e.message || e); }
 			}
-
-
 
 			const objNamesToDescribe = new Set();
 			submittedIds.forEach((id) => {
@@ -3467,11 +2572,6 @@ objNamesToDescribe.add(rec.objectName);
 				try {
 					describesByObject.set(name, await getDescribe(name));
 				} catch (err) {
-
-
-
-
-
 
 					try {
 						ext.captureException(err, {
@@ -3504,8 +2604,6 @@ objNamesToDescribe.add(rec.objectName);
 					headers: Object.assign(
 						{ 'Content-Type': 'application/json' },
 
-
-
 						allowDuplicates ? { 'Sforce-Duplicate-Rule-Header': 'allowSave=true' } : {},
 					),
 				});
@@ -3530,7 +2628,6 @@ objNamesToDescribe.add(rec.objectName);
 
 			const respGraphs = (graphResp && graphResp.graphs) || [];
 			const results = [];
-
 
 			cycleIds.forEach((id) => {
 				const rec = recordsById.get(id);
@@ -3633,14 +2730,6 @@ return;
 }
 			}
 
-
-
-
-
-
-
-
-
 			const deleteResults = [];
 			const someGraphCommitted = successCount > 0;
 			if (deletesIn.length > 0 && (records.length === 0 || someGraphCommitted)) {
@@ -3689,8 +2778,6 @@ return;
 				}
 			} else if (deletesIn.length > 0) {
 
-
-
 				for (const d of deletesIn) {
 					deleteResults.push({
 						tempId: (d && d.tempId) || null,
@@ -3705,11 +2792,6 @@ return;
 			const deleteFailureCount = deleteResults.length - deleteSuccessCount;
 
 			try {
-
-
-
-
-
 
 				const uploadRequestId = auditDb.newRequestId();
 				const objects = Array.from(new Set(records.map((r) => r && r.objectName).filter(Boolean)));
@@ -3734,8 +2816,6 @@ continue;
 						},
 					});
 				}
-
-
 
 				for (const d of deleteResults) {
 					if (!d) {
@@ -3820,7 +2900,6 @@ continue;
 						directUpload,
 						atomicSuccess: allAtomicSuccess,
 
-
 						allowDuplicates: allowDuplicates || undefined,
 						objectBreakdown: graphObjectBreakdown,
 						errorCodeCounts: Object.keys(graphErrorCodes).length ? graphErrorCodes : undefined,
@@ -3832,7 +2911,6 @@ continue;
 }
 
 			let batchId = null;
-
 
 			let canonicalByTempId;
 			try {
@@ -3865,7 +2943,6 @@ continue;
 						}));
 						if (_pendingBatchId) {
 
-
 							await batchStore.finalize(_pendingBatchId, {
 								insertedIds,
 								deletedIds,
@@ -3892,10 +2969,6 @@ continue;
 }
 			}
 
-
-
-
-
 			if (_pendingBatchId && successCount === 0 && successfulDeletes.length === 0) {
 				try { await _twoPhaseStore.remove(_pendingBatchId); } catch (e) {                   }
 			}
@@ -3919,12 +2992,6 @@ continue;
 }
 	});
 
-
-
-
-
-
-
 	app.post('/api/upload/preflight', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
@@ -3944,8 +3011,6 @@ return;
 				return res.status(403).json({ error: orgGate.reason, approvalStatus: orgGate.approvalStatus });
 			}
 			const records = Array.isArray(req.body?.records) ? req.body.records : [];
-
-
 
 			applySlotFieldFilter(records);
 			const associations = Array.isArray(req.body?.associations) ? req.body.associations : [];
@@ -3976,9 +3041,6 @@ deps.get(a.fromId).add(a.toId);
 }
 			});
 
-
-
-
 			const sampleIds = new Set();
 			const seenObjs = new Set();
 			for (const r of records) {
@@ -4005,9 +3067,6 @@ continue;
 			if (sampleIds.size === 0) {
 				return res.json({ ok: true, sampled: 0, total: records.length, skipped: true });
 			}
-
-
-
 
 			const SAMPLE_CAP = 60;
 			let sampleArr = records.filter((r) => sampleIds.has(r.tempId));
@@ -4216,10 +3275,6 @@ return;
 }
 	});
 
-
-
-
-
 	app.post('/api/upload/bulk', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
@@ -4244,30 +3299,20 @@ return;
 			const skipTempIds = new Set(Array.isArray(req.body?.skipTempIds) ? req.body.skipTempIds : []);
 			const directUpload = !!req.body?.directUpload;
 
-
-
-
-
 			const deletesIn = _orderDeletesChildrenFirst(
 				Array.isArray(req.body?.deletes) ? req.body.deletes : [],
 				associations,
 			);
 
-
 			if (records.length === 0 && deletesIn.length === 0) {
 				return res.status(400).json({ error: 'no-records' });
 			}
-
-
-
 
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
 return res.status(409).json({ error: 'no-active-workspace' });
 }
-
-
 
 			if (!directUpload) {
 				const uploadQuota = await ext.getQuota(req.account, 'uploads');
@@ -4282,11 +3327,6 @@ return res.status(409).json({ error: 'no-active-workspace' });
 				}
 			}
 
-
-
-
-
-
 			const _attemptId = (req.body && typeof req.body.attemptId === 'string') ? req.body.attemptId : null;
 			let _twoPhaseStore = null;
 			let _pendingBatchId = null;
@@ -4296,13 +3336,6 @@ return res.status(409).json({ error: 'no-active-workspace' });
 				} catch (e) { console.warn('[two-phase store/bulk]:', e.message || e); }
 			}
 			if (_twoPhaseStore) {
-
-
-
-
-
-
-
 
 				try {
 					const prior = await _twoPhaseStore.findByAttemptId(_attemptId);
@@ -4362,10 +3395,6 @@ deps.get(a.fromId).add(a.toId);
 }
 			});
 
-
-
-
-
 			const levelByTempId = new Map();
 			const cycleIds = new Set();
 			function computeLevel(id, stackSet, stackArr) {
@@ -4398,16 +3427,6 @@ lvl = parentLvl + 1;
 				return lvl;
 			}
 			recordsById.forEach((_, id) => computeLevel(id, new Set(), []));
-
-
-
-
-
-
-
-
-
-
 
 			const byLevel = new Map();
 			recordsById.forEach((rec, tempId) => {
@@ -4553,17 +3572,6 @@ delete values[textField];
 }
 							});
 
-
-
-
-
-
-
-
-
-
-
-
 							values = stripUnwritableFields(values, describe, group.operation === 'update' || group.operation === 'upsert');
 							associations.forEach((a) => {
 								if (a.fromId !== rec.tempId) {
@@ -4604,17 +3612,6 @@ return;
 						});
 						result.successes.forEach((s) => {
 							sfIdByTempId.set(s.tempId, s.sfId);
-
-
-
-
-
-
-
-
-
-
-
 
 							let resolvedMode;
 							if (group.operation === 'update') {
@@ -4660,10 +3657,6 @@ byId.set(r.tempId, r);
 orderedResults.push(r);
 } 
 });
-
-
-
-
 
 				const deleteResults = [];
 				for (const d of deletesIn) {
@@ -4712,10 +3705,6 @@ orderedResults.push(r);
 				const deleteSuccessCount = deleteResults.filter((r) => r.success).length;
 				const deleteFailureCount = deleteResults.length - deleteSuccessCount;
 
-
-
-
-
 				let canonicalByTempId;
 				try {
 					canonicalByTempId = await _fetchCanonicalValuesForUpload({
@@ -4749,10 +3738,6 @@ orderedResults.push(r);
 				}
 				try {
 
-
-
-
-
 					const uploadRequestId = auditDb.newRequestId();
 					const objects = Array.from(new Set(records.map((r) => r && r.objectName).filter(Boolean)));
 					for (const r of orderedResults) {
@@ -4777,8 +3762,6 @@ continue;
 						});
 					}
 
-
-
 					for (const d of deleteResults) {
 						if (!d) {
 							continue;
@@ -4799,12 +3782,6 @@ continue;
 							},
 						});
 					}
-
-
-
-
-
-
 
 					const objectBreakdown = {};
 					const errorCodeCounts = {};
@@ -4895,9 +3872,6 @@ continue;
 }
 				}
 
-
-
-
 				if (_pendingBatchId && successCount === 0 && successfulDeletes.length === 0) {
 					try { await _twoPhaseStore.remove(_pendingBatchId); } catch (e) {                   }
 				}
@@ -4922,12 +3896,6 @@ continue;
  next(err); 
 }
 	});
-
-
-
-
-
-
 
 	app.post('/api/upload-batches/:id/recall-preflight', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -4954,24 +3922,10 @@ return res.status(404).json({ error: 'not-found' });
 				classification,
 			});
 
-
-
-
-
-
-
 			const valueDrift = await classifyValueDrift({
 				conn: req.sf.conn,
 				batch: { insertedIds: batch.insertedIds },
 			});
-
-
-
-
-
-
-
-
 
 			res.json({
 				clean: classification.clean || [],
@@ -4993,10 +3947,6 @@ return res.status(404).json({ error: 'not-found' });
 }
 	});
 
-
-
-
-
 	app.delete('/api/upload-batches/:id', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (!await _gateCapability(req, res, 'recall-upload', 'delete_upload_batch', { auditPayload: { batchId: req.params.id } })) {
@@ -5016,35 +3966,6 @@ return res.status(404).json({ error: 'not-found' });
  next(err); 
 }
 	});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	const _loggedLimitsFailFor = new Set();
 	app.get('/api/limits', requireAccount, requireSfConnection, async (req, res) => {
@@ -5079,15 +4000,6 @@ return res.status(404).json({ error: 'not-found' });
 		try {
 			const list = await listObjects(req.sf.conn, req.sf.sfOrgId);
 
-
-
-
-
-
-
-
-
-
 			const out = req.query.raw === '1'
 				? list
 				: list.filter((o) => o.queryable !== false && o.createable && !isNoiseSObject(o.name));
@@ -5121,10 +4033,6 @@ return res.status(404).json({ error: 'not-found' });
 				return res.status(400).json({ error: 'invalid-record-id' });
 			}
 
-
-
-
-
 			if (!await _gateCapability(req, res, 'browse-records', 'record_retrieve')) {
 				return;
 			}
@@ -5145,8 +4053,6 @@ return res.status(404).json({ error: 'not-found' });
 }
 	});
 
-
-
 	app.get('/api/objects/:name/lookup', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const name = req.params.name;
@@ -5162,12 +4068,6 @@ return res.status(404).json({ error: 'not-found' });
 			const conn = req.sf.conn;
 			const apiVersion = conn.version || '60.0';
 			const apiBase = '/services/data/v' + apiVersion;
-
-
-
-
-
-
 
 			let referenceTargets = null;
 			try {
@@ -5186,43 +4086,24 @@ params.set('q', q);
 params.set('recordTypeId', recordTypeId);
 }
 
-
-
 			if (targetApiNameParam) {
 				params.set('targetApiName', targetApiNameParam);
 			} else if (referenceTargets && referenceTargets.length > 1) {
 
-
 				params.set('targetApiName', referenceTargets[0]);
 			}
-
-
-
-
-
-
 
 			if (sourceRecordId && /^[a-zA-Z0-9]{15,18}$/.test(sourceRecordId)) {
 				params.set('sourceRecordId', sourceRecordId);
 			}
 
-
-
 			if (q) {
 params.set('searchType', 'Search');
 }
 
-
 			const url = apiBase + '/ui-api/lookups/' + encodeURIComponent(name) + '/' + encodeURIComponent(fieldName) + (params.toString() ? '?' + params.toString() : '');
 			try {
 				const data = await conn.request(url);
-
-
-
-
-
-
-
 
 				let rawRecords = [];
 				if (data && data.lookupResults && typeof data.lookupResults === 'object') {
@@ -5237,9 +4118,6 @@ rawRecords = rawRecords.concat(group.records);
 				}
 				const records = rawRecords.map((r) => {
 
-
-
-
 					let title = null;
 					if (r.fields) {
 						const nameCandidates = ['Name', 'Subject', 'Title', 'CaseNumber', 'FullName'];
@@ -5249,8 +4127,6 @@ rawRecords = rawRecords.concat(group.records);
 								break;
 							}
 						}
-
-
 
 						if (!title) {
 							for (const k of Object.keys(r.fields)) {
@@ -5277,19 +4153,9 @@ title = r.apiName || r.id;
 					};
 				});
 
-
-
-
-
-
-
-
 				const filteredRecords = sourceRecordId
 					? records.filter((r) => r.id && r.id.slice(0, 15) !== sourceRecordId.slice(0, 15))
 					: records;
-
-
-
 
 				console.log('[lookup] url=' + url + ' rawCount=' + rawRecords.length + ' mappedCount=' + records.length + (sourceRecordId ? ' afterSelfFilter=' + filteredRecords.length : ''));
 				const out = { records: filteredRecords, available: true, source: 'ui-api' };
@@ -5317,13 +4183,6 @@ out._debug = { requestUrl: url, error: (err && err.message) || String(err), refe
 }
 	});
 
-
-
-
-
-
-
-
 	app.post('/api/query', requireAccount, _rateLimitSfReads, requireSfConnection, async (req, res, next) => {
 		const SOQL_ROW_CAP = 500;
 		const SOQL_LEN_CAP = 10_000;
@@ -5350,19 +4209,12 @@ return res.status(400).json({ error: 'soql-required' });
 				return res.status(400).json({ error: 'no-comments' });
 			}
 
-
-
-
 			const skeleton = _maskSoqlSkeleton(soqlRaw);
 			const fromMatch = skeleton.match(/\bFROM\s+(\w+)/i);
 			if (!fromMatch) {
 				return res.status(400).json({ error: 'no-from-clause' });
 			}
 			let objectName = fromMatch[1];
-
-
-
-
 
 			if (SOQL_OBJECT_DENYLIST.has(objectName.toLowerCase())) {
 				return res.status(400).json({
@@ -5378,19 +4230,6 @@ return res.status(400).json({ error: 'soql-required' });
 					message: 'Aggregate queries (COUNT, SUM, etc.) are not supported — return record rows instead.',
 				});
 			}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			let cappedSoql = soqlRaw;
 			let imposedCap = false;
@@ -5417,13 +4256,6 @@ return res.status(400).json({ error: 'soql-required' });
 				return res.status(400).json({ error: 'describe-failed', message: 'Could not describe ' + objectName + ': ' + (err && err.message) });
 			}
 
-
-
-
-
-
-
-
 			if (parentDescribe && parentDescribe.name) {
 objectName = parentDescribe.name;
 }
@@ -5433,8 +4265,6 @@ objectName = parentDescribe.name;
 childRelByName.set(cr.relationshipName.toLowerCase(), cr);
 }
 			});
-
-
 
 			const subqueryFromMatches = soqlRaw.match(/\(\s*SELECT\b[\s\S]+?\bFROM\s+(\w+)\s*[\s\S]*?\)/gi) || [];
 			for (const subq of subqueryFromMatches) {
@@ -5454,8 +4284,6 @@ continue;
 					});
 				}
 
-
-
 				if (childRel.childSObject && SOQL_OBJECT_DENYLIST.has(childRel.childSObject.toLowerCase())) {
 					return res.status(400).json({
 						error: 'object-not-allowed',
@@ -5463,16 +4291,8 @@ continue;
 					});
 				}
 
-
-
-
-
 			}
 			const parentFieldNames = new Set((parentDescribe.fields || []).map((f) => f.name));
-
-
-
-
 
 			let result;
 			try {
@@ -5549,8 +4369,6 @@ childValues[ck] = childRow[ck];
 						});
 						records.push({ tempId: childTempId, objectName: childObjectName, loadedFromId: childRow.Id, values: childValues });
 
-
-
 						if (childRel.field) {
 							associations.push({ fromTempId: childTempId, toTempId: parentTempId, fieldName: childRel.field });
 						}
@@ -5564,9 +4382,6 @@ childValues[ck] = childRow[ck];
 					});
 				}
 			}
-
-
-
 
 			if (fullFields && records.length > 0) {
 				const idsByObject = new Map();
@@ -5589,7 +4404,6 @@ fullByKey.set(objName + '::' + rec.Id, rec);
 }
 							}
 						} catch (err) {
-
 
 							console.warn('[api/query full-fields] retrieve failed for', objName, '(' + chunk.length + ' ids):', err.message || err);
 						}
@@ -5630,13 +4444,6 @@ v[k] = full[k];
 				});
 			} catch (e) {               }
 
-
-
-
-
-
-
-
 			const hitCap = imposedCap && result.records.length >= SOQL_ROW_CAP;
 			res.json({
 				objectName,
@@ -5651,10 +4458,6 @@ v[k] = full[k];
 			});
 		} catch (err) {
 			console.error('[api/query] failed:', err);
-
-
-
-
 
 			try {
 				const soqlRaw = String((req.body && req.body.soql) || '').trim();
@@ -5671,27 +4474,16 @@ v[k] = full[k];
 		}
 	});
 
-
-
-
-
-
-
 	app.get('/api/objects/:name/graph', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const conn = req.sf.conn;
 			const name = req.params.name;
-
-
-
-
 
 			if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
 				return res.status(400).json({ error: 'invalid-object-name' });
 			}
 			const describe = await conn.sobject(name).describe();
 			const queryableSet = await getQueryableSObjects(conn, req.sf.sfOrgId);
-
 
 			const isNoise = (n) => isNoiseSObject(n);
 
@@ -5718,9 +4510,6 @@ continue;
 						field: f.name,
 						label: cleanLabel(f.label, f.name),
 						required: !f.nillable && !f.defaultedOnCreate,
-
-
-
 
 						createable: !!f.createable,
 						updateable: !!f.updateable,
@@ -5761,17 +4550,12 @@ continue;
 }
 	});
 
-
 	app.get('/api/objects/:name/validation-rules', requireAccount, requireSfConnection, async (req, res) => {
 		const name = req.params.name;
 		if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
 			return res.status(400).json({ error: 'invalid-object-name' });
 		}
 		try {
-
-
-
-
 
 			const soql = `SELECT Id, FullName, Metadata FROM ValidationRule WHERE EntityDefinition.QualifiedApiName = '${name}'`;
 			const result = await req.sf.conn.tooling.query(soql);
@@ -5780,52 +4564,6 @@ continue;
 			res.json({ unavailable: true, reason: err.message || 'Could not load validation rules.' });
 		}
 	});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	app.post('/api/records/refresh', requireAccount, requireSfConnection, async (req, res, next) => {
 		const MAX_RECORDS = 200;
@@ -5844,8 +4582,6 @@ continue;
 					max: MAX_RECORDS,
 				});
 			}
-
-
 
 			const byObject = new Map();
 			const inputIndex = [];
@@ -5868,10 +4604,6 @@ continue;
 				inputIndex.push({ objectName, sfId });
 			}
 			const conn = req.sf.conn;
-
-
-
-
 
 			const byKey = new Map();
 			const objectErrors = new Map();
@@ -5927,8 +4659,6 @@ continue;
 				return { objectName: entry.objectName, sfId: entry.sfId, ok: true, values };
 			});
 
-
-
 			try {
 				await ext.auditWrite({
 					req,
@@ -5976,9 +4706,6 @@ return;
 			const limit = Math.min(PREVIEW_MAX, Math.max(1, parseInt(body.limit, 10) || PREVIEW_DEFAULT));
 			const offset = Math.max(0, parseInt(body.offset, 10) || 0);
 
-
-
-
 			const describe = await req.sf.conn.sobject(objectName).describe();
 			const fieldByName = new Map();
 			for (const f of (describe.fields || [])) {
@@ -5986,12 +4713,6 @@ return;
 fieldByName.set(f.name, f);
 }
 			}
-
-
-
-
-
-
 
 			function _soqlString(v) {
 				return "'" + String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
@@ -6004,8 +4725,6 @@ throw new Error('Invalid Salesforce id: ' + s);
 }
 				return "'" + s + "'";
 			}
-
-
 
 			function _soqlDate(v) {
 				const s = String(v).trim();
@@ -6028,9 +4747,6 @@ throw new Error('Invalid number: ' + v);
 }
 				return String(n);
 			}
-
-
-
 
 			function _compileFilter(filt) {
 				if (!filt || typeof filt !== 'object') {
@@ -6159,10 +4875,6 @@ return `${fieldName} = ${bv ? 'true' : 'false'}`;
 			}
 			const whereClause = whereFragments.length > 0 ? ' WHERE ' + whereFragments.join(' AND ') : '';
 
-
-
-
-
 			let orderClause = '';
 			if (sortField) {
 				if (!fieldByName.has(sortField)) {
@@ -6171,19 +4883,11 @@ return `${fieldName} = ${bv ? 'true' : 'false'}`;
 				orderClause = ` ORDER BY ${sortField} ${sortDirection} NULLS LAST`;
 			}
 
-
-
-
-
-
 			const previewFields = ['Id'];
 			const nameFieldDesc = (describe.fields || []).find((f) => f && f.nameField);
 			if (nameFieldDesc) {
 previewFields.push(nameFieldDesc.name);
 }
-
-
-
 
 			for (const f of filters) {
 				if (f && f.field && fieldByName.has(f.field) && !previewFields.includes(f.field)) {
@@ -6198,13 +4902,7 @@ break;
 			const previewSoql = `SELECT ${selectClause} FROM ${objectName}${whereClause}${orderClause} LIMIT ${limit} OFFSET ${offset}`;
 			const countSoql = `SELECT COUNT() FROM ${objectName}${whereClause}`;
 
-
-
-
 			const loadSoql = `SELECT Id FROM ${objectName}${whereClause}${orderClause}`;
-
-
-
 
 			let count;
 			try {
@@ -6217,12 +4915,6 @@ break;
 					soql: countSoql,
 				});
 			}
-
-
-
-
-
-
 
 			let loadableCount = count;
 			const onCanvasIds = Array.isArray(body.onCanvasIds)
@@ -6267,17 +4959,10 @@ break;
 }
 	});
 
-
-
-
-
-
-
 	app.post('/api/migrate/match', requireAccount, _rateLimitSfReads, requireSfConnection, async (req, res, next) => {
 		const VALUES_MAX = 2000;
 		const CHUNK = 200;
 		try {
-
 
 			if (!await _gateCapability(req, res, 'browse-records', 'browse_records')) {
 				return;
@@ -6365,7 +5050,6 @@ break;
 		}
 	});
 
-
 	app.get('/api/objects/:name/search', requireAccount, requireSfConnection, async (req, res, next) => {
 		const name = req.params.name;
 		if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
@@ -6388,7 +5072,6 @@ break;
  next(err); 
 }
 	});
-
 
 	const _RELATED_FILTER_SHAPE_RE = /can not be filtered|cannot be filtered|INVALID_FIELD|MALFORMED_QUERY|UNSUPPORTED_API_VERSION|not supported on the/i;
 	app.get('/api/objects/:name/related-count', requireAccount, requireSfConnection, async (req, res, next) => {
@@ -6417,10 +5100,6 @@ return res.status(400).json({ error: 'invalid-id' });
 			next(err);
 		}
 	});
-
-
-
-
 
 	app.post('/api/related-counts', requireAccount, requireSfConnection, async (req, res, next) => {
 		const probes = Array.isArray(req.body?.probes) ? req.body.probes : [];
@@ -6481,8 +5160,6 @@ return;
 }
 	});
 
-
-
 	app.get('/api/objects/:name/by-ref', requireAccount, requireSfConnection, async (req, res, next) => {
 		const name = req.params.name;
 		const field = String(req.query.field || '').trim();
@@ -6501,8 +5178,6 @@ return res.status(400).json({ error: 'invalid-id' });
 			const conn = req.sf.conn;
 			const describe = await conn.sobject(name).describe();
 
-
-
 			const selectable = Array.from(new Set(['Id'].concat(
 				describe.fields
 					.filter((f) => (f.createable || f.nameField) && f.type !== 'address' && f.type !== 'location')
@@ -6520,9 +5195,6 @@ return res.status(400).json({ error: 'invalid-id' });
 			next(err);
 		}
 	});
-
-
-
 
 	app.get('/api/objects/:name/by-ref-search', requireAccount, requireSfConnection, async (req, res, next) => {
 		const name = req.params.name;
@@ -6565,11 +5237,6 @@ filters.push(nameField + " LIKE '%" + escapedQ + "%'");
 			next(err);
 		}
 	});
-
-
-
-
-
 
 	app.get('/api/objects/:name/layout', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -6692,8 +5359,6 @@ return;
 }
 	});
 
-
-
 	app.post('/api/objects/:name/duplicates', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const name = req.params.name;
@@ -6738,14 +5403,8 @@ return;
 }
 	});
 
-
 	app.post('/api/objects/:name/records', requireAccount, requireSfConnection, async (req, res) => {
 		try {
-
-
-
-
-
 
 			if (!await _gateCapability(req, res, 'upload-records', 'record_insert')) {
 				return;
@@ -6795,9 +5454,6 @@ return;
 		}
 	});
 
-
-
-
 	app.get('/api/sf/users/search', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const conn = req.sf.conn;
@@ -6823,26 +5479,11 @@ return;
 }
 	});
 
-
-
-
-
-
-
-
-
-
-
-
-
 	app.get('/api/connections', requireAccount, async (req, res, next) => {
 		try {
 			const list = await connectionsDb.listForAccount(req.account.id);
 			const view = await viewStateDb.get(req.account.id);
 			const activeId = (view && view.current_connection_id) || null;
-
-
-
 
 			const sfAuth = req.session && req.session.sfAuth;
 			const activeSfUserId = (sfAuth && sfAuth.sfUserId) || null;
@@ -6865,9 +5506,6 @@ return;
 }
 	});
 
-
-
-
 	app.post('/api/connections/:id/activate', requireAccount, async (req, res, next) => {
 		try {
 			const c = await connectionsDb.findById(req.params.id);
@@ -6881,61 +5519,11 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'activate')
 				return res.status(409).json({ error: 'connection-disabled' });
 			}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 			const sfAuth = req.session && req.session.sfAuth;
 			const identityMatches = sfAuth
 				&& sfAuth.sfUserId === c.sf_user_id
 				&& sfAuth.sfOrgId === c.sf_org_id;
 			if (!identityMatches) {
-
-
-
-
-
-
-
-
-
 
 				const byConn = (req.session && req.session.sfAuthByConnection) || {};
 				const stored = byConn[c.id];
@@ -6957,13 +5545,6 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'activate')
 				return res.status(409).json({ error: 'reauth-required', loginUrl });
 			}
 
-
-
-
-
-
-
-
 			req.session.currentConnectionId = c.id;
 			await viewStateDb.setCurrentConnection(req.account.id, c.id);
 			await connectionsDb.touchLastUsed(c.id);
@@ -6973,17 +5554,6 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'activate')
  next(err);
 }
 	});
-
-
-
-
-
-
-
-
-
-
-
 
 	app.delete('/api/connections/:id', requireAccount, async (req, res, next) => {
 		try {
@@ -6996,9 +5566,6 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'delete');
 			}
 			await connectionsDb.disable(c.id);
 
-
-
-
 			const view = await viewStateDb.get(req.account.id);
 			const wasActive = view && view.current_connection_id === c.id;
 			if (wasActive) {
@@ -7008,23 +5575,11 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'delete');
 				}
 			}
 
-
-
 			dropRefreshToken(req.session && req.session.id, c.id);
 
 			if (req.session && req.session.sfAuthByConnection) {
 				delete req.session.sfAuthByConnection[c.id];
 			}
-
-
-
-
-
-
-
-
-
-
 
 			await ext.auditWrite({
 				req,
@@ -7052,42 +5607,9 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'delete');
 		}
 	});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	app.get('/api/canvas/:id/proposals', requireAccount, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
-
 
 			const isDraft = /^draft-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canvasId);
 			const isSf = /^[a-zA-Z0-9]{15,18}$/.test(canvasId);
@@ -7101,7 +5623,6 @@ return res.status(409).json({ error: 'no-active-workspace' });
 }
 			const all = await proposalsDb.listPendingForCanvas(canvasId);
 
-
 			const visible = all.filter((p) => p.workspaceId === workspaceId);
 			res.json({ proposals: visible });
 		} catch (err) {
@@ -7109,26 +5630,10 @@ return res.status(409).json({ error: 'no-active-workspace' });
 }
 	});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	app.post('/api/canvas/:id/proposals/:proposalId/apply', requireAccount, requireSfConnectionUnlessDraft, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const proposalId = req.params.proposalId;
-
 
 			const isDraft = /^draft-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canvasId);
 			const isSf = /^[a-zA-Z0-9]{15,18}$/.test(canvasId);
@@ -7152,30 +5657,14 @@ return res.status(404).json({ error: 'proposal-not-found' });
 				return res.status(403).json({ error: 'workspace-mismatch' });
 			}
 
-
-
-
-
-
-
 			if (!await _gateCapability(req, res, 'ai-edit-on-canvas', 'proposal_apply')) {
 				return;
 			}
 
-
-
-
 			const overrides = (req.body && req.body.overrides) || {};
-
-
 
 			const skipIds = new Set(Array.isArray(req.body && req.body.skipRecordIds)
 				? req.body.skipRecordIds.map(String) : []);
-
-
-
-
-
 
 			const skipChangeIndexes = new Set();
 			if (Array.isArray(req.body && req.body.skipChangeIndexes)) {
@@ -7188,14 +5677,6 @@ skipChangeIndexes.add(n);
 			}
 
 			const results = [];
-
-
-
-
-
-
-
-
 
 			let store = null;
 			let payload;
@@ -7220,11 +5701,6 @@ skipChangeIndexes.add(n);
 			}
 			payload = (liveRead && liveRead.payload) || {};
 
-
-
-
-
-
 			if (!isDraft) {
 				store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
 				const item = await store.get(canvasId);
@@ -7241,18 +5717,6 @@ skipChangeIndexes.add(n);
 			const oldDrafts = Array.isArray(payload.drafts) ? payload.drafts : [];
 			const oldLoadedRecords = Array.isArray(payload.loadedRecords) ? payload.loadedRecords : [];
 
-
-
-
-
-
-
-
-
-
-
-
-
 			const draftChangeByTempId = new Map();
 			const recordChangeById = new Map();
 			const newDraftAdds = [];
@@ -7266,9 +5730,6 @@ skipChangeIndexes.add(n);
 			for (let idx = 0; idx < allChanges.length; idx++) {
 				const c = allChanges[idx];
 				if (skipChangeIndexes.has(idx)) {
-
-
-
 
 					results.push({
 						changeIndex: idx,
@@ -7326,11 +5787,6 @@ skipChangeIndexes.add(n);
 				}
 			}
 
-
-
-
-
-
 			const deletedDraftTempIds = new Set();
 			for (const op of deleteDraftOps) {
 				if (op.tempId != null) {
@@ -7349,12 +5805,6 @@ return d;
 					});
 				});
 
-
-
-
-
-
-
 			let nextTempId = 1;
 			for (const d of newDrafts) {
 				if (typeof d.tempId === 'number' && d.tempId >= nextTempId) {
@@ -7362,8 +5812,6 @@ nextTempId = d.tempId + 1;
 }
 			}
 			const newDraftResults = [];
-
-
 
 			const tempRefToMintedTempId = new Map();
 			for (const c of newDraftAdds) {
@@ -7381,16 +5829,11 @@ tempRefToMintedTempId.set(String(c.tempRef), mintedTempId);
 					objectName: c.objectName,
 					kind: 'new-draft',
 
-
-
 					fields: Object.assign({}, c.fields || {}),
-
-
 
 					tempRef: c.tempRef || undefined,
 				});
 			}
-
 
 			const deletedRecordIds = new Set();
 			for (const op of deleteRecordOps) {
@@ -7414,9 +5857,6 @@ return r;
 					});
 				});
 
-
-
-
 			function _resolveEndpointForPersist(ep) {
 				if (!ep || typeof ep !== 'object') {
 return null;
@@ -7436,13 +5876,6 @@ return null;
 				}
 				return null;
 			}
-
-
-
-
-
-
-
 
 			const _assocTouchesDeletedDraft = (a) => {
 				if (!a) {
@@ -7529,10 +5962,6 @@ newAssociations.push({ from, to, fieldName: c.fieldName });
 
 			let saveError = null;
 
-
-
-
-
 			if (!isDraft) {
 				try {
 					await store.update(canvasId, { payload: newPayload });
@@ -7540,10 +5969,6 @@ newAssociations.push({ from, to, fieldName: c.fieldName });
 					saveError = err.message || String(err);
 				}
 			}
-
-
-
-
 
 			for (const [key, entry] of draftChangeByTempId.entries()) {
 				const present = oldDrafts.some((d) => String(d.tempId) === key);
@@ -7571,17 +5996,12 @@ newAssociations.push({ from, to, fieldName: c.fieldName });
 				});
 			}
 
-
-
-
 			for (const r of newDraftResults) {
 				results.push(Object.assign({}, r, {
 					status: saveError ? 'failed' : 'applied',
 					error: saveError || undefined,
 				}));
 			}
-
-
 
 			for (const r of newAssociationResults) {
 				results.push(Object.assign({}, r, {
@@ -7595,12 +6015,6 @@ newAssociations.push({ from, to, fieldName: c.fieldName });
 					error: saveError || r.error,
 				}));
 			}
-
-
-
-
-
-
 
 			for (const op of deleteDraftOps) {
 				const present = oldDrafts.some((d) => String(d.tempId) === String(op.tempId));
@@ -7636,11 +6050,6 @@ newAssociations.push({ from, to, fieldName: c.fieldName });
 				});
 			}
 
-
-
-
-
-
 			for (const op of autofillOps) {
 				results.push({
 					kind: 'autofill-required',
@@ -7649,16 +6058,6 @@ newAssociations.push({ from, to, fieldName: c.fieldName });
 					error: saveError || undefined,
 				});
 			}
-
-
-
-
-
-
-
-
-
-
 
 			if (loadRecordOps.length > 0 && (!req.sf || !req.sf.conn)) {
 				try {
@@ -7703,8 +6102,6 @@ req.sf = bundle;
 						? await req.sf.conn.sobject(op.objectName).retrieve(op.recordId, fields)
 						: await req.sf.conn.sobject(op.objectName).retrieve(op.recordId);
 
-
-
 					const values = {};
 					if (record && typeof record === 'object') {
 						for (const k of Object.keys(record)) {
@@ -7737,17 +6134,6 @@ values.Id = op.recordId;
 				}
 			}
 
-
-
-
-
-
-
-
-
-
-
-
 			await ext.auditWrite({
 				req,
 				workspaceId: proposal.workspaceId,
@@ -7755,17 +6141,10 @@ values.Id = op.recordId;
 				targetObject: 'ai_proposals',
 				targetId: proposalId,
 
-
-
 				targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
 				payload: {
 					canvasId,
 					mode: isDraft ? 'draft-canvas-only' : 'canvas-only',
-
-
-
-
-
 
 					results: results.map((r) => {
 						const out = Object.assign({}, r);
@@ -7791,8 +6170,6 @@ values.Id = op.recordId;
 		}
 	});
 
-
-
 	app.post('/api/canvas/:id/proposals/:proposalId/reject', requireAccount, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
@@ -7812,11 +6189,6 @@ return res.status(404).json({ error: 'proposal-not-found' });
 			if (workspaceId !== proposal.workspaceId) {
 				return res.status(403).json({ error: 'workspace-mismatch' });
 			}
-
-
-
-
-
 
 			await ext.auditWrite({
 				req,
@@ -7842,16 +6214,6 @@ return res.status(404).json({ error: 'proposal-not-found' });
 		}
 	});
 
-
-
-
-
-
-
-
-
-
-
 	app.get('/api/canvas/:id/clarifications', requireAccount, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
@@ -7867,8 +6229,6 @@ return res.status(409).json({ error: 'no-active-workspace' });
 }
 			const all = await clarificationsDb.listPendingForCanvas(canvasId);
 
-
-
 			const now = Date.now();
 			const visible = all.filter((c) => c.workspaceId === workspaceId && (!c.expiresAt || c.expiresAt > now));
 			res.json({ clarifications: visible });
@@ -7876,9 +6236,6 @@ return res.status(409).json({ error: 'no-active-workspace' });
  next(err); 
 }
 	});
-
-
-
 
 	app.post('/api/canvas/:id/clarifications/:clarificationId/respond', requireAccount, async (req, res, next) => {
 		try {
@@ -7908,9 +6265,6 @@ return res.status(404).json({ error: 'clarification-not-found' });
 			if (workspaceId !== row.workspaceId) {
 				return res.status(403).json({ error: 'workspace-mismatch' });
 			}
-
-
-
 
 			if (responseOption && Array.isArray(row.options) && !row.options.includes(responseOption)) {
 				return res.status(400).json({ error: 'invalid-option', message: 'responseOption must be one of the options offered.' });
@@ -7943,22 +6297,6 @@ return res.status(404).json({ error: 'clarification-not-found' });
 		}
 	});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	app.get('/api/canvas/:id/presence/subscribe', requireAccount, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
@@ -7972,14 +6310,6 @@ return res.status(400).json({ error: 'invalid-id' });
 			if (!workspaceId) {
 return res.status(409).json({ error: 'no-active-workspace' });
 }
-
-
-
-
-
-
-
-
 
 			if (isSf) {
 				const bundle = await getActiveSfConnection(req);
@@ -8011,18 +6341,10 @@ return res.status(409).json({ error: 'no-active-workspace' });
 				sseRes: res,
 			});
 
-
-
 		} catch (err) {
  next(err); 
 }
 	});
-
-
-
-
-
-
 
 	app.post('/api/canvas/:id/presence/cursor', requireAccount, async (req, res, next) => {
 		try {
@@ -8041,10 +6363,6 @@ return res.status(400).json({ error: 'missing-connectionId' });
 }
 	});
 
-
-
-
-
 	app.post('/api/canvas/:id/presence/focus', requireAccount, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
@@ -8059,20 +6377,6 @@ return res.status(400).json({ error: 'missing-connectionId' });
  next(err); 
 }
 	});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	app.post('/api/canvas/:id/presence/draft-link', requireAccount, async (req, res, next) => {
 		try {
@@ -8098,11 +6402,6 @@ return res.status(400).json({ error: 'missing-endpoint-or-field' });
  next(err); 
 }
 	});
-
-
-
-
-
 
 	app.post('/api/canvas/:id/presence/record-remove', requireAccount, async (req, res, next) => {
 		try {
@@ -8158,6 +6457,5 @@ return res.status(400).json({ error: 'missing-fields' });
  next(err); 
 }
 	});
-
 
 }

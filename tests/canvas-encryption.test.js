@@ -1,20 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -42,7 +25,6 @@ describe('canvas-encryption — payload encrypt/decrypt', () => {
 	test('tampered ciphertext fails authentication', () => {
 		const key = generateDataKey();
 		const envelope = encryptPayload('{"x":1}', key);
-
 
 		envelope[envelope.length - 1] ^= 0x01;
 		assert.throws(() => decryptPayload(envelope, key));

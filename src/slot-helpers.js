@@ -1,26 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export function slotKind(slot) {
 	if (!slot) {
 return null;
@@ -28,22 +5,11 @@ return null;
 	return slot.kind || 'whole-record';
 }
 
-
-
-
-
-
-
-
-
 export function stripDraftValuesForSave(payload) {
 	return payload;
 }
 
 export function stripDraftsForNonOwner(payload) {
-
-
-
 
 	const safeDrafts = Array.isArray(payload && payload.drafts)
 		? payload.drafts.map((d) => {
@@ -71,11 +37,8 @@ return l;
 			const kind = slotKind(l.slot);
 			if (kind === 'fields') {
 
-
-
 				return l;
 			}
-
 
 			return {
 				objectName: l.objectName,
@@ -90,15 +53,6 @@ return l;
 		loadedRecords: safeLoaded,
 	});
 }
-
-
-
-
-
-
-
-
-
 
 export function slotProgress(rec) {
 	if (!rec || !rec.slot || rec.slot.slotId == null) {
@@ -130,10 +84,6 @@ filled++;
 	return { filled: (loaded || hasValue) ? 1 : 0, total: 1 };
 }
 
-
-
-
-
 export function aggregateSlotProgress(records) {
 	let filled = 0, total = 0, recordCount = 0;
 	if (!Array.isArray(records)) {
@@ -154,8 +104,6 @@ continue;
 	return { filled, total, recordCount };
 }
 
-
-
 export function slotProgressClass(progress) {
 	if (!progress || progress.total === 0) {
 return 'slot-progress-empty';
@@ -168,28 +116,6 @@ return 'slot-progress-empty';
 }
 	return 'slot-progress-partial';
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export function mergeSlotFills({ records, fills, recipientSfUserId }) {
 	const safeRecords = Array.isArray(records) ? records.slice() : [];
@@ -245,26 +171,6 @@ merged[k] = incoming[k];
 	return { records: safeRecords, applied, skipped, appliedCount };
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export function planSlotFills({ records, fills, recipientSfUserId }) {
 	const safeRecords = Array.isArray(records) ? records : [];
 	const safeFills = Array.isArray(fills) ? fills : [];
@@ -279,11 +185,6 @@ export function planSlotFills({ records, fills, recipientSfUserId }) {
 	const applied = [];
 	const skipped = [];
 	let appliedCount = 0;
-
-
-
-
-
 
 	const updateByRecordId = new Map();
 
@@ -312,10 +213,6 @@ continue;
 		const kind = slotKind(rec.slot);
 		const incoming = (fill.values && typeof fill.values === 'object') ? fill.values : {};
 
-
-
-
-
 		const allowedKeys = kind === 'fields'
 			? new Set(Array.isArray(rec.slot.fields) ? rec.slot.fields : [])
 			: null;
@@ -333,8 +230,6 @@ continue;
 			entry = { objectName: rec.objectName, fields: {} };
 			updateByRecordId.set(recordId, entry);
 		}
-
-
 
 		Object.assign(entry.fields, accepted);
 

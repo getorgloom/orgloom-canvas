@@ -1,48 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -59,49 +14,20 @@
 
 			const AUDIT_FK_FIELDS = new Set(['CreatedById', 'LastModifiedById', 'OwnerId']);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 			const _RELATED_SOFT_THRESHOLD = 50;
 			const _RELATED_HARD_THRESHOLD = 5000;
 			const _RELATED_BULK_LOAD_CAP = 200;
 			const _relatedCountCache = new Map();
 			const _byRefCache = new Map();
 
-
-
-
-
-
 			const _relatedCountInFlight = new Map();
 			const _byRefInFlight = new Map();
 			const PREFETCH_COUNT_CAP = 25;
-			
+
 			function _countCacheKey(objectName, field, id) {
 				return objectName + '|' + field + '|' + id;
 			}
-			
+
 			function fetchRelatedCount(objectName, field, id) {
 				const key = _countCacheKey(objectName, field, id);
 				if (_relatedCountCache.has(key)) {
@@ -132,14 +58,6 @@ return _relatedCountInFlight.get(key);
 				_relatedCountInFlight.set(key, p);
 				return p;
 			}
-			
-
-
-
-
-
-
-
 
 			async function fetchRelatedCountsBatch(probes) {
 				const result = new Map();
@@ -165,7 +83,6 @@ continue;
 					toFetch.push({ key, p });
 				}
 				if (toFetch.length > 0) {
-
 
 					let resolveBatch;
 					const batchPromise = new Promise((r) => {
@@ -202,8 +119,6 @@ return { counts: [] };
 							result.set(key, c.count || 0);
 						});
 
-
-
 						toFetch.forEach((x) => {
 							if (!result.has(x.key)) {
 								_relatedCountCache.set(x.key, 0);
@@ -226,7 +141,7 @@ return { counts: [] };
 				}
 				return result;
 			}
-			
+
 			function fetchByRefCached(objectName, field, hostId) {
 				const key = _countCacheKey(objectName, field, hostId);
 				if (_byRefCache.has(key)) {
@@ -254,16 +169,6 @@ throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
 				_byRefInFlight.set(key, p);
 				return p;
 			}
-			
-
-
-
-
-
-
-
-
-
 
 			async function prefetchTypeNodeOneLevel(tn) {
 				if (!tn || !tn.isTypeNode) {
@@ -317,22 +222,11 @@ return;
 return false;
 }
 
-
-
 						if (AUDIT_FK_FIELDS.has(c.field)) {
 return false;
 }
 						return true;
 					});
-
-
-
-
-
-
-
-
-
 
 					const validRecs = records.filter((r) => r && r.Id);
 					const probes = [];
@@ -345,16 +239,11 @@ return false;
 					const L2_CAP = 200;
 					const probeSlice = probes.slice(0, L2_CAP);
 
-
-
 					const counts = await fetchRelatedCountsBatch(probeSlice);
 					const probeResults = probeSlice.map((p) => ({
 						...p,
 						count: counts.get(_countCacheKey(p.objectName, p.field, p.id)) || 0,
 					}));
-
-
-
 
 					const L3_CAP = 30;
 					const l3Targets = probeResults

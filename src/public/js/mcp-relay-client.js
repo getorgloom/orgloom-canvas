@@ -1,40 +1,9 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
-
-
-
 
 	if (!document.getElementById('app-root')) {
 return;
 }
-
-
-
-
 
 	if (window.ORGLOOM_MOCK) {
 return;
@@ -61,12 +30,9 @@ options.credentials = 'same-origin';
 	let _registeredCanvasId = null;
 	let _eventSource = null;
 
-
-
 	let _connectAttempts = 0;
 
 	function _log(...args) {
-
 
 		try {
 			if (localStorage.getItem('orgloomRelayDebug') === '1') {
@@ -89,7 +55,6 @@ return;
 				_connectAttempts = 0;
 				_log('connected, connectionId=' + _connectionId);
 
-
 				_maybeRegisterCurrent();
 			} catch (e) {
  _log('bad ready payload:', e); 
@@ -106,8 +71,6 @@ return;
 		});
 		_eventSource.onerror = (err) => {
 			_log('SSE error, will auto-retry:', err);
-
-
 
 			if (_eventSource && _eventSource.readyState === EventSource.CLOSED) {
 				_eventSource = null;
@@ -127,16 +90,10 @@ return;
 				}
 				if (canvasId !== _registeredCanvasId) {
 
-
-
 					return _postResponse(requestId, null, 'canvas-not-registered-here');
 				}
 				result = snap({ canvasId });
 			} else if (method === 'describe_object') {
-
-
-
-
 
 				const dsc = window.Orgloom && window.Orgloom.canvasState && window.Orgloom.canvasState.describeObject;
 				if (typeof dsc !== 'function') {
@@ -201,15 +158,8 @@ _registeredCanvasId = null;
 }
 	}
 
-
-
-
-
 	let _pendingLoad = null;
 	function _maybeRegisterCurrent() {
-
-
-
 
 		if (document.visibilityState !== 'visible') {
 return;
@@ -247,19 +197,12 @@ _unregister(cid);
 
 	function _syncRegistration(canvasId, meta) {
 
-
-
-
-
-
 		if (document.visibilityState !== 'visible') {
 			if (_registeredCanvasId) {
 _unregister(_registeredCanvasId);
 }
 			return;
 		}
-
-
 
 		if (_registeredCanvasId && _registeredCanvasId !== canvasId) {
 			_unregister(_registeredCanvasId);
@@ -272,11 +215,6 @@ _unregister(_registeredCanvasId);
 			_register(canvasId, meta || {});
 		}
 	}
-
-
-
-
-
 
 	document.addEventListener('visibilitychange', () => {
 		const cs = window.Orgloom && window.Orgloom.canvasState;
@@ -292,14 +230,6 @@ return;
 			_unregister(_registeredCanvasId);
 		}
 	});
-
-
-
-
-
-
-
-
 
 	setInterval(() => {
 		const cs = window.Orgloom && window.Orgloom.canvasState;

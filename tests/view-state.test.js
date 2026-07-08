@@ -1,13 +1,3 @@
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -21,13 +11,6 @@ async function makeAccount(email = 'a@x.com') {
 	return (await accounts.upsertByEmail({ email })).account;
 }
 
-
-
-
-
-
-
-
 async function makeWorkspace(ownerAccountId, name = 'W') {
 	const { ext } = await import('../src/extensions.js');
 	const db = ext.getDb();
@@ -37,10 +20,6 @@ async function makeWorkspace(ownerAccountId, name = 'W') {
 		id, name, owner_account_id: ownerAccountId,
 		created_at: now, updated_at: now,
 	}).execute();
-
-
-
-
 
 	await db.insertInto('workspace_members').values({
 		workspace_id: id,

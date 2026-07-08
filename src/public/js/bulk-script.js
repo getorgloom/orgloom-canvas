@@ -1,39 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -46,7 +10,6 @@
 			}
 			const canvasState = deps.canvasState;
 			const showBulkToast = deps.showBulkToast;
-
 
 			const showBulkToastWithAction = deps.showBulkToastWithAction || null;
 			const renderBulkView = deps.renderBulkView;
@@ -148,10 +111,6 @@ closeBulkScriptModal();
 				'\t}\n' +
 				'}\n';
 			let _bsLastSource = _bsExample;
-
-
-
-
 
 			function _bsScriptableRecords() {
 				return canvasState.bulkRecords.filter((r) => r && !r.isTypeNode && !r.isPending);
@@ -264,7 +223,6 @@ advance();
 						while (i < src.length && (isDigit(src[i]) || src[i] === '.')) {
 s += advance();
 }
-
 
 						if (s.split('.').length > 2 || Number.isNaN(Number(s))) {
 							throw new Error('Malformed number "' + s + '" at line ' + startLine);
@@ -560,19 +518,7 @@ eat();
 			function _bsInterpret(ast, env) {
 				let steps = 0;
 
-
-
-
-
-
-
-
-
 				const _identityGuarded = new Set(Array.isArray(env.records) ? env.records : []);
-
-
-
-
 
 				const _IDENTITY_PROPS = new Set(['id', 'loadedFromId', 'values']);
 				function tick() {
@@ -797,20 +743,12 @@ execStmt(ast.body[k], root);
 				const out = bulkScriptModal.querySelector('#bs-output');
 				_bsLastSource = source;
 
-
-
-
-
-
-
 				const recordSnapshots = new Map();
 				canvasState.bulkRecords.forEach((r) => {
 					let snap;
 					try {
 						snap = structuredClone(r);
 					} catch (_) {
-
-
 
 						snap = { values: r.values ? Object.assign({}, r.values) : {} };
 					}
@@ -868,11 +806,6 @@ return a;
 					abs: Math.abs,
 				};
 
-
-
-
-
-
 				const rollbackAll = () => {
 					canvasState.bulkRecords.forEach((r) => {
 						const snap = recordSnapshots.get(r.id);
@@ -902,10 +835,6 @@ lines.push('--- log ---', logs.join('\n'), '');
 				try {
 					_bsInterpret(ast, env);
 					elapsed = (((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0).toFixed(1);
-
-
-
-
 
 					canvasState.bulkRecords.forEach((r) => {
 						const snap = recordSnapshots.get(r.id);
@@ -939,12 +868,6 @@ lines.push('--- log ---', logs.join('\n'), '');
 					const _doneMsg = 'Script updated ' + changed + ' record' + (changed === 1 ? '' : 's') + '.';
 					if (showBulkToastWithAction) {
 
-
-
-
-
-
-
 						showBulkToastWithAction(_doneMsg, 'Undo', () => {
 							rollbackAll();
 							renderBulkView();
@@ -955,13 +878,6 @@ lines.push('--- log ---', logs.join('\n'), '');
 					}
 				}
 			}
-
-
-
-
-
-
-
 
 			async function runBulkScriptWithGate(source) {
 				const loadedCount = _bsScriptableRecords()
@@ -983,7 +899,6 @@ return;
 				}
 				runBulkScript(source);
 			}
-
 
 			bulkScriptModal.querySelector('#bs-run').onclick = () => {
 				const ta = bulkScriptModal.querySelector('#bs-source');

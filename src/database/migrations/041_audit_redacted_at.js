@@ -1,23 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import crypto from "node:crypto";
 
 function _canonical(row) {
@@ -61,8 +41,6 @@ export async function up(db) {
 		.alterTable("audit_log")
 		.addColumn("redacted_at", "integer")
 		.execute();
-
-
 
 	const rows = await db
 		.selectFrom("audit_log")

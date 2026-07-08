@@ -1,25 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -31,8 +9,6 @@
 	}
 
 	window.ORGLOOM_capture = function (err, context) {
-
-
 
 		safeWarn(err, context);
 		if (window.Sentry && typeof window.Sentry.captureException === 'function') {

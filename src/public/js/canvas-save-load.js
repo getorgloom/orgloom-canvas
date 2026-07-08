@@ -1,31 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -80,8 +52,6 @@ throw new Error('canvas-save-load.mount: missing deps object');
 			const rehydrateSessionDraftValues = deps.rehydrateSessionDraftValues;
 			const _hasCap = deps._hasCap;
 
-
-
 			const clearAutosave = typeof deps.clearAutosave === 'function' ? deps.clearAutosave : function () {};
 
 			function showSaveMenu(triggerEl) {
@@ -89,30 +59,8 @@ throw new Error('canvas-save-load.mount: missing deps object');
 				const hasAny = canvasState.selectedObjects.length > 0;
 				const actionDisabled = hasAny ? '' : ' disabled';
 
-
-
-
 				const _hasRecords = canvasState.bulkRecords.some((r) => !r.isTypeNode);
 				const exportDisabled = _hasRecords ? '' : ' disabled';
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const hasCurrent = !!(canvasState.currentCanvas && canvasState.currentCanvas.id);
 				const ownsCurrent = !!(canvasState.currentCanvas && canvasState.currentCanvas.ownedByMe);
@@ -127,13 +75,6 @@ throw new Error('canvas-save-load.mount: missing deps object');
 							'Fork as new canvas <span class="tpl-action-sub">your own editable copy of \u201c' + safeTitle + '\u201d</span>' +
 						'</button>';
 				}
-
-
-
-
-
-
-
 
 				const _canExportCanvas = _hasCap('export-canvas');
 				const _canExportRecords = _hasCap('export-records');
@@ -151,13 +92,6 @@ throw new Error('canvas-save-load.mount: missing deps object');
 					primarySaveBtn +
 					'<button type="button" class="tpl-action" data-tpl-action="save-new"' + actionDisabled + '>Save as new canvas <span class="tpl-action-sub">a fresh saved canvas in your Salesforce org</span></button>' +
 					_downloadHeader +
-
-
-
-
-
-
-
 
 					_exportJsonBtn +
 					_exportCsvBtn;
@@ -182,18 +116,8 @@ openExportCsvModal();
 					});
 				});
 			}
-			
-
-
-
 
 			async function promptCanvasSave(opts = {}) {
-
-
-
-
-
-
 
 				const name = await showPromptModal({
 					title: opts.title || 'Name this canvas',
@@ -221,11 +145,6 @@ return;
 					const data = await r.json().catch(() => ({}));
 					if (!r.ok) {
 
-
-
-
-
-
 						if (r.status === 403 && data && data.error === 'sf-content-version-create-denied') {
 							await _showContentPermDeniedDialog(data.message || '', data.sfError || '');
 							return;
@@ -242,20 +161,11 @@ return;
 					}
 					showBulkToast('Saved canvas \u201c' + name + '\u201d to your Salesforce Files.');
 
-
 					clearAutosave();
-
-
 
 					if (data && data.id) {
 						canvasState.currentCanvas = { id: data.id, title: name, ownedByMe: true, versionId: data.versionId || null };
 						_watchProposalsForCurrentCanvas();
-
-
-
-
-
-
 
 						if (window.Orgloom && window.Orgloom.canvasState && window.Orgloom.canvasState.clearDraft) {
 							window.Orgloom.canvasState.clearDraft();
@@ -266,11 +176,6 @@ return;
 						payload: { name, contentDocumentId: data.id },
 					});
 
-
-
-
-
-
 					if (typeof opts.afterSave === 'function' && data && data.id) {
 						try {
  opts.afterSave({ id: data.id, title: name }); 
@@ -280,12 +185,6 @@ return;
 					showBulkToast('Save failed: ' + (e.message || e), 'error');
 				}
 			}
-			
-
-
-
-
-
 
 			async function forkCanvasAsNew() {
 				const sourceTitle = (canvasState.currentCanvas && canvasState.currentCanvas.title) || '';
@@ -295,10 +194,6 @@ return;
 					submitText: 'Fork',
 				});
 			}
-			
-
-
-
 
 			async function saveExistingCanvas() {
 				if (!canvasState.currentCanvas || !canvasState.currentCanvas.id) {
@@ -321,9 +216,6 @@ return;
 }
 				try {
 
-
-
-
 					try {
  notePresenceLocalSave(); 
 } catch (_) {}
@@ -334,28 +226,15 @@ return;
 						body: JSON.stringify({
 							payload,
 
-
-
-
 							expectedVersionId: canvasState.currentCanvas.versionId || null,
 						}),
 					});
 					const data = await r.json().catch(() => ({}));
 
-
-
-
-
-
-
 					if (r.status === 409 && data && (data.error === 'version-mismatch' || data.code === 'version_mismatch')) {
 						handleCanvasVersionMismatch(data, payload);
 						return;
 					}
-
-
-
-
 
 					if (r.status === 403 && data && (data.error === 'sf-content-version-create-denied' || data.error === 'sf-content-document-edit-denied')) {
 						await _showContentPermDeniedDialog(data.message || '', data.sfError || '');
@@ -371,12 +250,10 @@ throw new Error((data && (data.message || data.error)) || 'HTTP ' + r.status);
 }
 					const titleForToast = (data && data.title) || canvasState.currentCanvas.title || 'canvas';
 
-
 					if (data && data.versionId) {
 						canvasState.currentCanvas = Object.assign({}, canvasState.currentCanvas, { versionId: data.versionId });
 					}
 					showBulkToast('Updated \u201c' + titleForToast + '\u201d.');
-
 
 					clearAutosave();
 					pingAuditEvent('canvas_save_sf', {
@@ -387,16 +264,6 @@ throw new Error((data && (data.message || data.error)) || 'HTTP ' + r.status);
 					showBulkToast('Save failed: ' + (e.message || e), 'error');
 				}
 			}
-			
-
-
-
-
-
-
-
-
-
 
 			function handleCanvasVersionMismatch(serverPayload, originalPayload) {
 				document.querySelectorAll('.canvas-version-conflict').forEach((el) => el.remove());
@@ -455,7 +322,6 @@ throw new Error((data && data.error) || 'HTTP ' + r.status);
 							credentials: 'same-origin',
 							headers: { 'Content-Type': 'application/json' },
 
-
 							body: JSON.stringify({ payload: originalPayload }),
 						});
 						const data = await r.json().catch(() => ({}));
@@ -472,20 +338,6 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 				});
 				setTimeout(() => overlay.querySelector('[data-vc-reload]').focus(), 0);
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			async function beginMigration() {
 				const real = canvasState.bulkRecords.filter((r) => !r.isTypeNode);
@@ -517,9 +369,6 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 					return;
 				}
 
-
-
-
 				if (window.Orgloom && window.Orgloom.sfConnectionsModal
 					&& typeof window.Orgloom.sfConnectionsModal.open === 'function') {
 					window.Orgloom.sfConnectionsModal.open();
@@ -527,7 +376,6 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 					window.location.assign('/connect');
 				}
 			}
-
 
 			async function promptFileExport() {
 				const real = canvasState.bulkRecords.filter((r) => !r.isTypeNode);
@@ -549,10 +397,6 @@ return;
 					: ('orgloom-canvas-' + new Date().toISOString().slice(0, 10));
 				downloadTemplate(name, false, { preserveLoadedLinks });
 			}
-
-
-
-
 
 			function _showExportOptionsDialog({ loadedCount, totalCount }) {
 				return new Promise((resolve) => {
@@ -615,13 +459,6 @@ finish(null);
 					setTimeout(() => modal.querySelector('[data-eo-confirm]').focus(), 0);
 				});
 			}
-			
-
-
-
-
-
-
 
 			async function _showContentPermDeniedDialog(actionableMessage, sfError) {
 				document.querySelectorAll('.modal.content-perm-modal').forEach((el) => el.remove());
@@ -678,13 +515,6 @@ cleanup();
 					document.addEventListener('keydown', onKey);
 				});
 			}
-			
-
-
-
-
-
-
 
 			async function _showSavedCanvasCapDialog(data) {
 				document.querySelectorAll('.modal.saved-cap-modal').forEach((el) => el.remove());
@@ -734,29 +564,10 @@ cleanup();
 					document.addEventListener('keydown', onKey);
 				});
 			}
-			
-
 
 			function showTemplatesMenu(triggerEl) {
  showSaveMenu(triggerEl); 
 }
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			async function showBrowseSavedMenu(triggerEl) {
 				const { pop, cleanup } = _openAnchoredPopup(triggerEl, 440);
@@ -778,33 +589,18 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 						list.innerHTML = '<div class="tpl-empty">No saved canvases in ' + escapeHtml(teamName || 'this workspace') + ' yet. Use Save &rarr; "Save as new canvas" to put one here. <a href="/docs/walkthroughs/saving-canvases" target="_blank" rel="noopener" class="empty-doclink">How saving works &rarr;</a></div>';
 						return;
 					}
-			
-
-
-
-
-
-
 
 					const inWorkspace = items.slice();
 					const other = [];
-			
+
 					function _renderSavedRow(t, opts) {
 						const showWsBadge = !!(opts && opts.showWsBadge);
 						const date = t.updatedAt ? new Date(t.updatedAt).toLocaleString() : '';
-
-
-
 
 						const isActive = !!(canvasState.currentCanvas && canvasState.currentCanvas.id === t.id);
 						const activeTag = isActive
 							? '<span class="tpl-scope-tag tpl-scope-tag--active" title="This is the canvas you currently have open">ACTIVE</span>'
 							: '';
-
-
-
-
-
 
 						let ownTag;
 						if (t.ownedByMe) {
@@ -814,11 +610,6 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 						} else {
 							ownTag = '<span class="tpl-scope-tag tpl-scope-tag--template">CONTRIBUTOR</span>';
 						}
-
-
-
-
-
 
 						let fillTag = '';
 						const activity = t.lastActivity || t.lastFillActivity;
@@ -832,9 +623,6 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 								escapeHtml(new Date(activity.at).toLocaleString()) +
 								'">' + escapeHtml(verb + ' ' + rel + ' by ' + who) + '</div>';
 						}
-
-
-
 
 						const wsBadge = showWsBadge && t.ownerBoundTeamName
 							? '<span class="tpl-ws-badge" title="This canvas is bound to ' + escapeHtml(t.ownerBoundTeamName) + '. Loading it will switch your view to that workspace.">' + escapeHtml(t.ownerBoundTeamName) + '</span>'
@@ -850,16 +638,13 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 							(t.ownedByMe ? '<button type="button" class="tpl-del" data-tpl-del="' + escapeHtml(t.id) + '" title="Delete">\u00D7</button>' : '') +
 						'</div>';
 					}
-			
+
 					const inWsHtml = inWorkspace.length > 0
 						? inWorkspace.map((t) => _renderSavedRow(t, { showWsBadge: false })).join('')
 						: '<div class="tpl-empty">No canvases in ' + escapeHtml(teamName || 'this workspace') + ' yet. Use Export &rarr; "Save canvas" to put one here.</div>';
-			
+
 					let otherHtml = '';
 					if (other.length > 0) {
-
-
-
 
 						const openByDefault = inWorkspace.length === 0;
 						const otherRows = other.map((t) => _renderSavedRow(t, { showWsBadge: true })).join('');
@@ -871,7 +656,7 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 								'<div class="tpl-other-list">' + otherRows + '</div>' +
 							'</details>';
 					}
-			
+
 					list.innerHTML = inWsHtml + otherHtml;
 					pop.querySelectorAll('[data-tpl-load]').forEach((b) => {
 						b.addEventListener('click', async () => {
@@ -893,45 +678,19 @@ throw new Error(td && td.error || 'HTTP ' + tr.status);
 }
 								await applyCanvasPayload(td.payload || {}, { merge: mode === 'merge', ownedByMe: !!td.ownedByMe });
 
-
-
-
-
-
-
 								try {
  rehydrateSessionDraftValues(id);
 } catch (err) { window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'canvas-save-load.js/loadFromList/rehydrateSession' }); }
 
-
-
-
-
-
 								if (mode !== 'merge') {
 									_setStaleRefsFromLoad(td.staleRefs);
 								} else if (Array.isArray(td.staleRefs)) {
-
-
-
-
-
-
-
-
-
-
-
 
 									const mergeStaleIds = td.staleRefs
 										.filter((s) => s && s.sfId && (s.reason || 'unknown') !== 'no-access')
 										.map((s) => s.sfId);
 									_addStaleRefIds(mergeStaleIds);
 								}
-
-
-
-
 
 								if (mode !== 'merge') {
 									canvasState.currentCanvas = { id, title: td.title || '', ownedByMe: !!td.ownedByMe, versionId: td.versionId || null };
@@ -958,16 +717,8 @@ throw new Error(td && td.error || 'HTTP ' + tr.status);
 						b.addEventListener('click', async (ev) => {
 							ev.stopPropagation();
 
-
-
-
 							const id = b.dataset.tplDel;
 							const row = b.closest('.tpl-item');
-
-
-
-
-
 
 							const shareBtn = row && row.querySelector('[data-tpl-name]');
 							let title = shareBtn ? shareBtn.getAttribute('data-tpl-name') : null;
@@ -999,10 +750,6 @@ return;
 throw new Error(dd && dd.error || 'HTTP ' + dr.status);
 }
 
-
-
-
-
 								if (row && row.parentNode) {
 									row.parentNode.removeChild(row);
 								}
@@ -1020,15 +767,6 @@ throw new Error(dd && dd.error || 'HTTP ' + dr.status);
 					list.innerHTML = '<div class="tpl-empty">Failed to load: ' + escapeHtml(e.message || String(e)) + '</div>';
 				}
 			}
-			
-
-
-
-
-
-
-
-
 
 			return {
 				showSaveMenu: showSaveMenu,

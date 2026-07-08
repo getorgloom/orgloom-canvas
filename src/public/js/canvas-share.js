@@ -1,39 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -65,14 +29,6 @@ throw new Error('canvas-share.mount: missing deps object');
 			function attachSfUserPicker(hostEl, { onPick, placeholder = 'Search by name, email, or username…' } = {}) {
 				hostEl.classList.add('sf-user-picker');
 
-
-
-
-
-
-
-
-
 				hostEl.innerHTML =
 					'<input type="search" name="sf-user-search" class="sf-user-picker-input" ' +
 						'placeholder="' + escapeHtml(placeholder) + '" ' +
@@ -83,10 +39,10 @@ throw new Error('canvas-share.mount: missing deps object');
 				const input = hostEl.querySelector('.sf-user-picker-input');
 				const results = hostEl.querySelector('.sf-user-picker-results');
 				const selected = hostEl.querySelector('.sf-user-picker-selected');
-			
+
 				let _seq = 0;
 				let _picked = null;
-			
+
 				async function runSearch(q) {
 					const mySeq = ++_seq;
 					results.hidden = false;
@@ -133,7 +89,7 @@ return;
 						results.innerHTML = '<div class="sf-user-picker-empty">Search failed: ' + escapeHtml(err.message || String(err)) + '</div>';
 					}
 				}
-			
+
 				function pick(u) {
 					_picked = u;
 					input.value = '';
@@ -149,7 +105,7 @@ return;
 onPick(u);
 }
 				}
-			
+
 				function clear() {
 					_picked = null;
 					selected.hidden = true;
@@ -162,7 +118,7 @@ onPick(u);
 onPick(null);
 }
 				}
-			
+
 				let _debounce;
 				input.addEventListener('input', () => {
 					clearTimeout(_debounce);
@@ -179,7 +135,6 @@ runSearch('');
 results.hidden = true;
 }
 				});
-			
 
 				return {
 					getPicked() {
@@ -193,15 +148,6 @@ input.focus();
 },
 				};
 			}
-			
-
-
-
-
-
-
-
-
 
 			function _shareDisclosureRecords() {
 				const seen = new Set();
@@ -221,12 +167,6 @@ continue;
 					const composedPerson = ((v.FirstName || '') + ' ' + (v.LastName || '')).trim();
 					const objectLabel = rec.label || rec.objectName;
 
-
-
-
-
-
-
 					const namedDisplay =
 						v.Name
 						|| (composedPerson || null)
@@ -244,26 +184,9 @@ continue;
 				}
 				return out;
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function openCanvasEmailLinkModal(canvasId, canvasTitle) {
 				document.querySelectorAll('.canvas-share-modal').forEach((el) => el.remove());
-
-
 
 				const _disclosureRecords = _shareDisclosureRecords();
 				const _disclosureItemsHtml = _disclosureRecords.length === 0
@@ -324,16 +247,6 @@ continue;
 								'<span class="tag" id="cs-link-msg" aria-live="polite"></span>' +
 							'</div>' +
 
-
-
-
-
-
-
-
-
-
-
 							'<div id="cs-share-result" style="display:none;margin-top:0.9em;padding:0.7em 0.85em;border:1px solid var(--border);border-radius:4px;background:var(--bg-elev)"></div>' +
 							'<h4 style="margin:1.2em 0 0.4em;font-size:0.92rem">Active shares</h4>' +
 							'<div id="cs-link-list"><div class="tag">Loading…</div></div>' +
@@ -343,13 +256,10 @@ continue;
 						'</div>' +
 					'</div>';
 				document.body.appendChild(modal);
-			
+
 				const cleanup = () => {
 					modal.remove();
 					document.removeEventListener('keydown', onKey);
-
-
-
 
 					_invalidateShareCountForCanvas(canvasId);
 				};
@@ -360,7 +270,7 @@ cleanup();
 };
 				document.addEventListener('keydown', onKey);
 				modal.querySelectorAll('[data-cs-close]').forEach((el) => el.addEventListener('click', cleanup));
-			
+
 				const sendBtnEl = modal.querySelector('#cs-link-send');
 				const shareResultEl = modal.querySelector('#cs-share-result');
 				const picker = attachSfUserPicker(modal.querySelector('#cs-link-picker'), {
@@ -369,16 +279,6 @@ cleanup();
 						sendBtnEl.disabled = !user;
 					},
 				});
-
-
-
-
-
-
-
-
-
-
 
 				if (window.ORGLOOM_MOCK) {
 					const demoBanner = document.createElement('div');
@@ -400,8 +300,7 @@ intro.parentNode.insertBefore(demoBanner, intro);
 					sendBtnEl.disabled = true;
 					sendBtnEl.title = 'Sharing is disabled in demo mode. Sign up to share canvases with your teammates.';
 				}
-			
-			
+
 				async function refreshList() {
 					const listEl = modal.querySelector('#cs-link-list');
 					listEl.innerHTML = '<div class="tag">Loading…</div>';
@@ -418,14 +317,7 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 							return;
 						}
 
-
-
 						const directHtml = directShares.map((d) => {
-
-
-
-
-
 
 							const role = d.role || (d.accessLevel === 'Collaborator' ? 'editor' : 'viewer');
 							const roleLabel = role.toUpperCase();
@@ -442,9 +334,6 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 								'<button type="button" class="button secondary cs-direct-revoke" data-sf-user-id="' + escapeHtml(d.sfUserId) + '" style="font-size:0.78rem;padding:0.25em 0.6em">Revoke</button>' +
 							'</div>';
 						}).join('');
-
-
-
 
 						listEl.innerHTML = directHtml;
 						listEl.querySelectorAll('.cs-direct-revoke').forEach((btn) => {
@@ -480,13 +369,9 @@ throw new Error(dd && dd.error || 'HTTP ' + dr.status);
 						listEl.innerHTML = '<div class="tag">Couldn’t load active links: ' + escapeHtml(err.message || String(err)) + '</div>';
 					}
 				}
-			
+
 				const msgEl = modal.querySelector('#cs-link-msg');
 				async function sendLink() {
-
-
-
-
 
 					if (window.ORGLOOM_MOCK) {
 return;
@@ -529,8 +414,6 @@ return;
 							throw new Error((data && (data.message || data.error)) || 'HTTP ' + r.status);
 						}
 
-
-
 						const r2 = data.recipient || {};
 						const who = r2.name || r2.email || picked.email || picked.name || 'the recipient';
 						let nextStep;
@@ -547,10 +430,6 @@ return;
 						}
 						msgEl.textContent = nextStep;
 						msgEl.style.color = 'var(--success)';
-
-
-
-
 
 						if (shareResultEl) {
 							const canvasUrl = window.location.origin + '/?openCanvas=' + encodeURIComponent(canvasId);
@@ -587,12 +466,6 @@ return;
 								}
 							});
 						}
-
-
-
-
-
-
 
 						if (data.recordAccess) {
 							const note = document.createElement('div');
@@ -634,17 +507,6 @@ msgEl.appendChild(note);
 				}
 				sendBtnEl.addEventListener('click', sendLink);
 
-			
-
-
-
-
-
-
-
-
-
-
 				if (!_hasCap('share-canvas')) {
 					const contentEl = modal.querySelector('.modal-content');
 					const upgradeBanner = document.createElement('div');
@@ -659,8 +521,6 @@ msgEl.appendChild(note);
 						'<a href="/pricing" target="_blank" rel="noopener">Compare plans</a>';
 					contentEl.insertBefore(upgradeBanner, contentEl.firstChild);
 
-
-
 					const lockTargets = [
 						modal.querySelector('.cs-role-picker'),
 						modal.querySelector('#cs-link-picker'),
@@ -674,26 +534,21 @@ msgEl.appendChild(note);
 });
 					});
 
-
-
-
 					const upgradeBtn = document.createElement('a');
 					upgradeBtn.className = 'button';
 					upgradeBtn.href = '/workspace/upgrade';
 					upgradeBtn.textContent = 'Upgrade to Pro to share';
 					sendBtnEl.replaceWith(upgradeBtn);
 
-
 					const msgEl = modal.querySelector('#cs-link-msg');
 					if (msgEl) {
 msgEl.textContent = '';
 }
 				}
-			
+
 				refreshList();
 				setTimeout(() => picker.focus(), 0);
 			}
-			
 
 			return {
 				attachSfUserPicker: attachSfUserPicker,

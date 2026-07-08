@@ -1,30 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -91,8 +64,6 @@ return;
 				const cyContainer = getGraph().querySelector('#bulk-canvas-cy');
 				const legacyContainer = getGraph().querySelector('#bulk-canvas');
 
-
-
 				const activeContainer = () => {
 					if (cyContainer && cyContainer.offsetParent !== null) {
 return cyContainer;
@@ -102,9 +73,6 @@ return legacyContainer;
 }
 					return cyContainer || legacyContainer;
 				};
-
-
-
 
 				const worldFromClient = (clientX, clientY) => {
 					const container = activeContainer();
@@ -126,19 +94,12 @@ return null;
 					return { x: container.scrollLeft + px, y: container.scrollTop + py };
 				};
 
-
-
-
 				const overInteractive = (target) =>
 					!!(target && target.closest && target.closest(
 						'.record-card, .record-card-pending, .record-related-chip, ' +
 						'.bulk-empty-placeholder, ' +
 						'.bulk-toast, .modal',
 					));
-			
-
-
-
 
 				document.addEventListener('contextmenu', (ev) => {
 					const worldPos = worldFromClient(ev.clientX, ev.clientY);
@@ -148,9 +109,6 @@ return;
 					if (overInteractive(ev.target)) {
 return;
 }
-
-
-
 
 					if (getCyInstance()) {
 						const cont = activeContainer();
@@ -170,11 +128,6 @@ return;
 					ev.preventDefault();
 					_showCanvasContextMenu(ev.clientX, ev.clientY, worldPos);
 				});
-			
-
-
-
-
 
 				document.addEventListener('keydown', (ev) => {
 					const isInputTarget = ev.target
@@ -217,7 +170,6 @@ return;
 					}
 				});
 
-
 				document.addEventListener('mousedown', () => {
 					if (getCanvasSpaceHeld()) {
 getGraph().classList.add('canvas-pan-mode-active');
@@ -227,19 +179,11 @@ getGraph().classList.add('canvas-pan-mode-active');
 					getGraph().classList.remove('canvas-pan-mode-active');
 				});
 			}
-			
-
-
-
-
-
-
 
 			function _showCanvasContextMenu(clientX, clientY, worldPos) {
 				document.querySelectorAll('.canvas-context-menu').forEach((el) => el.remove());
 				const menu = document.createElement('div');
 				menu.className = 'canvas-context-menu';
-
 
 				const width = 220;
 				const estHeight = 48;
@@ -286,10 +230,6 @@ return;
 					}
 				});
 			}
-			
-
-
-
 
 			function showAddRecordsMenu(triggerEl) {
 				document.querySelectorAll('.fill-menu-popup').forEach(el => el.remove());
@@ -300,8 +240,6 @@ return;
 				const left = Math.min(rect.left, viewportW - 280);
 				pop.style.left = Math.max(8, left) + 'px';
 				pop.style.top = (rect.bottom + 6) + 'px';
-
-
 
 				pop.innerHTML =
 					'<div class="fm-header">From Salesforce</div>' +
@@ -322,10 +260,6 @@ pop.remove();
 					b.addEventListener('click', () => {
 						const action = b.dataset.addMenu;
 						cleanup();
-
-
-
-
 
 						if (action === 'csv') {
 openLinkedCsvModal();
@@ -353,12 +287,6 @@ cleanup();
 					document.addEventListener('keydown', onEsc, true);
 				}, 0);
 			}
-			
-
-
-
-
-
 
 			function showBulkOperationsMenu(triggerEl) {
 				document.querySelectorAll('.fill-menu-popup').forEach((el) => el.remove());
@@ -369,14 +297,6 @@ cleanup();
 				const left = Math.min(rect.left, viewportW - 280);
 				pop.style.left = Math.max(8, left) + 'px';
 				pop.style.top = (rect.bottom + 6) + 'px';
-
-
-
-
-
-
-
-
 
 				const selectedDraftIds = canvasState.bulkRecords
 					.filter((r) => !r.loadedFromId && !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id))
@@ -390,43 +310,7 @@ cleanup();
 						: ' (no draft records yet)')
 					: ' on ' + scopedDraftCount + (scopeToSelected ? ' selected' : '') + ' draft record' + (scopedDraftCount === 1 ? '' : 's');
 
-
-
 				const fillLabelSuffix = scopeToSelected ? ' (selected)' : '';
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				const canRunScripts = _hasCap('run-script');
 				let scriptItem;
@@ -439,7 +323,6 @@ cleanup();
 					'</button>';
 				} else {
 
-
 					const offTitle = isTeamAdmin()
 						? 'Run script isn\'t granted to your account. Click to open workspace member permissions and grant it.'
 						: 'Run script isn\'t enabled for your account. Ask a workspace admin to grant you access.';
@@ -448,13 +331,6 @@ cleanup();
 						'<span class="tag" style="font-size:0.7rem">Off</span>' +
 					'</button>';
 				}
-
-
-
-
-
-
-
 
 				const _selectedReal = canvasState.bulkRecords.filter((r) =>
 					!r.isTypeNode && !r.isPending && canvasState.bulkSelectedIds.has(r.id)
@@ -475,8 +351,6 @@ cleanup();
 					? '<button type="button" data-bulk-op="diff" title="' + diffTitle + '">' + diffLabel + '</button>'
 					: '<button type="button" data-bulk-op="diff" title="' + diffTitle + '" disabled aria-disabled="true">' + diffLabel + '</button>';
 
-
-
 				const _searchableCount = canvasState.bulkRecords.filter(
 					(r) => r && !r.isTypeNode && !r.isPending
 				).length;
@@ -487,13 +361,6 @@ cleanup();
 				const searchItem = searchEnabled
 					? '<button type="button" data-bulk-op="search" title="' + searchTitle + '">Search canvas <span class="fm-tag">Cmd/Ctrl+F</span></button>'
 					: '<button type="button" data-bulk-op="search" title="' + searchTitle + '" disabled aria-disabled="true">Search canvas</button>';
-
-
-
-
-
-
-
 
 				let dupesEnabled = false;
 				const _dupesCountsByObject = new Map();
@@ -517,13 +384,6 @@ continue;
 					? '<button type="button" data-bulk-op="find-dupes" title="' + dupesTitle + '">Find duplicates</button>'
 					: '<button type="button" data-bulk-op="find-dupes" title="' + dupesTitle + '" disabled aria-disabled="true">Find duplicates</button>';
 
-
-
-
-
-
-
-
 				const _canAutoFill = _hasCap('auto-fill-records');
 				const _canBulkEdit = _hasCap('bulk-edit-records');
 				const _autoFillItem = _canAutoFill
@@ -532,11 +392,6 @@ continue;
 				const _bulkEditItem = _canBulkEdit
 					? '<button type="button" data-bulk-op="bulk-edit" title="Find &amp; replace or set a value across many records at once">Bulk edit</button>'
 					: '';
-
-
-
-
-
 
 				const _canBrowseForRefresh = _hasCap('browse-records');
 				let _refreshItem = '';
@@ -550,11 +405,6 @@ continue;
 					const _refreshCount = _selectedLoaded.length;
 					const _hasSelection = canvasState.bulkSelectedIds && canvasState.bulkSelectedIds.size > 0;
 
-
-
-
-
-
 					const _refreshSubtitle = _refreshCount === 0
 						? (_hasSelection ? 'No loaded records in selection' : 'No loaded records on canvas')
 						: (_hasSelection
@@ -567,9 +417,6 @@ continue;
 						? '<button type="button" data-bulk-op="refresh-sf" disabled aria-disabled="true" title="' + _refreshEmptyTitle + '">Refresh from Salesforce <span class="tag">' + _refreshSubtitle + '</span></button>'
 						: '<button type="button" data-bulk-op="refresh-sf" title="Pull current Salesforce values for loaded records. Dirty cards prompt for confirmation before being clobbered.">Refresh from Salesforce <span class="tag">' + _refreshSubtitle + '</span></button>';
 				}
-
-
-
 
 				const _migrateHasRecords = canvasState.bulkRecords.some((r) => !r.isTypeNode);
 				const _migrateItem = _migrateHasRecords
@@ -601,11 +448,6 @@ pop.remove();
 						const op = b.dataset.bulkOp;
 						cleanup();
 
-
-
-
-
-
 						const liveSelectedIds = canvasState.bulkRecords
 							.filter((r) => !r.loadedFromId && !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id))
 							.map((r) => r.id);
@@ -626,12 +468,6 @@ openBulkRefreshFlow();
 beginMigration();
 } else if (op === 'diff') {
 
-
-
-
-
-
-
 							const pair = canvasState.bulkRecords.filter((r) =>
 								!r.isTypeNode && !r.isPending && canvasState.bulkSelectedIds.has(r.id)
 							);
@@ -640,16 +476,8 @@ openRecordDiffModal(pair[0], pair[1]);
 }
 						} else if (op === 'script-upgrade') {
 
-
-
-
 							window.location.href = '/workspace/upgrade';
 						} else if (op === 'script-not-granted') {
-
-
-
-
-
 
 							if (isTeamAdmin()) {
 								window.location.href = '/workspace#team';
@@ -674,8 +502,6 @@ cleanup();
 					document.addEventListener('keydown', onEsc, true);
 				}, 0);
 			}
-			
-
 
 			function showBulkHelpPopover(triggerEl) {
 				document.querySelectorAll('.bulk-help-popup').forEach(el => el.remove());
@@ -686,15 +512,8 @@ cleanup();
 				const viewportH = window.innerHeight;
 				const width = 320;
 
-
 				const left = Math.min(rect.right - width, viewportW - width - 8);
 				pop.style.left = Math.max(8, left) + 'px';
-
-
-
-
-
-
 
 				const estimatedHeight = 280;
 				const wouldOverflowBelow = rect.bottom + 6 + estimatedHeight > viewportH - 8;
@@ -738,13 +557,6 @@ cleanup();
 					document.addEventListener('keydown', onEsc, true);
 				}, 0);
 			}
-			
-
-
-
-
-
-
 
 			window.Orgloom = window.Orgloom || {};
 			window.Orgloom.canvasHelp = {
@@ -753,17 +565,10 @@ cleanup();
 return showBulkHelpPopover(anchorEl);
 }
 
-
-
-
-
-
 					const hint = document.getElementById('canvas-shortcut-hint');
 					if (hint) {
 return showBulkHelpPopover(hint);
 }
-
-
 
 					const synthetic = {
 						getBoundingClientRect: () => {
@@ -775,52 +580,8 @@ return showBulkHelpPopover(hint);
 					return showBulkHelpPopover(synthetic);
 				},
 			};
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function _openAutoFillModal() {
-
-
-
-
-
-
-
-
-
-
 
 				const _realFilter = (r) => !r.isTypeNode && !r.isPending;
 				const allRealRecords = canvasState.bulkRecords.filter(_realFilter);
@@ -830,9 +591,6 @@ return showBulkHelpPopover(hint);
 					canvasState.bulkSelectedIds.has(r.id),
 				);
 
-
-
-
 				document.querySelectorAll('.auto-fill-modal').forEach((el) => el.remove());
 
 				const overlay = document.createElement('div');
@@ -841,14 +599,10 @@ return showBulkHelpPopover(hint);
 				const scopeExistingCount = allExisting.length;
 				const scopeSelCount = allSelected.length;
 
-
-
-
 				const initialScope = scopeSelCount > 0
 					? 'selected'
 					: 'drafts';
 				const initialMode = 'required';
-
 
 				function recordsForScope(scope) {
 					if (scope === 'drafts') {
@@ -863,19 +617,11 @@ return allSelected;
 					return [];
 				}
 
-
-
-
 				function includeLoadedForScope(scope) {
 					return scope !== 'drafts';
 				}
 
 				function countFillTargets(records, mode) {
-
-
-
-
-
 
 					let total = 0;
 					for (const rec of records) {
@@ -914,9 +660,6 @@ total++;
 					return total;
 				}
 
-
-
-
 				function recordNoun(n) {
 					return n === 1 ? 'record' : 'records';
 				}
@@ -931,12 +674,6 @@ total++;
 					}
 					const count = countFillTargets(records, mode);
 					const noun = recordNoun(records.length);
-
-
-
-
-
-
 
 					const includesLoaded = scope !== 'drafts'
 						&& records.some((r) => r.loadedFromId);
@@ -1061,8 +798,6 @@ total++;
 							b.setAttribute('aria-pressed', active ? 'true' : 'false');
 						});
 
-
-
 						const runBtn = overlay.querySelector('[data-af-run]');
 						if (runBtn) {
 runBtn.classList.toggle('danger', _mode === 'clear');
@@ -1077,13 +812,6 @@ runBtn.classList.toggle('danger', _mode === 'clear');
 return;
 }
 					const includeLoaded = includeLoadedForScope(_scope);
-
-
-
-
-
-
-
 
 					const scopeOpts = {
 						tempIds: records.map((r) => r.id),

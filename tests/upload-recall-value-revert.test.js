@@ -1,23 +1,6 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyValueDrift, executeRecall } from '../src/upload-recall.js';
-
-
-
-
 
 function makeQueryConn(stateById) {
 	return {
@@ -31,8 +14,6 @@ return { records: [] };
 return { records: [] };
 }
 			const soql = decodeURIComponent(url.slice(qIdx + 3));
-
-
 
 			const selMatch = soql.match(/^SELECT\s+(.+?)\s+FROM/i);
 			const fields = selMatch
@@ -129,7 +110,6 @@ describe('classifyValueDrift', () => {
 		const result = await classifyValueDrift({ conn, batch: { insertedIds: [row] } });
 		const rec = result.records[0];
 
-
 		assert.equal(rec.drifted.length, 1);
 		assert.equal(rec.drifted[0].fieldName, 'Industry');
 		assert.equal(rec.drifted[0].current, 'Healthcare');
@@ -188,10 +168,6 @@ describe('classifyValueDrift', () => {
 
 	test('field name with bad shape gets dropped from the SOQL SELECT', async () => {
 
-
-
-
-
 		const conn = makeQueryConn({
 			'001abc': { Id: '001abc', Industry: 'Banking' },
 		});
@@ -209,7 +185,6 @@ describe('classifyValueDrift', () => {
 	});
 
 	test('multiple records of the same object batched into one SOQL', async () => {
-
 
 		const queries = [];
 		const conn = {
@@ -240,12 +215,6 @@ return { records: [] };
 	});
 });
 
-
-
-
-
-
-
 function makeRecallConn({ updateBehavior = () => ({ success: true }) } = {}) {
 	const calls = { updates: [], deletes: [] };
 	return {
@@ -253,12 +222,9 @@ function makeRecallConn({ updateBehavior = () => ({ success: true }) } = {}) {
 		version: '60.0',
 		request: async ({ method, url }) => {
 
-
 			if (method === 'GET' && url.indexOf('queryAll') >= 0) {
 				return { records: [] };
 			}
-
-
 
 			if (method === 'DELETE' && url.indexOf('/composite/sobjects') >= 0) {
 				const idsMatch = url.match(/ids=([^&]+)/);

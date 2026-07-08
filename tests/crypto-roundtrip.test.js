@@ -1,20 +1,5 @@
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
-
-
-
 
 process.env.ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 

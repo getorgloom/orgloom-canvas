@@ -1,31 +1,4 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export async function up(db) {
-
-
-
-
 
 	await db.schema
 		.createTable("accounts")
@@ -41,7 +14,6 @@ export async function up(db) {
 		.on("accounts")
 		.column("email")
 		.execute();
-
 
 	await db.schema
 		.createTable("connections")
@@ -78,10 +50,6 @@ export async function up(db) {
 		.column("sf_org_id")
 		.execute();
 
-
-
-
-
 	await db.schema
 		.createTable("audit_log")
 		.addColumn("id", "text", (col) => col.primaryKey())
@@ -111,11 +79,6 @@ export async function up(db) {
 		.column("expires_at")
 		.execute();
 
-
-
-
-
-
 	try {
 		const overlay = await import("orgloom-saas/database/saas-overlay");
 		await overlay.applySaasOverlay(db);
@@ -133,8 +96,6 @@ export async function up(db) {
 }
 
 export async function down(db) {
-
-
 
 	try {
 		const overlay = await import("orgloom-saas/database/saas-overlay");

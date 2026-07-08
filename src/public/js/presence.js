@@ -1,40 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -61,27 +24,15 @@
 			const renderBulkView = deps.renderBulkView;
 			const addToSelection = deps.addToSelection;
 
-
 			let _eventSource = null;
 			let _myConnectionId = null;
 			let _currentCanvasId = null;
 			const _peers = new Map();
 
-
-
 			let _cursorLayer = null;
 			let _presenceChips = null;
 
-
-
-
-
 			let _lastCursorPostAt = 0;
-
-
-
-
-
 
 			const CURSOR_THROTTLE_MS = 100;
 			let _pendingCursorAbort = null;
@@ -90,9 +41,6 @@
 				if (canvasState.currentCanvas && canvasState.currentCanvas.id) {
 return canvasState.currentCanvas.id;
 }
-
-
-
 
 				const cs = window.Orgloom && window.Orgloom.canvasState;
 				if (cs && typeof cs.getCurrentCanvas === 'function') {
@@ -124,12 +72,6 @@ return _presenceChips;
 }
 				_presenceChips = document.createElement('div');
 				_presenceChips.className = 'presence-chip-strip';
-
-
-
-
-
-
 
 				const strip = document.getElementById('canvas-status-strip');
 				if (strip) {
@@ -176,13 +118,6 @@ el.remove();
 				}
 				el.style.color = peer.color;
 
-
-
-
-
-
-
-
 				let localX, localY;
 				if (peer.cursor.world) {
 					const local = _worldToLayerLocal(peer.cursor.x, peer.cursor.y);
@@ -190,9 +125,6 @@ el.remove();
 						localX = local.x;
 						localY = local.y;
 					} else {
-
-
-
 
 						el.style.display = 'none';
 						return;
@@ -210,15 +142,6 @@ el.remove();
 					label.style.backgroundColor = peer.color;
 				}
 			}
-
-
-
-
-
-
-
-
-
 
 			function _positionChipStrip() {
 
@@ -312,21 +235,6 @@ el.remove();
 				}
 			}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 			function _clearPeerFocus(connectionId) {
 
 				document.querySelectorAll('.presence-focus-label[data-presence-focus="' + connectionId + '"]').forEach((el) => el.remove());
@@ -367,9 +275,6 @@ return;
 				card.appendChild(label);
 			}
 
-
-
-
 			function _reapplyAllFocus() {
 				for (const peer of _peers.values()) {
 					if (peer && peer.focus) {
@@ -378,67 +283,14 @@ _renderPeerFocus(peer);
 				}
 			}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 			const _lastBroadcastDraftValues = new Map();
 
-
-
-
-
-
-
-
-
-
 			const _lastBroadcastLoadedSfIds = new Set();
-
-
-
-
-
-
-
 
 			const _lastBroadcastDraftLinks = new Set();
 			const DRAFT_BROADCAST_INTERVAL_MS = 2000;
 
-
-
-
 			const POSITION_BROADCAST_THRESHOLD = 1;
-
-
-
-
-
-
-
 
 			function _syncIdOf(rec) {
 				if (!rec) {
@@ -497,8 +349,6 @@ return;
 return;
 }
 
-
-
 				_flushPendingDraftLinks();
 				const seenIds = new Set();
 				for (const r of canvasState.bulkRecords) {
@@ -511,9 +361,6 @@ continue;
 					if (r.loadedFromId) {
 continue;
 }
-
-
-
 
 					let syncId = _syncIdOf(r);
 					const isFirstBroadcast = syncId == null;
@@ -545,7 +392,6 @@ continue;
 					const lastEntry = _lastBroadcastDraftValues.get(syncId) || { values: {}, x: null, y: null };
 					const lastValues = lastEntry.values || {};
 
-
 					const diff = {};
 					let hasFieldsDiff = false;
 					for (const k of Object.keys(cur)) {
@@ -560,9 +406,6 @@ continue;
 							hasFieldsDiff = true;
 						}
 					}
-
-
-
 
 					const curX = typeof r.x === 'number' ? r.x : null;
 					const curY = typeof r.y === 'number' ? r.y : null;
@@ -593,9 +436,6 @@ payload.position = posPayload;
 					});
 				}
 
-
-
-
 				const toRemove = [];
 				for (const k of _lastBroadcastDraftValues.keys()) {
 					if (!seenIds.has(k)) {
@@ -611,10 +451,6 @@ toRemove.push(k);
 					});
 					_lastBroadcastDraftValues.delete(k);
 				}
-
-
-
-
 
 				const currentLoadedSfIds = new Set();
 				for (const r of canvasState.bulkRecords) {
@@ -651,21 +487,9 @@ removedLoadedIds.push(sfId);
 					_lastBroadcastLoadedSfIds.delete(sfId);
 				}
 
-
-
 				for (const sfId of currentLoadedSfIds) {
 					_lastBroadcastLoadedSfIds.add(sfId);
 				}
-
-
-
-
-
-
-
-
-
-
 
 				const recordsByRuntimeId = new Map();
 				for (const r of canvasState.bulkRecords) {
@@ -773,34 +597,8 @@ return null;
 				};
 			}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 			const _pendingDraftLinks = [];
 			const PENDING_LINKS_CAP = 100;
-
-
-
-
-
-
 
 			function _tryApplyPeerDraftLink(data) {
 				if (!data || !data.kind || !data.fromSyncId || !data.toSyncId || !data.fieldName) {
@@ -852,8 +650,6 @@ return true;
 				}
 			}
 
-
-
 			function _flushPendingDraftLinks() {
 				if (_pendingDraftLinks.length === 0) {
 return;
@@ -867,13 +663,6 @@ return;
 					}
 				}
 			}
-
-
-
-
-
-
-
 
 			function _applyPeerLoadedRemoved(data) {
 				if (!data || !data.sfId) {
@@ -893,10 +682,6 @@ return;
  remaining.push(r); continue; 
 }
 
-
-
-
-
 					const refId = r.loadedFromId != null ? String(r.loadedFromId) : null;
 					if (refId === targetSfId) {
 						removedRuntimeId = r.id;
@@ -905,8 +690,6 @@ return;
 					remaining.push(r);
 				}
 				if (removedRuntimeId == null) {
-
-
 
 					_lastBroadcastLoadedSfIds.delete(targetSfId);
 					return;
@@ -956,9 +739,6 @@ return;
 				const syncId = String(data.tempId);
 				let target = _findDraftBySyncId(syncId);
 
-
-
-
 				if (data.kind === 'remove') {
 					if (target) {
 						const beforeLen = canvasState.bulkRecords.length;
@@ -975,10 +755,6 @@ return;
 					_lastBroadcastDraftValues.delete(syncId);
 					return;
 				}
-
-
-
-
 
 				if (!target && data.kind === 'create') {
 					const objName = data.objectName;
@@ -1002,9 +778,6 @@ return;
 							values: {},
 							fromSelectionId: sel.id,
 
-
-
-
 							_collabId: syncId,
 						};
 						canvasState.bulkRecords.push(newRec);
@@ -1018,8 +791,6 @@ return;
 return;
 }
 				let touched = false;
-
-
 
 				if (data.position && typeof data.position === 'object') {
 					const px = typeof data.position.x === 'number' ? data.position.x : null;
@@ -1046,8 +817,6 @@ return;
 					}
 				}
 
-
-
 				_lastBroadcastDraftValues.set(syncId, {
 					values: _safeValueCopy(target.values),
 					x: typeof target.x === 'number' ? target.x : null,
@@ -1059,28 +828,13 @@ return;
 } catch (_) {}
 				}
 
-
-
-
 				if (data.kind === 'create') {
 _flushPendingDraftLinks();
 }
 			}
 
-
-
-
-
-
-
-
-
-
 			let _savedBanner = null;
 			async function _onCanvasSaved(data) {
-
-
-
 
 				const meAcct = (window.SF_ACCOUNT_ID || null);
 				const yourSelfAcct = data.savedByAccountId || null;
@@ -1096,17 +850,9 @@ return;
 }
 				const name = data.savedByDisplayName || 'Someone';
 
-
-
-
-
-
 				if (!isCanvasDirty()) {
 					const ok = await reloadCanvasFromServer();
 					if (ok) {
-
-
-
 
 						try {
 							showBulkToast(name + ' saved this canvas — your view updated.', 'info');
@@ -1114,13 +860,9 @@ return;
 						return;
 					}
 
-
-
 				}
 				_showSavedBanner({ name, at: data.at || Date.now() });
 			}
-
-
 
 			let _lastLocalSaveAt = 0;
 			function noteLocalSave() {
@@ -1154,16 +896,6 @@ return;
 					const action = btn.getAttribute('data-saved-action');
 					if (action === 'reload') {
 
-
-
-
-
-
-
-
-
-
-
 						const id = _currentCanvasId;
 						if (id && /^[a-zA-Z0-9]{15,18}$/.test(id)) {
 							window.location.href = '/?openCanvas=' + encodeURIComponent(id);
@@ -1178,14 +910,6 @@ return;
 					}
 				});
 			}
-
-
-
-
-
-
-
-
 
 			function _viewportToWorld(clientX, clientY) {
 				const cy = getCyInstance && getCyInstance();
@@ -1254,9 +978,6 @@ return;
 return;
 }
 
-
-
-
 				const world = _viewportToWorld(ev.clientX, ev.clientY);
 				let x, y, isWorld;
 				if (world) {
@@ -1265,14 +986,10 @@ return;
 					isWorld = true;
 				} else {
 
-
-
-
 					x = ev.clientX;
 					y = ev.clientY;
 					isWorld = false;
 				}
-
 
 				if (_pendingCursorAbort) {
 _pendingCursorAbort.abort();
@@ -1321,12 +1038,6 @@ return;
 return;
 }
 
-
-
-
-
-
-
 				if (window.ORGLOOM_MOCK) {
 return;
 }
@@ -1356,7 +1067,6 @@ return;
 } catch (err) { window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'presence.js/sse/event' }); }
 				});
 				_eventSource.addEventListener('error', () => {
-
 
 				});
 			}
@@ -1392,15 +1102,6 @@ return;
 				).catch(() => {});
 			}
 
-
-
-
-
-
-
-
-
-
 			let _lastSeenId = null;
 			setInterval(() => {
 				const id = _resolveCanvasId();
@@ -1413,18 +1114,7 @@ return;
 					unsubscribe();
 				}
 
-
-
-
-
-
-
-
 				_reapplyAllFocus();
-
-
-
-
 
 				for (const peer of _peers.values()) {
 					if (peer && peer.cursor) {
@@ -1432,25 +1122,12 @@ _renderCursor(peer);
 }
 				}
 
-
-
 				_positionChipStrip();
 			}, 2000);
 
-
-
-
-
 			setInterval(_broadcastDraftDeltas, DRAFT_BROADCAST_INTERVAL_MS);
 
-
-
 			window.addEventListener('beforeunload', unsubscribe);
-
-
-
-
-
 
 			window.addEventListener('resize', () => {
 				for (const peer of _peers.values()) {
@@ -1466,10 +1143,6 @@ _renderCursor(peer);
 				subscribeToCanvas: subscribeToCanvas,
 				unsubscribe: unsubscribe,
 				pushFocus: pushFocus,
-
-
-
-
 
 				noteLocalSave: noteLocalSave,
 			};

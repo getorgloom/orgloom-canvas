@@ -1,44 +1,5 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
-
-
-
 
 	var SYSTEM_KEYS = {
 		id: 1, createddate: 1, createdbyid: 1, lastmodifieddate: 1,
@@ -57,11 +18,8 @@
 		}
 		var lk = String(key).toLowerCase();
 
-
 		return lk.charAt(0) === '_' || SYSTEM_KEYS[lk] === 1;
 	}
-
-
 
 	function _lookupValue(values, fieldName) {
 		if (!values || !fieldName) {
@@ -79,11 +37,6 @@
 		}
 		return undefined;
 	}
-
-
-
-
-
 
 	function resolveTargetRecordTypeId(developerName, targetDescribe) {
 		if (!developerName || !targetDescribe) {
@@ -103,9 +56,6 @@
 		return null;
 	}
 
-
-
-
 	function _picklistRemapFor(record, fieldName) {
 		var remap = record && record._migratePicklistRemap;
 		if (!remap || !fieldName) {
@@ -124,19 +74,11 @@
 		return null;
 	}
 
-
-
-
-
-
-
-
 	function computeMigrationStatus(record, targetDescribe) {
 		var issues = [];
 		var resolvedRecordTypeId = null;
 		var values = (record && record.values) || {};
 		var fields = (targetDescribe && targetDescribe.fields) || [];
-
 
 		var fieldByName = {};
 		for (var i = 0; i < fields.length; i++) {
@@ -145,7 +87,6 @@
 				fieldByName[String(f.name).toLowerCase()] = f;
 			}
 		}
-
 
 		var valueKeys = Object.keys(values);
 		for (var k = 0; k < valueKeys.length; k++) {
@@ -165,14 +106,6 @@
 				});
 			}
 		}
-
-
-
-
-
-
-
-
 
 		var _isUpdate = !!(record && record.loadedFromId);
 		for (var r = 0; !_isUpdate && r < fields.length; r++) {
@@ -195,7 +128,6 @@
 				});
 			}
 		}
-
 
 		for (var p = 0; p < valueKeys.length; p++) {
 			var pkey = valueKeys[p];
@@ -248,9 +180,6 @@
 			}
 		}
 
-
-
-
 		var srcRtDevName = record &&
 			(record._sourceRecordTypeDeveloperName ||
 				(record.values && record.values._sourceRecordTypeDeveloperName));
@@ -289,10 +218,6 @@
 		};
 	}
 
-
-
-
-
 	function annotateRecords(records, describeByObject) {
 		records = records || [];
 		describeByObject = describeByObject || {};
@@ -312,7 +237,6 @@
 		}
 		return out;
 	}
-
 
 	function summarize(annotations) {
 		var counts = { ready: 0, warning: 0, blocked: 0, pending: 0, total: 0 };
@@ -336,7 +260,6 @@
 		annotateRecords: annotateRecords,
 		summarize: summarize,
 	};
-
 
 	if (typeof window !== 'undefined') {
 		window.Orgloom = window.Orgloom || {};

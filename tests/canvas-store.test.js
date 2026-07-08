@@ -1,29 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -42,21 +16,13 @@ import { installSfFetchStub, makeKekConn } from './helpers/sf-kek-stub.js';
 const CANVAS_EXT = '.orgloom-canvas.json';
 const ORG_ID = '00DTEST00000001';
 
-
-
-
 let _stub;
 before(initTestDb);
 before(() => { _stub = installSfFetchStub(); });
 after(() => { if (_stub) { _stub.restore(); } });
 beforeEach(clearTestDb);
 
-
 const TEST_KEK = makeSfApexKekProvider(makeKekConn());
-
-
-
-
 
 function mockConn(initial = {}) {
 	const calls = {
@@ -69,7 +35,6 @@ function mockConn(initial = {}) {
 	const createQueue = [...(initial.creates || [])];
 	const retrieveQueue = [...(initial.retrieves || [])];
 	return {
-
 
 		instanceUrl: 'https://test.my.salesforce.com',
 		accessToken: 'TEST_TOKEN',
@@ -104,8 +69,6 @@ return null;
  return { success: true };
 },
 
-
-
 				async upsert(payload, extIdField) {
 					calls.sobjectUpserts.push({ name, payload, extIdField });
 					return { success: true };
@@ -115,9 +78,6 @@ return null;
 	};
 }
 
-
-
-
 async function decryptSavedBlob(versionDataB64, canvasId) {
 	const buf = Buffer.from(versionDataB64, 'base64');
 	assert.equal(isEncryptedEnvelope(buf), true, 'expected OLE2 envelope, got plaintext');
@@ -126,12 +86,7 @@ async function decryptSavedBlob(versionDataB64, canvasId) {
 	return JSON.parse(decryptPayload(buf, key));
 }
 
-
-
-
 const F = (n) => 'orgloom__' + n;
-
-
 
 function hybridMetaRow(canvasId, extra = {}) {
 	return Object.assign({
@@ -199,7 +154,6 @@ describe('canvas store — save (encrypt + key persistence + metadata)', () => {
 			creates: [{ success: true, id: '068NEW' }, { success: true, id: 'cdl1' }],
 			retrieves: [{ ContentDocumentId: '069NEW' }],
 
-
 			queries: [
 				{ records: [{ Id: 'a0Canvas1' }] },
 				{ records: [] },
@@ -218,7 +172,6 @@ describe('canvas store — save (encrypt + key persistence + metadata)', () => {
 		assert.equal(res.id, '069NEW');
 		assert.equal(res.versionId, '068NEW');
 
-
 		const cvCreate = conn.calls.sobjectCreates.find((c) => c.name === 'ContentVersion');
 		const rawBuf = Buffer.from(cvCreate.payload.VersionData, 'base64');
 		assert.equal(isEncryptedEnvelope(rawBuf), true);
@@ -228,14 +181,11 @@ describe('canvas store — save (encrypt + key persistence + metadata)', () => {
 			'plaintext payload markers leaked into ciphertext',
 		);
 
-
-
 		const upsert = conn.calls.sobjectUpserts.find((u) => u.name === F('Orgloom_Canvas__c'));
 		assert.ok(upsert, 'save must upsert the Orgloom_Canvas__c metadata row');
 		assert.equal(upsert.extIdField, F('Canvas_Id__c'));
 		assert.equal(upsert.payload[F('Canvas_Id__c')], '069NEW');
 		assert.equal(upsert.payload[F('Body_Document_Id__c')], '069NEW');
-
 
 		const saved = await decryptSavedBlob(cvCreate.payload.VersionData, '069NEW');
 		assert.equal(saved.drafts[0].tempId, 1);
@@ -253,7 +203,6 @@ describe('canvas store — save (encrypt + key persistence + metadata)', () => {
 			() => store.save({ name: 'X', payload: { drafts: [], loadedRecords: [] } }),
 			(err) => err instanceof Error && /save|permission|access|content/i.test(err.message),
 		);
-
 
 		const stranded = await canvasKeys.get({ sfOrgId: ORG_ID, canvasId: '069NEW', kekProvider: TEST_KEK });
 		assert.equal(stranded, null);
@@ -275,9 +224,6 @@ describe('canvas store — get (probe + decrypt + legacy plaintext)', () => {
 	});
 
 	test('throws 404 canvas-not-accessible when there is no Canvas__c metadata row', async () => {
-
-
-
 
 		const conn = mockConn({ queries: [{ records: [] }] });
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
@@ -325,7 +271,6 @@ describe('canvas store — get (probe + decrypt + legacy plaintext)', () => {
 		const cvCreate = writeConn.calls.sobjectCreates.find((c) => c.name === 'ContentVersion');
 		const versionData = cvCreate.payload.VersionData;
 
-
 		const bodySha = crypto.createHash('sha256').update(Buffer.from(versionData, 'base64')).digest('hex');
 
 		const readConn = mockConn({
@@ -362,7 +307,6 @@ describe('canvas store — get (probe + decrypt + legacy plaintext)', () => {
 	});
 
 	test('ciphertext with no key row throws canvas-key-missing', async () => {
-
 
 		const dataKey = generateDataKey();
 		const envelope = encryptPayload(JSON.stringify({ drafts: [], loadedRecords: [] }), dataKey);

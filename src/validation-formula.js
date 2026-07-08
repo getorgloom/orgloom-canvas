@@ -1,42 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export function tokenize(s) {
 	const toks = [];
 	let i = 0;
@@ -93,8 +54,6 @@ j++;
 	}
 	return toks;
 }
-
-
 
 export function parseFormula(src) {
 	const toks = tokenize(src);
@@ -194,14 +153,6 @@ throw new Error('trailing tokens');
 	return tree;
 }
 
-
-
-
-
-
-
-
-
 export function looseEq(a, b) {
 	if (a == null && b == null) {
 return true;
@@ -215,8 +166,6 @@ return num(a) === num(b);
 	return String(a) === String(b);
 }
 
-
-
 export function num(v) {
 	if (typeof v === 'number') {
 return v;
@@ -227,33 +176,6 @@ return 0;
 	const n = parseFloat(v);
 	return isNaN(n) ? 0 : n;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export function resolveFieldValue(path, vals, opts) {
 	if (vals && Object.prototype.hasOwnProperty.call(vals, path)) {
@@ -269,7 +191,6 @@ export function resolveFieldValue(path, vals, opts) {
 	const tail = path.substring(dotIdx + 1);
 	const fields = (opts && opts.currentFields) || [];
 
-
 	const refField = fields.find((f) => f.relationshipName === head)
 		|| fields.find((f) => f.name === head)
 		|| fields.find((f) => (f.relationshipName || '').toLowerCase() === head.toLowerCase())
@@ -278,10 +199,6 @@ export function resolveFieldValue(path, vals, opts) {
 return null;
 }
 	const targetObjectName = refField.referenceTo[0];
-
-
-
-
 
 	if (opts && opts.currentRecord && Array.isArray(opts.bulkAssociations) && Array.isArray(opts.bulkRecords)) {
 		const assoc = opts.bulkAssociations.find(
@@ -305,12 +222,6 @@ return null;
 	const nestedOpts = Object.assign({}, opts, { currentFields: targetFields, currentRecord: null });
 	return resolveFieldValue(tail, targetVals, nestedOpts);
 }
-
-
-
-
-
-
 
 export function evalNode(n, vals, opts) {
 	switch (n.k) {
@@ -378,20 +289,6 @@ return (l == null ? '' : String(l)) + (r == null ? '' : String(r));
 	}
 	throw new Error('bad node');
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export function evaluateRule(rule, values, opts) {
 	if (!rule || !rule.formula) {

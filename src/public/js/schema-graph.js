@@ -1,56 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -99,11 +46,8 @@ return;
 				target.addEventListener('transitionend', handler);
 				setTimeout(fire, 280);
 			}
-			
+
 			async function openGraph(objectName) {
-
-
-
 
 				canvasState._suppressNextViewTransition = true;
 				getGraph().classList.remove('hidden');
@@ -146,7 +90,7 @@ fc.style.display = 'none';
 						'<div class="graph-empty load-error">Failed to load: ' + escapeHtml(err.message) + '</div>';
 				}
 			}
-			
+
 			function closeGraph() {
 				getGraph().classList.add('hidden');
 				canvasState.selectedObjects = [];
@@ -154,19 +98,13 @@ fc.style.display = 'none';
 				canvasState.activeIndex = 0;
 				canvasState.hiddenObjects.clear();
 			}
-			
+
 			async function fetchGraphData(name) {
 				if (canvasState.graphCache[name]) {
 return canvasState.graphCache[name];
 }
 				const resp = await csrfFetch('/api/objects/' + encodeURIComponent(name) + '/graph');
 				if (!resp.ok) {
-
-
-
-
-
-
 
 					let serverMsg = '';
 					try {
@@ -186,7 +124,7 @@ err.code = 'object-no-access';
 				canvasState.graphCache[name] = data;
 				return data;
 			}
-			
+
 			function setGraphView(view) {
 				if (view === 'bulk' && canvasState.selectedObjects.length > 0) {
 renderBulkView();

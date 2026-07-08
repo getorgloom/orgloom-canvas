@@ -1,18 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	if (window.olConfirm) {
 return;
@@ -23,7 +8,6 @@ return;
 			.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 			.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 	}
-
 
 	let _toastHost = null;
 	function _ensureToastHost() {
@@ -60,10 +44,6 @@ return _toastHost;
 			setTimeout(remove, variant === 'error' ? 8000 : 4500);
 		} catch (e) {                                              }
 	}
-
-
-
-
 
 	function _modal({ title, message, confirmLabel, cancelLabel, danger, withInput, inputValue, placeholder, showCancel }, done) {
 		document.querySelectorAll('.ol-dialog-modal').forEach((el) => el.remove());
@@ -136,10 +116,6 @@ input.select();
 		return new Promise((resolve) => _modal({ title: o.title || 'Heads up', message, confirmLabel: o.confirmLabel || 'OK', showCancel: false }, () => resolve()));
 	}
 
-
-
-
-
 	function olConfirmSubmit(ev, message, opts) {
 		if (!ev) {
 return false;
@@ -159,10 +135,6 @@ form.submit();
 	window.olPrompt = olPrompt;
 	window.olAlert = olAlert;
 	window.olConfirmSubmit = olConfirmSubmit;
-
-
-
-
 
 	function _wireConfirmForms(root) {
 		(root || document).querySelectorAll('form[data-confirm-message]:not([data-confirm-wired])').forEach((form) => {

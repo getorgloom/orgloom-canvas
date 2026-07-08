@@ -1,23 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -32,14 +12,6 @@ return;
 	const REAUTH_URL = '/auth/login';
 
 	const _originalFetch = window.fetch.bind(window);
-
-
-
-
-
-
-
-
 
 	const _OFFLINE_KEY = 'orgloom:sfOfflineMode';
 	function _persistOffline() {
@@ -58,15 +30,8 @@ return;
 		}
 	} catch (_) {}
 
-
-
-
-
 	const _csrfMeta = document.querySelector('meta[name="csrf-token"]');
 	const _csrfToken = _csrfMeta ? _csrfMeta.getAttribute('content') || '' : '';
-
-
-
 
 	function _shouldStampCsrf(input, init) {
 		if (!_csrfToken) {
@@ -86,22 +51,6 @@ return false;
 		return url.origin === window.location.origin;
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	function _handleReauthNeeded() {
 		if (window.__sfReauthPromptOpen) {
 return;
@@ -109,7 +58,6 @@ return;
 		if (window.__sfOfflineMode) {
 return;
 }
-
 
 		try {
  window.__sfReauthPromptOpen = true;
@@ -165,7 +113,6 @@ return;
 		overlay.querySelector('[data-rap-action="signin"]').addEventListener('click', () => {
 			cleanup();
 
-
 			_clearOfflinePersistence();
 			try {
  window.__sfRedirectingToReauth = true; 
@@ -175,12 +122,7 @@ return;
 		overlay.querySelector('[data-rap-action="switch"]').addEventListener('click', () => {
 			cleanup();
 
-
 			_clearOfflinePersistence();
-
-
-
-
 
 			if (window.Orgloom && window.Orgloom.sfConnectionsModal && typeof window.Orgloom.sfConnectionsModal.open === 'function') {
 				try {
@@ -195,24 +137,15 @@ return;
 		overlay.querySelector('[data-rap-action="offline"]').addEventListener('click', () => {
 			cleanup();
 
-
-
-
-
 			try {
  window.__sfOfflineMode = true; 
 } catch (_) {}
 
-
-
-
 			_persistOffline();
-
 
 			try {
  document.dispatchEvent(new CustomEvent('orgloom:sf-offline'));
 } catch (_) {}
-
 
 			_markChipOffline();
 		});
@@ -222,7 +155,6 @@ return;
 		if (!res || res.status !== 401) {
 return false;
 }
-
 
 		const ct = res.headers && res.headers.get && res.headers.get('content-type');
 		if (!ct || ct.indexOf('application/json') === -1) {
@@ -236,13 +168,6 @@ return false;
 			return false;
 		}
 	}
-
-
-
-
-
-
-
 
 	async function _isMissingConnectionResponse(res) {
 		if (!res || res.status !== 409) {
@@ -261,9 +186,6 @@ return false;
 		}
 	}
 
-
-
-
 	function _stampCsrfHeader(init) {
 		const next = { ...(init || {}) };
 		const h = new Headers(next.headers || {});
@@ -273,13 +195,6 @@ h.set('x-csrf-token', _csrfToken);
 		next.headers = h;
 		return next;
 	}
-
-
-
-
-
-
-
 
 	function _markChipOffline() {
 		try {
@@ -297,8 +212,6 @@ h.set('x-csrf-token', _csrfToken);
 		} catch (_) {}
 	}
 
-
-
 	document.addEventListener('click', function (e) {
 		if (!window.__sfOfflineMode) {
 			return;
@@ -313,16 +226,12 @@ h.set('x-csrf-token', _csrfToken);
 			e.stopImmediatePropagation();
 		}
 
-
 		try {
 			window.__sfOfflineMode = false;
 		} catch (_) {}
 		_clearOfflinePersistence();
 		_handleReauthNeeded();
 	}, true);
-
-
-
 
 	if (window.__sfOfflineMode) {
 		if (document.readyState === 'loading') {
@@ -336,20 +245,9 @@ h.set('x-csrf-token', _csrfToken);
 		const initWithCsrf = _shouldStampCsrf(input, init) ? _stampCsrfHeader(init) : init;
 		const res = await _originalFetch(input, initWithCsrf);
 
-
-
-
-
 		if (window.__sfOfflineMode) {
 return res;
 }
-
-
-
-
-
-
-
 
 		if (await _isMissingConnectionResponse(res)) {
 			if (window.ORGLOOM_SF_CONNECTED === false) {
@@ -362,18 +260,11 @@ return res;
 return res;
 }
 
-
-
-
 		if (window.ORGLOOM_SF_CONNECTED === false) {
 return res;
 }
 
-
-
-
 		_handleReauthNeeded();
-
 
 		return res;
 	};

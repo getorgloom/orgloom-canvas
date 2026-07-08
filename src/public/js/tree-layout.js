@@ -1,31 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -38,13 +10,6 @@
 			}
 			const canvasState = deps.canvasState;
 			const getCyInstance = deps.getCyInstance;
-
-
-
-
-
-
-
 
 			function relayoutNewRecords(newRecIds) {
 				const _cyInstance = getCyInstance();
@@ -62,16 +27,6 @@ return;
 					&& newRecIds.has(e.target().data('recId'))
 				);
 				const newEles = newCyNodes.union(newCyEdges);
-
-
-
-
-
-
-
-
-
-
 
 				const EXISTING_GUTTER = 80;
 				const existingCyNodes = _cyInstance.nodes().filter((n) => {
@@ -104,17 +59,12 @@ existingMaxY = bb.y2;
 				const hasEdges = newCyEdges.length > 0;
 				let rootCyNodes = newCyNodes.filter((n) => n.outgoers('edge').length === 0);
 
-
-
-
 				if (rootCyNodes.length === 0 && newCyNodes.length > 0) {
 					const sorted = newCyNodes.toArray().sort((a, b) => b.degree() - a.degree());
 					rootCyNodes = sorted.length > 0 ? _cyInstance.collection([sorted[0]]) : newCyNodes;
 				}
 				const useTreeLayout = newCyNodes.length >= 5 && hasEdges && rootCyNodes.length > 0;
 				if (useTreeLayout) {
-
-
 
 					const components = newEles.components();
 					const compLaidOut = [];
@@ -131,17 +81,11 @@ existingMaxY = bb.y2;
 							fit: false,
 							padding: 0,
 
-
-
 							directed: false,
 							roots: compRoots.map((n) => n.id()),
 
-
-
-
 							spacingFactor: 1.15,
 							avoidOverlap: true,
-
 
 							grid: true,
 							maximalAdjustments: 5,
@@ -149,15 +93,6 @@ existingMaxY = bb.y2;
 						compLayout.run();
 						compLaidOut.push({ comp, bb: comp.boundingBox() });
 					}
-
-
-
-
-
-
-
-
-
 
 					const TREE_GUTTER = 60;
 					const totalArea = compLaidOut.reduce((s, r) => s + r.bb.w * r.bb.h, 0);
@@ -184,11 +119,6 @@ rowMaxH = bb.h;
 					}
 				} else {
 
-
-
-
-
-
 					const layout = newEles.layout({
 						name: 'cose',
 						animate: false,
@@ -202,11 +132,6 @@ rowMaxH = bb.h;
 					});
 					layout.run();
 
-
-
-
-
-
 					if (hasExisting && newCyNodes.length > 0) {
 						const bb = newCyNodes.boundingBox();
 						const dx = xStart - bb.x1;
@@ -218,15 +143,6 @@ rowMaxH = bb.h;
 					}
 				}
 
-
-
-
-
-
-
-
-
-
 				const cardSel = '[kind ^= "card"]';
 				const allCards = _cyInstance.nodes(cardSel);
 				const newCards = newCyNodes.filter(cardSel);
@@ -236,15 +152,11 @@ rowMaxH = bb.h;
 				if (z < 0.4) {
 					_cyInstance.zoom(0.4);
 
-
-
-
 					_cyInstance.center(newCards.length > 0 ? newCards : fitTarget);
 				} else if (z > 1) {
 					_cyInstance.zoom(1);
 					_cyInstance.center(fitTarget);
 				}
-
 
 				_cyInstance.nodes().forEach((n) => {
 					const recId = n.data('recId');

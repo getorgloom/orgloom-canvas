@@ -1,4 +1,3 @@
-
 (function () {
 	"use strict";
 
@@ -79,14 +78,11 @@
 					"</div>";
 				_banner.hidden = false;
 
-
 				const textInput = _banner.querySelector(".clar-text-input");
 				const sendBtn = _banner.querySelector(".clar-send-btn");
 				const dismissBtn = _banner.querySelector(".clar-dismiss");
 
 				dismissBtn.addEventListener("click", () => {
-
-
 
 					_banner.hidden = true;
 				});

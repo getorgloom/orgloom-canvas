@@ -1,39 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { escapeSoqlLiteral } from '../sf-soql.js';
 import crypto from 'node:crypto';
 import {
@@ -49,9 +13,6 @@ const BATCH_PATH_EXT = '.orgloom-batch.json';
 
 function _sanitizeBatchFileName(externalId, attemptId) {
 
-
-
-
 	const tag = attemptId ? '__att-' + String(attemptId).replace(/[^a-zA-Z0-9-]/g, '') : '';
 	return 'batch-' + externalId + tag + BATCH_PATH_EXT;
 }
@@ -63,12 +24,8 @@ function _summaryTitle({ source, recordCount, createdAt }) {
 
 function makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 
-
 	const kekProvider = makeSfApexKekProvider(conn);
 	const sessionId = (opts && opts.sessionId) || null;
-
-
-
 
 	async function _writeBatchPayload(payload) {
 		const json = JSON.stringify(payload);
@@ -88,7 +45,6 @@ function makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 		const cv = await conn.sobject('ContentVersion').retrieve(result.id);
 		const batchId = cv.ContentDocumentId;
 
-
 		await batchKeys.persist({ sfOrgId, batchId, dataKey, kekProvider, sessionId });
 		return { id: batchId, externalId: payload.externalId, createdAt: payload.createdAt };
 	}
@@ -98,10 +54,6 @@ function makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 
 		async list({ limit = 50 } = {}) {
 			const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
-
-
-
-
 
 			const soql =
 				'SELECT Id, ContentDocumentId, VersionData, PathOnClient, ' +
@@ -137,7 +89,6 @@ continue;
 						recalledAt: payload.recalledAt || null,
 						sfOrgId: payload.sfOrgId || sfOrgId || null,
 
-
 						insertedCount: Array.isArray(payload.insertedIds) ? payload.insertedIds.length : 0,
 						deletedCount: Array.isArray(payload.deletedIds) ? payload.deletedIds.length : 0,
 					});
@@ -146,15 +97,7 @@ continue;
 			return items;
 		},
 
-
-
-
-
-
 		async get(id) {
-
-
-
 
 			if (typeof id !== 'string' || !/^[a-zA-Z0-9]{15,18}$/.test(id)) {
 				return null;
@@ -206,17 +149,7 @@ return null;
 				sfOrgId: payload.sfOrgId || sfOrgId || null,
 				insertedIds: Array.isArray(payload.insertedIds) ? payload.insertedIds : [],
 
-
-
-
-
 				deletedIds: Array.isArray(payload.deletedIds) ? payload.deletedIds : [],
-
-
-
-
-
-
 
 				intendedRecords: Array.isArray(payload.intendedRecords) ? payload.intendedRecords : [],
 				associations: Array.isArray(payload.associations) ? payload.associations : null,
@@ -239,10 +172,6 @@ throw new Error('insertedIds must be an array');
 				recallResult: null,
 				sfOrgId: sfOrgId || null,
 
-
-
-
-
 				attemptId: attemptId ? String(attemptId).slice(0, 64) : null,
 				insertedIds,
 				deletedIds: _deletedIds,
@@ -250,12 +179,6 @@ throw new Error('insertedIds must be an array');
 			};
 			return _writeBatchPayload(payload);
 		},
-
-
-
-
-
-
 
 		async createPending({ source, note, attemptId, intendedRecords }) {
 			const payload = {
@@ -270,7 +193,6 @@ throw new Error('insertedIds must be an array');
 				sfOrgId: sfOrgId || null,
 				attemptId: attemptId ? String(attemptId).slice(0, 64) : null,
 
-
 				intendedRecords: Array.isArray(intendedRecords)
 					? intendedRecords.map((r) => ({ tempId: r.tempId, objectName: r.objectName }))
 					: [],
@@ -280,10 +202,6 @@ throw new Error('insertedIds must be an array');
 			};
 			return _writeBatchPayload(payload);
 		},
-
-
-
-
 
 		async finalize(id, { insertedIds, deletedIds, associations, recordCount } = {}) {
 			const existing = await this.get(id);
@@ -304,17 +222,11 @@ throw new Error('finalize: batch not found');
 			return { id, status: 'uploaded' };
 		},
 
-
-
-
-
-
 		async findByAttemptId(attemptId) {
 			if (!attemptId) {
 return null;
 }
 			const tag = '__att-' + String(attemptId).replace(/[^a-zA-Z0-9-]/g, '');
-
 
 			const soql =
 				'SELECT ContentDocumentId FROM ContentVersion ' +
@@ -329,9 +241,6 @@ return null;
 }
 			return this.get(row.ContentDocumentId);
 		},
-
-
-
 
 		async markRecalling(id) {
 			const existing = await this.get(id);
@@ -356,11 +265,6 @@ throw new Error('batch not found');
 			return next;
 		},
 
-
-
-
-
-
 		async remove(id) {
 			const existing = await this.get(id);
 			if (!existing) {
@@ -376,14 +280,10 @@ throw new Error('batch not found');
 				throw err;
 			}
 
-
-
-
-
 			try {
 				await batchKeys.remove({ sfOrgId, batchId: id });
 			} catch (e) {
-				 
+
 				console.warn('upload-batches-store: failed to drop batch_keys row for ' + id + ':', e && e.message);
 			}
 			return true;
@@ -391,24 +291,12 @@ throw new Error('batch not found');
 	};
 }
 
-
-
-
-
-
-
 async function _decodeVersionData(conn, vData, { sfOrgId, batchId, kekProvider, sessionId } = {}) {
 	if (vData == null) {
 return null;
 }
 	let buf;
 	if (typeof vData === 'string' && vData.startsWith('/')) {
-
-
-
-
-
-
 
 		const url = conn.instanceUrl.replace(/\/+$/, '') + vData;
 		const response = await fetch(url, {
@@ -426,8 +314,6 @@ return null;
 	if (isEncryptedEnvelope(buf)) {
 		if (!sfOrgId || !batchId) {
 
-
-
 			return null;
 		}
 		const dataKey = await batchKeys.get({ sfOrgId, batchId, kekProvider, sessionId });
@@ -440,8 +326,6 @@ return null;
  return null;
 }
 	} else {
-
-
 
 		json = buf.toString('utf8');
 	}
@@ -456,20 +340,11 @@ async function _rewriteBatch(conn, contentDocumentId, payload, { sfOrgId, kekPro
 	const json = JSON.stringify(payload);
 	const title = _summaryTitle(payload);
 
-
-
-
-
-
-
-
-
 	let envelope;
 	if (sfOrgId) {
 		const dataKey = await batchKeys.getOrMint({ sfOrgId, batchId: contentDocumentId, kekProvider, sessionId });
 		envelope = encryptPayload(json, dataKey);
 	} else {
-
 
 		envelope = Buffer.from(json, 'utf8');
 	}
@@ -487,9 +362,6 @@ async function _rewriteBatch(conn, contentDocumentId, payload, { sfOrgId, kekPro
 	}
 	return result.id;
 }
-
-
-
 
 export async function uploadBatchesStoreFromSfConnection(conn, sfUserId, sfOrgId, opts) {
 	return makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts);

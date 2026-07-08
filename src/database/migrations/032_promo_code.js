@@ -1,20 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export async function up(db) {
 	await db.schema
 		.alterTable("accounts")

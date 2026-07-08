@@ -1,12 +1,3 @@
-
-
-
-
-
-
-
-
-
 import { ext } from "../extensions.js";
 import {
 	generateDataKey,
@@ -94,17 +85,7 @@ export async function getOrMint({ sfOrgId, canvasId, kekProvider, sessionId }) {
 	const wrapped = await kekProvider.wrapDataKey(fresh);
 	const db = ext.getDb();
 
-
-
-
 	await _insertOrReplaceWrappedKey(db, { sfOrgId, canvasId, wrapped });
-
-
-
-
-
-
-
 
 	const row = await _readRow(db, sfOrgId, canvasId);
 	if (row && row.wrapped_key === wrapped.wrappedKey) {
@@ -114,12 +95,10 @@ export async function getOrMint({ sfOrgId, canvasId, kekProvider, sessionId }) {
 	}
 	if (row) {
 
-
 		const stored = await kekProvider.unwrapDataKey(_rowToWrapped(row));
 		putCachedDek(sessionId, 'canvas', canvasId, stored);
 		return stored;
 	}
-
 
 	putCachedDek(sessionId, 'canvas', canvasId, fresh);
 	return fresh;

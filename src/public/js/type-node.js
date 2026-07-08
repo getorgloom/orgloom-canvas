@@ -1,22 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -52,10 +33,6 @@ throw new Error('type-node.mount: missing deps object');
 			const showBulkToastWithAction = deps.showBulkToastWithAction;
 			const _canvasCapBlockReason = deps._canvasCapBlockReason;
 
-
-
-
-
 			const canvasCapCheck = typeof deps.canvasCapCheck === 'function'
 				? deps.canvasCapCheck
 				: function () { return { ok: true, blocked: false, reason: null }; };
@@ -88,7 +65,6 @@ throw new Error('type-node.mount: missing deps object');
 				const sl = (canvas && canvas.scrollLeft) || 0;
 				const st = (canvas && canvas.scrollTop) || 0;
 
-
 				const worldX = (sl + cw / 2) / canvasState.bulkZoom - getBulkRenderShiftX();
 				const worldY = (st + ch / 2) / canvasState.bulkZoom - getBulkRenderShiftY();
 				canvasState.bulkRecords.push({
@@ -103,17 +79,6 @@ throw new Error('type-node.mount: missing deps object');
 				renderBulkView();
 				showBulkToast('Added ' + label + ' \u2014 click "Pick record" to load one.');
 			}
-			
-
-
-
-
-
-
-
-
-
-
 
 			function pickRecordForFreeTypeNode(rec, anchorEl) {
 				document.querySelectorAll('.find-object-popup, .free-tn-picker').forEach((el) => el.remove());
@@ -182,8 +147,6 @@ return;
  list.innerHTML = '<div class="fop-empty">No matches.</div>'; return; 
 }
 
-
-
 						const onCanvas = new Set(
 							canvasState.bulkRecords
 								.filter((b) => !b.isTypeNode && b.objectName === rec.objectName && b.loadedFromId)
@@ -238,10 +201,6 @@ cleanup();
 					document.addEventListener('keydown', onEsc, true);
 				}, 0);
 			}
-			
-
-
-
 
 			async function loadRecordIntoFreeTypeNode(typeNodeRec, sfRecord) {
 				if (!sfRecord || !sfRecord.Id) {
@@ -254,9 +213,6 @@ cleanup();
 					if (i !== -1) {
 canvasState.bulkRecords.splice(i, 1);
 }
-
-
-
 
 					canvasState.bulkSelectedIds.clear();
 					canvasState.bulkSelectedIds.add(dup.id);
@@ -310,26 +266,10 @@ canvasState.bulkRecords.splice(idx, 1);
 }
 				canvasState.bulkRecords.push(newRec);
 
-
-
-
-
-
-
-
 				const inferredLinks = inferAssociationsForRecord(newRec, targetSel);
 				purgeRedundantTypeNodes();
 				renderBulkView();
 				if (targetSel) {
-
-
-
-
-
-
-
-
-
 
 					const others = canvasState.bulkRecords.filter((r) => r.id !== newRec.id);
 					let seedOpts = {};
@@ -351,22 +291,6 @@ canvasState.bulkRecords.splice(idx, 1);
 					: '';
 				showBulkToast('Loaded ' + (newRec.label || newRec.objectName) + linkSuffix + '.');
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function openRelatedSearchFlow({ rec, base }) {
 				const targetType = rec.objectName;
@@ -384,10 +308,6 @@ throw new Error(resp.statusText);
 }
 						const fullRec = await resp.json();
 
-
-
-
-
 						if (!canvasState.bulkRecords.some((b) => b.id === rec.id)) {
 							canvasState.bulkRecords.push(rec);
 						}
@@ -395,7 +315,7 @@ throw new Error(resp.statusText);
 					},
 				});
 			}
-			
+
 			async function openTypeNode(rec, opts) {
 				opts = opts || {};
 				if (!rec || !rec.isTypeNode) {
@@ -411,10 +331,6 @@ return;
 				}
 				const targetType = rec.objectName;
 
-
-
-
-
 				if (!opts.recordsOverride) {
 					let willAdd = 1;
 					if (rec.direction === 'child') {
@@ -427,21 +343,6 @@ return;
  showBulkToast(blocked); return; 
 }
 				}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 				if (!opts.recordsOverride && rec.direction === 'child') {
 					const countKey = _countCacheKey(targetType, rec.fieldOnOther, base.loadedFromId);
@@ -505,9 +406,6 @@ return;
 						return v;
 					};
 
-
-
-
 					let targetSel = canvasState.selectedObjects.find(s => s.name === targetType);
 					if (!targetSel) {
 						try {
@@ -524,31 +422,12 @@ return;
 					let reused = 0;
 					const newRecs = [];
 
-
-
-
-
-
-
-
-
-
-
 					const _hx = rec.x - base.x;
 					const _hy = rec.y - base.y;
 					const _outwardLen = Math.hypot(_hx, _hy);
 					const _outwardAngle = _outwardLen > 0.5 ? Math.atan2(_hy, _hx) : -Math.PI / 2;
 					const arcSpan = Math.PI * 0.95;
 					const N = records.length;
-
-
-
-
-
-
-
-
-
 
 					const _fkField = rec.direction === 'child' ? rec.fieldOnOther : rec.fieldOnThis;
 					const _existingAttachedCount = canvasState.bulkAssociations.filter((a) => {
@@ -557,14 +436,6 @@ return false;
 }
 						return rec.direction === 'child' ? a.toId === base.id : a.fromId === base.id;
 					}).length;
-
-
-
-
-
-
-
-
 
 					const _newCount = records.filter((r) =>
 						!canvasState.bulkRecords.some(br =>
@@ -590,11 +461,6 @@ return false;
 							let _y;
 							if (N === 1) {
 
-
-
-
-
-
 								const slot = _existingAttachedCount + i;
 								const PER_RING = 6;
 								const ring = Math.floor(slot / PER_RING);
@@ -605,10 +471,6 @@ return false;
 								_x = rec.x + radius * Math.cos(angle);
 								_y = rec.y + radius * Math.sin(angle);
 							} else {
-
-
-
-
 
 								const t = i / (N - 1);
 								const angle = _outwardAngle - arcSpan / 2 + arcSpan * t;
@@ -639,19 +501,6 @@ return false;
 							canvasState.bulkAssociations.push({ id: canvasState.bulkIdSeq++, fromId, toId, fieldName });
 						}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 						const holderRec = canvasState.bulkRecords.find((b) => b.id === fromId);
 						const targetRec = canvasState.bulkRecords.find((b) => b.id === toId);
 						if (holderRec && targetRec && targetRec.loadedFromId
@@ -660,11 +509,6 @@ return false;
 							holderRec.values[fieldName] = targetRec.loadedFromId;
 						}
 					});
-
-
-
-
-
 
 					const cachedCountForRemoval = (rec.direction === 'child')
 						? _relatedCountCache.get(_countCacheKey(targetType, rec.fieldOnOther, base.loadedFromId))
@@ -680,25 +524,10 @@ canvasState.bulkRecords.splice(i, 1);
 						rec._loading = false;
 					}
 
-
-
-
-
-
-
-
-
-
-
-
-
 					if (newRecs.length > 0 && targetSel) {
 						newRecs.forEach((nr) => inferAssociationsForRecord(nr, targetSel));
 						purgeRedundantTypeNodes();
 					}
-
-
-
 
 					if (newRecs.length > 0 && targetSel) {
 						newRecs.forEach((nr) => {
@@ -706,10 +535,6 @@ canvasState.bulkRecords.splice(i, 1);
 });
 					}
 					renderBulkView();
-
-
-
-
 
 					if (newRecs.length > 0 && targetSel) {
 						const outwardFrom = { x: rec.x, y: rec.y };
@@ -725,10 +550,6 @@ canvasState.bulkRecords.splice(i, 1);
 					if (added === 0 && reused === 0) {
 						showBulkToast('No related ' + noun + ' records found.');
 					} else if (wasTruncated) {
-
-
-
-
 
 						const remaining = cachedCountForRemoval - records.length;
 						const ctx = { rec, base };

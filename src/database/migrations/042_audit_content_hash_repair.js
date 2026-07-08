@@ -1,19 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import crypto from "node:crypto";
 
 function _canonical(row) {
@@ -50,8 +34,6 @@ function _chainHash(prev, contentHash) {
 
 export async function up(db) {
 
-
-
 	try {
 		await db.schema
 			.alterTable("audit_log")
@@ -63,7 +45,6 @@ export async function up(db) {
 		}
 		return;
 	}
-
 
 	const rows = await db
 		.selectFrom("audit_log")
@@ -89,6 +70,5 @@ export async function up(db) {
 }
 
 export async function down() {
-
 
 }

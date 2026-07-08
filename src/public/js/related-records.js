@@ -1,53 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -77,29 +27,9 @@ throw new Error('related-records.mount: missing deps object');
 			const _countCacheKey = deps._countCacheKey;
 			const _relatedCountCache = deps._relatedCountCache;
 
-
-
-
-
 			const _chipProbeState = new Map();
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			const _RELCHIP_SYSTEM_CHILD_NAMES = new Set([
-
-
 
 				'ContentDocumentLink', 'AttachedContentDocument',
 				'AttachedContentNote', 'CombinedAttachment',
@@ -109,17 +39,14 @@ throw new Error('related-records.mount: missing deps object');
 
 				'EmailMessageRelation',
 
-
 				'ProcessInstance', 'ProcessInstanceHistory',
 				'ProcessInstanceStep', 'ProcessInstanceWorkitem',
-
 
 				'AccountCleanInfo', 'LeadCleanInfo',
 				'DuplicateRecordItem', 'DuplicateRecordSet',
 
 				'AIInsightValue', 'AIRecordInsight', 'AIInsightAction',
 				'AIInsightReason', 'AIInsightFeedback',
-
 
 				'ContactPointAddress', 'ContactPointEmail',
 				'ContactPointPhone', 'ContactPointTypeConsent',
@@ -131,7 +58,6 @@ throw new Error('related-records.mount: missing deps object');
 				'AssociatedLocation', 'ServiceAppointment',
 
 				'MessagingEndUser', 'MessagingSession',
-
 
 				'CartCoupon', 'CartValidationOutput', 'CartTax',
 			]);
@@ -154,22 +80,12 @@ return true;
 }
 				return _RELCHIP_SYSTEM_CHILD_SUFFIXES.some((suf) => objName.endsWith(suf));
 			}
-			
-
-
-
 
 			const _RELCHIP_SYSTEM_PARENT_FIELDS = new Set([
 				'CreatedById',
 				'LastModifiedById',
 				'MasterRecordId',
 				'RecordTypeId',
-
-
-
-
-
-
 
 				'OwnerId',
 			]);
@@ -182,12 +98,6 @@ return false;
 }
 				return _RELCHIP_SYSTEM_PARENT_FIELDS.has(fieldName);
 			}
-			
-
-
-
-
-
 
 			function _ensureChipProbed(rec) {
 				if (!rec || !rec.loadedFromId || !rec.fromSelectionId) {
@@ -218,21 +128,6 @@ return;
 					renderBulkView();
 				});
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function _sfIdValue(x) {
 				if (typeof x === 'string') {
@@ -254,19 +149,6 @@ return true;
 }
 				return aId.slice(0, 15) === bId.slice(0, 15);
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
 
 			function _relInfoForRec(rec) {
 				if (!rec || !rec.fromSelectionId) {
@@ -330,25 +212,8 @@ return;
 					probing: _chipProbeState.get(rec.id) === 'probing',
 				};
 			}
-			
-
-
-
-
-
 
 			function showRelatedPopover(triggerEl, hostRec) {
-
-
-
-
-
-
-
-
-
-
-
 
 				const sel = hostRec.fromSelectionId
 					? canvasState.selectedObjects.find((s) => s.id === hostRec.fromSelectionId)
@@ -446,10 +311,6 @@ return;
 					loadRelatedFromChip(hostRec, { direction, objectName, fieldName, relationshipName });
 				});
 			}
-			
-
-
-
 
 			async function loadRelatedFromChip(hostRec, rel) {
 				if (!hostRec || !rel) {
@@ -469,19 +330,12 @@ return;
 					x: hostRec.x + (rel.direction === 'child' ? 0 : -160),
 					y: hostRec.y + (rel.direction === 'child' ? 160 : -160),
 
-
-
-
-
-
 					_chipLoader: true,
 				};
 				if (rel.direction === 'child') {
 					tn.fieldOnOther = rel.fieldName;
 				} else {
 					tn.fieldOnThis = rel.fieldName;
-
-
 
 					const fkValue = hostRec.values && hostRec.values[rel.fieldName];
 					if (!fkValue) {
@@ -495,7 +349,6 @@ return;
  await openTypeNode(tn); 
 } catch (e) {
 
-
 					const i = canvasState.bulkRecords.findIndex((b) => b.id === tn.id);
 					if (i !== -1) {
 canvasState.bulkRecords.splice(i, 1);
@@ -504,22 +357,6 @@ canvasState.bulkRecords.splice(i, 1);
 					showBulkToast('Load failed: ' + (e.message || e), 'error');
 				}
 			}
-			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			async function seedEditModeTypeNodes(hostRec, hostSel, opts) {
 				if (!hostSel || !hostSel.data || !hostRec.loadedFromId) {
@@ -527,34 +364,19 @@ return;
 }
 				opts = opts || {};
 
-
-
-
-
-
 				return;
 				const labelFor = (n) => {
 					const fromAll = Array.isArray(canvasState.allObjects) && canvasState.allObjects.find(o => o.name === n);
 					return (fromAll && fromAll.label) || n;
 				};
 
-
-
-
 				const existingTypeKeys = new Set(
 					canvasState.bulkRecords.filter(r => r.isTypeNode && r.hostRecordId === hostRec.id)
 						.map(r => r.objectName + '|' + r.direction + '|' + (r.fieldOnOther || r.fieldOnThis || ''))
 				);
 
-
-
-
 				const auditOnly = !!opts.auditOnly;
 				const includeAudit = !!auditOnly;
-
-
-
-
 
 				const queryableNames = new Set((canvasState.allObjects || []).filter((o) => o && o.queryable).map((o) => o.name));
 				const isQueryable = (name) => queryableNames.size === 0 || queryableNames.has(name);
@@ -616,11 +438,6 @@ return;
 return;
 }
 
-
-
-
-
-
 					const onCanvas = canvasState.bulkRecords.find(r =>
 						!r.isTypeNode && r.objectName === p.object && r.loadedFromId === parentId);
 					if (onCanvas) {
@@ -636,8 +453,6 @@ return;
 					});
 				});
 
-
-
 				const probes = childCandidates.map((n) => ({
 					objectName: n.objectName,
 					field: n.fieldOnOther,
@@ -650,12 +465,6 @@ return;
 					if (sfCount === 0) {
 return false;
 }
-
-
-
-
-
-
 
 					const canvasMatches = canvasState.bulkRecords.filter((r) =>
 						!r.isTypeNode && r.objectName === n.objectName &&
@@ -672,29 +481,8 @@ return false;
 					return;
 				}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 				const isBase = !opts.outwardFrom && typeof hostRec._fanAngle !== 'number';
 				const hasExisting = existingTypeKeys.size > 0;
-
-
-
-
-
-
-
 
 				const fallbackRing = opts.ring || (isBase ? 220 : 180);
 				const baseRing = hasExisting ? fallbackRing + 120 : fallbackRing;
@@ -704,34 +492,14 @@ return false;
 					span = Math.PI * 2;
 				} else {
 
-
-
 					span = Math.PI * 0.95;
 					if (typeof hostRec._fanAngle === 'number') {
-
-
-
-
-
 
 						baseAngle = hostRec._fanAngle;
 					} else {
 						const odx = hostRec.x - opts.outwardFrom.x;
 						const ody = hostRec.y - opts.outwardFrom.y;
 						const parentBased = Math.atan2(ody, odx);
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 						const SAMPLES = 24;
 						const probeR = Math.max(baseRing, 320);
@@ -764,8 +532,6 @@ minDist = probeR;
 								sumMin += minDist;
 							}
 
-
-
 							const align = Math.cos(cand - parentBased);
 							const score = (sumMin / offsets.length) + align * 30;
 							if (score > bestScore) {
@@ -779,19 +545,7 @@ minDist = probeR;
 				}
 				const n = nodes.length;
 
-
-
-
-
-
-
-
-
-
 				const _MIN_SEP = 120;
-
-
-
 
 				const angularStep = isBase
 					? (n > 1 ? span / n : 0)
@@ -801,14 +555,6 @@ minDist = probeR;
 					: 0;
 				const ring = Math.max(baseRing, intraRingMin);
 
-
-
-
-
-
-
-
-
 				const _halfExtents = (rec) => rec.isTypeNode
 					? { hw: 65, hh: 65 }
 					: { hw: 120, hh: 90 };
@@ -817,10 +563,6 @@ minDist = probeR;
 					return { l: rec.x - hw, r: rec.x + hw, t: rec.y - hh, b: rec.y + hh };
 				};
 				const _hits = (a, b) => !(a.r <= b.l || a.l >= b.r || a.b <= b.t || a.t >= b.b);
-
-
-
-
 
 				const radiusForIndex = (i) => {
 					const cycle = i % 3;
@@ -832,9 +574,6 @@ return ring * 1.14;
 }
 					return ring;
 				};
-
-
-
 
 				const PUSH_STEP = 30;
 				const PUSH_MAX = 20;

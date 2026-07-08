@@ -1,16 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -34,10 +21,6 @@ return;
 	);
 	process.env.DATABASE_URL = `sqlite:${tmpFile}`;
 
-
-
-
-
 	if (!process.env.ENCRYPTION_KEY) {
 		process.env.ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 	}
@@ -47,8 +30,6 @@ return;
 	sqlite.pragma('foreign_keys = ON');
 	_rawClient = sqlite;
 	_db = new Kysely({ dialect: new SqliteDialect({ database: sqlite }) });
-
-
 
 	const migrator = new Migrator({
 		db: _db,
@@ -75,7 +56,6 @@ throw error;
 	ext.registerRawClientProvider(() => ({ dialect: 'sqlite', client: _rawClient }));
 	_ready = true;
 
-
 	process.on('exit', () => {
 		try {
  fs.unlinkSync(tmpFile); 
@@ -89,12 +69,6 @@ throw error;
 	});
 }
 
-
-
-
-
-
-
 const TABLES_IN_DELETE_ORDER = [
 	'workspace_pending_joins',
 	'magic_link_tokens',
@@ -107,8 +81,6 @@ const TABLES_IN_DELETE_ORDER = [
 	'subscriptions',
 	'account_view_state',
 	'mcp_tokens',
-
-
 
 	'canvas_keys',
 	'batch_keys',

@@ -1,19 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { canvasStoreFromSfConnection } from '../src/storage/canvas-store.js';
@@ -28,9 +12,6 @@ before(initTestDb);
 before(() => { _stub = installSfFetchStub(); });
 after(() => { if (_stub) { _stub.restore(); } });
 beforeEach(clearTestDb);
-
-
-
 
 function makeStatefulConn(canvasId, opts = {}) {
 	const state = { latest: opts.initialVersion || '068V0', counter: 0 };
@@ -58,8 +39,6 @@ function makeStatefulConn(canvasId, opts = {}) {
 			return {
 				async create(payload) {
 					if (name === 'ContentVersion') {
-
-
 
 						await new Promise((r) => setTimeout(r, createDelayMs));
 						state.counter += 1;
@@ -104,7 +83,6 @@ describe('canvas update — per-canvas optimistic-lock serialization', () => {
 		const first = await store.update(CANVAS, { payload: { n: 1 }, expectedVersionId: '068V0' });
 		assert.equal(first.versionId, '068V1', 'first write advances the version');
 
-
 		await assert.rejects(
 			() => store.update(CANVAS, { payload: { n: 2 }, expectedVersionId: '068V0' }),
 			(err) => {
@@ -127,7 +105,6 @@ describe('canvas update — per-canvas optimistic-lock serialization', () => {
 	test('a failing update releases the lock (no deadlock for the next save)', async () => {
 		const conn = makeStatefulConn(CANVAS, { initialVersion: '068V0' });
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID, { sessionId: 'rel-sess' });
-
 
 		await assert.rejects(() => store.update(CANVAS, { payload: {}, expectedVersionId: '068STALE' }));
 		const ok = await store.update(CANVAS, { payload: { after: 'fail' }, expectedVersionId: '068V0' });

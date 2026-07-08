@@ -1,20 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -34,8 +17,6 @@ const RUN_LIVE = process.env.RUN_SF_LIVE === '1';
 const ORG_ALIAS = process.env.SF_TEST_ORG_ALIAS;
 const OBJECT_NAME = 'Account';
 
-
-
 if (!RUN_LIVE || !ORG_ALIAS) {
 	describe('validation engine — live SF integration', () => {
 		test('skipped — set RUN_SF_LIVE=1 and SF_TEST_ORG_ALIAS=<alias> to enable', () => {
@@ -51,14 +32,10 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 	before(async () => {
 		conn = connectViaSfCli(ORG_ALIAS);
 
-
-
 		await cleanupTestRules(conn, OBJECT_NAME);
 	});
 
 	after(async () => {
-
-
 
 		for (const id of trackedRecordIds) {
 			await deleteRecord(conn, OBJECT_NAME, id).catch(() => {});
@@ -69,9 +46,6 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 		await cleanupTestRules(conn, OBJECT_NAME).catch(() => {});
 	});
 
-
-
-
 	async function runRulePattern({
 		ruleName,
 		formula,
@@ -81,10 +55,6 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 	}) {
 		const errorMessage = sentinelErrorMessage(ruleName);
 		const rule = { id: null, name: ruleName, formula, errorMessage, active: true };
-
-
-
-
 
 		const predFail = evaluateRule(rule, failingValues, opts);
 		assert.equal(predFail, 'fail',
@@ -101,10 +71,7 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 
 		try {
 
-
-
 			await waitForRuleActive(conn, OBJECT_NAME, failingValues, errorMessage);
-
 
 			const failResult = await tryInsert(conn, OBJECT_NAME, failingValues);
 			if (failResult.ok) {
@@ -120,7 +87,6 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 				`SF rejected but not with our sentinel error. ` +
 				`Rule: ${ruleName}. Errors: ${JSON.stringify(failResult.errors)}`);
 
-
 			const passResult = await tryInsert(conn, OBJECT_NAME, passingValues);
 			assert.equal(passResult.ok, true,
 				`SF rejected a record the engine predicted would pass. ` +
@@ -131,8 +97,6 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 			await deleteValidationRule(conn, ruleId).catch(() => {});
 		}
 	}
-
-
 
 	describe('validation engine — live SF integration', () => {
 		test('LEN comparison: Description over 50 chars fires the rule', async () => {

@@ -1,16 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -22,8 +9,6 @@ import {
 	resolveFieldValue,
 	evaluateRule,
 } from '../src/validation-formula.js';
-
-
 
 describe('tokenize', () => {
 	test('skips whitespace', () => {
@@ -69,8 +54,6 @@ describe('tokenize', () => {
 		assert.throws(() => tokenize('@'), /unexpected char/);
 	});
 });
-
-
 
 describe('parseFormula', () => {
 	test('literal number', () => {
@@ -134,8 +117,6 @@ describe('parseFormula', () => {
 	});
 });
 
-
-
 describe('num', () => {
 	test('passes numbers through', () => {
 		assert.equal(num(3.14), 3.14);
@@ -181,8 +162,6 @@ describe('looseEq', () => {
 		assert.equal(looseEq('foo', 'Foo'), false);
 	});
 });
-
-
 
 function ev(formula, vals = {}, opts = {}) {
 	return evalNode(parseFormula(formula), vals, opts);
@@ -333,8 +312,6 @@ describe('evalNode — unsupported function throws', () => {
 	});
 });
 
-
-
 describe('resolveFieldValue — cross-object via savedRecords', () => {
 	const fields = [
 		{ name: 'Name' },
@@ -388,7 +365,6 @@ describe('resolveFieldValue — cross-object via bulk associations', () => {
 		bulkAssociations: [{ fromId: 'rec-1', fieldName: 'AccountId', toId: 'rec-acct' }],
 		describeCache: { Account: { fields: [{ name: 'Name' }] } },
 
-
 		savedRecords: {},
 	};
 
@@ -404,14 +380,6 @@ describe('resolveFieldValue — cross-object via bulk associations', () => {
 		assert.equal(resolveFieldValue('Account.Name', {}, opts2), 'Saved Co');
 	});
 });
-
-
-
-
-
-
-
-
 
 describe('real-world rule patterns', () => {
 	const rules = {
@@ -516,9 +484,6 @@ describe('real-world rule patterns', () => {
 
 	test('cross-object rule returns pass when describe cache is empty (we treat null parent as blank)', () => {
 
-
-
-
 		const opts = {
 			currentFields: [
 				{ name: 'Title' },
@@ -530,8 +495,6 @@ describe('real-world rule patterns', () => {
 		assert.equal(evaluateRule(rules.titleAtImportantAccount, { Title: null }, opts), 'pass');
 	});
 });
-
-
 
 describe('evaluateRule', () => {
 	test('returns "unknown" for a rule with no formula', () => {

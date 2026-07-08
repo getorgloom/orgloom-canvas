@@ -1,28 +1,5 @@
 import { sql } from "kysely";
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export async function up(db) {
 	await rebuildNullable(db, "canvas_keys", "canvas_id", "canvas_keys_pk");
 	await rebuildNullable(db, "batch_keys", "batch_id", "batch_keys_pk");
@@ -44,7 +21,6 @@ async function rebuildNullable(db, table, idColumn, pkName) {
 		.addColumn("created_at", "integer", (col) => col.notNull())
 		.addColumn("updated_at", "integer", (col) => col.notNull())
 
-
 		.addPrimaryKeyConstraint(pkName + "_v2", ["sf_org_id", idColumn])
 		.execute();
 
@@ -52,10 +28,6 @@ async function rebuildNullable(db, table, idColumn, pkName) {
 	await db.schema.dropTable(table).execute();
 	await db.schema.alterTable(tmp).renameTo(table).execute();
 }
-
-
-
-
 
 export async function down(db) {
 	await rebuildNotNull(db, "canvas_keys", "canvas_id", "canvas_keys_pk");

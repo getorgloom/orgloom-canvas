@@ -1,12 +1,3 @@
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -19,11 +10,6 @@ import {
 
 describe('shareSchemaFor — standard objects use <Object>Id / <Object>AccessLevel', () => {
 	test('Account → AccountShare with multi-axis access fields (AccountShare special-case)', () => {
-
-
-
-
-
 
 		assert.deepEqual(shareSchemaFor('Account'), {
 			shareTable: 'AccountShare',
@@ -223,11 +209,6 @@ describe('recordsToShareFromManifest', () => {
 describe('grantRecordAccess — connection interaction (mocked)', () => {
 	function makeMockConn(behavior) {
 
-
-
-
-
-
 		const calls = [];
 		return {
 			calls,
@@ -277,8 +258,6 @@ describe('grantRecordAccess — connection interaction (mocked)', () => {
 		assert.equal(conn.calls[0].shareTable, 'AccountShare');
 		assert.equal(conn.calls[1].shareTable, 'ContactShare');
 
-
-
 		assert.equal(conn.calls[0].row.AccountId, '001A');
 		assert.equal(conn.calls[0].row.AccountAccessLevel, 'Edit');
 		assert.equal(conn.calls[0].row.UserOrGroupId, '005me');
@@ -293,8 +272,6 @@ describe('grantRecordAccess — connection interaction (mocked)', () => {
 
 	test('AccountShare row carries the multi-axis required AccessLevel extras', async () => {
 
-
-
 		const conn = makeMockConn({});
 		await grantRecordAccess(conn, [
 			{ objectName: 'Account', recordId: '001A' },
@@ -306,8 +283,6 @@ describe('grantRecordAccess — connection interaction (mocked)', () => {
 	});
 
 	test('non-AccountShare rows do NOT include the AccountShare extras', async () => {
-
-
 
 		const conn = makeMockConn({});
 		await grantRecordAccess(conn, [
@@ -322,7 +297,6 @@ describe('grantRecordAccess — connection interaction (mocked)', () => {
 	});
 
 	test('custom-object shares still use ParentId + AccessLevel', () => {
-
 
 		return (async () => {
 			const conn = makeMockConn({});
@@ -392,9 +366,6 @@ describe('grantRecordAccess — connection interaction (mocked)', () => {
 	});
 
 	test('"below organization levels" is normalized to granted with coveredByOWD', async () => {
-
-
-
 
 		const conn = makeMockConn({
 			'AccountShare:001A':

@@ -1,16 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -20,7 +7,6 @@ import {
 	isNoiseSObject,
 	getQueryableSObjects,
 } from '../src/sf-describe.js';
-
 
 function fakeConn(objectNames) {
 	let calls = 0;
@@ -150,7 +136,6 @@ describe('getQueryableSObjects cache isolation', () => {
 	});
 
 	test('falsy orgId is NEVER cached — two orgs never cross-contaminate', async () => {
-
 
 		const orgA = fakeConn(['Account', 'CustomA__c']);
 		const orgB = fakeConn(['Account', 'CustomB__c']);

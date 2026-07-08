@@ -1,21 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (function () {
 	'use strict';
 
@@ -61,10 +43,6 @@ _close();
 		const onCanvas = location.pathname === '/' || location.pathname === '';
 		const ctx = onCanvas ? 'canvas' : ('page ' + location.pathname);
 
-
-
-
-
 		const items = [];
 		items.push('<button type="button" class="app-help-item" data-help-support>' +
 			'<span class="app-help-item-name">Contact support</span>' +
@@ -77,8 +55,6 @@ _close();
 		_menu.className = 'app-help-menu';
 		_menu.setAttribute('role', 'menu');
 		_menu.innerHTML = items.join('');
-
-
 
 		const rect = chip.getBoundingClientRect();
 		_menu.style.position = 'fixed';
@@ -112,8 +88,6 @@ _close();
 				}
 			});
 		}
-
-
 
 		setTimeout(() => {
 			document.addEventListener('mousedown', _outside, true);

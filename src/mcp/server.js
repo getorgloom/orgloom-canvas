@@ -1,4 +1,3 @@
-
 import * as mcpTokensDb from "orgloom-canvas/database/mcp-tokens";
 import * as accountsDb from "orgloom-canvas/database/accounts";
 import * as viewStateDb from "orgloom-canvas/database/view-state";
@@ -15,7 +14,6 @@ const SERVER_INFO = Object.freeze({
 	version: "1.0.0",
 });
 
-
 const ERR_PARSE = -32700;
 const ERR_INVALID_REQUEST = -32600;
 const ERR_METHOD_NOT_FOUND = -32601;
@@ -25,12 +23,6 @@ const ERR_AUTH = -32001;
 const ERR_NO_WORKSPACE = -32002;
 const ERR_FORBIDDEN = -32004;
 const ERR_NOT_FOUND = -32005;
-
-
-
-
-
-
 
 const TOOLS = [
 	{
@@ -524,9 +516,7 @@ const TOOLS = [
 	},
 ];
 
-
 const RELAY_REQUEST_TIMEOUT_MS = 5000;
-
 
 const _SF_CANVAS_ID = /^[a-zA-Z0-9]{15,18}$/;
 const _DRAFT_CANVAS_ID =
@@ -633,7 +623,6 @@ async function _toolProposeRecordChanges(ctx, args) {
 			"changes must be a non-empty array",
 		);
 	}
-
 
 	let liveRead;
 	try {
@@ -1602,10 +1591,6 @@ async function _toolGetMyCapabilities(ctx) {
 
 	}
 
-
-
-
-
 	const allowed = _ALL_CHANGE_KINDS.slice();
 
 	const notes = [];
@@ -1801,7 +1786,6 @@ const TOOL_HANDLERS = {
 	read_clarification: _toolReadClarification,
 };
 
-
 async function _handleInitialize() {
 	return {
 		protocolVersion: PROTOCOL_VERSION,
@@ -1827,7 +1811,6 @@ async function _handleToolsCall(ctx, params) {
 		throw _appError(ERR_METHOD_NOT_FOUND, "Unknown tool: " + name);
 	}
 
-
 	const cap = await ext.getCapability(ctx.account, "ai-edit-on-canvas", {
 		workspaceId: ctx.workspaceId,
 		actorKind: "mcp",
@@ -1847,9 +1830,6 @@ async function _handleToolsCall(ctx, params) {
 	try {
 		result = await handler(ctx, args);
 	} catch (err) {
-
-
-
 
 		await ext.auditWrite({
 			workspaceId: ctx.workspaceId,
@@ -1875,7 +1855,6 @@ async function _handleToolsCall(ctx, params) {
 
 	return result;
 }
-
 
 export async function mcpHandler(req, res) {
 	const body = req.body;
@@ -1931,9 +1910,6 @@ export async function mcpHandler(req, res) {
 		const message = (err && err.message) || "Internal error";
 		const data = err && err.data;
 
-
-
-
 		if (code === ERR_AUTH) {
 			res.status(401);
 		}
@@ -1970,8 +1946,6 @@ async function _resolveContext(req) {
 
 	return { account, workspaceId, mcpToken: tokenRow };
 }
-
-
 
 function _textResult(text) {
 

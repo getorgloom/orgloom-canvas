@@ -1,37 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import jsforce from 'jsforce';
 import { connections as connectionsDb } from './database/index.js';
 import * as viewStateDb from 'orgloom-canvas/database/view-state';
@@ -52,20 +18,12 @@ return null;
 return null;
 }
 
-
-
-
-
-
-
-
 	let connectionId = req.session && req.session.currentConnectionId;
 	if (!connectionId) {
 		try {
 			const view = await viewStateDb.get(accountId);
 			connectionId = view && view.current_connection_id;
 		} catch (_) {
-
 
 		}
 	}
@@ -84,19 +42,6 @@ return null;
 return null;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 	const userMismatch = sfAuth.sfUserId && conn.sf_user_id
 		&& sfAuth.sfUserId !== conn.sf_user_id;
 	const orgMismatch = sfAuth.sfOrgId && conn.sf_org_id
@@ -104,24 +49,6 @@ return null;
 	if (userMismatch || orgMismatch) {
 		return null;
 	}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	const sid = req.session && req.session.id;
 	const refreshToken = sid ? getRefreshToken(sid, connectionId) : null;
@@ -141,9 +68,6 @@ return null;
 						req.session.sfAuth.accessToken = newAccessToken;
 					}
 
-
-
-
 					if (req.session.sfAuthByConnection
 						&& req.session.sfAuthByConnection[connectionId]) {
 						req.session.sfAuthByConnection[connectionId].accessToken = newAccessToken;
@@ -154,7 +78,6 @@ return null;
 				}
 			} catch (_) {
 
-
 			}
 		});
 	} else {
@@ -164,8 +87,6 @@ return null;
 			version: config.salesforce.apiVersion,
 		});
 	}
-
-
 
 	connectionsDb.touchLastUsed(connectionId).catch(() => {});
 

@@ -1,11 +1,3 @@
-
-
-
-
-
-
-
-
 import Anthropic from '@anthropic-ai/sdk';
 
 let _client = null;
@@ -14,9 +6,6 @@ const _key = process.env.ANTHROPIC_API_KEY;
 if (_key) {
 	_client = new Anthropic({
 		apiKey: _key,
-
-
-
 
 		timeout: 120_000,
 		maxRetries: 2,
