@@ -1,0 +1,347 @@
+
+
+
+
+
+<% var __isQuickUpload = (typeof quickUpload !== 'undefined') && !!quickUpload; %>
+<% var __needsSfConnect = (typeof needsSfConnect !== 'undefined') && !!needsSfConnect; %>
+<% var __sfConnected = !!user && !__needsSfConnect; %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Org Loom<% if (__isQuickUpload) { %> &mdash; Quick Upload<% } %></title>
+	<link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="canvas-page">
+
+
+
+
+
+	<%- include('partials/top-strip') %>
+
+
+
+
+
+	<% if (typeof playgroundMode !== 'undefined' && playgroundMode) { %>
+		<div class="app-playground-banner" role="status">
+
+
+
+			<a class="app-playground-banner-home" href="/?from=playground">&larr; Back to home</a>
+
+
+
+
+
+
+
+
+
+			<span class="app-playground-banner-content">
+				<strong>Demo mode</strong> &middot; no data leaves your browser. You&rsquo;re working against a sample dataset, not a real org.
+			</span>
+		</div>
+	<% } %>
+
+	<main class="app-main">
+		<% if (user) { %>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			<% if (typeof upgrade !== 'undefined' && upgrade === 'pending') { %>
+			<div id="upgrade-banner" role="status" style="position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--warn,#d29a00);color:#1a1a1a;padding:0.6em 2.5em 0.6em 1em;font-size:0.9em;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.25)"><strong>Payment processing.</strong> We&rsquo;ll upgrade your workspace once your bank confirms (usually 3&ndash;5 business days). You can connect Salesforce and start using Org Loom on your current plan in the meantime.<button type="button" id="upgrade-banner-x" aria-label="Dismiss" style="position:absolute;right:0.5em;top:50%;transform:translateY(-50%);background:none;border:0;color:inherit;font-size:1.1em;cursor:pointer;line-height:1;padding:0.25em 0.5em">&times;</button></div>
+			<script nonce="<%= cspNonce %>">
+			(function () {
+				var bar = document.getElementById('upgrade-banner');
+				if (!bar) return;
+				var dismiss = function () { if (bar.parentNode) bar.parentNode.removeChild(bar); };
+				var x = document.getElementById('upgrade-banner-x');
+				if (x) x.addEventListener('click', dismiss);
+				setTimeout(dismiss, 12000);
+			})();
+			</script>
+			<% } %>
+
+			<!-- App shell is rendered entirely by app.js into the fixed-position
+			     graph overlay. This `#app-root` placeholder exists only so code
+			     that still references it has a mount point; nothing is rendered
+			     here directly. -->
+			<div id="app-root"></div>
+
+			<!-- Cytoscape powers the parallel records-canvas renderer
+			     (renderBulkCanvasCy in app.js). Loads from node_modules
+			     via the /vendor static route in server.js so the version
+			     is pinned by package.json. Toggled per-session by the
+			     `?cy=0` URL param; the cy renderer is the default. -->
+			<script src="/vendor/cytoscape/dist/cytoscape.umd.js" defer></script>
+			<!-- HTML labels: lets us render the legacy <div class="record-card">
+			     markup verbatim inside cy nodes, instead of cy's plain text
+			     labels. Required for full record-card visual fidelity. -->
+			<script src="/vendor/cytoscape-node-html-label/dist/cytoscape-node-html-label.min.js" defer></script>
+			<script nonce="<%= cspNonce %>">
+				// SF_* globals are null when no SF connection is active.
+				// Every read-site in app.js uses `|| 'anon'` / `|| null`
+				// fallbacks so the canvas keeps working — planning,
+				// drafts, layout, and AI proposals all run without a
+				// connection. SF-touching actions check at invocation
+				// time and surface their own prompt.
+				window.SF_ORG_ID = <%- jsonForScript(user && user.organizationId ? user.organizationId : null) %>;
+				window.SF_USER_ID = <%- jsonForScript(user && user.sfUserId ? user.sfUserId : null) %>;
+				window.SF_USER_NAME = <%- jsonForScript(user && (user.displayName || user.username) ? (user.displayName || user.username) : null) %>;
+				window.SF_INSTANCE_URL = <%- jsonForScript(typeof instanceUrl !== 'undefined' ? instanceUrl : null) %>;
+				window.ORGLOOM_ACCOUNT_ID = <%- jsonForScript(user && user.id ? user.id : null) %>;
+				window.ORGLOOM_SF_CONNECTED = <%- jsonForScript(!!__sfConnected) %>;
+				// Whether the /docs hub is served by this deployment. False
+				// in canvas-standalone (docs.ejs lives in the saas tree);
+				// help-chip + any other docs-link surfaces gate on this.
+				window.ORGLOOM_HAS_DOCS = <%- jsonForScript(typeof saasEnabled !== 'undefined' && !!saasEnabled) %>;
+				// Playground / mock mode. When true, mock-sf.js installs a
+				// fetch interceptor that returns canned data for every
+				// SF-bound API call. The canvas itself doesn't know — it
+				// keeps calling /api/objects/:name/describe etc., the mock
+				// layer just answers from a static dataset.
+				window.ORGLOOM_MOCK = <%- jsonForScript(typeof playgroundMode !== 'undefined' && !!playgroundMode) %>;
+				// Sentry (GlitchTip) browser SDK config. Stays null in
+				// dev / self-host where SENTRY_DSN_BROWSER isn't set;
+				// /js/sentry-init.js no-ops in that case. accountIdHash
+				// is a SHA-256 of the account id, truncated server-side
+				// so the browser never sees the raw id.
+				window.ORGLOOM_SENTRY_DSN = <%- jsonForScript(typeof sentryDsn !== 'undefined' ? sentryDsn : null) %>;
+				window.ORGLOOM_ACCOUNT_ID_HASH = <%- jsonForScript(typeof accountIdHash !== 'undefined' ? accountIdHash : null) %>;
+				window.ORGLOOM_ENV = <%- jsonForScript(typeof appEnv !== 'undefined' ? appEnv : 'production') %>;
+				window.ORGLOOM_RELEASE = <%- jsonForScript(typeof appRelease !== 'undefined' ? appRelease : null) %>;
+				<% if (__isQuickUpload) { %>
+				// Quick Upload mode flag — app.js reads this on init and at
+				// payload-build time. See pricing.ejs FAQ for the user-facing
+				// description; see linkedCsvConfirm in app.js for the upload
+				// path. directUpload=true is set on uploads from this page.
+				window.__orgloomQuickUpload = true;
+				<% } %>
+				// PostHog: explicit canvas_opened event so the funnel
+				// "landing → signup → first canvas opened" works
+				// without relying on autocapture URL matching (which
+				// gets fuzzy with single-page-app-ish behavior).
+				// posthog is loaded by top-strip.ejs before app.js
+				// runs; the optional-chain guard handles the
+				// analytics-disabled case.
+				if (window.posthog && window.posthog.capture) {
+					window.posthog.capture('canvas_opened', {
+						sf_connected: !!window.ORGLOOM_SF_CONNECTED,
+						quick_upload_mode: !!window.__orgloomQuickUpload,
+					});
+				}
+			</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			<script src="https://browser.sentry-cdn.com/8.55.0/bundle.tracing.min.js" integrity="sha384-ek46VuBjLOrzW6vcL5CcxRrAtcxp4l7tJqnBOW3s7SIYy7qrKN+IzGFT7g1puodV" crossorigin="anonymous"></script>
+			<script src="/js/sentry-init.js"></script>
+
+
+
+
+
+
+
+
+			<script src="/js/canvas-capture.js"></script>
+
+
+
+
+
+
+
+			<% if (typeof playgroundMode !== 'undefined' && playgroundMode) { %>
+				<script src="/js/mock-data.js"></script>
+				<script src="/js/mock-sf.js"></script>
+			<% } %>
+
+
+
+
+
+
+
+			<script src="/js/playground-bridge.js"></script>
+
+
+
+
+
+			<script src="/js/sf-fetch.js"></script>
+
+
+
+
+
+
+
+
+
+
+			<script src="/js/formula.js" defer></script>
+			<script src="/js/import-shared.js" defer></script>
+			<script src="/js/value-compare.js" defer></script>
+			<script src="/js/migrate-annotate.js" defer></script>
+			<script src="/js/migrate-match.js" defer></script>
+			<script src="/js/record-diff-modal.js" defer></script>
+			<script src="/js/find-duplicates-modal.js" defer></script>
+			<script src="/js/ai-generate.js" defer></script>
+			<script src="/js/bulk-script.js" defer></script>
+			<script src="/js/upload-history.js" defer></script>
+			<script src="/js/support-modals.js" defer></script>
+			<script src="/js/csv-import.js" defer></script>
+			<script src="/js/linked-csv.js" defer></script>
+			<script src="/js/soql-import.js" defer></script>
+			<script src="/js/record-browse.js" defer></script>
+			<script src="/js/templates.js" defer></script>
+			<script src="/js/session-drafts.js" defer></script>
+			<script src="/js/presence.js" defer></script>
+			<script src="/js/ai-proposals.js" defer></script>
+			<script src="/js/ai-clarifications.js" defer></script>
+			<script src="/js/bulk-edit-modal.js" defer></script>
+			<script src="/js/insert-modal.js" defer></script>
+			<script src="/js/related-counts.js" defer></script>
+			<script src="/js/find-object-popover.js" defer></script>
+			<script src="/js/preflight.js" defer></script>
+			<script src="/js/schema-graph.js" defer></script>
+			<script src="/js/schema-builder.js" defer></script>
+			<script src="/js/records-canvas.js" defer></script>
+			<script src="/js/related-records.js" defer></script>
+			<script src="/js/type-node.js" defer></script>
+			<script src="/js/pending-spawn.js" defer></script>
+			<script src="/js/cy-interactions.js" defer></script>
+			<script src="/js/canvas-autosave.js" defer></script>
+			<script src="/js/canvas-marquee.js" defer></script>
+			<script src="/js/canvas-associations.js" defer></script>
+			<script src="/js/canvas-card-menu.js" defer></script>
+			<script src="/js/canvas-save-load.js" defer></script>
+			<script src="/js/canvas-share.js" defer></script>
+			<script src="/js/slot-user.js" defer></script>
+			<script src="/js/ui-feedback.js" defer></script>
+			<script src="/js/bulk-ops-menu.js" defer></script>
+			<script src="/js/bulk-autofill.js" defer></script>
+			<script src="/js/canvas-cap.js" defer></script>
+			<script src="/js/stale-ref.js" defer></script>
+			<script src="/js/canvas-search.js" defer></script>
+			<script src="/js/canvas-export-csv.js" defer></script>
+			<script src="/js/anchored-popup.js" defer></script>
+			<script src="/js/bulk-toolbar.js" defer></script>
+
+
+
+
+
+			<script src="/js/tree-layout.js" defer></script>
+			<script src="/js/upload-modal.js" defer></script>
+
+
+
+
+			<script src="/js/support.js"></script>
+
+
+
+			<script src="/js/app.js" defer></script>
+
+
+
+
+
+			<script src="/js/mcp-relay-client.js" defer></script>
+		<% } else { %>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			<% var __ts_saas = (typeof saasEnabled !== 'undefined') ? !!saasEnabled : false; %>
+			<section class="signin-gate">
+				<% if (__ts_saas) { %>
+					<a class="button signin-gate-btn" href="/signup">Sign up</a>
+					<p class="signin-gate-existing">
+						Already have an account? <a href="/sign-in">Sign in</a>.
+					</p>
+				<% } else { %>
+					<a class="button signin-gate-btn" href="/auth/login">Connect Salesforce to get started</a>
+					<p class="signin-gate-existing">
+						Org Loom Canvas runs entirely on your local machine. Connect a Salesforce org once and the canvas opens.
+					</p>
+				<% } %>
+				<div class="signin-gate-video">
+
+
+
+
+
+
+					<div class="video-embed video-embed--placeholder video-embed--aspect-16-9" role="img" aria-label="Demo video placeholder">
+						<div class="video-embed-empty">
+							<span class="video-embed-empty-icon" aria-hidden="true">▶</span>
+							<span class="video-embed-empty-text">Demo video coming soon</span>
+						</div>
+					</div>
+				</div>
+				<% if (__ts_saas && typeof betaGateEnabled !== 'undefined' && betaGateEnabled) { %>
+					<p class="landing-note">Currently in private beta. <a href="/waitlist">Join the waitlist</a> to get early access.</p>
+				<% } %>
+				<% if (__ts_saas) { %>
+					<p class="landing-note">
+						Source-available: <a href="https://github.com/getorgloom/orgloom-canvas" rel="noopener" target="_blank">read the canvas source</a> on GitHub.
+					</p>
+				<% } %>
+			</section>
+		<% } %>
+	</main>
+</body>
+</html>

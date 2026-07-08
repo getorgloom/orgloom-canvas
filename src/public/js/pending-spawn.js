@@ -1,0 +1,225 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(function () {
+	'use strict';
+
+	window.OrgLoom = window.OrgLoom || {};
+
+	window.OrgLoom.pendingSpawn = {
+		mount: function mount(deps) {
+			const required = [
+				'canvasState', 'showBulkToast',
+				'_canvasCapBlockReason',
+				'addToSelection', 'cloneRecord',
+				'pickRecordForFreeTypeNode', 'renderBulkView',
+				'getGraph',
+			];
+			if (!deps) {
+throw new Error('pending-spawn.mount: missing deps object');
+}
+			for (const k of required) {
+				if (deps[k] === undefined || deps[k] === null) {
+					throw new Error('pending-spawn.mount: missing dep ' + k);
+				}
+			}
+			const canvasState = deps.canvasState;
+			const showBulkToast = deps.showBulkToast;
+			const _canvasCapBlockReason = deps._canvasCapBlockReason;
+			const addToSelection = deps.addToSelection;
+			const cloneRecord = deps.cloneRecord;
+			const pickRecordForFreeTypeNode = deps.pickRecordForFreeTypeNode;
+			const renderBulkView = deps.renderBulkView;
+			const getGraph = deps.getGraph;
+
+			async function spawnDraftRecord(objectName) {
+				const blocked = _canvasCapBlockReason(1);
+				if (blocked) {
+ showBulkToast(blocked); return; 
+}
+				let s = canvasState.selectedObjects.find((so) => so.name === objectName);
+				if (!s) {
+					try {
+ s = await addToSelection(objectName); 
+} catch (e) {
+						showBulkToast('Failed to add ' + objectName + ': ' + (e.message || e), 'error');
+						return;
+					}
+				}
+				cloneRecord(objectName);
+			}
+			
+
+
+
+
+
+
+
+
+
+
+			function spawnPendingRecord(worldX, worldY) {
+				let x, y;
+				if (typeof worldX === 'number' && typeof worldY === 'number') {
+					x = worldX;
+					y = worldY;
+				} else {
+					const canvas = getGraph().querySelector('#bulk-canvas');
+					const cw = (canvas && canvas.clientWidth) || 800;
+					const ch = (canvas && canvas.clientHeight) || 600;
+					const sl = (canvas && canvas.scrollLeft) || 0;
+					const st = (canvas && canvas.scrollTop) || 0;
+					const baseX = sl + cw / 2;
+					const baseY = st + ch / 2;
+
+
+
+
+
+
+
+					const STEP_X = 260;
+					const STEP_Y = 170;
+					const PER_ROW = 5;
+					const pendingSiblings = canvasState.bulkRecords.filter((r) => r && r.isPending);
+					if (pendingSiblings.length === 0) {
+						x = baseX;
+						y = baseY;
+					} else {
+						const anchor = pendingSiblings[0];
+						const idx = pendingSiblings.length;
+						const col = idx % PER_ROW;
+						const r = Math.floor(idx / PER_ROW);
+						x = anchor.x + col * STEP_X;
+						y = anchor.y + r * STEP_Y;
+					}
+				}
+				canvasState.bulkRecords.push({
+					id: canvasState.bulkIdSeq++,
+					isTypeNode: true,
+					isPending: true,
+					x,
+					y,
+				});
+				renderBulkView();
+			}
+			
+			async function resolvePendingRecord(recId, objectName) {
+				const rec = canvasState.bulkRecords.find((r) => r.id === recId);
+				if (!rec || !rec.isPending) {
+return;
+}
+				const blocked = _canvasCapBlockReason(1);
+				if (blocked) {
+ showBulkToast(blocked); return; 
+}
+				let s = canvasState.selectedObjects.find((so) => so.name === objectName);
+				if (!s) {
+					try {
+ s = await addToSelection(objectName); 
+} catch (e) {
+						showBulkToast('Failed to add ' + objectName + ': ' + (e.message || e), 'error');
+						return;
+					}
+				}
+				rec.isPending = false;
+				rec.isTypeNode = false;
+				rec.objectName = s.name;
+				rec.label = s.label;
+				rec.fromSelectionId = s.id;
+				rec.values = {};
+				renderBulkView();
+			}
+			
+
+
+
+
+
+
+
+
+			async function resolvePendingRecordToLoad(recId, objectName) {
+				const rec = canvasState.bulkRecords.find((r) => r.id === recId);
+				if (!rec || !rec.isPending) {
+return;
+}
+				const blocked = _canvasCapBlockReason(1);
+				if (blocked) {
+ showBulkToast(blocked); return; 
+}
+				let s = canvasState.selectedObjects.find((so) => so.name === objectName);
+				if (!s) {
+					try {
+ s = await addToSelection(objectName); 
+} catch (e) {
+						showBulkToast('Failed to add ' + objectName + ': ' + (e.message || e), 'error');
+						return;
+					}
+				}
+
+
+
+
+
+
+
+
+
+
+
+				const cardEl = getGraph().querySelector('[data-rec-id="' + rec.id + '"]');
+				const loadBtn = cardEl && cardEl.querySelector('[data-pending-pick-load]');
+				pickRecordForFreeTypeNode({
+					id: rec.id,
+					x: rec.x,
+					y: rec.y,
+					objectName: s.name,
+					label: s.label,
+				}, loadBtn || cardEl || null);
+			}
+			
+
+
+
+
+
+
+
+
+
+
+			return {
+				spawnDraftRecord: spawnDraftRecord,
+				spawnPendingRecord: spawnPendingRecord,
+				resolvePendingRecord: resolvePendingRecord,
+				resolvePendingRecordToLoad: resolvePendingRecordToLoad,
+			};
+		},
+	};
+})();

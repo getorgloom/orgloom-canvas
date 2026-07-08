@@ -1,0 +1,469 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import crypto from 'node:crypto';
+
+
+const _presenceByCanvas = new Map();
+
+
+
+
+const IDLE_THRESHOLD_MS = 90 * 1000;
+const SWEEP_INTERVAL_MS = 60 * 1000;
+
+
+
+
+
+const _COLOR_PALETTE = [
+	'#e09240',
+	'#6fa9d6',
+	'#7ac96a',
+	'#d36fb0',
+	'#9d7fd3',
+	'#e0a048',
+	'#5fbfbf',
+	'#d36f6f',
+];
+
+function _pickColor(canvasState) {
+	const used = new Set();
+	for (const entry of canvasState.values()) {
+used.add(entry.color);
+}
+	for (const c of _COLOR_PALETTE) {
+if (!used.has(c)) {
+return c;
+}
+}
+
+	const idx = canvasState.size % _COLOR_PALETTE.length;
+	return _COLOR_PALETTE[idx];
+}
+
+function _writeSseEvent(res, event, data) {
+	try {
+		if (event) {
+res.write('event: ' + event + '\n');
+}
+		res.write('data: ' + JSON.stringify(data) + '\n\n');
+		return true;
+	} catch (e) {
+
+
+		return false;
+	}
+}
+
+
+
+
+
+
+
+
+function _ownsConnection(entry, requestingAccountId) {
+	if (!requestingAccountId) {
+return false;
+}
+	return entry.accountId === requestingAccountId;
+}
+
+function _toPeerPayload(entry) {
+	return {
+		connectionId: entry.connectionId,
+		accountId: entry.accountId,
+		displayName: entry.displayName,
+		color: entry.color,
+		cursor: entry.cursor,
+		focus: entry.focus,
+	};
+}
+
+
+
+
+function _broadcast(canvasId, payload, excludeConnId) {
+	const conns = _presenceByCanvas.get(canvasId);
+	if (!conns) {
+return 0;
+}
+	let delivered = 0;
+	for (const [connId, entry] of conns.entries()) {
+		if (connId === excludeConnId) {
+continue;
+}
+		if (_writeSseEvent(entry.sseRes, 'presence', payload)) {
+delivered++;
+}
+	}
+	return delivered;
+}
+
+
+
+
+
+
+export function subscribe({ canvasId, workspaceId, accountId, displayName, sseRes }) {
+	if (!canvasId || !workspaceId || !accountId || !sseRes) {
+		throw new Error('subscribe: missing required field');
+	}
+	if (!_presenceByCanvas.has(canvasId)) {
+_presenceByCanvas.set(canvasId, new Map());
+}
+	const conns = _presenceByCanvas.get(canvasId);
+	const connectionId = crypto.randomUUID();
+	const color = _pickColor(conns);
+	const entry = {
+		connectionId,
+		workspaceId,
+		accountId,
+		displayName: displayName || 'Someone',
+		color,
+		cursor: null,
+		focus: null,
+		lastSeenAt: Date.now(),
+		sseRes,
+	};
+
+
+
+
+
+
+
+
+	const peers = [];
+	for (const other of conns.values()) {
+		peers.push(_toPeerPayload(other));
+	}
+	conns.set(connectionId, entry);
+	_writeSseEvent(sseRes, 'presence-init', {
+		you: _toPeerPayload(entry),
+		peers,
+	});
+
+	const keepalive = setInterval(() => {
+		try {
+ sseRes.write(': keepalive\n\n'); 
+} catch (e) {                            }
+	}, 25 * 1000);
+	sseRes.on('close', () => {
+		clearInterval(keepalive);
+		unsubscribe({ canvasId, connectionId });
+	});
+
+	_broadcast(canvasId, { type: 'join', peer: _toPeerPayload(entry) }, connectionId);
+	return connectionId;
+}
+
+export function unsubscribe({ canvasId, connectionId }) {
+	const conns = _presenceByCanvas.get(canvasId);
+	if (!conns) {
+return false;
+}
+	const entry = conns.get(connectionId);
+	if (!entry) {
+return false;
+}
+	conns.delete(connectionId);
+	if (conns.size === 0) {
+_presenceByCanvas.delete(canvasId);
+}
+	_broadcast(canvasId, { type: 'leave', connectionId }, connectionId);
+	return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+export function updateCursor({ canvasId, connectionId, x, y, world, requestingAccountId }) {
+	const conns = _presenceByCanvas.get(canvasId);
+	if (!conns) {
+return false;
+}
+	const entry = conns.get(connectionId);
+	if (!entry) {
+return false;
+}
+	if (!_ownsConnection(entry, requestingAccountId)) {
+return false;
+}
+	const cx = typeof x === 'number' ? x : null;
+	const cy = typeof y === 'number' ? y : null;
+	entry.cursor = (cx == null || cy == null) ? null : { x: cx, y: cy, world: !!world };
+	entry.lastSeenAt = Date.now();
+	_broadcast(canvasId, {
+		type: 'cursor',
+		connectionId,
+		cursor: entry.cursor,
+	}, connectionId);
+	return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+export function updateDraft({ canvasId, connectionId, tempId, fields, kind, objectName, x, y, position, requestingAccountId }) {
+	const conns = _presenceByCanvas.get(canvasId);
+	if (!conns) {
+return false;
+}
+	const entry = conns.get(connectionId);
+	if (!entry) {
+return false;
+}
+	if (!_ownsConnection(entry, requestingAccountId)) {
+return false;
+}
+	if (tempId == null) {
+return false;
+}
+	if (!fields || typeof fields !== 'object') {
+return false;
+}
+	entry.lastSeenAt = Date.now();
+	const payload = {
+		type: 'draft-update',
+		connectionId,
+		tempId,
+		fields,
+	};
+
+
+
+
+
+
+
+
+
+	if (kind === 'create') {
+		payload.kind = 'create';
+		if (typeof objectName === 'string') {
+payload.objectName = objectName;
+}
+		if (typeof x === 'number') {
+payload.x = x;
+}
+		if (typeof y === 'number') {
+payload.y = y;
+}
+	} else if (kind === 'remove') {
+		payload.kind = 'remove';
+	}
+	if (position && typeof position === 'object'
+		&& typeof position.x === 'number' && typeof position.y === 'number') {
+		payload.position = { x: position.x, y: position.y };
+	}
+	_broadcast(canvasId, payload, connectionId);
+	return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+export function updateDraftLink({ canvasId, connectionId, kind, fromSyncId, toSyncId, fieldName, requestingAccountId }) {
+	const conns = _presenceByCanvas.get(canvasId);
+	if (!conns) {
+return false;
+}
+	const entry = conns.get(connectionId);
+	if (!entry) {
+return false;
+}
+	if (!_ownsConnection(entry, requestingAccountId)) {
+return false;
+}
+	if (kind !== 'add' && kind !== 'remove') {
+return false;
+}
+	if (!fromSyncId || !toSyncId || !fieldName) {
+return false;
+}
+	entry.lastSeenAt = Date.now();
+	_broadcast(canvasId, {
+		type: 'draft-link',
+		connectionId,
+		kind,
+		fromSyncId: String(fromSyncId),
+		toSyncId: String(toSyncId),
+		fieldName: String(fieldName),
+	}, connectionId);
+	return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+export function removeLoadedRecord({ canvasId, connectionId, sfId, requestingAccountId }) {
+	const conns = _presenceByCanvas.get(canvasId);
+	if (!conns) {
+return false;
+}
+	const entry = conns.get(connectionId);
+	if (!entry) {
+return false;
+}
+	if (!_ownsConnection(entry, requestingAccountId)) {
+return false;
+}
+	if (!sfId) {
+return false;
+}
+	entry.lastSeenAt = Date.now();
+	_broadcast(canvasId, {
+		type: 'loaded-removed',
+		connectionId,
+		sfId: String(sfId),
+	}, connectionId);
+	return true;
+}
+
+
+
+
+
+export function updateFocus({ canvasId, connectionId, focus, requestingAccountId }) {
+	const conns = _presenceByCanvas.get(canvasId);
+	if (!conns) {
+return false;
+}
+	const entry = conns.get(connectionId);
+	if (!entry) {
+return false;
+}
+	if (!_ownsConnection(entry, requestingAccountId)) {
+return false;
+}
+	entry.focus = focus || null;
+	entry.lastSeenAt = Date.now();
+	_broadcast(canvasId, {
+		type: 'focus',
+		connectionId,
+		focus: entry.focus,
+	}, connectionId);
+	return true;
+}
+
+
+
+
+
+
+
+
+export function broadcastCanvasSaved({ canvasId, savedByAccountId, savedByDisplayName, versionId, title }) {
+	if (!canvasId) {
+return 0;
+}
+	return _broadcast(canvasId, {
+		type: 'canvas-saved',
+		savedByAccountId: savedByAccountId || null,
+		savedByDisplayName: savedByDisplayName || 'Someone',
+		versionId: versionId || null,
+		title: title || null,
+		at: Date.now(),
+	}, null);
+}
+
+
+
+
+export function summary({ canvasId }) {
+	const conns = _presenceByCanvas.get(canvasId);
+	if (!conns) {
+return { count: 0 };
+}
+	return { count: conns.size };
+}
+
+
+
+function _sweep() {
+	const now = Date.now();
+	for (const [canvasId, conns] of _presenceByCanvas.entries()) {
+		for (const [connectionId, entry] of conns.entries()) {
+			if (now - entry.lastSeenAt > IDLE_THRESHOLD_MS) {
+				conns.delete(connectionId);
+				_broadcast(canvasId, { type: 'leave', connectionId }, connectionId);
+			}
+		}
+		if (conns.size === 0) {
+_presenceByCanvas.delete(canvasId);
+}
+	}
+}
+
+const _sweepTimer = setInterval(_sweep, SWEEP_INTERVAL_MS);
+if (_sweepTimer.unref) {
+_sweepTimer.unref();
+}

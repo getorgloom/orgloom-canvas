@@ -1,0 +1,205 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Org Loom Canvas &mdash; First-boot setup</title>
+	<link rel="stylesheet" href="/css/app.css">
+
+
+
+</head>
+<body>
+	<main class="setup">
+		<h1>Welcome to Org Loom Canvas</h1>
+		<p class="lede">
+			One-time setup. We need a Salesforce External Client App (the
+			Summer-'24 replacement for Connected Apps) so the canvas can
+			OAuth into your SF orgs. It takes about 5 minutes plus a
+			10-minute wait for Salesforce to propagate.
+		</p>
+
+		<% if (submitted) { %>
+			<div class="setup-success">
+				<h2>&#10003; Saved</h2>
+				<p>
+					Credentials written to <code>.env</code>. The server needs
+					to restart to pick up the new values.
+				</p>
+				<p>
+					<strong>If you started with <code>npm run dev</code></strong>:
+					the watcher should restart automatically. Refresh this page.
+				</p>
+				<p>
+					<strong>If you started with <code>npm start</code></strong>:
+					stop the process (<kbd>Ctrl</kbd>+<kbd>C</kbd>) and run
+					<code>npm start</code> again. Then visit
+					<a href="/"><%= appUrl %></a>.
+				</p>
+			</div>
+		<% } else { %>
+			<% if (submitError) { %>
+				<div class="setup-error">
+					<strong>Save failed:</strong> <%= submitError %>
+				</div>
+			<% } %>
+
+			<section class="setup-step">
+				<span class="setup-step-num">1</span>
+				<h2>Open Salesforce Setup &rarr; External Client App Manager</h2>
+				<p>
+					Log into any Salesforce org. This can be a Developer
+					Edition org (free at
+					<a href="https://developer.salesforce.com/signup" target="_blank" rel="noopener">developer.salesforce.com/signup</a>)
+					or any existing org you can administer.
+				</p>
+				<p>
+					From the gear icon &rarr; <strong>Setup</strong>, search
+					for <strong>External Client App Manager</strong> in the
+					quick-find box. Click <strong>New External Client App</strong>.
+				</p>
+				<p class="tag">
+					Older orgs may still surface the legacy
+					<strong>App Manager</strong> with a <em>New Connected App</em>
+					button instead &mdash; that path also works. Salesforce
+					renamed Connected Apps to External Client Apps in Summer
+					&rsquo;24; the OAuth flow is identical.
+				</p>
+			</section>
+
+			<section class="setup-step">
+				<span class="setup-step-num">2</span>
+				<h2>Fill in the basic info</h2>
+				<ul>
+					<li><strong>External Client App Name</strong>: <code>Org Loom Canvas (Self-hosted)</code></li>
+					<li><strong>API Name</strong>: <code>Org_Loom_Canvas_Self_Hosted</code></li>
+					<li><strong>Contact Email</strong>: your email</li>
+					<li><strong>Distribution State</strong>: <code>Local</code> &mdash; this is a single-org install, not a managed package.</li>
+				</ul>
+			</section>
+
+			<section class="setup-step">
+				<span class="setup-step-num">3</span>
+				<h2>Configure OAuth</h2>
+				<p>
+					Check <strong>Enable OAuth</strong>. In the new External
+					Client App UI the OAuth settings live under
+					<em>API (Enable OAuth Settings)</em> on the app&rsquo;s
+					Settings tab.
+				</p>
+				<p><strong>Callback URL</strong> (paste this exactly):</p>
+				<div class="setup-callback">
+					<input type="text" readonly value="<%= appUrl %>/auth/callback" data-select-on-click>
+				</div>
+				<p><strong>OAuth Scopes</strong>: add</p>
+				<ul>
+					<li><code>Manage user data via APIs (api)</code></li>
+					<li><code>Perform requests at any time (refresh_token, offline_access)</code></li>
+				</ul>
+				<p>
+					<strong>Uncheck</strong> "Require Proof Key for Code
+					Exchange (PKCE)" and <strong>uncheck</strong> "Require
+					Secret for Web Server Flow" only if your org has it
+					checked by default and PKCE setup fails &mdash; Org
+					Loom Canvas uses the standard OAuth2 web flow with
+					client secret.
+				</p>
+			</section>
+
+			<section class="setup-step">
+				<span class="setup-step-num">4</span>
+				<h2>Save, then enable the policies</h2>
+				<p>
+					Click <strong>Create</strong> (or <strong>Save</strong>
+					in the legacy UI). External Client Apps come up with
+					policies disabled by default &mdash; open the app you
+					just created, go to <strong>Policies</strong>, and
+					verify <em>OAuth Policies &rarr; Permitted Users</em>
+					is set to <strong>All users may self-authorize</strong>
+					(or <em>Admin approved users are pre-authorized</em>
+					if you want to restrict). Save.
+				</p>
+				<p>
+					Salesforce then shows a warning: "Allow ~10 minutes for
+					changes to take effect." This is not a joke &mdash; the
+					next step will fail if you don&rsquo;t wait. Get a coffee.
+				</p>
+			</section>
+
+			<section class="setup-step">
+				<span class="setup-step-num">5</span>
+				<h2>Copy the Consumer Key + Secret</h2>
+				<p>
+					Open the External Client App&rsquo;s detail page. Under
+					<strong>Settings &rarr; OAuth Settings &rarr; App
+					Settings</strong>, click <strong>Consumer Key and
+					Secret &rarr; Manage Consumer Details</strong> (you may
+					be asked to re-verify your identity). Copy the
+					<strong>Consumer Key</strong> and <strong>Consumer
+					Secret</strong>. Paste them below.
+				</p>
+				<p class="tag">
+					On the legacy Connected App UI the same values live
+					under <em>Manage Consumer Details</em> on the app&rsquo;s
+					top-level page.
+				</p>
+
+				<form class="setup-form" method="POST" action="/setup">
+					<div>
+						<label for="sf_client_id">Consumer Key</label>
+						<input type="text" id="sf_client_id" name="sf_client_id" required autocomplete="off" placeholder="3MVG9...">
+						<p class="field-hint">From the Connected App's "Manage Consumer Details" page.</p>
+					</div>
+					<div>
+						<label for="sf_client_secret">Consumer Secret</label>
+						<input type="password" id="sf_client_secret" name="sf_client_secret" required autocomplete="off">
+						<p class="field-hint">Stored locally in <code>.env</code>. Never sent anywhere except Salesforce.</p>
+					</div>
+					<div>
+						<label for="anthropic_api_key">Anthropic API Key (optional)</label>
+						<input type="password" id="anthropic_api_key" name="anthropic_api_key" autocomplete="off" placeholder="sk-ant-api03-...">
+						<p class="field-hint">
+							Enables AI Generate. Get one at
+							<a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a>.
+							You can skip this and add it later.
+						</p>
+					</div>
+					<div>
+						<button type="submit" class="button">Save and continue</button>
+					</div>
+				</form>
+			</section>
+		<% } %>
+	</main>
+
+
+	<script nonce="<%= cspNonce %>">
+		document.querySelectorAll('input[data-select-on-click]').forEach(function (el) {
+			el.addEventListener('click', function () { el.select(); });
+		});
+	</script>
+</body>
+</html>

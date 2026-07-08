@@ -1,0 +1,12 @@
+# Org Loom security contact information.
+# RFC 9116 — see https://securitytxt.org/
+#
+# IMPORTANT: refresh `Expires` annually. Per RFC 9116 a stale Expires
+# makes this file invalid; researchers will assume your security
+# contact path is broken. Calendar reminder for the next refresh date
+# below.
+
+Contact: mailto:security@orgloom.com
+Expires: 2027-05-01T00:00:00Z
+Canonical: https://orgloom.com/.well-known/security.txt
+Preferred-Languages: en

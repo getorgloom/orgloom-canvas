@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Org Loom &mdash; Connect Salesforce</title>
+	<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+
+
+
+
+	<%- include('partials/top-strip') %>
+	<main class="app-main connect-main">
+		<section class="connect-card">
+			<h1 class="connect-title">Connect a Salesforce org</h1>
+			<% if (errorCode === 'invalid-domain') { %>
+				<div class="connect-error" role="alert">
+					That doesn&rsquo;t look like a Salesforce URL. Use the
+					form below with a full <code>https://&lt;mydomain&gt;.my.salesforce.com</code>
+					(or <code>.force.com</code>) address.
+				</div>
+			<% } %>
+			<p class="connect-sub">
+				<% if (accountEmail) { %>
+					Signed in as <code><%= accountEmail %></code>. Pick which Salesforce org to connect first.
+				<% } else { %>
+					Pick which Salesforce org to connect.
+				<% } %>
+				You can add more orgs later from the account menu.
+			</p>
+
+
+
+
+
+
+
+
+			<% if (activeWorkspace && activeWorkspace.kind !== 'personal') { %>
+				<div class="connect-workspace-context">
+					<div class="connect-workspace-name">
+						Active workspace: <strong><%= activeWorkspace.name %></strong>
+						<span class="tag"><%= activeWorkspace.role || 'member' %></span>
+					</div>
+					<%
+						// Two independent allowlists — prod and non-prod. Banner
+						// only fires when at least one is on, and names exactly
+						// which org types are gated so the user knows whether
+						// their sandbox connection also needs approval.
+						var _prodGated = workspaceSettings && workspaceSettings.prod_org_allowlist_enabled === 1;
+						var _nonprodGated = workspaceSettings && workspaceSettings.nonprod_org_allowlist_enabled === 1;
+						var _gatedOrgPhrase = _prodGated && _nonprodGated
+							? 'any Salesforce org'
+							: _prodGated ? 'a production org' : 'a non-production org';
+						var _gatedOrgsPhrase = _prodGated && _nonprodGated
+							? 'any of these orgs'
+							: _prodGated ? 'production orgs' : 'non-production orgs';
+					%>
+					<% if (_prodGated || _nonprodGated) { %>
+						<p class="connect-workspace-policy">
+							<strong>Note:</strong> this workspace requires admin
+							approval before members can connect to <%= _gatedOrgPhrase %>.
+							You can complete OAuth, but actions against
+							<%= _gatedOrgsPhrase %> will be blocked until an
+							admin approves.
+						</p>
+					<% } %>
+				</div>
+			<% } %>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			<% if (existingConnections && existingConnections.length > 0) { %>
+				<div class="connect-reconnect-section">
+					<div class="connect-reconnect-head">
+						<% if (existingConnections.length === 1) { %>
+							Reconnect to your Salesforce org
+						<% } else { %>
+							Reconnect to a previously connected org
+						<% } %>
+					</div>
+					<div class="connect-reconnect-list">
+						<% existingConnections.forEach(function(c) { %>
+							<a class="button connect-reconnect-item"
+								href="/auth/login?loginUrl=<%= encodeURIComponent(c.instanceUrl || '') %>">
+								<span class="connect-reconnect-row">
+									<span class="connect-reconnect-name"><%= c.username || c.email || c.sfUserId %></span>
+									<% if (c.orgType) { %>
+										<span class="connect-reconnect-type connect-reconnect-type--<%= c.orgType %>"><%= c.orgType %></span>
+									<% } %>
+								</span>
+								<% if (c.sfOrgId) { %>
+									<span class="connect-reconnect-meta"><code class="tag"><%= c.sfOrgId %></code></span>
+								<% } %>
+							</a>
+						<% }); %>
+					</div>
+				</div>
+				<div class="connect-divider"><span>Or connect a different org</span></div>
+			<% } %>
+
+			<div class="connect-options">
+				<a class="button connect-option" href="/auth/login?env=prod">
+					<span class="connect-option-title">Production / Developer Edition</span>
+					<span class="connect-option-tag">login.salesforce.com</span>
+				</a>
+				<a class="button secondary connect-option" href="/auth/login?env=sandbox">
+					<span class="connect-option-title">Sandbox</span>
+					<span class="connect-option-tag">test.salesforce.com</span>
+				</a>
+			</div>
+
+
+
+
+
+
+			<details class="connect-custom" id="connect-custom-section">
+				<summary class="connect-custom-summary">
+					<span>Use a custom My Domain URL</span>
+					<span class="tag">advanced</span>
+				</summary>
+				<div class="connect-custom-body">
+					<form class="connect-custom-form" method="get" action="/auth/login">
+						<input type="hidden" name="env" value="custom">
+
+
+
+						<input type="hidden" name="force" value="" id="connect-custom-force">
+						<input
+							class="connect-custom-input"
+							type="url"
+							id="connect-domain"
+							name="domain"
+							placeholder="https://yourcompany.my.salesforce.com"
+							pattern="https://.+\.(salesforce|force)\.com.*"
+							autocomplete="off"
+							required>
+						<button class="button" type="submit">Continue with custom domain</button>
+					</form>
+				</div>
+			</details>
+
+
+
+
+
+
+
+
+
+
+
+			<p class="connect-force-login-line">
+				Different Salesforce user cached in this browser?
+				Force sign-in with
+				<a href="/auth/login?env=prod&amp;force=1">Production</a>
+				·
+				<a href="/auth/login?env=sandbox&amp;force=1">Sandbox</a>
+				·
+				<a href="#" data-force-custom>Custom</a>.
+			</p>
+
+			<script nonce="<%= cspNonce %>">
+				// "Force sign-in: Custom" link: opens the custom-domain
+				// accordion, stamps force=1 on its hidden input, and
+				// focuses the URL field. Lets the user do the
+				// equivalent of the prod/sandbox force links above
+				// without having to find the accordion and tick
+				// anything manually.
+				(function () {
+					var link = document.querySelector('[data-force-custom]');
+					if (!link) return;
+					link.addEventListener('click', function (e) {
+						e.preventDefault();
+						var details = document.getElementById('connect-custom-section');
+						var forceInput = document.getElementById('connect-custom-force');
+						var domainInput = document.getElementById('connect-domain');
+						if (details) details.open = true;
+						if (forceInput) forceInput.value = '1';
+						if (domainInput) domainInput.focus();
+					});
+				})();
+			</script>
+
+			<div class="connect-foot">
+
+
+
+				<form action="/auth/logout" method="post" class="connect-signout">
+					<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+					<button type="submit" class="button secondary connect-signout-btn">Sign out instead</button>
+				</form>
+			</div>
+		</section>
+	</main>
+</body>
+</html>

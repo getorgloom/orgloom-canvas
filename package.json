@@ -1,0 +1,51 @@
+{
+  "name": "orgloom-canvas",
+  "version": "0.1.0",
+  "description": "Org Loom Canvas — source-available record-staging + SF upload product (PolyForm Internal Use License 1.0.0).",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getorgloom/orgloom-canvas.git"
+  },
+  "homepage": "https://github.com/getorgloom/orgloom-canvas",
+  "bugs": {
+    "url": "https://github.com/getorgloom/orgloom-canvas/issues"
+  },
+  "type": "module",
+  "main": "./src/server.js",
+  "exports": {
+    ".": "./src/server.js",
+    "./*": "./src/*.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test tests/*.test.js",
+    "test:integration": "node --test tests/integration/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.91.1",
+    "better-sqlite3": "^12.9.0",
+    "better-sqlite3-session-store": "^0.1.0",
+    "cookie-parser": "^1.4.7",
+    "csrf-csrf": "^4.0.3",
+    "cytoscape": "^3.33.2",
+    "cytoscape-edgehandles": "^4.0.1",
+    "cytoscape-node-html-label": "^1.2.2",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "helmet": "^8.2.0",
+    "jsforce": "^3.6.0",
+    "kysely": "^0.28.16"
+  },
+  "optionalDependencies": {
+    "connect-pg-simple": "^10.0.0",
+    "pg": "^8.20.0"
+  }
+}
+

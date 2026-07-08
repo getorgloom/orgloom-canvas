@@ -1,0 +1,236 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(function () {
+	'use strict';
+
+	window.OrgLoom = window.OrgLoom || {};
+
+	window.OrgLoom.sessionDrafts = {
+		mount: function mount(deps) {
+			if (!deps || !deps.canvasState) {
+				throw new Error('session-drafts.mount: missing canvasState');
+			}
+			const canvasState = deps.canvasState;
+
+
+
+
+
+			function _storageKey(canvasId) {
+				return 'orgloom:draftValues:' + canvasId;
+			}
+
+			function _readMap(canvasId) {
+				if (!canvasId) {
+return {};
+}
+				try {
+					const raw = window.sessionStorage.getItem(_storageKey(canvasId));
+					if (!raw) {
+return {};
+}
+					const parsed = JSON.parse(raw);
+					return (parsed && typeof parsed === 'object') ? parsed : {};
+				} catch (_) {
+					return {};
+				}
+			}
+
+			function _writeMap(canvasId, map) {
+				if (!canvasId) {
+return;
+}
+				try {
+					if (!map || Object.keys(map).length === 0) {
+						window.sessionStorage.removeItem(_storageKey(canvasId));
+					} else {
+						window.sessionStorage.setItem(_storageKey(canvasId), JSON.stringify(map));
+					}
+				} catch (_) {
+
+
+				}
+			}
+
+
+
+
+
+			function persistDraftValues(canvasId) {
+				if (!canvasId) {
+return;
+}
+				if (!Array.isArray(canvasState.bulkRecords)) {
+return;
+}
+				const map = {};
+				for (const r of canvasState.bulkRecords) {
+					if (!r) {
+continue;
+}
+					if (r.isTypeNode) {
+continue;
+}
+					if (r.loadedFromId) {
+continue;
+}
+					const tid = _persistedTempIdOf(r);
+					if (tid == null) {
+continue;
+}
+					const values = r.values || {};
+					if (Object.keys(values).length === 0) {
+continue;
+}
+
+
+
+
+					const safe = {};
+					for (const k of Object.keys(values)) {
+						const v = values[k];
+						if (v == null) {
+continue;
+}
+						const t = typeof v;
+						if (t === 'string' || t === 'number' || t === 'boolean') {
+							safe[k] = v;
+						}
+					}
+					if (Object.keys(safe).length > 0) {
+map[String(tid)] = safe;
+}
+				}
+				_writeMap(canvasId, map);
+			}
+
+
+
+
+
+			function rehydrateDraftValues(canvasId) {
+				if (!canvasId) {
+return 0;
+}
+				if (!Array.isArray(canvasState.bulkRecords)) {
+return 0;
+}
+				const map = _readMap(canvasId);
+				if (!map || Object.keys(map).length === 0) {
+return 0;
+}
+				let restored = 0;
+				for (const r of canvasState.bulkRecords) {
+					if (!r) {
+continue;
+}
+					if (r.isTypeNode || r.loadedFromId) {
+continue;
+}
+					const tid = _persistedTempIdOf(r);
+					if (tid == null) {
+continue;
+}
+					const stored = map[String(tid)];
+					if (!stored || typeof stored !== 'object') {
+continue;
+}
+					r.values = Object.assign({}, r.values || {}, stored);
+					restored++;
+				}
+				return restored;
+			}
+
+			function clearDraftValues(canvasId, tempId) {
+				if (!canvasId || tempId == null) {
+return;
+}
+				const map = _readMap(canvasId);
+				if (!map || !map[String(tempId)]) {
+return;
+}
+				delete map[String(tempId)];
+				_writeMap(canvasId, map);
+			}
+
+			function clearAllForCanvas(canvasId) {
+				if (!canvasId) {
+return;
+}
+				try {
+ window.sessionStorage.removeItem(_storageKey(canvasId)); 
+} catch (_) {}
+			}
+
+
+
+
+
+
+
+			function _persistedTempIdOf(rec) {
+				if (rec._persistedTempId != null) {
+return rec._persistedTempId;
+}
+				if (rec.id != null) {
+return rec.id;
+}
+				return null;
+			}
+
+			return {
+				persistDraftValues: persistDraftValues,
+				rehydrateDraftValues: rehydrateDraftValues,
+				clearDraftValues: clearDraftValues,
+				clearAllForCanvas: clearAllForCanvas,
+			};
+		},
+	};
+})();
