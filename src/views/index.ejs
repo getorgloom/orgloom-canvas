@@ -1,8 +1,3 @@
-
-
-
-
-
 <% var __isQuickUpload = (typeof quickUpload !== 'undefined') && !!quickUpload; %>
 <% var __needsSfConnect = (typeof needsSfConnect !== 'undefined') && !!needsSfConnect; %>
 <% var __sfConnected = !!user && !__needsSfConnect; %>
@@ -16,30 +11,12 @@
 </head>
 <body class="canvas-page">
 
-
-
-
-
 	<%- include('partials/top-strip') %>
-
-
-
-
 
 	<% if (typeof playgroundMode !== 'undefined' && playgroundMode) { %>
 		<div class="app-playground-banner" role="status">
 
-
-
 			<a class="app-playground-banner-home" href="/?from=playground">&larr; Back to home</a>
-
-
-
-
-
-
-
-
 
 			<span class="app-playground-banner-content">
 				<strong>Demo mode</strong> &middot; no data leaves your browser. You&rsquo;re working against a sample dataset, not a real org.
@@ -49,23 +26,6 @@
 
 	<main class="app-main">
 		<% if (user) { %>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			<% if (typeof upgrade !== 'undefined' && upgrade === 'pending') { %>
 			<div id="upgrade-banner" role="status" style="position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--warn,#d29a00);color:#1a1a1a;padding:0.6em 2.5em 0.6em 1em;font-size:0.9em;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.25)"><strong>Payment processing.</strong> We&rsquo;ll upgrade your workspace once your bank confirms (usually 3&ndash;5 business days). You can connect Salesforce and start using Org Loom on your current plan in the meantime.<button type="button" id="upgrade-banner-x" aria-label="Dismiss" style="position:absolute;right:0.5em;top:50%;transform:translateY(-50%);background:none;border:0;color:inherit;font-size:1.1em;cursor:pointer;line-height:1;padding:0.25em 0.5em">&times;</button></div>
@@ -151,70 +111,19 @@
 				}
 			</script>
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 			<script src="https://browser.sentry-cdn.com/8.55.0/bundle.tracing.min.js" integrity="sha384-ek46VuBjLOrzW6vcL5CcxRrAtcxp4l7tJqnBOW3s7SIYy7qrKN+IzGFT7g1puodV" crossorigin="anonymous"></script>
 			<script src="/js/sentry-init.js"></script>
 
-
-
-
-
-
-
-
 			<script src="/js/canvas-capture.js"></script>
-
-
-
-
-
-
 
 			<% if (typeof playgroundMode !== 'undefined' && playgroundMode) { %>
 				<script src="/js/mock-data.js"></script>
 				<script src="/js/mock-sf.js"></script>
 			<% } %>
 
-
-
-
-
-
-
 			<script src="/js/playground-bridge.js"></script>
 
-
-
-
-
 			<script src="/js/sf-fetch.js"></script>
-
-
-
-
-
-
-
-
-
 
 			<script src="/js/formula.js" defer></script>
 			<script src="/js/import-shared.js" defer></script>
@@ -265,45 +174,15 @@
 			<script src="/js/anchored-popup.js" defer></script>
 			<script src="/js/bulk-toolbar.js" defer></script>
 
-
-
-
-
 			<script src="/js/tree-layout.js" defer></script>
 			<script src="/js/upload-modal.js" defer></script>
 
-
-
-
 			<script src="/js/support.js"></script>
-
-
 
 			<script src="/js/app.js" defer></script>
 
-
-
-
-
 			<script src="/js/mcp-relay-client.js" defer></script>
 		<% } else { %>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			<% var __ts_saas = (typeof saasEnabled !== 'undefined') ? !!saasEnabled : false; %>
 			<section class="signin-gate">
@@ -319,11 +198,6 @@
 					</p>
 				<% } %>
 				<div class="signin-gate-video">
-
-
-
-
-
 
 					<div class="video-embed video-embed--placeholder video-embed--aspect-16-9" role="img" aria-label="Demo video placeholder">
 						<div class="video-embed-empty">

@@ -8,10 +8,6 @@
 </head>
 <body>
 
-
-
-
-
 	<%- include('partials/top-strip') %>
 	<main class="app-main connect-main">
 		<section class="connect-card">
@@ -31,13 +27,6 @@
 				<% } %>
 				You can add more orgs later from the account menu.
 			</p>
-
-
-
-
-
-
-
 
 			<% if (activeWorkspace && activeWorkspace.kind !== 'personal') { %>
 				<div class="connect-workspace-context">
@@ -70,19 +59,6 @@
 					<% } %>
 				</div>
 			<% } %>
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 			<% if (existingConnections && existingConnections.length > 0) { %>
 				<div class="connect-reconnect-section">
@@ -124,11 +100,6 @@
 				</a>
 			</div>
 
-
-
-
-
-
 			<details class="connect-custom" id="connect-custom-section">
 				<summary class="connect-custom-summary">
 					<span>Use a custom My Domain URL</span>
@@ -137,8 +108,6 @@
 				<div class="connect-custom-body">
 					<form class="connect-custom-form" method="get" action="/auth/login">
 						<input type="hidden" name="env" value="custom">
-
-
 
 						<input type="hidden" name="force" value="" id="connect-custom-force">
 						<input
@@ -154,16 +123,6 @@
 					</form>
 				</div>
 			</details>
-
-
-
-
-
-
-
-
-
-
 
 			<p class="connect-force-login-line">
 				Different Salesforce user cached in this browser?
@@ -198,8 +157,6 @@
 			</script>
 
 			<div class="connect-foot">
-
-
 
 				<form action="/auth/logout" method="post" class="connect-signout">
 					<input type="hidden" name="_csrf" value="<%= csrfToken %>">
