@@ -24,6 +24,7 @@
 			const canvasState = deps.canvasState;
 			const addToSelection = deps.addToSelection;
 			const renderBulkView = deps.renderBulkView;
+			const pushUndo = deps.pushUndo;
 			const getGraph = deps.getGraph;
 			const startElapsedTicker = deps.startElapsedTicker;
 
@@ -583,6 +584,14 @@
 					showBulkToast(_aiCap.reason);
 					return;
 				}
+
+				const _preAi = {
+					bulkRecords: canvasState.bulkRecords.slice(),
+					bulkAssociations: canvasState.bulkAssociations.slice(),
+					bulkSelectedIds: new Set(canvasState.bulkSelectedIds),
+					bulkSelectedEdgeId: canvasState.bulkSelectedEdgeId,
+					bulkInitialized: canvasState.bulkInitialized,
+				};
 				if (clearFirst) {
 					canvasState.bulkRecords = [];
 					canvasState.bulkAssociations = [];
@@ -756,21 +765,39 @@
 						values: r.values || {},
 					});
 				});
+
+				const _importShared = window.OrgLoom.importShared;
+				const _usedFk = new Set(
+					canvasState.bulkAssociations.map((x) => x.fromId + "::" + x.fieldName),
+				);
+				let _skippedAssoc = 0;
 				associations.forEach((a) => {
 					const from = idMap.get(a.fromTempId);
 					const to = idMap.get(a.toTempId);
-					if (from != null && to != null) {
-						canvasState.bulkAssociations.push({
-							id: canvasState.bulkIdSeq++,
-							fromId: from,
-							toId: to,
-							fieldName: a.fieldName,
-						});
+					if (!_importShared.admitAssociation(_usedFk, from, to, a && a.fieldName)) {
+						_skippedAssoc += 1;
+						return;
 					}
+					canvasState.bulkAssociations.push({
+						id: canvasState.bulkIdSeq++,
+						fromId: from,
+						toId: to,
+						fieldName: a.fieldName,
+					});
 				});
 				canvasState.bulkInitialized = true;
 				closeAiGenModal();
 				renderBulkView();
+				if (typeof pushUndo === "function") {
+					pushUndo("AI generate", function () {
+						canvasState.bulkRecords = _preAi.bulkRecords;
+						canvasState.bulkAssociations = _preAi.bulkAssociations;
+						canvasState.bulkSelectedIds = _preAi.bulkSelectedIds;
+						canvasState.bulkSelectedEdgeId = _preAi.bulkSelectedEdgeId;
+						canvasState.bulkInitialized = _preAi.bulkInitialized;
+						renderBulkView();
+					});
+				}
 
 				const graph = getGraph();
 				const canvasEl =
@@ -800,7 +827,8 @@
 						(n === 1 ? "" : "s") +
 						" to the canvas" +
 						groupsMsg +
-						".",
+						"." +
+						_importShared.skipSuffix(0, _skippedAssoc),
 				);
 			}
 

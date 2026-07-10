@@ -22,6 +22,7 @@ throw new Error('pending-spawn.mount: missing deps object');
 			}
 			const canvasState = deps.canvasState;
 			const showBulkToast = deps.showBulkToast;
+			const pushUndo = deps.pushUndo;
 			const _canvasCapBlockReason = deps._canvasCapBlockReason;
 			const addToSelection = deps.addToSelection;
 			const cloneRecord = deps.cloneRecord;
@@ -76,14 +77,28 @@ throw new Error('pending-spawn.mount: missing deps object');
 						y = anchor.y + r * STEP_Y;
 					}
 				}
+				const _newId = canvasState.bulkIdSeq++;
 				canvasState.bulkRecords.push({
-					id: canvasState.bulkIdSeq++,
+					id: _newId,
 					isTypeNode: true,
 					isPending: true,
 					x,
 					y,
 				});
 				renderBulkView();
+
+				if (typeof pushUndo === 'function') {
+					pushUndo('Add record', function () {
+						const i = canvasState.bulkRecords.findIndex((r) => r && r.id === _newId);
+						if (i !== -1) {
+							canvasState.bulkRecords.splice(i, 1);
+						}
+						canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
+							(a) => a && a.fromId !== _newId && a.toId !== _newId,
+						);
+						renderBulkView();
+					});
+				}
 			}
 
 			async function resolvePendingRecord(recId, objectName) {

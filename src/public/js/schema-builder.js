@@ -9,7 +9,7 @@
 				|| !deps.addToSelection || !deps.renderBulkView || !deps.fetchGraphData
 				|| !deps.ensureDescribe
 				|| !deps._canvasCapBlockReason
-				|| !deps.cloneRecord || !deps.attachCyEdgeMarkers
+				|| !deps.attachCyEdgeMarkers
 				|| !deps.attachCyMiddleClickPan || !deps.attachCyWheelZoom
 				|| !deps.redrawCyEdgeMarkers || !deps.SCHEMA_SYSTEM_FK_FIELDS
 				|| !deps.getGraph || !deps.getCySchemaInstance || !deps.setCySchemaInstance) {
@@ -25,7 +25,8 @@
 
 			const RECORDS_WORLD_SCALE = typeof deps.RECORDS_WORLD_SCALE === 'number' ? deps.RECORDS_WORLD_SCALE : 1.4;
 			const _canvasCapBlockReason = deps._canvasCapBlockReason;
-			const cloneRecord = deps.cloneRecord;
+
+			const pushUndo = deps.pushUndo;
 			const attachCyEdgeMarkers = deps.attachCyEdgeMarkers;
 			const attachCyMiddleClickPan = deps.attachCyMiddleClickPan;
 			const attachCyWheelZoom = deps.attachCyWheelZoom;
@@ -292,7 +293,7 @@ return;
 }
 						const kind = n.data('kind');
 
-						if (kind === 'spawn-btn') {
+						if (kind === 'spawn-btn' || kind === 'expand-btn') {
 return;
 }
 						const p = n.position();
@@ -621,6 +622,36 @@ return links;
 				return [];
 			}
 
+			function _nearestFreeSpotToViewportCenter() {
+				const canvasEl = getGraph().querySelector('#bulk-canvas');
+				const cw = (canvasEl && canvasEl.clientWidth) || 800;
+				const ch = (canvasEl && canvasEl.clientHeight) || 600;
+				const cx0 = ((canvasEl && canvasEl.scrollLeft) || 0) + cw / 2;
+				const cy0 = ((canvasEl && canvasEl.scrollTop) || 0) + ch / 2;
+				const CARD_W = 230;
+				const CARD_H = 90;
+				const overlaps = (x, y) => canvasState.bulkRecords.some((r) => (
+					r && !r.isTypeNode && !r._chipLoader
+					&& typeof r.x === 'number' && typeof r.y === 'number'
+					&& Math.abs(r.x - x) < CARD_W && Math.abs(r.y - y) < CARD_H
+				));
+				if (!overlaps(cx0, cy0)) {
+					return { x: cx0, y: cy0 };
+				}
+				for (let ring = 1; ring <= 40; ring++) {
+					const rad = ring * 40;
+					const pts = ring * 8;
+					for (let i = 0; i < pts; i++) {
+						const ang = (2 * Math.PI * i) / pts;
+						const x = cx0 + rad * Math.cos(ang);
+						const y = cy0 + rad * Math.sin(ang);
+						if (!overlaps(x, y)) {
+							return { x, y };
+						}
+					}
+				}
+				return { x: cx0, y: cy0 };
+			}
 			function _spawnRecordFromSchemaObject(objectName) {
 				if (!objectName) {
 return;
@@ -636,24 +667,29 @@ return;
 					const focusedRec = focusedRecId != null
 						? canvasState.bulkRecords.find((r) => r.id === focusedRecId)
 						: null;
-					if (!focusedRec || focusedRec.isTypeNode) {
-						cloneRecord(selEntry.name);
-						return;
+					let x, y;
+					if (focusedRec && !focusedRec.isTypeNode) {
+
+						const baseSchemaNode = getCySchemaInstance()
+							? getCySchemaInstance().getElementById('o_' + focusedRec.objectName)
+							: null;
+						const objSchemaNode = getCySchemaInstance()
+							? getCySchemaInstance().getElementById('o_' + selEntry.name)
+							: null;
+						const baseSchemaPos = baseSchemaNode && baseSchemaNode.length
+							? baseSchemaNode.position()
+							: { x: 0, y: 0 };
+						const objSchemaPos = objSchemaNode && objSchemaNode.length
+							? objSchemaNode.position()
+							: baseSchemaPos;
+						x = focusedRec.x + (objSchemaPos.x - baseSchemaPos.x) * RECORDS_WORLD_SCALE;
+						y = focusedRec.y + (objSchemaPos.y - baseSchemaPos.y) * RECORDS_WORLD_SCALE;
+					} else {
+
+						const spot = _nearestFreeSpotToViewportCenter();
+						x = spot.x;
+						y = spot.y;
 					}
-					const baseSchemaNode = getCySchemaInstance()
-						? getCySchemaInstance().getElementById('o_' + focusedRec.objectName)
-						: null;
-					const objSchemaNode = getCySchemaInstance()
-						? getCySchemaInstance().getElementById('o_' + selEntry.name)
-						: null;
-					const baseSchemaPos = baseSchemaNode && baseSchemaNode.length
-						? baseSchemaNode.position()
-						: { x: 0, y: 0 };
-					const objSchemaPos = objSchemaNode && objSchemaNode.length
-						? objSchemaNode.position()
-						: baseSchemaPos;
-					let x = focusedRec.x + (objSchemaPos.x - baseSchemaPos.x) * RECORDS_WORLD_SCALE;
-					let y = focusedRec.y + (objSchemaPos.y - baseSchemaPos.y) * RECORDS_WORLD_SCALE;
 
 					const SPAWN_CARD_W = 230;
 					const SPAWN_CARD_H = 90;
@@ -693,6 +729,19 @@ return false;
 							fieldName: link.field,
 						});
 					});
+
+					if (typeof pushUndo === 'function') {
+						const _spawnedId = newRec.id;
+						pushUndo('Add record', function () {
+							canvasState.bulkRecords = canvasState.bulkRecords.filter(
+								(r) => !r || r.id !== _spawnedId,
+							);
+							canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
+								(a) => a && a.fromId !== _spawnedId && a.toId !== _spawnedId,
+							);
+							renderBulkView();
+						});
+					}
 					renderBulkView();
 					const label = selEntry.label || selEntry.name;
 					let toastMsg = 'Added ' + label + ' record.';
@@ -730,8 +779,11 @@ focusedRec = r;
 return null;
 }
 
-				const isOverride = !!overrideName && (!focusedRec || overrideName !== focusedRec.objectName);
-				const activeName = isOverride ? overrideName : focusedRec.objectName;
+				const activeName = overrideName || focusedRec.objectName;
+				if (!overrideName) {
+					canvasState._schemaViewObject = activeName;
+				}
+				const isOverride = true;
 
 				let componentRecIds;
 				let objectNames;
@@ -826,6 +878,8 @@ return;
 
 				const edgeKeys = [];
 				const seenEdges = new Set();
+
+				if (!isOverride) {
 				canvasState.bulkAssociations.forEach((a) => {
 					const fromRec = canvasState.bulkRecords.find((r) => r.id === a.fromId);
 					const toRec = canvasState.bulkRecords.find((r) => r.id === a.toId);
@@ -861,6 +915,7 @@ return;
 						},
 					});
 				});
+				}
 
 				if (isOverride && canvasState._schemaViewPathEdges.length) {
 					canvasState._schemaViewPathEdges.forEach((step) => {
@@ -1403,6 +1458,28 @@ el.data('kind', kind);
 }
 					});
 				}
+
+				(function _parkAllSatellites() {
+					const cyI = getCySchemaInstance();
+					if (!cyI) {
+						return;
+					}
+					cyI.nodes('[kind = "sel"], [kind = "sel-active"]').forEach((node) => {
+						const objName = node.data('objectName');
+						if (!objName) {
+							return;
+						}
+						const p = node.position();
+						const sp = cyI.getElementById('spawn_' + objName);
+						if (sp && sp.length && !sp.data('expandedHidden')) {
+							sp.position({ x: p.x + SCHEMA_SPAWN_OFFSET_X, y: p.y + SCHEMA_SPAWN_OFFSET_Y });
+						}
+						const ex = cyI.getElementById('expand_' + objName);
+						if (ex && ex.length && !ex.data('expandedHidden')) {
+							ex.position({ x: p.x + SCHEMA_EXPAND_OFFSET_X, y: p.y + SCHEMA_EXPAND_OFFSET_Y });
+						}
+					});
+				})();
 
 				requestAnimationFrame(() => {
 					if (!getCySchemaInstance()) {

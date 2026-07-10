@@ -28,6 +28,7 @@
 			const renderBulkView = deps.renderBulkView;
 			const _canvasCapBlockReason = deps._canvasCapBlockReason;
 			const showBulkToast = deps.showBulkToast;
+			const pushUndo = deps.pushUndo;
 			const showPromptModal = deps.showPromptModal;
 
 			function startMarquee(e) {
@@ -241,6 +242,20 @@
 				canvasState.bulkSelectedEdgeId = null;
 				renderBulkView();
 				showBulkToast('Pasted ' + n + ' cop' + (n === 1 ? 'y' : 'ies') + '.');
+
+				const _pastedIds = new Set(newIds);
+				if (typeof pushUndo === 'function' && _pastedIds.size > 0) {
+					pushUndo('Paste', function () {
+						canvasState.bulkRecords = canvasState.bulkRecords.filter(
+							(r) => !r || !_pastedIds.has(r.id),
+						);
+						canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
+							(a) => a && !_pastedIds.has(a.fromId) && !_pastedIds.has(a.toId),
+						);
+						canvasState.bulkSelectedIds = new Set();
+						renderBulkView();
+					});
+				}
 			}
 
 			function openPasteCountPrompt() {

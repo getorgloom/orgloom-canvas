@@ -44,6 +44,10 @@ _close();
 		const ctx = onCanvas ? 'canvas' : ('page ' + location.pathname);
 
 		const items = [];
+
+		items.push('<a class="app-help-item" href="/docs">' +
+			'<span class="app-help-item-name">Guides &amp; docs</span>' +
+		'</a>');
 		items.push('<button type="button" class="app-help-item" data-help-support>' +
 			'<span class="app-help-item-name">Contact support</span>' +
 		'</button>');

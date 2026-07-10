@@ -249,7 +249,8 @@ v[k] = r[k];
 				};
 				const values = recToValues(sfRecord);
 				const newRec = {
-					id: canvasState.bulkIdSeq++,
+
+					id: typeNodeRec.id != null ? typeNodeRec.id : canvasState.bulkIdSeq++,
 					objectName: typeNodeRec.objectName,
 					label: targetSel ? targetSel.label : typeNodeRec.objectName,
 					x: typeNodeRec.x,

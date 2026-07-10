@@ -2485,17 +2485,31 @@ return;
 							' for ' + target + ' locally.';
 					}
 				}
-				renderForm();
-				showModalToast(msg, toastVariant);
-				populateForm(payload);
-				evaluateAllRules();
-				if (typeof renderChips === 'function') {
-renderChips();
-}
 
-				if (canvasState.graphView === 'bulk') {
-renderBulkView();
-}
+				if (canvasState.currentRecordRef) {
+					if (typeof renderChips === 'function') {
+						renderChips();
+					}
+					if (canvasState.graphView === 'bulk') {
+						renderBulkView();
+					}
+					closeModal();
+					if (typeof showBulkToast === 'function') {
+						showBulkToast(msg, toastVariant);
+					}
+				} else {
+					renderForm();
+					showModalToast(msg, toastVariant);
+					populateForm(payload);
+					evaluateAllRules();
+					if (typeof renderChips === 'function') {
+						renderChips();
+					}
+
+					if (canvasState.graphView === 'bulk') {
+						renderBulkView();
+					}
+				}
 			});
 
 			function populateForm(values) {

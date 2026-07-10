@@ -138,6 +138,7 @@ span.app-plan-chip:hover { filter: none; }
 
 @media (max-width: 640px) {
 	.app-top-strip { padding: 0 0.6em; height: 44px; }
+	.trial-banner:not([hidden]) { top: 44px; }
 	.app-top-strip-right { gap: 0.4em; }
 	.app-user-chip-btn { padding: 0.3em 0.45em; }
 	.app-user-chip-btn .app-user-name { max-width: 7em; }
@@ -244,7 +245,7 @@ a.aws-trigger.aws-trigger--solo { text-decoration: none; }
 }
 .app-help-item {
 	display: flex; align-items: baseline; justify-content: space-between; gap: 0.8em;
-	width: 100%; padding: 0.5em 0.9em;
+	width: 100%; padding: 0.5em 0.9em; box-sizing: border-box;
 	background: transparent; border: 0; text-align: left;
 	color: var(--ink); font: inherit; font-size: 0.88rem;
 	cursor: pointer; text-decoration: none;
@@ -2135,6 +2136,11 @@ button.confirm-danger:hover { background: color-mix(in srgb, var(--danger, #d358
 
 .trial-banner { display: flex; align-items: center; gap: 0.8em; flex-wrap: wrap; padding: 0.5em 1em; font-size: 0.86rem; border-bottom: 1px solid transparent; }
 .trial-banner[hidden] { display: none; }
+
+.trial-banner:not([hidden]) { position: fixed; top: 48px; left: 0; right: 0; z-index: 95; }
+body:has(.trial-banner:not([hidden])) > .app-main { padding-top: calc(48px + 44px); }
+body:has(.trial-banner:not([hidden])) > .app-main.activity-main { padding-top: calc(48px + 44px + 2.5em); }
+body:has(.trial-banner:not([hidden])) .graph-overlay { top: calc(48px + 44px); }
 .trial-banner .trial-banner-msg { flex: 1 1 auto; min-width: 0; }
 .trial-banner .trial-banner-btn { flex-shrink: 0; font-size: 0.82rem; font-weight: 600; padding: 0.3em 0.9em; border-radius: 4px; text-decoration: none; white-space: nowrap; }
 .trial-banner .trial-banner-dismiss { flex-shrink: 0; background: transparent; border: 0; font-size: 1.1rem; line-height: 1; cursor: pointer; color: inherit; opacity: 0.6; padding: 0 0.2em; }
@@ -5446,7 +5452,6 @@ body.canvas-share-banner-active .canvas-status-strip {
 	font-size: 1.05rem;
 	color: var(--ink-soft);
 	line-height: 1.6;
-	max-width: 720px;
 }
 .docs-toc {
 	margin: 1.5em 0 2.5em;

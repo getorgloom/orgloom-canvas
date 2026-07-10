@@ -87,7 +87,26 @@ function csrfFetch(url, options) {
 		},
 	});
 	const showBulkToast = _uif.showBulkToast;
-	const showBulkToastWithAction = _uif.showBulkToastWithAction;
+
+	const _rawToastWithAction = _uif.showBulkToastWithAction;
+	const showBulkToastWithAction = (message, actionLabel, action, variant) => {
+		if (typeof action === "function" && /undo/i.test(String(actionLabel || ""))) {
+			let spent = false;
+			const once = () => {
+				if (spent) {
+					return false;
+				}
+				spent = true;
+				action();
+				return true;
+			};
+			if (typeof pushUndo === "function") {
+				pushUndo(actionLabel, once);
+			}
+			return _rawToastWithAction(message, actionLabel, once, variant);
+		}
+		return _rawToastWithAction(message, actionLabel, action, variant);
+	};
 	const showConfirmDialog = _uif.showConfirmDialog;
 	const confirmHydrateChoice = _uif.confirmHydrateChoice;
 
@@ -95,6 +114,7 @@ function csrfFetch(url, options) {
 		csrfFetch: csrfFetch,
 		escapeHtml: escapeHtml,
 		showBulkToast: showBulkToast,
+		pushUndo: pushUndo,
 		canvasState: canvasState,
 
 		canvasCapCheck: function () {
@@ -2773,7 +2793,6 @@ function csrfFetch(url, options) {
 			});
 		}
 
-		renderCanvas();
 		renderObjectFilterPanel();
 		renderStepper();
 		renderBulkCountChip();
@@ -3369,8 +3388,9 @@ function csrfFetch(url, options) {
 			y = anchor.y + r * STEP_Y;
 		}
 
+		const _newId = canvasState.bulkIdSeq++;
 		canvasState.bulkRecords.push({
-			id: canvasState.bulkIdSeq++,
+			id: _newId,
 			objectName: s.name,
 			label: s.label,
 			x,
@@ -3379,6 +3399,17 @@ function csrfFetch(url, options) {
 			fromSelectionId: s.id,
 		});
 		renderBulkView();
+
+		pushUndo("Add record", () => {
+			const i = canvasState.bulkRecords.findIndex((r) => r && r.id === _newId);
+			if (i !== -1) {
+				canvasState.bulkRecords.splice(i, 1);
+			}
+			canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
+				(a) => a && a.fromId !== _newId && a.toId !== _newId,
+			);
+			renderBulkView();
+		});
 	}
 
 	function _importFileSummary(parsed, isSavedCanvas) {
@@ -4153,6 +4184,7 @@ function csrfFetch(url, options) {
 		},
 		_canvasCapBlockReason: _canvasCapBlockReason,
 		showBulkToast: showBulkToast,
+		pushUndo: pushUndo,
 
 		showPromptModal: function (opts) {
 			return showPromptModal(opts);
@@ -4528,11 +4560,19 @@ function csrfFetch(url, options) {
 			return;
 		}
 		e.preventDefault();
-		const op = undoStack.pop();
-		try {
-			op.fn();
-		} catch (err) {
-			showBulkToast("Undo failed: " + (err.message || err), "error");
+
+		while (undoStack.length > 0) {
+			const op = undoStack.pop();
+			let ran = true;
+			try {
+				ran = op.fn() !== false;
+			} catch (err) {
+				showBulkToast("Undo failed: " + (err.message || err), "error");
+				ran = true;
+			}
+			if (ran) {
+				break;
+			}
 		}
 	});
 
@@ -5899,7 +5939,7 @@ function csrfFetch(url, options) {
 		ensureDescribe: ensureDescribe,
 		RECORDS_WORLD_SCALE: RECORDS_WORLD_SCALE,
 		_canvasCapBlockReason: _canvasCapBlockReason,
-		cloneRecord: cloneRecord,
+		pushUndo: pushUndo,
 		attachCyEdgeMarkers: attachCyEdgeMarkers,
 		attachCyMiddleClickPan: attachCyMiddleClickPan,
 		attachCyWheelZoom: attachCyWheelZoom,
@@ -6239,6 +6279,7 @@ function csrfFetch(url, options) {
 	const _ps = window.OrgLoom.pendingSpawn.mount({
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
+		pushUndo: pushUndo,
 		_canvasCapBlockReason: _canvasCapBlockReason,
 		addToSelection: addToSelection,
 		cloneRecord: function () {
