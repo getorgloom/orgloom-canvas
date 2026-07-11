@@ -163,9 +163,6 @@
 			function renderAiGenStepScope() {
 				const body = aiGenModal.querySelector("#ai-gen-content");
 				const footer = aiGenModal.querySelector("#ai-gen-footer");
-				const all = Array.isArray(canvasState.allObjects)
-					? canvasState.allObjects
-					: [];
 
 				const scope = aiGenState.scope || { objects: [] };
 				aiGenState.scope = scope;
@@ -184,6 +181,10 @@
 
 				const renderObjects = () => {
 					const q = (searchInput.value || "").toLowerCase().trim();
+
+					const all = Array.isArray(canvasState.allObjects)
+						? canvasState.allObjects
+						: [];
 					const filtered = all
 						.filter((o) => o.queryable !== false)
 						.filter(
@@ -262,6 +263,22 @@
 				});
 
 				renderObjects();
+
+				if (canvasState.allObjects === null) {
+					const _arrival = setInterval(() => {
+						if (
+							!aiGenModal.contains(objectsList) ||
+							aiGenModal.classList.contains("hidden")
+						) {
+							clearInterval(_arrival);
+							return;
+						}
+						if (canvasState.allObjects !== null) {
+							clearInterval(_arrival);
+							renderObjects();
+						}
+					}, 300);
+				}
 				setTimeout(() => searchInput.focus(), 0);
 			}
 

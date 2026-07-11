@@ -4530,7 +4530,7 @@ function csrfFetch(url, options) {
 			updateProgress(Math.min(i + chunk.length, candidates.length));
 		}
 		const msg = failCount === 0
-			? "Refreshed " + okCount + " records."
+			? "Refreshed " + okCount + " record" + (okCount === 1 ? "" : "s") + "."
 			: "Refreshed " + okCount + ". " + failCount + " no longer accessible in Salesforce.";
 		showBulkToast(msg, failCount === 0 ? "info" : "warn");
 	}
@@ -5416,6 +5416,8 @@ function csrfFetch(url, options) {
 					fieldName: a.fieldName,
 				})),
 
+			getSchemaViewObject: () => canvasState._schemaViewObject || null,
+
 			setRecordValue: (id, field, value) => {
 				const rec = canvasState.bulkRecords.find((r) => r.id === id);
 				if (!rec) {
@@ -5424,6 +5426,7 @@ function csrfFetch(url, options) {
 				rec.values = Object.assign({}, rec.values || {}, {
 					[field]: value,
 				});
+				rec._valuesRevision = (Number(rec._valuesRevision) || 0) + 1;
 				renderBulkView();
 				return true;
 			},
@@ -6190,6 +6193,7 @@ function csrfFetch(url, options) {
 		isLinkedCsvQuickUploadMode: function () {
 			return _isLinkedCsvQuickUploadMode();
 		},
+		pingAuditEvent: pingAuditEvent,
 	});
 	const openUploadModal = _um.openUploadModal;
 	const closeUploadModal = _um.closeUploadModal;

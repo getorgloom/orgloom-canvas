@@ -33,14 +33,46 @@ throw new Error('bulk-autofill.mount: missing deps object');
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction : null;
 
+			function _replaceValues(rec, values) {
+				rec.values = values;
+				rec._valuesRevision = (Number(rec._valuesRevision) || 0) + 1;
+			}
+
+			function _valuesFingerprint(values) {
+				try {
+					return JSON.stringify(values || {});
+				} catch (_e) {
+					return null;
+				}
+			}
+
 			function _captureValuesUndo(records) {
-				const prior = records.map((r) => ({ rec: r, values: r.values }));
-				return function restore() {
-					prior.forEach((p) => {
-						p.rec.values = p.values;
-					});
-					renderBulkView();
-					showBulkToast('Restored the previous field values.');
+				const priorByRecord = new Map(records.map((r) => [r, r.values]));
+				return function arm(touchedRecords) {
+					const entries = touchedRecords.map((rec) => ({
+						rec: rec,
+						priorValues: priorByRecord.get(rec),
+						expectedRevision: Number(rec._valuesRevision) || 0,
+						expectedValues: rec.values,
+						expectedFingerprint: _valuesFingerprint(rec.values),
+					}));
+					return function restore() {
+						const stale = entries.some((p) =>
+							(Number(p.rec._valuesRevision) || 0) !== p.expectedRevision ||
+							p.rec.values !== p.expectedValues ||
+							_valuesFingerprint(p.rec.values) !== p.expectedFingerprint
+						);
+						if (stale) {
+							showBulkToast(
+								'Can\u2019t undo Auto-fill because one or more affected records were edited afterward.',
+								'info',
+							);
+							return;
+						}
+						entries.forEach((p) => _replaceValues(p.rec, p.priorValues));
+						renderBulkView();
+						showBulkToast('Restored the previous field values.');
+					};
 				};
 			}
 
@@ -49,6 +81,8 @@ throw new Error('bulk-autofill.mount: missing deps object');
 				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0
 					? new Set(opts.tempIds)
 					: null;
+
+				const selectionScope = opts.selectionScope !== undefined ? !!opts.selectionScope : !!onlyIds;
 				const silent = !!opts.silent;
 
 				const includeLoaded = !!opts.includeLoaded;
@@ -102,12 +136,12 @@ showBulkToast(msg);
 						? '• Fills empty required fields only. Fields that already have a value are left alone.'
 						: '• Fills every empty field (required and optional). Fields that already have a value are left alone.';
 
-					const skipLine = onlyIds
+					const skipLine = selectionScope
 						? '• Only draft records in your selection are changed.'
 						: (skippedLoaded > 0
 							? '• Skips ' + skippedLoaded + ' loaded Salesforce record' + (skippedLoaded === 1 ? '' : 's') + ' on the canvas — only draft records are changed.'
 							: '• Only draft records on the canvas are changed.');
-					const scopeQualifier = onlyIds ? ' selected' : '';
+					const scopeQualifier = selectionScope ? ' selected' : '';
 					const message =
 						'Fill ' + scopeNoun + ' fields on ' + draftRecords.length + scopeQualifier + ' draft ' + recordWord +
 						' (' + objSummary + moreObjs + ').\n\n' +
@@ -133,6 +167,7 @@ return;
 
 						const _undo = _captureValuesUndo(draftRecords);
 						let touchedCount = 0;
+						const touchedRecords = [];
 						draftRecords.forEach(rec => {
 							const describe = canvasState.describeCache[rec.objectName];
 							if (!describe || !describe.fields) {
@@ -183,7 +218,8 @@ return;
 								touched = true;
 							}
 							if (touched) {
-								rec.values = values;
+								_replaceValues(rec, values);
+								touchedRecords.push(rec);
 								touchedCount++;
 							}
 						});
@@ -194,10 +230,11 @@ return;
 							: '';
 
 						const recNoun = includeLoaded ? 'record' : 'draft record';
-						const _msg = 'Pre-filled ' + label + ' on ' + touchedCount + ' ' + recNoun + (touchedCount === 1 ? '' : 's') + '.' + skipNote;
+						const scopeNote = selectionScope ? ' selected' : '';
+						const _msg = 'Pre-filled ' + label + ' on ' + touchedCount + scopeNote + ' ' + recNoun + (touchedCount === 1 ? '' : 's') + '.' + skipNote;
 						if (!silent) {
 							if (touchedCount > 0 && showBulkToastWithAction) {
-								showBulkToastWithAction(_msg, 'Undo', _undo);
+								showBulkToastWithAction(_msg, 'Undo', _undo(touchedRecords));
 							} else {
 								showBulkToast(_msg);
 							}
@@ -215,6 +252,8 @@ showBulkToast('Failed to load field metadata: ' + (err.message || err), 'error')
 				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0
 					? new Set(opts.tempIds)
 					: null;
+
+				const selectionScope = opts.selectionScope !== undefined ? !!opts.selectionScope : !!onlyIds;
 
 				const includeLoaded = !!opts.includeLoaded;
 				if (canvasState.bulkRecords.length === 0) {
@@ -265,7 +304,7 @@ draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
 					skipLine = '\u2022 Includes ' + loadedInScope + ' loaded Salesforce record' +
 						(loadedInScope === 1 ? '' : 's') +
 						' \u2014 next upload will NULL those fields in Salesforce.';
-				} else if (onlyIds) {
+				} else if (selectionScope) {
 					skipLine = '\u2022 Only draft records in your selection are wiped.';
 				} else if (skippedLoaded > 0) {
 					skipLine = '\u2022 Skips ' + skippedLoaded + ' loaded Salesforce record' +
@@ -274,7 +313,7 @@ draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
 				} else {
 					skipLine = '\u2022 Only draft records on the canvas are wiped.';
 				}
-				const scopeQualifier = onlyIds
+				const scopeQualifier = selectionScope
 					? ' selected'
 					: (includeLoaded ? '' : ' draft');
 				const noun = includeLoaded ? recordWord : ('draft ' + recordWord);
@@ -296,25 +335,27 @@ return;
 
 				const _undo = _captureValuesUndo(draftRecords);
 				let touchedCount = 0;
+				const touchedRecords = [];
 				draftRecords.forEach((rec) => {
 					const hadValues = rec.values && Object.keys(rec.values).length > 0;
-					rec.values = {};
 					if (hadValues) {
-touchedCount++;
+						_replaceValues(rec, {});
+						touchedRecords.push(rec);
+						touchedCount++;
 }
 				});
 				renderBulkView();
-				const skipNote = onlyIds
+				const skipNote = selectionScope
 					? ''
 					: (skippedLoaded > 0
 						? ' Skipped ' + skippedLoaded + ' loaded record' + (skippedLoaded === 1 ? '' : 's') + ' (Clear only applies to drafts).'
 						: '');
-				const scopeNote = onlyIds ? ' selected' : '';
+				const scopeNote = selectionScope ? ' selected' : '';
 
 				const recNoun = includeLoaded ? 'record' : 'draft record';
 				const _msg = 'Cleared all fields on ' + touchedCount + scopeNote + ' ' + recNoun + (touchedCount === 1 ? '' : 's') + '.' + skipNote;
 				if (touchedCount > 0 && showBulkToastWithAction) {
-					showBulkToastWithAction(_msg, 'Undo', _undo);
+					showBulkToastWithAction(_msg, 'Undo', _undo(touchedRecords));
 				} else {
 					showBulkToast(_msg);
 				}

@@ -45,6 +45,8 @@ throw new Error('upload-modal.mount: missing deps object');
 
 			const _isLinkedCsvQuickUploadMode = deps.isLinkedCsvQuickUploadMode;
 
+			const pingAuditEvent = typeof deps.pingAuditEvent === 'function' ? deps.pingAuditEvent : function () {};
+
 			const uploadModal = document.createElement('div');
 			uploadModal.className = 'modal hidden';
 			uploadModal.innerHTML =

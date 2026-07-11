@@ -816,6 +816,8 @@ return;
 					const scopeOpts = {
 						tempIds: records.map((r) => r.id),
 						includeLoaded: includeLoaded,
+
+						selectionScope: _scope === 'selected',
 					};
 					cleanup();
 					if (_mode === 'required') {

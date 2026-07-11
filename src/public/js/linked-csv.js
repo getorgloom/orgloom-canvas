@@ -1023,7 +1023,7 @@ return { liveById, draftKeys: new Set(), canceled: true };
 								'<button class="modal-close" data-mid-close>&times;</button></div>' +
 							'<div class="modal-content">' +
 								'<p style="white-space:pre-line">' + items.length + ' row' + (items.length === 1 ? '' : 's') +
-									' reference a Salesforce Id that doesn’t exist in this org (deleted, wrong org, or a typo). ' +
+									(items.length === 1 ? ' references' : ' reference') + ' a Salesforce Id that doesn’t exist in this org (deleted, wrong org, or a typo). ' +
 									'Pick which to add as new draft records — unchecked rows are skipped. ' +
 									'Rows whose Id WAS found import as existing records regardless.</p>' +
 								'<div style="display:flex;gap:12px;margin:6px 0;">' +

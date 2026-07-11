@@ -2469,6 +2469,8 @@ return;
 						msg = 'No changes to save for ' + target + '.';
 					} else {
 						canvasState.currentRecordRef.values = payload;
+						canvasState.currentRecordRef._valuesRevision =
+							(Number(canvasState.currentRecordRef._valuesRevision) || 0) + 1;
 						msg = 'Saved ' + changed.length + ' changed field' + (changed.length === 1 ? '' : 's') +
 							' for ' + target + ' locally.';
 					}

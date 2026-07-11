@@ -90,7 +90,8 @@ throw new Error('canvas-save-load.mount: missing deps object');
 				pop.innerHTML =
 					'<div class="tpl-header">Save this canvas</div>' +
 					primarySaveBtn +
-					'<button type="button" class="tpl-action" data-tpl-action="save-new"' + actionDisabled + '>Save as new canvas <span class="tpl-action-sub">a fresh saved canvas in your Salesforce org</span></button>' +
+
+					'<button type="button" class="tpl-action" data-tpl-action="save-new">Save as new canvas <span class="tpl-action-sub">a fresh saved canvas in your Salesforce org</span></button>' +
 					_downloadHeader +
 
 					_exportJsonBtn +
