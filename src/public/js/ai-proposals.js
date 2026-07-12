@@ -32,6 +32,7 @@
 			const bulkAutoFill = deps.bulkAutoFill;
 			const ensureDescribe = deps.ensureDescribe;
 			const renderBulkView = deps.renderBulkView;
+			const pushUndo = typeof deps.pushUndo === "function" ? deps.pushUndo : null;
 
 			const canvasCapCheck = typeof deps.canvasCapCheck === "function"
 				? deps.canvasCapCheck
@@ -245,7 +246,7 @@
 					'<input type="checkbox" class="proposals-autoapply-toggle"' +
 					(_isAutoApplyEnabled(canvasId) ? " checked" : "") +
 					">" +
-					"<span><strong>Auto-apply AI proposals to this canvas</strong> — future proposals land on the canvas without opening this review. Each change still echoes into the canvas state as if you clicked Apply; Salesforce uploads still require a separate Save + Upload. Per-canvas, browser-only.</span>" +
+					"<span><strong>Auto-apply AI proposals to this canvas</strong>: future proposals land on the canvas without opening this review. Each change still echoes into the canvas state as if you clicked Apply; Salesforce uploads still require a separate Save + Upload. Per-canvas, browser-only.</span>" +
 					"</label>" +
 					"</div>" +
 					'<div class="modal-content" id="proposals-review-content">' +
@@ -530,7 +531,7 @@
 						) {
 							const isDraftDel = c.kind === "delete-draft";
 							const chip =
-								'<span class="proposal-kind-chip proposal-kind-chip--record" title="Remove from the canvas. Salesforce records are NOT deleted — this only removes the canvas reference.">− remove</span>';
+								'<span class="proposal-kind-chip proposal-kind-chip--record" title="Remove from the canvas. Salesforce records are NOT deleted; this only removes the canvas reference.">− remove</span>';
 							const target = isDraftDel
 								? "Draft #<code>" +
 									escapeHtml(String(c.tempId)) +
@@ -664,8 +665,8 @@
 						const kindChip = isNewDraft
 							? '<span class="proposal-kind-chip proposal-kind-chip--new" title="Brand-new draft record. On Apply, a fresh draft appears on the canvas with these field values.">+ new draft</span>'
 							: kind === "draft"
-								? '<span class="proposal-kind-chip proposal-kind-chip--draft" title="Draft on the canvas — not yet uploaded to Salesforce">draft</span>'
-								: '<span class="proposal-kind-chip proposal-kind-chip--record" title="Loaded Salesforce record on the canvas — Apply updates the canvas, not Salesforce">SF record</span>';
+								? '<span class="proposal-kind-chip proposal-kind-chip--draft" title="Draft on the canvas, not yet uploaded to Salesforce">draft</span>'
+								: '<span class="proposal-kind-chip proposal-kind-chip--record" title="Loaded Salesforce record on the canvas; Apply updates the canvas, not Salesforce">SF record</span>';
 
 						const targetTag = isNewDraft
 							? ""
@@ -764,8 +765,8 @@
 								? skipCount +
 									" change" +
 									(skipCount === 1 ? "" : "s") +
-									" will be skipped. The rest will land on the canvas — nothing is written to Salesforce yet."
-								: "The proposed values will land on the canvas — nothing is written to Salesforce yet. To push to Salesforce, save and upload the canvas as you would any other change.",
+									" will be skipped. The rest will land on the canvas; nothing is written to Salesforce yet."
+								: "The proposed values will land on the canvas; nothing is written to Salesforce yet. To push to Salesforce, save and upload the canvas as you would any other change.",
 						confirmLabel:
 							skipCount > 0
 								? "Apply selected"
@@ -777,6 +778,16 @@
 						return;
 					}
 				}
+				const undoSnapshot = pushUndo ? {
+					selectedObjects: structuredClone(canvasState.selectedObjects || []),
+					selectedIdSeq: canvasState.selectedIdSeq,
+					activeIndex: canvasState.activeIndex,
+					hiddenObjects: new Set(canvasState.hiddenObjects || []),
+					bulkRecords: structuredClone(canvasState.bulkRecords || []),
+					bulkAssociations: structuredClone(canvasState.bulkAssociations || []),
+					bulkIdSeq: canvasState.bulkIdSeq,
+					bulkInitialized: canvasState.bulkInitialized,
+				} : null;
 				try {
 					const r = await csrfFetch(
 						"/api/canvas/" +
@@ -840,7 +851,8 @@
 						const STEP_X = 260;
 						const STEP_Y = 170;
 						const PER_ROW = 5;
-						const _canvasEl = graph.querySelector("#bulk-canvas");
+
+						const _canvasEl = document.querySelector("#bulk-canvas");
 						const _cw = (_canvasEl && _canvasEl.clientWidth) || 0;
 						const _ch = (_canvasEl && _canvasEl.clientHeight) || 0;
 						const _baseX = 80;
@@ -997,7 +1009,7 @@
 									: tempId;
 								const rec = canvasState.bulkRecords.find(
 									(r) =>
-										r.id === runtimeId && !r.loadedFromId,
+										String(r.id) === String(runtimeId) && !r.loadedFromId,
 								);
 								if (rec) {
 									try {
@@ -1265,6 +1277,39 @@
 							}
 						}
 						if (touched) {
+							if (undoSnapshot && pushUndo) {
+								const appliedFingerprint = JSON.stringify({
+									selectedObjects: canvasState.selectedObjects || [],
+									hiddenObjects: Array.from(canvasState.hiddenObjects || []).sort(),
+									bulkRecords: canvasState.bulkRecords || [],
+									bulkAssociations: canvasState.bulkAssociations || [],
+								});
+								pushUndo("AI proposal apply", function () {
+									const currentFingerprint = JSON.stringify({
+										selectedObjects: canvasState.selectedObjects || [],
+										hiddenObjects: Array.from(canvasState.hiddenObjects || []).sort(),
+										bulkRecords: canvasState.bulkRecords || [],
+										bulkAssociations: canvasState.bulkAssociations || [],
+									});
+									if (currentFingerprint !== appliedFingerprint) {
+										showBulkToast("Can’t undo the AI proposal because the canvas was edited afterward.", "info");
+										return false;
+									}
+									canvasState.selectedObjects = undoSnapshot.selectedObjects;
+									canvasState.selectedIdSeq = undoSnapshot.selectedIdSeq;
+									canvasState.activeIndex = undoSnapshot.activeIndex;
+									canvasState.hiddenObjects.clear();
+									undoSnapshot.hiddenObjects.forEach((value) => canvasState.hiddenObjects.add(value));
+									canvasState.bulkRecords = undoSnapshot.bulkRecords;
+									canvasState.bulkAssociations = undoSnapshot.bulkAssociations;
+									canvasState.bulkIdSeq = undoSnapshot.bulkIdSeq;
+									canvasState.bulkInitialized = undoSnapshot.bulkInitialized;
+									canvasState.bulkSelectedIds = new Set();
+									canvasState.bulkSelectedEdgeId = null;
+									renderBulkView();
+									showBulkToast("AI proposal apply undone.");
+								});
+							}
 							try {
 								renderBulkView();
 							} catch (renderErr) {

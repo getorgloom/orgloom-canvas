@@ -72,7 +72,7 @@ return;
 				const _selectedRealCount = canvasState.bulkRecords.filter((r) => !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id)).length;
 				const _hasPartialSelection = _selectedRealCount > 0 && _selectedRealCount < _allRealCount;
 				const uploadBtn = getReadOnlyMode()
-					? '<button type="button" class="upload-btn upload-btn--locked" disabled title="Read-only mode is on \u2014 turn it off in the org banner above to upload">\uD83D\uDD12 Read-only</button>'
+					? '<button type="button" class="upload-btn upload-btn--locked" disabled title="Read-only mode is on - turn it off in the org banner above to upload">\uD83D\uDD12 Read-only</button>'
 					: (_uploadEmpty
 						? '<button type="button" class="upload-btn" data-bulk-upload disabled title="Add records to the canvas to enable upload">Upload to Salesforce</button>'
 						: (_hasPartialSelection
@@ -129,7 +129,7 @@ return;
 						'<path d="M3 3v5h5"/>' +
 						'<path d="M12 7v5l4 2"/>' +
 					'</svg>';
-				const historyBtn = '<button type="button" class="batch-btn batch-btn-icon" data-app-history title="Recent uploads — recall a previous batch" aria-label="Upload history">' +
+				const historyBtn = '<button type="button" class="batch-btn batch-btn-icon" data-app-history title="Recent uploads - recall a previous batch" aria-label="Upload history">' +
 						_historyIconSvg +
 					'</button>';
 
@@ -237,13 +237,13 @@ return;
 				chip.innerHTML =
 					'<span class="bcc-total" title="Total records on the canvas">' + total + ' record' + (total === 1 ? '' : 's') + '</span>' +
 					'<span class="bcc-sep" aria-hidden="true">·</span>' +
-					'<span class="bcc-state bcc-draft" title="Drafts — new records that will be inserted">' +
+					'<span class="bcc-state bcc-draft" title="Drafts - new records that will be inserted">' +
 						'<span class="bcc-dot" aria-hidden="true"></span>' + drafts + ' draft' +
 					'</span>' +
-					'<span class="bcc-state bcc-modified" title="Modified — loaded from Salesforce, edited locally; will be updated on upload">' +
+					'<span class="bcc-state bcc-modified" title="Modified - loaded from Salesforce, edited locally; will be updated on upload">' +
 						'<span class="bcc-dot" aria-hidden="true"></span>' + modified + ' modified' +
 					'</span>' +
-					'<span class="bcc-state bcc-existing" title="Existing — loaded from Salesforce, unchanged; will be skipped on upload">' +
+					'<span class="bcc-state bcc-existing" title="Existing - loaded from Salesforce, unchanged; will be skipped on upload">' +
 						'<span class="bcc-dot" aria-hidden="true"></span>' + existing + ' existing' +
 					'</span>' +
 
@@ -283,7 +283,7 @@ return;
 					const diffHint = selectedReal.length === 1
 						? 'need 1 more'
 						: 'select only 2 (' + selectedReal.length + ' selected)';
-					const diffTitle = 'Diff compares exactly two records \u2014 ' + diffHint + '.';
+					const diffTitle = 'Diff compares exactly two records -' + diffHint + '.';
 					diffBtn = '<button type="button" class="bsc-diff" data-sel-diff title="' + diffTitle + '" disabled aria-disabled="true">Diff <span class="bsc-diff-hint">\u00b7 ' + diffHint + '</span></button>';
 				}
 				chip.style.display = '';

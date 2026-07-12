@@ -531,7 +531,7 @@
 							`<div class="ai-gen-preview-head">Preview</div>` +
 							`<div class="ai-gen-recs">${recsHtml}</div>` +
 							warningsHtml
-						: `<div class="ai-gen-empty"><div class="ai-gen-empty-icon">✨</div><div class="ai-gen-empty-title">No records to add</div><div class="ai-gen-empty-hint">The AI couldn’t turn that into valid records — try rephrasing your description or adjusting the scope.</div></div>` +
+						: `<div class="ai-gen-empty"><div class="ai-gen-empty-icon">✨</div><div class="ai-gen-empty-title">No records to add</div><div class="ai-gen-empty-hint">The AI couldn’t turn that into valid records; try rephrasing your description or adjusting the scope.</div></div>` +
 							warningsHtml;
 				const warnsToggle = body.querySelector("#ai-gen-warns-toggle");
 				if (warnsToggle) {

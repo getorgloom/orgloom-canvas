@@ -4,7 +4,11 @@ import crypto from 'node:crypto';
 import { initTestDb, clearTestDb } from './helpers/db.js';
 
 before(initTestDb);
-beforeEach(clearTestDb);
+beforeEach(async () => {
+	await clearTestDb();
+	const { _resetMcpTokenRateLimitForTests } = await import('../src/mcp/server.js');
+	_resetMcpTokenRateLimitForTests();
+});
 
 const ERR_PARSE = -32700;
 const ERR_INVALID_REQUEST = -32600;
@@ -20,6 +24,7 @@ function fakeRes() {
 		body: undefined,
 		ended: false,
 		status(code) { this.statusCode = code; return this; },
+		setHeader(name, value) { this.headers = this.headers || {}; this.headers[name] = value; return this; },
 		json(obj) { this.body = obj; this.ended = true; return this; },
 		end() { this.ended = true; return this; },
 	};
@@ -187,6 +192,17 @@ describe('protocol methods', () => {
 });
 
 describe('tools/call', () => {
+	test('per-token throttle returns HTTP 429', async () => {
+		const { token } = await makeMcpFixture();
+		for (let i = 0; i < 120; i++) {
+			const allowed = await callMcp({ body: rpc('ping', undefined, i), token });
+			assert.equal(allowed.statusCode, 200);
+		}
+		const blocked = await callMcp({ body: rpc('ping', undefined, 121), token });
+		assert.equal(blocked.statusCode, 429);
+		assert.equal(blocked.body.error.code, -32006);
+		assert.equal(blocked.headers['Retry-After'], '60');
+	});
 	test('missing tool name → ERR_INVALID_PARAMS', async () => {
 		const { token } = await makeMcpFixture();
 		const res = await callMcp({ body: rpc('tools/call', {}), token });

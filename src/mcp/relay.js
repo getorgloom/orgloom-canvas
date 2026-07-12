@@ -40,12 +40,22 @@ export function registerConnection({ accountId, workspaceId, sseRes }) {
 
 	const keepalive = setInterval(() => {
 		try {
+			if (sseRes.destroyed || sseRes.writableEnded) {
+				clearInterval(keepalive);
+				unregisterConnection(connectionId);
+				return;
+			}
 			sseRes.write(": keepalive\n\n");
 		} catch (e) {
-
+			clearInterval(keepalive);
+			unregisterConnection(connectionId);
 		}
 	}, 25000);
 	sseRes.on("close", () => {
+		clearInterval(keepalive);
+		unregisterConnection(connectionId);
+	});
+	sseRes.on("error", () => {
 		clearInterval(keepalive);
 		unregisterConnection(connectionId);
 	});

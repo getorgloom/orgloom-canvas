@@ -243,10 +243,10 @@ return;
 
 				pop.innerHTML =
 					'<div class="fm-header">From Salesforce</div>' +
-					'<button type="button" data-add-menu="browse" title="Filter records by field values, see live counts, then load matches onto the canvas \u2014 no SOQL knowledge required">Browse records</button>' +
+					'<button type="button" data-add-menu="browse" title="Filter records by field values, see live counts, then load matches onto the canvas - no SOQL knowledge required">Browse records</button>' +
 					'<button type="button" data-add-menu="soql" title="Write a SOQL SELECT to pull records (and their related children via subqueries) into the canvas">Import via SOQL query</button>' +
 					'<div class="fm-header">From a file</div>' +
-					'<button type="button" data-add-menu="csv" title="Upload one or more CSV files — multi-file imports auto-detect FK links between rows">Import from CSV</button>' +
+					'<button type="button" data-add-menu="csv" title="Upload one or more CSV files - multi-file imports auto-detect FK links between rows">Import from CSV</button>' +
 					'<button type="button" data-add-menu="fixture" title="Import a previously-saved canvas (with records) from a JSON file">Import saved canvas (JSON)</button>';
 				document.body.appendChild(pop);
 				const cleanup = () => {
@@ -317,7 +317,7 @@ cleanup();
 				if (canRunScripts) {
 					scriptItem = '<button type="button" data-bulk-op="script" title="Run a JavaScript snippet against records on the canvas (no Salesforce calls)">Run script</button>';
 				} else if (!_isOnPaidPlan()) {
-					scriptItem = '<button type="button" data-bulk-op="script-upgrade" title="Run script is a Pro feature — click to upgrade" style="display:flex;align-items:center;gap:0.4em;justify-content:space-between">' +
+					scriptItem = '<button type="button" data-bulk-op="script-upgrade" title="Run script is a Pro feature - click to upgrade" style="display:flex;align-items:center;gap:0.4em;justify-content:space-between">' +
 						'<span>Run script</span>' +
 						'<span class="tag" style="font-size:0.7rem;background:var(--accent-soft);color:var(--accent)">Pro</span>' +
 					'</button>';
@@ -345,7 +345,7 @@ cleanup();
 							: '<span class="fm-hint">select only 2 (' + _selectedReal.length + ' selected)</span>';
 				const diffTitle = diffEnabled
 					? 'Compare the two selected records field-by-field'
-					: 'Diff compares exactly two records — select 2 on the canvas to enable.';
+					: 'Diff compares exactly two records - select 2 on the canvas to enable.';
 				const diffLabel = 'Diff records' + (diffStateHint ? ' ' + diffStateHint : '');
 				const diffItem = diffEnabled
 					? '<button type="button" data-bulk-op="diff" title="' + diffTitle + '">' + diffLabel + '</button>'
@@ -379,7 +379,7 @@ continue;
 					? 'Group same-object records that look like duplicates so you can keep one and remove the rest'
 					: (_searchableCount < 2
 						? 'Add at least 2 records to the canvas to find duplicates'
-						: 'Find duplicates compares records of the same object type — add a second record of an existing type to enable.');
+						: 'Find duplicates compares records of the same object type - add a second record of an existing type to enable.');
 				const dupesItem = dupesEnabled
 					? '<button type="button" data-bulk-op="find-dupes" title="' + dupesTitle + '">Find duplicates</button>'
 					: '<button type="button" data-bulk-op="find-dupes" title="' + dupesTitle + '" disabled aria-disabled="true">Find duplicates</button>';
@@ -387,7 +387,7 @@ continue;
 				const _canAutoFill = _hasCap('auto-fill-records');
 				const _canBulkEdit = _hasCap('bulk-edit-records');
 				const _autoFillItem = _canAutoFill
-					? '<button type="button" data-bulk-op="auto-fill" title="Fill empty required fields, fill all empty fields, or clear all values — pick the mode + scope in the modal that opens.">Auto-fill</button>'
+					? '<button type="button" data-bulk-op="auto-fill" title="Fill empty required fields, fill all empty fields, or clear all values - pick the mode + scope in the modal that opens.">Auto-fill</button>'
 					: '';
 				const _bulkEditItem = _canBulkEdit
 					? '<button type="button" data-bulk-op="bulk-edit" title="Find &amp; replace or set a value across many records at once">Bulk edit</button>'
@@ -411,7 +411,7 @@ continue;
 							? _refreshCount + ' selected'
 							: _refreshCount + ' loaded');
 					const _refreshEmptyTitle = _hasSelection
-						? 'Your selection has no loaded records — clear the selection to refresh every loaded record on the canvas.'
+						? 'Your selection has no loaded records - clear the selection to refresh every loaded record on the canvas.'
 						: 'No loaded records on the canvas to refresh.';
 					_refreshItem = _refreshCount === 0
 						? '<button type="button" data-bulk-op="refresh-sf" disabled aria-disabled="true" title="' + _refreshEmptyTitle + '">Refresh from Salesforce <span class="tag">' + _refreshSubtitle + '</span></button>'
@@ -679,8 +679,8 @@ total++;
 						&& records.some((r) => r.loadedFromId);
 					const sfHint = includesLoaded
 						? (mode === 'clear'
-							? '<span class="af-preview-hint"> Includes Salesforce-loaded records — next upload will NULL those fields in Salesforce.</span>'
-							: '<span class="af-preview-hint"> Includes Salesforce-loaded records — only empty fields are filled; the next upload pushes the new values to Salesforce.</span>')
+							? '<span class="af-preview-hint"> Includes Salesforce-loaded records - next upload will NULL those fields in Salesforce.</span>'
+							: '<span class="af-preview-hint"> Includes Salesforce-loaded records - only empty fields are filled; the next upload pushes the new values to Salesforce.</span>')
 						: '';
 					if (count == null) {
 						return 'Across <strong>' + records.length + '</strong> ' + noun + '. ' +
@@ -694,7 +694,7 @@ total++;
 							sfHint;
 					}
 					if (count === 0) {
-						return 'Nothing to do — every ' + (mode === 'required' ? 'required ' : '') +
+						return 'Nothing to do - every ' + (mode === 'required' ? 'required ' : '') +
 							'field already has a value across the <strong>' + records.length + '</strong> ' + noun + ' in scope.';
 					}
 					return '<strong>' + count + '</strong> empty ' + (mode === 'required' ? 'required ' : '') +
@@ -734,15 +734,15 @@ total++;
 							'<div class="af-actions" role="radiogroup" aria-label="Mode">' +
 								'<button type="button" class="af-action-card af-action-card--required af-action-card--selected" data-af-mode="required" aria-pressed="true">' +
 									'<div class="af-action-title">Fill required fields</div>' +
-									'<div class="af-action-sub">Empty required fields get sample data. Fields with a value are left alone — Salesforce-loaded values are never overwritten.</div>' +
+									'<div class="af-action-sub">Empty required fields get sample data. Fields with a value are left alone - Salesforce-loaded values are never overwritten.</div>' +
 								'</button>' +
 								'<button type="button" class="af-action-card af-action-card--all" data-af-mode="all" aria-pressed="false">' +
 									'<div class="af-action-title">Fill all fields</div>' +
-									'<div class="af-action-sub">Every empty writable field gets sample data. Fields with a value are left alone — Salesforce-loaded values are never overwritten.</div>' +
+									'<div class="af-action-sub">Every empty writable field gets sample data. Fields with a value are left alone - Salesforce-loaded values are never overwritten.</div>' +
 								'</button>' +
 								'<button type="button" class="af-action-card af-action-card--clear" data-af-mode="clear" aria-pressed="false">' +
 									'<div class="af-action-title">Clear all fields</div>' +
-									'<div class="af-action-sub">Wipe every value from records in scope. Destructive — and on loaded records, the next upload writes NULL back to Salesforce.</div>' +
+									'<div class="af-action-sub">Wipe every value from records in scope. Destructive - and on loaded records, the next upload writes NULL back to Salesforce.</div>' +
 								'</button>' +
 							'</div>' +
 							'<div class="af-preview" data-af-preview>' + renderCountLine(initialMode, initialScope) + '</div>' +

@@ -6,7 +6,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Org Loom<% if (__isQuickUpload) { %> &mdash; Quick Upload<% } %></title>
+	<title>Org Loom<% if (__isQuickUpload) { %>: Quick Upload<% } %></title>
 	<link rel="stylesheet" href="/css/app.css">
 </head>
 <body class="canvas-page">
@@ -60,7 +60,7 @@
 			<script nonce="<%= cspNonce %>">
 				// SF_* globals are null when no SF connection is active.
 				// Every read-site in app.js uses `|| 'anon'` / `|| null`
-				// fallbacks so the canvas keeps working — planning,
+				// fallbacks so the canvas keeps working: planning,
 				// drafts, layout, and AI proposals all run without a
 				// connection. SF-touching actions check at invocation
 				// time and surface their own prompt.
@@ -76,7 +76,7 @@
 				window.ORGLOOM_HAS_DOCS = <%- jsonForScript(typeof saasEnabled !== 'undefined' && !!saasEnabled) %>;
 				// Playground / mock mode. When true, mock-sf.js installs a
 				// fetch interceptor that returns canned data for every
-				// SF-bound API call. The canvas itself doesn't know — it
+				// SF-bound API call. The canvas itself doesn't know; it
 				// keeps calling /api/objects/:name/describe etc., the mock
 				// layer just answers from a static dataset.
 				window.ORGLOOM_MOCK = <%- jsonForScript(typeof playgroundMode !== 'undefined' && !!playgroundMode) %>;
@@ -90,7 +90,7 @@
 				window.ORGLOOM_ENV = <%- jsonForScript(typeof appEnv !== 'undefined' ? appEnv : 'production') %>;
 				window.ORGLOOM_RELEASE = <%- jsonForScript(typeof appRelease !== 'undefined' ? appRelease : null) %>;
 				<% if (__isQuickUpload) { %>
-				// Quick Upload mode flag — app.js reads this on init and at
+				// Quick Upload mode flag: app.js reads this on init and at
 				// payload-build time. See pricing.ejs FAQ for the user-facing
 				// description; see linkedCsvConfirm in app.js for the upload
 				// path. directUpload=true is set on uploads from this page.

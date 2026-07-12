@@ -18,14 +18,43 @@
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction : null;
 
+			function _replaceValues(rec, values) {
+				rec.values = values;
+				rec._valuesRevision = (Number(rec._valuesRevision) || 0) + 1;
+			}
+
+			function _valuesFingerprint(values) {
+				try {
+					return JSON.stringify(values || {});
+				} catch (_e) {
+					return null;
+				}
+			}
+
 			function _captureValuesUndo(records) {
-				const prior = records.map((r) => ({ rec: r, values: r.values }));
-				return function restore() {
-					prior.forEach((p) => {
-						p.rec.values = p.values;
-					});
-					renderBulkView();
-					showBulkToast('Restored the previous field values.');
+				const priorByRecord = new Map(records.map((r) => [r, r.values]));
+				return function arm(touchedRecords) {
+					const entries = touchedRecords.map((rec) => ({
+						rec: rec,
+						priorValues: priorByRecord.get(rec),
+						expectedRevision: Number(rec._valuesRevision) || 0,
+						expectedValues: rec.values,
+						expectedFingerprint: _valuesFingerprint(rec.values),
+					}));
+					return function restore() {
+						const stale = entries.some((p) =>
+							(Number(p.rec._valuesRevision) || 0) !== p.expectedRevision ||
+							p.rec.values !== p.expectedValues ||
+							_valuesFingerprint(p.rec.values) !== p.expectedFingerprint
+						);
+						if (stale) {
+							showBulkToast('Can\u2019t undo Bulk edit because one or more affected records were edited afterward.', 'info');
+							return;
+						}
+						entries.forEach((p) => _replaceValues(p.rec, p.priorValues));
+						renderBulkView();
+						showBulkToast('Restored the previous field values.');
+					};
 				};
 			}
 
@@ -369,7 +398,7 @@ apply.disabled = true;
 					const _loaded = bulkEditLoadedInScope();
 					const sfHint = _loaded > 0
 						? ' Includes ' + _loaded + ' Salesforce-loaded record' + (_loaded === 1 ? '' : 's') +
-							' — the next upload writes these changes to Salesforce.'
+							' - the next upload writes these changes to Salesforce.'
 						: '';
 					if (_beState.action === 'replace') {
 						const n = bulkEditMatchCount();
@@ -422,6 +451,7 @@ return;
 
 					const _undo = _captureValuesUndo(affected);
 					let updatedCount = 0;
+					const touchedRecords = [];
 					if (_beState.action === 'replace') {
 						const find = _beState.find;
 						if (find === '') {
@@ -447,7 +477,8 @@ return;
 								const rep = _beState.replace;
 								nv = sv.replace(new RegExp(escaped, 'gi'), () => rep);
 							}
-							r.values = Object.assign({}, r.values || {}, { [_beState.fieldName]: nv });
+							_replaceValues(r, Object.assign({}, r.values || {}, { [_beState.fieldName]: nv }));
+							touchedRecords.push(r);
 							updatedCount++;
 						});
 					} else {
@@ -459,7 +490,8 @@ delete next[_beState.fieldName];
 } else {
 next[_beState.fieldName] = coerced;
 }
-							r.values = next;
+							_replaceValues(r, next);
+							touchedRecords.push(r);
 							updatedCount++;
 						});
 					}
@@ -467,7 +499,7 @@ next[_beState.fieldName] = coerced;
 					renderBulkView();
 					const _msg = 'Updated ' + updatedCount + ' record' + (updatedCount === 1 ? '' : 's') + '.';
 					if (updatedCount > 0 && showBulkToastWithAction) {
-						showBulkToastWithAction(_msg, 'Undo', _undo);
+						showBulkToastWithAction(_msg, 'Undo', _undo(touchedRecords));
 					} else {
 						showBulkToast(_msg);
 					}

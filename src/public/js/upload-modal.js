@@ -7,7 +7,7 @@
 		mount: function mount(deps) {
 			const required = [
 				'canvasState', 'csrfFetch', 'escapeHtml',
-				'showBulkToast', 'showConfirmDialog',
+				'showBulkToast', 'showConfirmDialog', 'showBulkSwitchWarning',
 				'validateBulkRecords', 'computeUploadOrder',
 				'isRecordModified', 'isRecordPendingDelete', 'recordOrdinal',
 				'renderBulkView', 'startElapsedTicker',
@@ -34,6 +34,7 @@ throw new Error('upload-modal.mount: missing deps object');
 			};
 			const showBulkToast = deps.showBulkToast;
 			const showConfirmDialog = deps.showConfirmDialog;
+			const showBulkSwitchWarning = deps.showBulkSwitchWarning;
 			const validateBulkRecords = deps.validateBulkRecords;
 			const computeUploadOrder = deps.computeUploadOrder;
 			const isRecordModified = deps.isRecordModified;
@@ -147,9 +148,9 @@ _uploadScopeSelected = false;
 						'<span class="pf-icon">' + (_migBlocked > 0 ? '⚠' : (_migWarning > 0 ? 'i' : '✓')) + '</span>' +
 						'<span class="pf-msg"><strong>Migrating to this org.</strong> ' +
 						(_migBlocked > 0
-							? _migBlocked + ' record' + (_migBlocked === 1 ? '' : 's') + ' can’t be migrated yet — resolve the <em>blocked</em> cards (missing record type or required field) before uploading.'
+							? _migBlocked + ' record' + (_migBlocked === 1 ? '' : 's') + ' can’t be migrated yet - resolve the <em>blocked</em> cards (missing record type or required field) before uploading.'
 							: (_migWarning > 0
-								? _migWarning + ' record' + (_migWarning === 1 ? '' : 's') + ' will migrate with fields dropped or picklist values skipped — review the <em>review</em> cards, or proceed.'
+								? _migWarning + ' record' + (_migWarning === 1 ? '' : 's') + ' will migrate with fields dropped or picklist values skipped - review the <em>review</em> cards, or proceed.'
 								: 'All records are ready to recreate in the destination org.')) +
 						' <button type="button" class="link-button" data-migrate-match>Match existing records…</button>' +
 						'</span></div>'
@@ -179,6 +180,7 @@ byRecordId.set(rid, rIssues);
 				const willDeleteCount = deleteIdSet.size;
 
 				const orderResult = computeUploadOrder(unchangedSet, scopedIds, deleteIdSet);
+				const cycleIds = orderResult.cycleIds || new Set();
 				const orderEntries = orderResult.creates.filter((e) => e.upload > 0);
 				const deleteEntries = orderResult.deletes;
 				const orderRows = orderEntries.map((entry, idx) => {
@@ -277,18 +279,27 @@ summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
 							'</span>' +
 						'</div>';
 				}
+				if (cycleIds.size > 0) {
+					preflightHtml =
+						'<div class="preflight has-errors">' +
+							'<span class="pf-icon">⚠</span>' +
+							'<span class="pf-msg"><strong>Reference cycle detected.</strong> ' +
+							cycleIds.size + ' record' + (cycleIds.size === 1 ? '' : 's') +
+							' depend on each other. Break the cycle on the canvas before uploading; no records have been sent to Salesforce.</span>' +
+						'</div>';
+				}
 
 				const unchangedNote = unchangedSet.size > 0
-					? '<p class="tag" style="margin-top:0.4em">' + unchangedSet.size + ' loaded record' + (unchangedSet.size === 1 ? '' : 's') + ' ' + (unchangedSet.size === 1 ? 'has' : 'have') + ' no local changes and will be skipped \u2014 only modified or new records will sync.</p>'
+					? '<p class="tag" style="margin-top:0.4em">' + unchangedSet.size + ' loaded record' + (unchangedSet.size === 1 ? '' : 's') + ' ' + (unchangedSet.size === 1 ? 'has' : 'have') + ' no local changes and will be skipped - only modified or new records will sync.</p>'
 					: '';
 
 				const autoExtendNote = autoExtendCount > 0
-					? '<p class="tag" style="margin-top:0.4em">Also uploading ' + autoExtendCount + ' record' + (autoExtendCount === 1 ? '' : 's') + ' you didn’t select that your chosen records link to — without ' + (autoExtendCount === 1 ? 'it, that link' : 'them, those links') + ' would be blank in Salesforce.</p>'
+					? '<p class="tag" style="margin-top:0.4em">Also uploading ' + autoExtendCount + ' record' + (autoExtendCount === 1 ? '' : 's') + ' you didn’t select that your chosen records link to - without ' + (autoExtendCount === 1 ? 'it, that link' : 'them, those links') + ' would be blank in Salesforce.</p>'
 					: '';
 
 				const deletesBlock = deleteEntries.length > 0
 					? '<div class="upload-section-head upload-section-head--danger">Then delete <span class="tag tag-danger">irreversible</span></div>' +
-						'<p class="upload-deletes-lead">These records will be DELETE\'d in Salesforce after the creates/updates above. Deletes can\u2019t be undone from Org Loom \u2014 recover from the Salesforce recycle bin within 15 days if needed.</p>' +
+						'<p class="upload-deletes-lead">These records will be DELETE\'d in Salesforce after the creates/updates above. Deletes can\u2019t be undone from Org Loom - recover from the Salesforce recycle bin within 15 days if needed.</p>' +
 						'<div class="upload-summary upload-summary--ordered upload-summary--deletes">' +
 							deleteRowsHtml +
 						'</div>'
@@ -301,7 +312,7 @@ summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
 					migrateBanner +
 					autoExtendNote +
 					preflightHtml +
-					'<p>Records will upload in the order below \u2014 parents first, so child FK lookups always resolve.</p>' +
+					'<p>Records will upload in the order below - parents first, so child FK lookups always resolve.</p>' +
 					unchangedNote +
 					'<div class="upload-section-head">Upload order</div>' +
 					'<div class="upload-summary upload-summary--ordered">' +
@@ -337,7 +348,14 @@ return;
 				});
 
 				const hasWork = willUploadCount > 0 || willDeleteCount > 0;
-				if (_migActive && _migBlocked > 0) {
+				if (cycleIds.size > 0) {
+					confirmBtn.style.display = '';
+					confirmBtn.disabled = true;
+					confirmBtn.textContent = 'Break reference cycle';
+					confirmBtn.classList.remove('confirm-anyway');
+					confirmBtn.classList.remove('confirm-danger');
+					if (cancelBtn) cancelBtn.textContent = 'Cancel';
+				} else if (_migActive && _migBlocked > 0) {
 
 					confirmBtn.style.display = '';
 					confirmBtn.disabled = true;
@@ -466,45 +484,11 @@ extended++;
 				if (!mig || !mig.isActive()) {
 					return base;
 				}
-				const out = Object.assign({}, base);
 				const ann = mig.annotationFor(r.id);
-				if (ann && ann.resolvedRecordTypeId) {
-					out.RecordTypeId = ann.resolvedRecordTypeId;
-				}
-				const remap = r._migratePicklistRemap;
-				if (remap) {
-					Object.keys(remap).forEach((field) => {
-						let key = field;
-						if (!Object.prototype.hasOwnProperty.call(out, key)) {
-							const lk = field.toLowerCase();
-							key = Object.keys(out).find((k) => k.toLowerCase() === lk) || field;
-						}
-						if (!Object.prototype.hasOwnProperty.call(out, key)) {
-							return;
-						}
-						const map = remap[field] || {};
-						const cur = out[key];
-						if (cur == null) {
-							return;
-						}
-						const s = String(cur);
-						if (s.indexOf(';') !== -1) {
-
-							out[key] = s.split(';')
-								.map((p) => (Object.prototype.hasOwnProperty.call(map, p) ? map[p] : p))
-								.filter((p) => p !== '')
-								.join(';');
-						} else if (Object.prototype.hasOwnProperty.call(map, s)) {
-							const t = map[s];
-							if (t === '') {
-								delete out[key];
-							} else {
-								out[key] = t;
-							}
-						}
-					});
-				}
-				return out;
+				const engine = window.Orgloom && window.Orgloom.migrateAnnotate;
+				return engine && typeof engine.prepareMigrationValues === 'function'
+					? engine.prepareMigrationValues(r, ann)
+					: base;
 			}
 
 			let _uploadAttemptId = null;
@@ -522,7 +506,7 @@ return;
 					const orgLabel = (_meInfo && _meInfo.orgType === 'production') ? 'PRODUCTION' : (_meInfo && _meInfo.orgType) || 'this org';
 					const msg = 'You\'re about to create ' + userRecords.length + ' User record' + (userRecords.length === 1 ? '' : 's') + ' in ' + orgLabel + '.\n\n' +
 						'\u2022 Each new User consumes a Salesforce license.\n' +
-						'\u2022 Users CAN\'T be deleted, only deactivated — these stay in the org forever.\n' +
+						'\u2022 Users CAN\'T be deleted, only deactivated - these stay in the org forever.\n' +
 						'\u2022 Salesforce sends a welcome email on insert (suppressed when IsActive=false).\n\n' +
 						'Proceed?';
 					if (!(await showConfirmDialog({ title: 'Create User records?', message: msg, confirmLabel: 'Create users', cancelLabel: 'Cancel', danger: true }))) {
@@ -684,18 +668,20 @@ stripped++;
 							(_orphanStrippedCount === 1 ? '' : 's') +
 							' across ' + _orphanStrippedRecordCount + ' record' +
 							(_orphanStrippedRecordCount === 1 ? '' : 's') +
-							' — those fields don\'t exist on this org\'s schema.',
+							' - those fields don\'t exist on this org\'s schema.',
 						'warn',
 					);
 				}
 
 				const payloadJson = JSON.stringify(payload);
+
+				const hasUpsert = realRecords.some((r) => r._csvOperation === 'upsert');
 				const fitsGraph = uploadingCountForGate > 0
 					&& maxComponentSize <= PER_COMPONENT_CAP
 					&& uploadingCountForGate <= TOTAL_NODES_CAP
 					&& payloadJson.length <= BYTE_CAP;
 
-				if (!_preflightOverride && !fitsGraph && uploadingCountForGate > 0) {
+				if (!_preflightOverride && !payload.directUpload && !fitsGraph && uploadingCountForGate > 0) {
 					confirmBtn.disabled = false;
 					confirmBtn.textContent = 'Upload';
 					const reasons = [];
@@ -716,7 +702,7 @@ stripped++;
 						'</div>';
 					return;
 				}
-				if (!_preflightOverride && fitsGraph) {
+				if (!_preflightOverride && fitsGraph && !hasUpsert) {
 					confirmBtn.disabled = true;
 					confirmBtn.textContent = 'Uploading\u2026';
 					content.innerHTML =
@@ -724,7 +710,7 @@ stripped++;
 							'<span class="busy-spinner lg"></span>' +
 							'<span>Uploading ' + uploadingCountForGate + ' record' + (uploadingCountForGate === 1 ? '' : 's') + ' atomically\u2026</span>' +
 						'</p>' +
-						'<p class="tag center">Validation and commit happen in one step \u2014 if anything fails, nothing is saved.</p>';
+						'<p class="tag center">Validation and commit happen in one step - if anything fails, nothing is saved.</p>';
 					let body;
 					try {
 						const r = await csrfFetch('/api/upload/graph', {
@@ -817,7 +803,7 @@ stripped++;
 					_bulkSwitchAcknowledged = true;
 				}
 
-				if (!_preflightOverride) {
+				if (!_preflightOverride && !hasUpsert) {
 					confirmBtn.disabled = true;
 					confirmBtn.textContent = 'Validating\u2026';
 					content.innerHTML = '<p class="center">Sending a sample to Salesforce to validate the schema, validation rules, and triggers\u2026</p>';
@@ -852,13 +838,12 @@ stripped++;
 					const skippedNote = pf.skipped
 						? ' <span class="tag">(no new records to validate)</span>'
 						: ' <span class="tag">(' + pf.sampled + ' record' + (pf.sampled === 1 ? '' : 's') + ' sampled)</span>';
-					content.innerHTML = '<p class="center">Pre-flight passed' + skippedNote + ' \u2014 starting upload\u2026</p>';
+					content.innerHTML = '<p class="center">Pre-flight passed' + skippedNote + ' - starting upload\u2026</p>';
 				}
 
 				confirmBtn.disabled = true;
 				confirmBtn.textContent = 'Uploading\u2026';
 
-				const hasUpsert = realRecords.some((r) => r._csvOperation === 'upsert');
 				const useBulk = hasUpsert || realRecords.length > BULK_THRESHOLD;
 				if (useBulk) {
 					try {
@@ -868,7 +853,7 @@ stripped++;
 						let recovered = 0;
 						try { recovered = await reconcileLostUpload(payload.records); } catch (_e) { recovered = 0; }
 						if (recovered > 0) {
-							content.innerHTML = '<div class="banner">Connection dropped mid-upload — but ' + recovered + ' record' + (recovered === 1 ? '' : 's') + ' had already saved to Salesforce. ' + (recovered === 1 ? 'It\u2019s' : 'They\u2019re') + ' now marked as uploaded, so retrying won\u2019t create duplicates. Click Retry to finish any records that didn\u2019t save.</div>';
+							content.innerHTML = '<div class="banner">Connection dropped mid-upload - but ' + recovered + ' record' + (recovered === 1 ? '' : 's') + ' had already saved to Salesforce. ' + (recovered === 1 ? 'It\u2019s' : 'They\u2019re') + ' now marked as uploaded, so retrying won\u2019t create duplicates. Click Retry to finish any records that didn\u2019t save.</div>';
 						} else {
 							content.innerHTML = '<div class="banner error">Upload failed: ' + escapeHtml(err.message || String(err)) + '</div>';
 						}
@@ -894,7 +879,7 @@ stripped++;
 						'<span>' + headerMsg + '</span>' +
 						'<span class="busy-elapsed" id="rest-elapsed"></span>' +
 					'</p>' +
-					'<p class="tag center">Records upload one at a time \u2014 expect ~5\u201310 records per second.</p>' +
+					'<p class="tag center">Records upload one at a time - expect ~5\u201310 records per second.</p>' +
 					skippedNote;
 				const stopElapsed = startElapsedTicker(content.querySelector('#rest-elapsed'));
 				try {
@@ -933,7 +918,7 @@ throw new Error((body && body.error) || 'Upload failed');
 						recovered = 0;
 					}
 					if (recovered > 0) {
-						content.innerHTML = '<div class="banner">Connection dropped mid-upload — but ' + recovered + ' record' + (recovered === 1 ? '' : 's') + ' had already saved to Salesforce. ' + (recovered === 1 ? 'It\u2019s' : 'They\u2019re') + ' now marked as uploaded, so retrying won\u2019t create duplicates. Click Retry to finish any records that didn\u2019t save.</div>';
+						content.innerHTML = '<div class="banner">Connection dropped mid-upload - but ' + recovered + ' record' + (recovered === 1 ? '' : 's') + ' had already saved to Salesforce. ' + (recovered === 1 ? 'It\u2019s' : 'They\u2019re') + ' now marked as uploaded, so retrying won\u2019t create duplicates. Click Retry to finish any records that didn\u2019t save.</div>';
 					} else {
 						content.innerHTML = '<div class="banner error">Upload failed: ' + escapeHtml(err.message || String(err)) + '</div>';
 					}
@@ -1189,7 +1174,7 @@ throw new Error('Bulk upload ended without results.');
 							'<span class="pf-icon">\u26A0</span>' +
 							'<span class="pf-msg">' +
 								'<strong>Salesforce rejected the sample.</strong> ' +
-								'These errors come from a real validation pass against ' + (pf.sampled || 0) + ' sample record' + (pf.sampled === 1 ? '' : 's') + ' (rolled back \u2014 nothing was committed). Fix them and retry, or upload anyway to see the same errors per-record.' +
+								'These errors come from a real validation pass against ' + (pf.sampled || 0) + ' sample record' + (pf.sampled === 1 ? '' : 's') + ' (rolled back - nothing was committed). Fix them and retry, or upload anyway to see the same errors per-record.' +
 							'</span>' +
 						'</div>' +
 						'<div class="pf-body">' + sections + '</div>' +
@@ -1290,7 +1275,7 @@ throw new Error('Bulk upload ended without results.');
 							'<strong>Previous attempt didn’t finish.</strong> ' +
 							escapeHtml((body && body.message) || 'An earlier upload with this attempt id may have saved these records to Salesforce. To avoid duplicates, this retry was paused.') +
 						'</div>' +
-						'<p class="tag" style="margin-top:0.5em">Open <strong>Upload History</strong> (the ↻ button in the toolbar) to see what landed, or refresh the affected records from Salesforce. Close this dialog once you’ve reconciled — a fresh upload then starts a new attempt.</p>';
+						'<p class="tag" style="margin-top:0.5em">Open <strong>Upload History</strong> (the ↻ button in the toolbar) to see what landed, or refresh the affected records from Salesforce. Close this dialog once you’ve reconciled - a fresh upload then starts a new attempt.</p>';
 				}
 
 				_uploadAttemptId = null;
@@ -1353,7 +1338,7 @@ summaryParts.push(failed.length + ' failed');
 				if (failed.length === 0 && synced.length > 0) {
 					html += '<div class="banner success">' + escapeHtml(summaryText) + '.</div>';
 				} else if (failed.length === 0 && synced.length === 0) {
-					html += '<div class="banner">' + escapeHtml(summaryText) + ' — nothing needed updating.</div>';
+					html += '<div class="banner">' + escapeHtml(summaryText) + ' - nothing needed updating.</div>';
 				} else if (synced.length === 0 && unchanged.length === 0) {
 					html += '<div class="banner error">' + escapeHtml(summaryText) + '.</div>';
 				} else {
@@ -1399,7 +1384,7 @@ summaryParts.push(failed.length + ' failed');
 						html += '<div class="upload-failure-block">' +
 							'<strong>#' + (i + 1) + ' ' + escapeHtml(r.objectName) + '</strong>' +
 							'<div class="upload-failure-msg">' + escapeHtml(r.error || 'Unknown error') +
-								(isDup ? ' — a Salesforce duplicate rule matched an existing record.' : '') +
+								(isDup ? ' - a Salesforce duplicate rule matched an existing record.' : '') +
 							'</div>' +
 						'</div>';
 					});
@@ -1407,7 +1392,7 @@ summaryParts.push(failed.length + ' failed');
 					if (dupFailed.length > 0) {
 						html += '<div class="banner" style="margin-top:0.6em">' +
 							'<strong>' + dupFailed.length + ' record' + (dupFailed.length === 1 ? '' : 's') + ' blocked by Salesforce duplicate rules.</strong> ' +
-							'If ' + (dupFailed.length === 1 ? 'this is' : 'these are') + ' intentional (not accidental duplicates), you can upload anyway — Salesforce will record the duplicate alert but accept the save. ' +
+							'If ' + (dupFailed.length === 1 ? 'this is' : 'these are') + ' intentional (not accidental duplicates), you can upload anyway - Salesforce will record the duplicate alert but accept the save. ' +
 							'<button type="button" class="button secondary" id="upload-allow-dups" style="margin-left:0.4em;font-size:0.82rem;padding:0.2em 0.6em">Upload anyway</button>' +
 						'</div>';
 					}
@@ -1415,7 +1400,7 @@ summaryParts.push(failed.length + ' failed');
 
 				if (deleted.length > 0) {
 					html += '<div class="upload-section-head upload-section-head--danger">Deleted in Salesforce</div>' +
-						'<p class="tag" style="margin-top:-0.4em">These records are gone. Org Loom can’t undelete them — restore from the Salesforce recycle bin within 15 days if needed.</p>' +
+						'<p class="tag" style="margin-top:-0.4em">These records are gone. Org Loom can’t undelete them - restore from the Salesforce recycle bin within 15 days if needed.</p>' +
 						'<div class="upload-summary" style="grid-template-columns: auto 1fr auto;">' +
 							deleted.map((d, i) => {
 								return '<div>#' + (i + 1) + '</div>' +
@@ -1520,9 +1505,9 @@ continue;
 							}
 							const _n = synced.length;
 							const _doneMsg = _n > 0
-								? 'Migration complete — ' + _n + ' record' + (_n === 1 ? '' : 's') +
+								? 'Migration complete - ' + _n + ' record' + (_n === 1 ? '' : 's') +
 									' now live in this org. You’re back to a normal canvas.'
-								: 'Migration complete — everything was already up to date. You’re back to a normal canvas.';
+								: 'Migration complete - everything was already up to date. You’re back to a normal canvas.';
 							showBulkToast(_doneMsg);
 						}
 					}

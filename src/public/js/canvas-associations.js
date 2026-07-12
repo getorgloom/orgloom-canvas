@@ -65,6 +65,11 @@
 			function inferAllReferences(fromName, toName) {
 				const seen = new Set();
 				const out = [];
+
+				const fkWritable = (field) =>
+					(field.createable === undefined && field.updateable === undefined) ||
+					!!field.createable ||
+					!!field.updateable;
 				const add = (direction, fieldName) => {
 					const key = direction + '|' + fieldName;
 					if (seen.has(key)) {
@@ -78,7 +83,8 @@
 					(fromDesc.fields || []).forEach((f) => {
 						if (
 							f.type === 'reference' &&
-							(f.referenceTo || []).includes(toName)
+							(f.referenceTo || []).includes(toName) &&
+							fkWritable(f)
 						) {
 							add('fwd', f.name);
 						}
@@ -89,17 +95,14 @@
 					(toDesc.fields || []).forEach((f) => {
 						if (
 							f.type === 'reference' &&
-							(f.referenceTo || []).includes(fromName)
+							(f.referenceTo || []).includes(fromName) &&
+							fkWritable(f)
 						) {
 							add('rev', f.name);
 						}
 					});
 				}
 
-				const fkWritable = (p) =>
-					(p.createable === undefined && p.updateable === undefined) ||
-					!!p.createable ||
-					!!p.updateable;
 				const fromObj = canvasState.selectedObjects.find(
 					(s) => s.name === fromName,
 				);
@@ -177,7 +180,7 @@
 									srcRec.label +
 									' and ' +
 									targetRec.label +
-									' — the relevant field is already in use (a lookup points to one record).',
+									', but the relevant field is already in use (a lookup points to one record).',
 							);
 							renderBulkView();
 							return;

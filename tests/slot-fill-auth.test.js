@@ -13,7 +13,7 @@ function slotRec({ slotId, kind = 'whole-record', fields, assigneeSfUserId, valu
 	};
 }
 
-describe('mergeSlotFills — assignment authorization', () => {
+describe('mergeSlotFills, assignment authorization', () => {
 	test('generic slot (no assignee) is fillable by any recipient', () => {
 		const records = [slotRec({ slotId: 1 })];
 		const out = mergeSlotFills({
@@ -129,7 +129,7 @@ describe('mergeSlotFills — assignment authorization', () => {
 	});
 });
 
-describe('mergeSlotFills — unknown / malformed fills', () => {
+describe('mergeSlotFills, unknown / malformed fills', () => {
 	test('fill referencing a non-existent slotId is skipped', () => {
 		const records = [slotRec({ slotId: 1 })];
 		const out = mergeSlotFills({
@@ -177,7 +177,7 @@ describe('mergeSlotFills — unknown / malformed fills', () => {
 	});
 });
 
-describe('mergeSlotFills — slot kind / field allowlist', () => {
+describe('mergeSlotFills, slot kind / field allowlist', () => {
 	test('field-level slot drops non-allowlisted keys', () => {
 		const records = [slotRec({
 			slotId: 1,
@@ -258,7 +258,7 @@ describe('mergeSlotFills — slot kind / field allowlist', () => {
 	});
 });
 
-describe('mergeSlotFills — purity / immutability', () => {
+describe('mergeSlotFills, purity / immutability', () => {
 	test('does not mutate the input records array', () => {
 		const original = [slotRec({ slotId: 1, values: { Name: 'old' } })];
 		const snapshot = JSON.parse(JSON.stringify(original));
@@ -296,7 +296,7 @@ describe('mergeSlotFills — purity / immutability', () => {
 	});
 });
 
-describe('mergeSlotFills — input edge cases', () => {
+describe('mergeSlotFills, input edge cases', () => {
 	test('non-array records yields empty result', () => {
 		const out = mergeSlotFills({
 			records: null,
@@ -347,7 +347,7 @@ describe('mergeSlotFills — input edge cases', () => {
 		assert.equal(out.records[0].values.Name, 'plain');
 	});
 
-	test('slotId can be a number or string — index uses the same key type', () => {
+	test('slotId can be a number or string; index uses the same key type', () => {
 
 		const records = [slotRec({ slotId: 7 })];
 		const out = mergeSlotFills({
@@ -359,7 +359,7 @@ describe('mergeSlotFills — input edge cases', () => {
 	});
 });
 
-describe('mergeSlotFills — fieldCount accounting', () => {
+describe('mergeSlotFills, fieldCount accounting', () => {
 	test('fieldCount reflects the number of incoming keys, not the merged count', () => {
 
 		const records = [slotRec({

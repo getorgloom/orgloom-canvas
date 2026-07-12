@@ -8,6 +8,7 @@
 		let row = [];
 		let cur = '';
 		let inQuotes = false;
+		let malformedQuotes = false;
 		const n = text.length;
 		let i = 0;
 		while (i < n) {
@@ -22,7 +23,9 @@
 				cur += c; i++; continue;
 			}
 			if (c === '"') {
- inQuotes = true; i++; continue; 
+				if (cur === '') { inQuotes = true; i++; continue; }
+
+				malformedQuotes = true; cur += c; i++; continue;
 }
 			if (c === ',') {
  row.push(cur); cur = ''; i++; continue; 
@@ -39,6 +42,7 @@ i++;
 			}
 			cur += c; i++;
 		}
+		if (inQuotes) malformedQuotes = true;
 		if (cur !== '' || row.length > 0) {
  row.push(cur); rows.push(row); 
 }
@@ -46,10 +50,20 @@ i++;
 rows.pop();
 }
 		if (rows.length === 0) {
-return { headers: [], rows: [] };
+return { headers: [], rows: [], errors: [] };
 }
 		const headers = rows[0].map(h => h.trim());
-		return { headers, rows: rows.slice(1) };
+		if (headers.length > 0) headers[0] = headers[0].replace(/^\uFEFF/, '');
+		const errors = [];
+		if (malformedQuotes) errors.push('Malformed or unclosed quoted field.');
+		const seenHeaders = new Set();
+		headers.forEach((header) => {
+			const key = String(header || '').trim().toLowerCase();
+			if (!key) return;
+			if (seenHeaders.has(key)) errors.push('Duplicate header: "' + header + '".');
+			seenHeaders.add(key);
+		});
+		return { headers, rows: rows.slice(1), errors };
 	}
 
 	function csvNormalizeKey(s) {
@@ -124,10 +138,7 @@ return hit;
 
 		byName[csvNormalizeKey('Id')] = 'Id';
 		byLabel[csvNormalizeKey('Record Id')] = 'Id';
-		fields.forEach(f => {
-			if (!f.createable) {
-return;
-}
+	fields.forEach(f => {
 			const nameKey = csvNormalizeKey(f.name);
 			byName[nameKey] = f.name;
 			const labelKey = f.label ? csvNormalizeKey(f.label) : '';

@@ -69,6 +69,20 @@
 					}
 					return rec;
 				});
+
+				if (isCrossOrg && Array.isArray(s.bulkAssociations)) {
+					const byId = new Map(converted.filter(Boolean).map((r) => [r.id, r]));
+					s.bulkAssociations.forEach((a) => {
+						const child = a && byId.get(a.fromId);
+						if (!child || !child.values || !a.fieldName) {
+							return;
+						}
+						const key = Object.keys(child.values).find((k) => k.toLowerCase() === String(a.fieldName).toLowerCase());
+						if (key) {
+							delete child.values[key];
+						}
+					});
+				}
 				if (Array.isArray(s.selectedObjects)) {
 
 					canvasState.selectedObjects = isCrossOrg
@@ -263,6 +277,14 @@
 			function _migrationSyncIfActive() {
 				const existing = _peekMigration();
 				if (!existing || existing.status !== 'in-progress') {
+					return;
+				}
+
+				if (!canvasState.migrateMode || !canvasState.migrateMode.active) {
+					return;
+				}
+				const currentOrg = window.SF_ORG_ID || null;
+				if (existing.targetSfOrgId && currentOrg !== existing.targetSfOrgId) {
 					return;
 				}
 				try {
@@ -510,6 +532,7 @@
 				migrationRestore: _migrationRestore,
 				migrationClear: _migrationClear,
 				hasPendingMigration: _hasPendingMigration,
+				migrationSyncIfActive: _migrationSyncIfActive,
 			};
 
 			return {
@@ -524,6 +547,7 @@
 				migrationRestore: _migrationRestore,
 				migrationClear: _migrationClear,
 				hasPendingMigration: _hasPendingMigration,
+				migrationSyncIfActive: _migrationSyncIfActive,
 			};
 		},
 	};

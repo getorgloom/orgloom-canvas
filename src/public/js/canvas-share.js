@@ -190,7 +190,7 @@ continue;
 
 				const _disclosureRecords = _shareDisclosureRecords();
 				const _disclosureItemsHtml = _disclosureRecords.length === 0
-					? '<li class="cs-disclosure-empty">No underlying records on this canvas — only the canvas itself will be shared.</li>'
+					? '<li class="cs-disclosure-empty">No underlying records on this canvas; only the canvas itself will be shared.</li>'
 					: _disclosureRecords.map((r) =>
 						'<li>' +
 							'<span class="cs-disclosure-name">' + escapeHtml(r.displayName) + '</span> ' +
@@ -285,7 +285,7 @@ cleanup();
 					demoBanner.className = 'banner warn';
 					demoBanner.style.cssText = 'margin:0 0 0.8em';
 					demoBanner.innerHTML =
-						'<strong>Demo mode.</strong> Sharing is disabled here — you can see what the share surface looks like, but no canvases or teammates are reachable. ' +
+						'<strong>Demo mode.</strong> Sharing is disabled here: you can see what the share surface looks like, but no canvases or teammates are reachable. ' +
 						'<a href="/signup?from=playground">Start a free trial</a> to share canvases with your real Salesforce teammates.';
 					const intro = modal.querySelector('#cs-intro');
 					if (intro && intro.parentNode) {
@@ -329,7 +329,7 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 										'<span class="tpl-scope-tag ' + roleTagClass + '" style="margin-left:0">' + roleLabel + '</span>' +
 										'<span class="tag" style="font-size:0.7rem">direct</span>' +
 									'</div>' +
-									'<div class="tag" style="font-size:0.72rem">Salesforce share &mdash; no expiry. Visible in their Saved Canvases.</div>' +
+									'<div class="tag" style="font-size:0.72rem">Salesforce share, no expiry. Visible in their Saved Canvases.</div>' +
 								'</div>' +
 								'<button type="button" class="button secondary cs-direct-revoke" data-sf-user-id="' + escapeHtml(d.sfUserId) + '" style="font-size:0.78rem;padding:0.25em 0.6em">Revoke</button>' +
 							'</div>';
@@ -418,11 +418,11 @@ return;
 						const who = r2.name || r2.email || picked.email || picked.name || 'the recipient';
 						let nextStep;
 						if (data.emailDeliverFailed) {
-							nextStep = 'Salesforce access granted, but the notification email failed to send. ' + who + ' can find the canvas in their Saved Canvases — or copy the link below.';
+							nextStep = 'Salesforce access granted, but the notification email failed to send. ' + who + ' can find the canvas in their Saved Canvases, or copy the link below.';
 						} else if (data.updated) {
 							nextStep = who + '\'s access updated to ' + (data.role || 'the new role') + '. Emailed them about the change.';
 						} else if (r2.hasAccount && r2.hasConnection) {
-							nextStep = who + ' has Org Loom + this Salesforce org connected — they\'ll see the canvas immediately.';
+							nextStep = who + ' has Org Loom + this Salesforce org connected, so they\'ll see the canvas immediately.';
 						} else if (r2.hasAccount) {
 							nextStep = who + ' has Org Loom but hasn\'t connected this Salesforce org yet. Emailed them with the next step.';
 						} else {

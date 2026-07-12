@@ -4,6 +4,7 @@
 	window.OrgLoom = window.OrgLoom || {};
 
 	const _DIRECT_CSV_VALIDATED_CAP = 5000;
+	const _QU_RESTORE_KEY = 'orgloom:quick-upload:restore:v1';
 
 	window.OrgLoom.linkedCsv = {
 		mount: function mount(deps) {
@@ -12,6 +13,7 @@
 				|| !deps.getGraph || !deps.parseCsv || !deps.csvGuessObjectFromFilename
 				|| !deps.csvAutoMapHeaders || !deps.csvNormalizeKey
 				|| !deps.pingAuditEvent || !deps.addToSelection
+				|| !deps.showConfirmDialog
 				|| !deps.showPromptModal || !deps.showReplaceOrMergeDialog
 				|| !deps.canvasCapBlockReason || !deps.openUploadModal
 				|| !deps.setPendingUploadCleanup || !deps.setPendingCsvImportMeta
@@ -33,6 +35,7 @@
 			const csvNormalizeKey = deps.csvNormalizeKey;
 			const pingAuditEvent = deps.pingAuditEvent;
 			const addToSelection = deps.addToSelection;
+			const showConfirmDialog = deps.showConfirmDialog;
 			const showPromptModal = deps.showPromptModal;
 			const showReplaceOrMergeDialog = deps.showReplaceOrMergeDialog;
 			const _canvasCapBlockReason = deps.canvasCapBlockReason;
@@ -86,12 +89,16 @@ closeLinkedCsvModal();
 
 				function openLinkedCsvModal(opts) {
 					opts = opts || {};
+					if (opts.quickUpload && _linkedCsvQuickUploadMode) {
+						showBulkToast('A Quick Upload is already in progress. Finish or cancel it before starting another.', 'warn');
+						return;
+					}
 					_linkedCsvQuickUploadMode = !!opts.quickUpload;
 
 					const footer = linkedCsvModal.querySelector('.modal-footer');
 					if (_linkedCsvQuickUploadMode) {
 						footer.innerHTML =
-							'<button class="button" id="linked-csv-upload" disabled title="Push these rows to Salesforce. No cap on this path — direct CSV uploads are unlimited on every plan.">Upload to Salesforce</button>';
+							'<button class="button" id="linked-csv-upload" disabled title="Push these rows to Salesforce. No cap on this path - direct CSV uploads are unlimited on every plan.">Upload to Salesforce</button>';
 						footer.querySelector('#linked-csv-upload').onclick = () => linkedCsvConfirm({ uploadDirectly: true });
 					} else {
 						footer.innerHTML =
@@ -103,10 +110,20 @@ closeLinkedCsvModal();
 
 					const header = linkedCsvModal.querySelector('.modal-header h3');
 					if (header) {
-header.textContent = _linkedCsvQuickUploadMode ? 'Quick Upload — Import from CSV' : 'Import from CSV';
+header.textContent = _linkedCsvQuickUploadMode ? 'Quick Upload - Import from CSV' : 'Import from CSV';
 }
 
-					linkedCsvState = { files: [], links: null, notices: [] };
+					linkedCsvState = {
+						files: [], links: null, notices: [],
+						planSfOrgId: window.SF_ORG_ID || null,
+						planConnectionPromise: csrfFetch('/api/me', { credentials: 'same-origin' })
+							.then((response) => response.json())
+							.then((me) => me && me.connection ? {
+								id: me.connection.id || null,
+								sfOrgId: me.connection.sfOrgId || me.connection.organizationId || null,
+							} : null)
+							.catch(() => null),
+					};
 					linkedCsvModal.classList.remove('hidden');
 					linkedCsvRender();
 
@@ -322,6 +339,9 @@ return;
 						const reader = new FileReader();
 						reader.onerror = () => resolve({ __rejected: true, name: f.name, reason: 'unreadable' });
 						reader.onload = () => {
+							if (String(reader.result || '').trim() === '') {
+								resolve({ __rejected: true, name: f.name, reason: 'norows' }); return;
+							}
 							let parsed;
 							try {
  parsed = parseCsv(String(reader.result || '')); 
@@ -335,12 +355,21 @@ return;
 } if (!parsed.rows.length) {
  resolve({ __rejected: true, name: f.name, reason: 'norows' }); return; 
 }
+							const raggedRows = parsed.rows.filter((r) => r.length !== parsed.headers.length).length;
+							const blankDataHeaders = parsed.headers.reduce((out, header, idx) => {
+								if (!header && parsed.rows.some((row) => String(row[idx] || '').trim() !== '')) out.push(idx + 1);
+								return out;
+							}, []);
+							const blockingErrors = (parsed.errors || []).slice();
+							if (raggedRows > 0) blockingErrors.push(raggedRows + ' row' + (raggedRows === 1 ? ' has' : 's have') + ' a different column count than the header.');
+							if (blankDataHeaders.length > 0) blockingErrors.push('Data appears under blank header column' + (blankDataHeaders.length === 1 ? '' : 's') + ' ' + blankDataHeaders.join(', ') + '.');
 							resolve({
 								name: f.name,
 								headers: parsed.headers,
 								rows: parsed.rows,
 
-								raggedRows: parsed.rows.filter((r) => r.length !== parsed.headers.length).length,
+								raggedRows,
+								blockingErrors,
 								objectName: null,
 								describe: null,
 								mapping: {},
@@ -373,17 +402,17 @@ _newlyDuplicated.push(name);
 							state.notices.push({
 								kind: 'warn',
 								text: _newlyDuplicated.length === 1
-									? 'Two or more files share the name ' + list + ' — suffixed "(2)" etc. in the file list for clarity. Rename if you want a clearer distinction.'
-									: 'Multiple files share names (' + list + ') — suffixed "(2)" etc. in the file list. Rename if you want clearer labels.',
+									? 'Two or more files share the name ' + list + ' - suffixed "(2)" etc. in the file list for clarity. Rename if you want a clearer distinction.'
+									: 'Multiple files share names (' + list + ') - suffixed "(2)" etc. in the file list. Rename if you want clearer labels.',
 							});
 						}
 
-						const _ragged = valid.filter((f) => f.raggedRows > 0);
+						const _ragged = valid.filter((f) => Array.isArray(f.blockingErrors) && f.blockingErrors.length > 0);
 						if (_ragged.length > 0) {
-							const list = _ragged.map((f) => '"' + f.name + '" (' + f.raggedRows + ' row' + (f.raggedRows === 1 ? '' : 's') + ')').join(', ');
+							const list = _ragged.map((f) => '"' + f.name + '": ' + f.blockingErrors.join(' ')).join(' ');
 							state.notices.push({
-								kind: 'warn',
-								text: 'Some rows have a different column count than the header: ' + list + '. Check for unquoted commas or missing fields — those rows may map to the wrong fields.',
+								kind: 'error',
+								text: 'Import blocked because the CSV structure is unsafe. ' + list + ' Fix the file and try again; no rows were imported.',
 							});
 						}
 
@@ -392,26 +421,15 @@ _newlyDuplicated.push(name);
 							const _sized = rejected.filter((f) => f.reason === 'toolarge');
 							_sized.forEach((f) => state.notices.push({ kind: 'error', text: f.gateMsg }));
 							const _rest = rejected.filter((f) => f.reason !== 'toolarge');
-							if (_rest.length > 0) {
-								const _rn = _rest.map((f) => '"' + f.name + '"').join(', ');
-								const _allWrongType = _rest.every((f) => f.reason === 'wrongtype');
-								const _allNoRows = _rest.every((f) => f.reason === 'norows');
-								let _msg;
-								if (_allWrongType) {
-									_msg = _rest.length === 1
-										? _rn + " isn't a CSV file — Import from CSV only accepts .csv files."
-										: 'These are not CSV files and were skipped: ' + _rn + ' — Import from CSV only accepts .csv files.';
-								} else if (_allNoRows) {
-									_msg = _rest.length === 1
-										? _rn + ' has no data rows — nothing to import.'
-										: 'These files have no data rows: ' + _rn + '.';
-								} else {
-									_msg = _rest.length === 1
-										? _rn + " couldn't be read as a CSV and was skipped — drop a .csv file with a header row."
-										: _rest.length + " files couldn't be read as CSV and were skipped: " + _rn + '.';
-								}
-								state.notices.push({ kind: 'error', text: _msg });
-							}
+							_rest.forEach((f) => {
+								const name = '"' + f.name + '"';
+								const text = f.reason === 'wrongtype'
+									? name + " isn't a CSV file - Import from CSV only accepts .csv files."
+									: f.reason === 'norows'
+										? name + ' has no data rows - nothing to import.'
+										: name + " couldn't be read as a CSV and was skipped - drop a .csv file with a header row.";
+								state.notices.push({ kind: 'error', text });
+							});
 
 							rejected.forEach((f) => _shared.captureImportFailure(
 								'csv',
@@ -607,7 +625,7 @@ return;
 					const filesHtml = state.files.length === 0
 						? '<p class="tag center">Drop CSVs above or click to choose.</p>'
 						: state.files.map((file, i) => {
-							const opts = '<option value="">\u2014 Pick object \u2014</option>' +
+							const opts = '<option value=""> - Pick object - </option>' +
 								allObjOptions.map((o) =>
 									'<option value="' + escapeHtml(o.name) + '"' + (o.name === file.objectName ? ' selected' : '') + '>' +
 										escapeHtml(o.label) + ' (' + escapeHtml(o.name) + ')' +
@@ -623,32 +641,31 @@ return;
 							if (file.objectName && file.describe) {
 								const hasIdCol = Object.values(file.mapping || {}).some((f) => f === 'Id');
 								if (hasIdCol && file.describe.updateable === false) {
-									permWarn = '<div class="lcsv-perm-warn">⚠ Your Salesforce user can read ' + escapeHtml(file.objectName) + ' but can’t update its records — this upload will fail. Ask your admin for Edit access.</div>';
+									permWarn = '<div class="lcsv-perm-warn">⚠ Your Salesforce user can read ' + escapeHtml(file.objectName) + ' but can’t update its records - this upload will fail. Ask your admin for Edit access.</div>';
 								} else if (!hasIdCol && file.describe.createable === false) {
-									permWarn = '<div class="lcsv-perm-warn">⚠ Your Salesforce user can read ' + escapeHtml(file.objectName) + ' but can’t create new records — this upload will fail. Ask your admin for Create access on ' + escapeHtml(file.objectName) + '.</div>';
+									permWarn = '<div class="lcsv-perm-warn">⚠ Your Salesforce user can read ' + escapeHtml(file.objectName) + ' but can’t create new records - this upload will fail. Ask your admin for Create access on ' + escapeHtml(file.objectName) + '.</div>';
 								}
 							}
 
 							let columnsHtml = '';
 							if (file.objectName && file.describe && Array.isArray(file.describe.fields)) {
 								const fieldOpts = file.describe.fields
-									.filter((f) => f.createable)
 									.slice()
 									.sort((a, b) => String(a.label || a.name).localeCompare(String(b.label || b.name)));
 
 								if (file.describe.updateable !== false) {
 									fieldOpts.unshift({
 										name: 'Id',
-										label: 'Salesforce Id — match & UPDATE existing record',
+										label: 'Salesforce Id - match & UPDATE existing record',
 									});
 								}
 								const rows = file.headers.map((h, ci) => {
 									const current = file.mapping[ci] || '';
-									const opts = '<option value="">\u2014 Skip \u2014</option>' +
+									const opts = '<option value=""> - Skip - </option>' +
 										fieldOpts.map((f) =>
 											'<option value="' + escapeHtml(f.name) + '"' + (f.name === current ? ' selected' : '') + '>' +
 												escapeHtml(f.label || f.name) + ' (' + escapeHtml(f.name) + ')' +
-												((f.type === 'reference' && Array.isArray(f.referenceTo) && f.referenceTo.length > 0) ? ' \u2192 ' + escapeHtml(f.referenceTo.join('/')) : '') +
+															(!f.createable ? ' - no create access' : '') +
 											'</option>'
 										).join('');
 									const status = current
@@ -735,7 +752,7 @@ return;
 						: links.map((link, i) => {
 							const fromFile = state.files[link.fromFileIdx];
 							const toFile = state.files[link.toFileIdx];
-							const colOpts = '<option value="">\u2014 Don\u2019t link \u2014</option>' +
+							const colOpts = '<option value=""> - Don\u2019t link - </option>' +
 								toFile.headers.map((h, ci) =>
 									'<option value="' + ci + '"' + (ci === link.toColumnIdx ? ' selected' : '') + '>' +
 										escapeHtml(h || '(blank)') +
@@ -805,9 +822,9 @@ return;
 								'<div class="lcsv-files-header"><strong>Files</strong><span class="tag lcsv-files-summary">' + _filesSummary + '</span></div>' +
 								(_bulkBannerForSummary
 									? '<div class="banner warn lcsv-bulk-banner" data-lcsv-bulk-banner>' +
-										'<strong>Large upload — atomicity not guaranteed.</strong> ' +
+										'<strong>Large upload - atomicity not guaranteed.</strong> ' +
 										_totalRowsForSummary.toLocaleString() + ' rows is past the ' + _DIRECT_CSV_VALIDATED_CAP.toLocaleString() + '-row pre-flight limit, so ' +
-										'<em>Upload to Salesforce</em> will run via the Bulk API v2. Records commit independently — some may succeed while others fail, and there is no all-or-nothing rollback. Per-row failures are reported when the upload finishes.' +
+										'<em>Upload to Salesforce</em> will run via the Bulk API v2. Records commit independently - some may succeed while others fail, and there is no all-or-nothing rollback. Per-row failures are reported when the upload finishes.' +
 									'</div>'
 									: '') +
 								'<div class="lcsv-files">' + filesHtml + '</div>' +
@@ -865,7 +882,7 @@ return;
 					const replaceBtn = linkedCsvModal.querySelector('#linked-csv-replace');
 					const confirmBtn = linkedCsvModal.querySelector('#linked-csv-confirm');
 					const uploadBtn = linkedCsvModal.querySelector('#linked-csv-upload');
-					const ready = _validForSummary.length > 0;
+					const ready = _validForSummary.length > 0 && !state.files.some((f) => Array.isArray(f.blockingErrors) && f.blockingErrors.length > 0);
 					if (confirmBtn) {
 confirmBtn.disabled = !ready;
 }
@@ -884,7 +901,7 @@ uploadBtn.disabled = !ready;
 							uploadBtn.disabled = true;
 							uploadBtn.title = 'Multi-file or linked uploads are capped at ' + _DIRECT_CSV_VALIDATED_CAP.toLocaleString() + ' rows. Split this batch or remove FK linking.';
 						} else if (_bulkBannerForSummary) {
-							uploadBtn.title = 'Large single-file upload — runs via Bulk API v2. Per-record success/failure; no pre-flight check, no atomic rollback.';
+							uploadBtn.title = 'Large single-file upload - runs via Bulk API v2. Per-record success/failure; no pre-flight check, no atomic rollback.';
 						} else {
 							uploadBtn.title = isMultiOrLinked
 								? 'Multi-file / linked upload. Records will be validated and committed together via the Composite Graph API (atomic per connected component).'
@@ -911,6 +928,8 @@ fieldByName.set(f.name, f);
 						if (!fieldName) {
 return;
 }
+
+						if (fieldName === 'Id') return;
 						const field = fieldByName.get(fieldName);
 						if (!field) {
 return;
@@ -930,6 +949,33 @@ return;
 						issues.push({ fileName: file.name, objectName: file.objectName, fields: bad });
 					}
 				}
+				return issues;
+			}
+
+			function _detectAmbiguousJoinKeys(state) {
+				const issues = [];
+				(state.links || []).forEach((link, linkIdx) => {
+					const fromFile = state.files[link.fromFileIdx];
+					const toFile = state.files[link.toFileIdx];
+					if (!fromFile || !toFile || link.toColumnIdx == null) return;
+					const targetRows = new Map();
+					toFile.rows.forEach((row, rowIdx) => {
+						const value = String(row[link.toColumnIdx] || '').trim();
+						if (!value) return;
+						if (!targetRows.has(value)) targetRows.set(value, []);
+						targetRows.get(value).push(rowIdx);
+					});
+					const sourceCounts = new Map();
+					fromFile.rows.forEach((row) => {
+						const value = String(row[link.fromColumnIdx] || '').trim();
+						if (value) sourceCounts.set(value, (sourceCounts.get(value) || 0) + 1);
+					});
+					targetRows.forEach((rows, value) => {
+						if (rows.length > 1 && sourceCounts.has(value)) {
+							issues.push({ linkIdx, value, targetCount: rows.length, childCount: sourceCounts.get(value), fromField: link.fromField });
+						}
+					});
+				});
 				return issues;
 			}
 
@@ -1024,7 +1070,7 @@ return { liveById, draftKeys: new Set(), canceled: true };
 							'<div class="modal-content">' +
 								'<p style="white-space:pre-line">' + items.length + ' row' + (items.length === 1 ? '' : 's') +
 									(items.length === 1 ? ' references' : ' reference') + ' a Salesforce Id that doesn’t exist in this org (deleted, wrong org, or a typo). ' +
-									'Pick which to add as new draft records — unchecked rows are skipped. ' +
+									'Pick which to add as new draft records - unchecked rows are skipped. ' +
 									'Rows whose Id WAS found import as existing records regardless.</p>' +
 								'<div style="display:flex;gap:12px;margin:6px 0;">' +
 									'<button type="button" class="button secondary" data-mid-all>Select all</button>' +
@@ -1085,10 +1131,55 @@ b.focus();
 					if (!state) {
 return;
 }
+
+					if (skipCanvas) {
+						try {
+							const plannedConnection = await state.planConnectionPromise;
+							const response = await csrfFetch('/api/me', { credentials: 'same-origin' });
+							const me = await response.json();
+							const activeConnection = me && me.connection ? {
+								id: me.connection.id || null,
+								sfOrgId: me.connection.sfOrgId || me.connection.organizationId || null,
+							} : null;
+							const changed = !plannedConnection || !activeConnection ||
+								(plannedConnection.id && activeConnection.id && plannedConnection.id !== activeConnection.id) ||
+								(plannedConnection.sfOrgId && activeConnection.sfOrgId && plannedConnection.sfOrgId !== activeConnection.sfOrgId);
+							if (!response.ok || changed) {
+								closeLinkedCsvModal();
+								showBulkToast('Your active Salesforce org changed. Quick Upload was cancelled; reopen it to remap against the active org.', 'error');
+								return;
+							}
+						} catch (e) {
+							showBulkToast('Could not verify the active Salesforce org. Nothing was uploaded; retry when the connection is available.', 'error');
+							return;
+						}
+					}
 					const validFiles = state.files.filter((f) => f.objectName && Object.values(f.mapping).filter(Boolean).length > 0);
 					if (validFiles.length === 0) {
 return;
 }
+					if (validFiles.some((f) => Array.isArray(f.blockingErrors) && f.blockingErrors.length > 0)) {
+						showBulkToast('Fix the blocked CSV structure errors before importing.', 'error');
+						return;
+					}
+					const ambiguousJoins = _detectAmbiguousJoinKeys(state);
+					state._skippedAmbiguousJoinKeys = new Set();
+					if (ambiguousJoins.length > 0) {
+						const lines = ['Some relationship keys match more than one parent row:', ''];
+						ambiguousJoins.forEach((issue) => {
+							lines.push('• "' + issue.value + '" → ' + issue.targetCount + ' parents, ' + issue.childCount + ' child' + (issue.childCount === 1 ? '' : 'ren') + ' (' + issue.fromField + ')');
+						});
+						lines.push('', 'Org Loom will never pick a parent based on file order. Continue only if you want the affected children imported without those relationships.');
+						const skip = await showConfirmDialog({
+							title: 'Ambiguous relationship keys',
+							message: lines.join('\n'),
+							confirmLabel: 'Import affected rows unlinked',
+							cancelLabel: 'Back to mapping',
+							danger: true,
+						});
+						if (!skip) return;
+						ambiguousJoins.forEach((issue) => state._skippedAmbiguousJoinKeys.add(issue.linkIdx + '::' + issue.value));
+					}
 
 					const unwritable = _detectUnwritableMappedFields(validFiles);
 
@@ -1107,7 +1198,7 @@ return;
 							}
 							lines.push('');
 						}
-						lines.push('If you continue, these columns will be silently dropped — the records will be created with those fields empty.');
+						lines.push('If you continue, these columns will be silently dropped - the records will be created with those fields empty.');
 						lines.push('');
 						lines.push('To upload these values, either ask your SF admin to grant your profile write access on the fields above, or remove those columns from the CSV.');
 						const ok = await showConfirmDialog({
@@ -1326,6 +1417,7 @@ values[field] = v;
 
 					let linkedCount = 0;
 					let linksSkippedFk = 0;
+					let linksSkippedAmbiguous = 0;
 					const newAssocIds = new Set();
 
 					const _admitAssociation = window.OrgLoom.importShared.admitAssociation;
@@ -1333,7 +1425,7 @@ values[field] = v;
 					canvasState.bulkAssociations.forEach((a) => {
 						_usedFk.add(a.fromId + '::' + a.fieldName);
 					});
-					(state.links || []).forEach((link) => {
+					(state.links || []).forEach((link, linkIdx) => {
 						const fromFile = state.files[link.fromFileIdx];
 						const toFile = state.files[link.toFileIdx];
 						if (!fromFile || !toFile || link.toColumnIdx == null) {
@@ -1352,6 +1444,10 @@ toIndex.set(v, idx);
 							if (!v) {
 return;
 }
+							if (state._skippedAmbiguousJoinKeys && state._skippedAmbiguousJoinKeys.has(linkIdx + '::' + v)) {
+								linksSkippedAmbiguous++;
+								return;
+							}
 							const toRowIdx = toIndex.get(v);
 							if (toRowIdx == null) {
 return;
@@ -1385,6 +1481,23 @@ return;
 						const _snapRecs = canvasState.bulkRecords.filter((r) => !newRecIds.has(r.id));
 						const _snapAssocs = canvasState.bulkAssociations.filter((a) => !newAssocIds.has(a.id));
 						const _snapSelectedObjects = _preImportSelectedObjects;
+
+						try {
+							const cy = getCyInstance();
+							sessionStorage.setItem(_QU_RESTORE_KEY, JSON.stringify({
+								version: 1,
+								sfOrgId: window.SF_ORG_ID || null,
+								records: _snapRecs,
+								associations: _snapAssocs,
+								selectedObjects: _snapSelectedObjects,
+								selectedIds: Array.from(canvasState.bulkSelectedIds || []),
+								bulkIdSeq: canvasState.bulkIdSeq,
+								currentCanvas: canvasState.currentCanvas || null,
+								viewport: cy ? { zoom: cy.zoom(), pan: cy.pan() } : null,
+							}));
+						} catch (e) {
+							console.warn('Quick Upload recovery snapshot failed:', e);
+						}
 						canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => newRecIds.has(r.id));
 						canvasState.bulkAssociations = canvasState.bulkAssociations.filter((a) => newAssocIds.has(a.id));
 
@@ -1397,6 +1510,7 @@ return;
 							getGraph().classList.remove('csv-direct-upload-active');
 
 							_linkedCsvQuickUploadMode = false;
+							try { sessionStorage.removeItem(_QU_RESTORE_KEY); } catch (e) {}
 							renderBulkView();
 						});
 
@@ -1422,7 +1536,7 @@ relayoutNewRecords(newRecIds);
 					const _mergeTotal = mergeQueue.length + mergeSkippedNoModal;
 					const _mergeNote = _mergeTotal > 0
 						? ' · ' + _mergeTotal + ' matched a card already on the canvas' +
-							(mergeQueue.length > 0 ? ' — review the merge' : ' — skipped')
+							(mergeQueue.length > 0 ? ' - review the merge' : ' - skipped')
 						: '';
 					const _unchangedNote = unchangedCount > 0
 						? ' · ' + unchangedCount + ' already on the canvas, unchanged'
@@ -1430,12 +1544,18 @@ relayoutNewRecords(newRecIds);
 					const _fkNote = linksSkippedFk > 0
 						? ' · ' + linksSkippedFk + ' link' + (linksSkippedFk === 1 ? '' : 's') + ' skipped (lookup already set)'
 						: '';
+					const _ambiguousNote = linksSkippedAmbiguous > 0
+						? ' · ' + linksSkippedAmbiguous + ' link' + (linksSkippedAmbiguous === 1 ? '' : 's') + ' skipped (ambiguous parent key)'
+						: '';
 					const _toastMsg =
 						'Imported ' + totalRecords + ' record' + (totalRecords === 1 ? '' : 's') +
 						' from ' + fileCount + ' file' + (fileCount === 1 ? '' : 's') +
 						(linkedCount > 0 ? ' (' + linkedCount + ' link' + (linkedCount === 1 ? '' : 's') + ' wired)' : '') +
-						_mergeNote + _unchangedNote + _fkNote + '.';
+						_mergeNote + _unchangedNote + _fkNote + _ambiguousNote + '.';
 					if (_undoImport && showBulkToastWithAction) {
+						if (typeof _undoImport.arm === 'function') {
+							_undoImport.arm();
+						}
 						showBulkToastWithAction(_toastMsg, 'Undo', _undoImport);
 					} else {
 						showBulkToast(_toastMsg);
@@ -1447,6 +1567,7 @@ relayoutNewRecords(newRecIds);
 							fileCount,
 							linksWired: linkedCount,
 							linksSkippedFk,
+							linksSkippedAmbiguous,
 							merged: mergeQueue.length,
 							unchanged: unchangedCount,
 
@@ -1477,6 +1598,40 @@ relayoutNewRecords(newRecIds);
 					}
 				}
 
+			function restoreInterruptedQuickUpload() {
+				let snapshot;
+				try {
+					const raw = sessionStorage.getItem(_QU_RESTORE_KEY);
+					if (!raw) return false;
+					snapshot = JSON.parse(raw);
+					sessionStorage.removeItem(_QU_RESTORE_KEY);
+				} catch (e) {
+					try { sessionStorage.removeItem(_QU_RESTORE_KEY); } catch (_e) {}
+					return false;
+				}
+				if (!snapshot || snapshot.version !== 1 ||
+					(snapshot.sfOrgId && window.SF_ORG_ID && snapshot.sfOrgId !== window.SF_ORG_ID)) {
+					return false;
+				}
+				canvasState.bulkRecords = Array.isArray(snapshot.records) ? snapshot.records : [];
+				canvasState.bulkAssociations = Array.isArray(snapshot.associations) ? snapshot.associations : [];
+				canvasState.selectedObjects = Array.isArray(snapshot.selectedObjects) ? snapshot.selectedObjects : [];
+				canvasState.bulkSelectedIds = new Set(Array.isArray(snapshot.selectedIds) ? snapshot.selectedIds : []);
+				if (Number.isFinite(snapshot.bulkIdSeq)) canvasState.bulkIdSeq = snapshot.bulkIdSeq;
+				canvasState.currentCanvas = snapshot.currentCanvas || null;
+				_linkedCsvQuickUploadMode = false;
+				getGraph().classList.remove('csv-direct-upload-active');
+				if (snapshot.viewport) {
+					setTimeout(() => {
+						const cy = getCyInstance();
+						if (!cy) return;
+						if (Number.isFinite(snapshot.viewport.zoom)) cy.zoom(snapshot.viewport.zoom);
+						if (snapshot.viewport.pan) cy.pan(snapshot.viewport.pan);
+					}, 0);
+				}
+				return true;
+			}
+
 			return {
 				openModal: openLinkedCsvModal,
 				closeModal: closeLinkedCsvModal,
@@ -1484,6 +1639,7 @@ relayoutNewRecords(newRecIds);
 				isQuickUploadMode: function () {
  return _linkedCsvQuickUploadMode; 
 },
+				restoreInterruptedQuickUpload: restoreInterruptedQuickUpload,
 			};
 		},
 	};

@@ -54,7 +54,7 @@ after(async () => {
 	}
 });
 
-describe('POST /api/records/refresh — route mounts', () => {
+describe('POST /api/records/refresh (route mounts)', () => {
 	test('route exists (auth gate fires, not 404)', async () => {
 
 		const r = await fetch(baseUrl + '/api/records/refresh', {
@@ -67,7 +67,7 @@ describe('POST /api/records/refresh — route mounts', () => {
 	});
 });
 
-describe('POST /api/records/refresh — validation', () => {
+describe('POST /api/records/refresh (validation)', () => {
 
 	let prevAccountResolver;
 	let prevCapResolver;

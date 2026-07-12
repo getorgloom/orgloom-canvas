@@ -39,7 +39,7 @@ async function writeN(workspaceId, actorAccountId, n) {
 	return ids;
 }
 
-describe('verifyChain — clean chain', () => {
+describe('verifyChain: clean chain', () => {
 	test('empty workspace returns ok with totalRows=0', async () => {
 		const { audit } = await import('../src/database/index.js');
 		const a = await makeAccount();
@@ -76,7 +76,7 @@ describe('verifyChain — clean chain', () => {
 	});
 });
 
-describe('verifyChain — tamper detection', () => {
+describe('verifyChain: tamper detection', () => {
 	test('mutating a row\'s payload_json after insert is detected at that row', async () => {
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();
@@ -144,7 +144,7 @@ describe('verifyChain — tamper detection', () => {
 		assert.equal(result.brokenIndex, 0);
 	});
 
-	test('mutating row N also surfaces a break — break propagates downstream', async () => {
+	test('mutating row N also surfaces a break: break propagates downstream', async () => {
 
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();

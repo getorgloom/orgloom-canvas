@@ -215,12 +215,24 @@ return { records: [] };
 	});
 });
 
-function makeRecallConn({ updateBehavior = () => ({ success: true }) } = {}) {
+function makeRecallConn({ updateBehavior = () => ({ success: true }), executionRecords = null } = {}) {
 	const calls = { updates: [], deletes: [] };
 	return {
 		calls,
 		version: '60.0',
 		request: async ({ method, url }) => {
+
+			if (method === 'GET' && url.indexOf('queryAll') >= 0 && !decodeURIComponent(url).includes('IsDeleted')) {
+				const soql = decodeURIComponent((url.split('q=')[1] || '').replace(/\+/g, ' '));
+				const ids = Array.from(soql.matchAll(/'([^']+)'/g)).map((m) => m[1]);
+				return { records: executionRecords || ids.map((Id) => ({
+					Id,
+					Industry: Id === '001a' || Id === '001abc2' ? 'B' : 'Banking',
+					Phone: Id === '001b' ? '555' : '555-1234',
+					Website: 'new.com',
+					LastName: 'New',
+				})) };
+			}
 
 			if (method === 'GET' && url.indexOf('queryAll') >= 0) {
 				return { records: [] };
@@ -243,7 +255,7 @@ function makeRecallConn({ updateBehavior = () => ({ success: true }) } = {}) {
 	};
 }
 
-describe('executeRecall — value-revert path', () => {
+describe('executeRecall - value-revert path', () => {
 	test('no revertSelections → no PATCHes fired (legacy behavior preserved)', async () => {
 		const conn = makeRecallConn();
 		const batch = {
@@ -292,6 +304,30 @@ describe('executeRecall — value-revert path', () => {
 		assert.equal(patch.Website, undefined);
 		assert.equal(result.revertedCount, 1);
 		assert.equal(result.revertFailedCount, 0);
+	});
+
+	test('execution rechecks drift and never overwrites a value changed after review', async () => {
+		const conn = makeRecallConn({
+			executionRecords: [{ Id: '001abc', Industry: 'Third-party edit' }],
+		});
+		const batch = {
+			insertedIds: [makeUpdateRow({
+				sfId: '001abc',
+				priorValues: { Industry: 'Tech' },
+				uploadedValues: { Industry: 'Banking' },
+			})],
+			associations: [],
+		};
+		const result = await executeRecall({
+			conn,
+			batch,
+			revertSelections: [{ sfId: '001abc', fields: ['Industry'] }],
+		});
+		assert.equal(conn.calls.updates.length, 0, 'drifted field must not be PATCHed');
+		assert.equal(result.revertedCount, 0);
+		assert.equal(result.revertDriftSkippedCount, 1);
+		assert.deepEqual(result.revertResults[0].fieldsSkipped, ['Industry']);
+		assert.equal(result.revertResults[0].reason, 'drifted-at-execution');
 	});
 
 	test('priorValues null entries write SF null (not "null" string)', async () => {

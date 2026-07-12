@@ -451,8 +451,15 @@ continue;
 
 	let revertedCount = 0;
 	let revertFailedCount = 0;
+	let revertDriftSkippedCount = 0;
 	const revertResults = [];
 	if (revertMap.size > 0) {
+
+		const executionDrift = await classifyValueDrift({ conn, batch });
+		const cleanFieldsById = new Map();
+		for (const rec of executionDrift.records || []) {
+			cleanFieldsById.set(String(rec.sfId), new Set((rec.clean || []).map((f) => f.fieldName)));
+		}
 
 		const revertByObject = new Map();
 		for (const row of preservedUpdates) {
@@ -473,8 +480,25 @@ revertByObject.set(row.objectName, []);
 		}
 		for (const [objName, entries] of revertByObject) {
 			for (const { row, fields } of entries) {
+				const executionClean = cleanFieldsById.get(String(row.sfId)) || new Set();
+				const safeFields = new Set(Array.from(fields).filter((f) => executionClean.has(f)));
+				const skippedFields = Array.from(fields).filter((f) => !executionClean.has(f));
+				if (skippedFields.length > 0) {
+					revertDriftSkippedCount += skippedFields.length;
+				}
+				if (safeFields.size === 0) {
+					revertResults.push({
+						sfId: row.sfId,
+						objectName: objName,
+						success: true,
+						skipped: true,
+						reason: 'drifted-at-execution',
+						fieldsSkipped: skippedFields,
+					});
+					continue;
+				}
 				const patch = { Id: row.sfId };
-				for (const fieldName of fields) {
+				for (const fieldName of safeFields) {
 					if (!fieldName || fieldName.startsWith('_')) {
 continue;
 }
@@ -491,7 +515,8 @@ continue;
 							sfId: row.sfId,
 							objectName: objName,
 							success: true,
-							fieldsReverted: Array.from(fields),
+							fieldsReverted: Array.from(safeFields),
+							fieldsSkipped: skippedFields,
 						});
 					} else {
 						revertFailedCount++;
@@ -546,7 +571,7 @@ continue;
 			try {
 				const r = await _queryAll(conn, soql);
 				(r.records || []).forEach((rec) => preDeletedSfIds.add(preDeletedKey(rec.Id)));
-			} catch (e) {                                             }
+			} catch (e) {                                            }
 		}
 	}
 
@@ -634,6 +659,7 @@ status = 'recall_partial';
 
 		revertedCount,
 		revertFailedCount,
+		revertDriftSkippedCount,
 		revertResults,
 		status,
 	};

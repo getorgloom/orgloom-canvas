@@ -51,6 +51,9 @@ body {
 .site-footer-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.6em; margin-bottom: 0.8em; }
 .site-footer-row a { color: var(--ink-soft, #cfccc3); text-decoration: none; font-size: 0.9rem; border-bottom: 0 !important; }
 .site-footer-row a:hover { color: var(--ink, #ede8dd); border-bottom: 0 !important; }
+
+.site-footer-btn { background: transparent; border: 0; padding: 0; color: var(--ink-soft, #cfccc3); cursor: pointer; font: inherit; font-size: 0.9rem; }
+.site-footer-btn:hover { color: var(--ink, #ede8dd); }
 .site-footer-tagline { font-size: 0.8rem; }
 
 body.canvas-page {
@@ -2643,7 +2646,7 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 .graph-overlay.schema-collapsed .graph-split.has-base > .graph-canvas-cy {
 	/* !important is needed to beat the inline flex/min/max styles
 	   that the resizer-drag handler writes onto the canvas via
-	   element.style.* — without it, dragging the divider before
+	   element.style.*; without it, dragging the divider before
 	   collapsing leaves the canvas stuck at the dragged width
 	   because inline styles outrank class rules. With !important
 	   the collapse always wins, and on expand the inline styles
@@ -3705,14 +3708,6 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 .activity-child-row > td { background: color-mix(in srgb, var(--bg-elev) 60%, var(--bg)); border-left: 2px solid var(--accent-soft); }
 .activity-child-row > td.col-when { padding-left: 1.6em; }
 
-.workspace-footer { display: flex; justify-content: center; gap: 0.5em; padding: 1.6em 0 1em; color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--border); margin-top: 2em; flex-wrap: wrap; }
-.workspace-footer a { color: var(--ink-soft); text-decoration: none; border-bottom: 0; }
-.workspace-footer a:hover { color: var(--accent); text-decoration: underline; }
-.workspace-footer .sep { color: var(--ink-faint); }
-
-.workspace-footer-link { background: transparent; border: 0; padding: 0; color: var(--ink-soft); cursor: pointer; font: inherit; }
-.workspace-footer-link:hover { color: var(--accent); text-decoration: underline; }
-
 .acct-modal-footer { display: flex; justify-content: space-between; align-items: center; gap: 1em; }
 .acct-modal-footer-left { display: flex; align-items: center; gap: 0.4em; color: var(--muted); font-size: 0.85rem; }
 .acct-modal-footer-sep { color: var(--ink-faint); }
@@ -4075,7 +4070,7 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 .acct-flag-msg { font-size: 0.78rem; margin-top: 0.4em; min-height: 1em; }
 
 .field.field-invalid-ref input { border-color: var(--danger); background: var(--danger-soft); }
-.field.field-invalid-ref::after { content: 'Invalid Salesforce ID — 15 or 18 alphanumeric characters'; display: block; margin-top: 0.3em; font-size: 0.74rem; color: var(--danger); font-family: var(--font-mono); }
+.field.field-invalid-ref::after { content: 'Invalid Salesforce ID - 15 or 18 alphanumeric characters'; display: block; margin-top: 0.3em; font-size: 0.74rem; color: var(--danger); font-family: var(--font-mono); }
 
 .field.is-readonly input[disabled] { cursor: not-allowed; color: var(--ink-soft); background: var(--bg); opacity: 0.9; }
 .field.is-readonly label { color: var(--muted); }
@@ -5435,14 +5430,29 @@ body.canvas-share-banner-active .canvas-status-strip {
 .docs-article--wide { max-width: 920px; }
 .docs-hero { margin-bottom: 1.5em; }
 
-.docs-article .kv-list { margin: 0.5em 0 0; }
+.docs-article .kv-list { margin: 0.9em 0 0; }
 .docs-article .kv-list dt {
-	font-weight: 500;
+	font-weight: 600;
 	color: var(--ink);
-	margin-top: 0.7em;
+	margin-top: 1em;
+	padding: 0.55em 0.9em;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-bottom: none;
+	border-radius: 6px 6px 0 0;
 }
 .docs-article .kv-list dt:first-child { margin-top: 0; }
-.docs-article .kv-list dd { margin: 0.2em 0 0 0; color: var(--ink-soft); }
+.docs-article .kv-list dd {
+	margin: 0;
+	padding: 0.65em 0.9em 0.75em;
+	color: var(--ink-soft);
+	border: 1px solid var(--border);
+	border-top: 1px solid var(--border-soft);
+	border-radius: 0 0 6px 6px;
+}
+.docs-article .kv-list dd p { margin: 0.35em 0; }
+.docs-article .kv-list dd p:first-child { margin-top: 0; }
+.docs-article .kv-list dd p:last-child { margin-bottom: 0; }
 .docs-hero h1 {
 	font-size: 2rem; margin: 0 0 0.3em;
 	font-weight: 500; letter-spacing: -0.01em;

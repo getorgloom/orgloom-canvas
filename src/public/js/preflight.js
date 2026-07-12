@@ -263,26 +263,31 @@ return;
 				});
 
 				const levelById = new Map();
-				function lvl(id, stack) {
+				const cycleIds = new Set();
+				function lvl(id, stack, stackArr) {
 					if (levelById.has(id)) {
 return levelById.get(id);
 }
 					if (stack.has(id)) {
-return 0;
+						const start = stackArr.indexOf(id);
+						for (let i = Math.max(0, start); i < stackArr.length; i++) cycleIds.add(stackArr[i]);
+						return 0;
 }
 					stack.add(id);
+					stackArr.push(id);
 					let m = 0;
 					for (const p of (deps.get(id) || [])) {
-						const v = lvl(p, stack) + 1;
+						const v = lvl(p, stack, stackArr) + 1;
 						if (v > m) {
 m = v;
 }
 					}
 					stack.delete(id);
+					stackArr.pop();
 					levelById.set(id, m);
 					return m;
 				}
-				recordsById.forEach((_, id) => lvl(id, new Set()));
+				recordsById.forEach((_, id) => lvl(id, new Set(), []));
 
 				const buckets = new Map();
 				const deleteBuckets = new Map();
@@ -331,7 +336,7 @@ return b.level - a.level;
 }
 					return a.label.localeCompare(b.label);
 				});
-				return { creates, deletes: deletesLane };
+				return { creates, deletes: deletesLane, cycleIds };
 			}
 
 			return {

@@ -20,6 +20,8 @@
 			const renderCanvas = deps.renderCanvas;
 			const getGraph = deps.getGraph;
 
+			const graphRequests = new Map();
+
 			function _runAfterSchemaTransition(cb) {
 				const target = getGraph().querySelector('.graph-canvas-cy') || getGraph().querySelector('.graph-canvas');
 				if (!target) {
@@ -103,6 +105,10 @@ fc.style.display = 'none';
 				if (canvasState.graphCache[name]) {
 return canvasState.graphCache[name];
 }
+				if (graphRequests.has(name)) {
+					return graphRequests.get(name);
+				}
+				const request = (async () => {
 				const resp = await csrfFetch('/api/objects/' + encodeURIComponent(name) + '/graph');
 				if (!resp.ok) {
 
@@ -123,6 +129,13 @@ err.code = 'object-no-access';
 				const data = await resp.json();
 				canvasState.graphCache[name] = data;
 				return data;
+				})();
+				graphRequests.set(name, request);
+				try {
+					return await request;
+				} finally {
+					graphRequests.delete(name);
+				}
 			}
 
 			function setGraphView(view) {

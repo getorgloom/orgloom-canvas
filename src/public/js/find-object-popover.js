@@ -57,6 +57,8 @@
 					'</div>' +
 
 					'<div class="fop-list" id="fop-list"><div class="fop-empty">Loading objects…</div></div>';
+
+				pop.insertAdjacentHTML('beforeend', '<div class="fop-sub" id="fop-summary" role="status" aria-live="polite"></div>');
 				document.body.appendChild(pop);
 
 				{
@@ -88,6 +90,7 @@ top = Math.max(8, viewportH - popH - 8);
 				let typeFilter = 'all';
 				const search = pop.querySelector('#fop-search');
 				const list = pop.querySelector('#fop-list');
+				const summary = pop.querySelector('#fop-summary');
 
 				const renderList = () => {
 					const q = (search.value || '').toLowerCase().trim();
@@ -112,12 +115,13 @@ return true;
 					const capped = filtered.slice(0, 60);
 					if (canvasState.allObjects === null) {
 						list.innerHTML = '<div class="fop-empty">Loading objects\u2026</div>';
+						if (summary) summary.textContent = '';
 						return;
 					}
 
 					if (canvasState.allObjects.length === 0 && canvasState._allObjectsError) {
 						var errMsg = (canvasState._allObjectsError.status === 409 || canvasState._allObjectsError.bodyError === 'no-active-connection')
-							? 'Salesforce session lost \u2014 reconnect from the SF chip above.'
+							? 'Salesforce session lost - reconnect from the SF chip above.'
 							: 'Couldn\u2019t load the Salesforce schema. Refresh to try again.';
 						list.innerHTML = '<div class="fop-empty">' + errMsg + '</div>';
 						return;
@@ -131,12 +135,17 @@ return true;
 							const onCanvas = canvasState.selectedObjects.some((s) => s.name === o.name);
 							const marked = already || onCanvas;
 							const tag = (o.custom ? 'Custom' : 'Standard') + (o.queryable ? '' : ' \u00b7 not queryable');
-							return '<button type="button" class="fop-item' + (already ? ' is-already' : '') + '" data-fop-pick="' + escapeHtml(o.name) + '"' + (already ? ' disabled title="Already on the canvas"' : (onCanvas ? ' title="Already on the canvas \u2014 pick again to add another"' : '')) + '>' +
+							return '<button type="button" class="fop-item' + (already ? ' is-already' : '') + '" data-fop-pick="' + escapeHtml(o.name) + '"' + (already ? ' disabled title="Already on the canvas"' : (onCanvas ? ' title="Already on the canvas - pick again to add another"' : '')) + '>' +
 								'<span class="fop-label">' + escapeHtml(o.label) + '</span>' +
 								'<span class="fop-name">' + escapeHtml(o.name) + '</span>' +
 								'<span class="fop-tag">' + tag + (marked ? ' \u00b7 added' : '') + '</span>' +
 							'</button>';
 						}).join('');
+					}
+					if (summary) {
+						summary.textContent = filtered.length > capped.length
+							? 'Showing ' + capped.length + ' of ' + filtered.length + ' matching objects. Search to find the rest.'
+							: 'Showing ' + capped.length + ' of ' + all.length + ' objects.';
 					}
 				};
 

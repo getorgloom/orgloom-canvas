@@ -48,10 +48,10 @@ return 'generic';
 return '';
 }
 				if (state === 'mine') {
-					return '<span class="slot-assignee-badge slot-assignee-badge--mine" title="Assigned to you — your fills will be saved when you submit.">for you</span>';
+					return '<span class="slot-assignee-badge slot-assignee-badge--mine" title="Assigned to you: your fills will be saved when you submit.">for you</span>';
 				}
 				const name = (rec.slot.assigneeName || rec.slot.assigneeEmail || 'someone else');
-				return '<span class="slot-assignee-badge slot-assignee-badge--other" title="Assigned to ' + escapeHtml(name) + ' — only they can fill this slot.">for ' + escapeHtml(name) + '</span>';
+				return '<span class="slot-assignee-badge slot-assignee-badge--other" title="Assigned to ' + escapeHtml(name) + ': only they can fill this slot.">for ' + escapeHtml(name) + '</span>';
 			}
 
 			function _slotAssignmentCardClass(rec) {

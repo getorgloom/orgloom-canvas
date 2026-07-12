@@ -63,7 +63,7 @@ async function call(method, path, body) {
 	return { status: res.status, body: json };
 }
 
-describe('interception policy — default-block for /api/*', () => {
+describe('interception policy: default-block for /api/*', () => {
 	test('unmatched /api/* returns a local 501, never the real fetch', async () => {
 		const beforeCount = realFetchCalls.length;
 		const paths = [
@@ -89,7 +89,7 @@ describe('interception policy — default-block for /api/*', () => {
 	});
 });
 
-describe('dataset integrity — describes vs records', () => {
+describe('dataset integrity: describes vs records', () => {
 	test('every seeded record type has a describe; every describe FK targets a dataset object', async () => {
 		const MOCK = W.OrgLoomMock;
 		const objectNames = new Set(Object.keys(MOCK.records));

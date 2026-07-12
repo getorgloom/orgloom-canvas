@@ -73,6 +73,6 @@ export function makeKekConn(initial = {}) {
 				},
 			};
 		},
-		async request() { throw new Error('makeKekConn.request() not stubbed — use the VersionData URL via global fetch'); },
+		async request() { throw new Error('makeKekConn.request() not stubbed; use the VersionData URL via global fetch'); },
 	};
 }

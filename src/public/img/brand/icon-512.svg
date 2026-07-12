@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <!-- 512x512 OL icon. Same design as icon-256.svg, scaled for surfaces
        that want higher resolution (X profile picture, app tiles, large
-       favicons). SVG is resolution-independent — this file exists for
+       favicons). SVG is resolution-independent - this file exists for
        explicitness; the 256 version also rasterizes cleanly at 512. -->
   <rect width="512" height="512" rx="88" ry="88" fill="#181b20"/>
   <text x="256" y="344" font-family="Segoe UI Black, Arial Black, sans-serif" font-weight="900" font-size="336" fill="#ffffff" text-anchor="middle">OL</text>

@@ -110,7 +110,7 @@ draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
 }
 				if (draftRecords.length === 0) {
 					const msg = skippedLoaded > 0
-						? 'No draft records to fill. Seed only applies to new records — loaded-existing records keep their Salesforce values.'
+						? 'No draft records to fill. Seed only applies to new records - loaded-existing records keep their Salesforce values.'
 						: 'No records to fill.';
 					if (!silent) {
 showBulkToast(msg);
@@ -139,7 +139,7 @@ showBulkToast(msg);
 					const skipLine = selectionScope
 						? '• Only draft records in your selection are changed.'
 						: (skippedLoaded > 0
-							? '• Skips ' + skippedLoaded + ' loaded Salesforce record' + (skippedLoaded === 1 ? '' : 's') + ' on the canvas — only draft records are changed.'
+							? '• Skips ' + skippedLoaded + ' loaded Salesforce record' + (skippedLoaded === 1 ? '' : 's') + ' on the canvas - only draft records are changed.'
 							: '• Only draft records on the canvas are changed.');
 					const scopeQualifier = selectionScope ? ' selected' : '';
 					const message =
@@ -277,9 +277,9 @@ draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
 }
 				if (draftRecords.length === 0) {
 					const msg = onlyIds
-						? 'No draft records in the selection. Clear only applies to drafts — loaded-existing records keep their Salesforce values.'
+						? 'No draft records in the selection. Clear only applies to drafts - loaded-existing records keep their Salesforce values.'
 						: (skippedLoaded > 0
-							? 'No draft records to clear. Clear only applies to drafts — loaded-existing records keep their Salesforce values.'
+							? 'No draft records to clear. Clear only applies to drafts - loaded-existing records keep their Salesforce values.'
 							: 'No records to clear.');
 					showBulkToast(msg);
 					return;
@@ -303,13 +303,13 @@ draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
 				if (includeLoaded && loadedInScope > 0) {
 					skipLine = '\u2022 Includes ' + loadedInScope + ' loaded Salesforce record' +
 						(loadedInScope === 1 ? '' : 's') +
-						' \u2014 next upload will NULL those fields in Salesforce.';
+						' - next upload will NULL those fields in Salesforce.';
 				} else if (selectionScope) {
 					skipLine = '\u2022 Only draft records in your selection are wiped.';
 				} else if (skippedLoaded > 0) {
 					skipLine = '\u2022 Skips ' + skippedLoaded + ' loaded Salesforce record' +
 						(skippedLoaded === 1 ? '' : 's') +
-						' on the canvas \u2014 only draft records are wiped.';
+						' on the canvas - only draft records are wiped.';
 				} else {
 					skipLine = '\u2022 Only draft records on the canvas are wiped.';
 				}
@@ -318,14 +318,14 @@ draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
 					: (includeLoaded ? '' : ' draft');
 				const noun = includeLoaded ? recordWord : ('draft ' + recordWord);
 				const ok = await showConfirmDialog({
-					title: includeLoaded && loadedInScope > 0 ? 'Clear fields \u2014 including Salesforce records?' : 'Clear all fields?',
+					title: includeLoaded && loadedInScope > 0 ? 'Clear fields - including Salesforce records?' : 'Clear all fields?',
 					message:
 						'Wipe every field value from ' + draftRecords.length + scopeQualifier + ' ' + noun +
 						' (' + objSummary + moreObjs + ').\n\n' +
 						'What this does:\n' +
 						'\u2022 Removes every value from each record (required and optional fields).\n' +
 						skipLine + '\n' +
-						'\u2022 You can Undo from the toast right after \u2014 once it expires, the values are gone.',
+						'\u2022 You can Undo from the toast right after - once it expires, the values are gone.',
 					confirmLabel: 'Clear fields',
 					danger: true,
 				});

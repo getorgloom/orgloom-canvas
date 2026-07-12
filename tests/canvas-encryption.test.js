@@ -7,7 +7,7 @@ import {
 	isEncryptedEnvelope,
 } from '../src/storage/canvas-encryption.js';
 
-describe('canvas-encryption — payload encrypt/decrypt', () => {
+describe('canvas-encryption - payload encrypt/decrypt', () => {
 	test('round-trips a payload', () => {
 		const key = generateDataKey();
 		const plaintext = JSON.stringify({ drafts: [{ tempId: 1, values: { Name: 'A' } }] });

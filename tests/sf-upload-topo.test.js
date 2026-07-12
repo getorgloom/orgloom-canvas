@@ -30,7 +30,7 @@ describe('topoSortRecords', () => {
 		assert.equal(order.length, 3);
 	});
 
-	test('two parents one child — both parents come first', () => {
+	test('two parents one child: both parents come first', () => {
 		const records = [rec(1), rec(2), rec(3)];
 		const associations = [fk(3, 1), fk(3, 2)];
 		const { order } = topoSortRecords(records, associations);

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { ext } from "../extensions.js";
 
 const TOKEN_PREFIX = "ol_mcp_";
+export const MAX_ACTIVE_TOKENS_PER_ACCOUNT = 10;
 const TOKEN_RANDOM_BYTES = 32;
 
 function _hashToken(plaintext) {
@@ -26,6 +27,15 @@ export async function issue({ accountId, name, ttlMs = null }) {
 	}
 	const db = ext.getDb();
 	const now = Date.now();
+	const active = await db.selectFrom("mcp_tokens").select("id")
+		.where("account_id", "=", accountId).where("revoked_at", "is", null)
+		.where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", now)]))
+		.execute();
+	if (active.length >= MAX_ACTIVE_TOKENS_PER_ACCOUNT) {
+		const err = new Error("mcp-token-cap-reached");
+		err.code = "mcp-token-cap-reached";
+		throw err;
+	}
 	for (let attempt = 0; attempt < 5; attempt++) {
 		const plaintext = _generatePlaintext();
 		const tokenHash = _hashToken(plaintext);

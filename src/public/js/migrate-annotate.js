@@ -254,11 +254,71 @@
 		return counts;
 	}
 
+	function prepareMigrationValues(record, annotation) {
+		var out = Object.assign({}, (record && record.values) || {});
+		var issues = (annotation && annotation.issues) || [];
+		for (var i = 0; i < issues.length; i++) {
+			var issue = issues[i];
+			if (!issue || !issue.field) {
+				continue;
+			}
+			var key = Object.keys(out).find(function (k) {
+				return k.toLowerCase() === String(issue.field).toLowerCase();
+			});
+			if (!key) {
+				continue;
+			}
+			if (issue.kind === 'missing-field') {
+				delete out[key];
+			} else if (issue.kind === 'picklist-mismatch') {
+				var invalid = {};
+				(issue.invalidValues || []).forEach(function (v) {
+					invalid[String(v)] = true;
+				});
+				var parts = String(out[key]).split(';').filter(function (v) {
+					return !invalid[v];
+				});
+				if (parts.length) {
+					out[key] = parts.join(';');
+				} else {
+					delete out[key];
+				}
+			}
+		}
+		if (annotation && annotation.resolvedRecordTypeId) {
+			out.RecordTypeId = annotation.resolvedRecordTypeId;
+		}
+		var remap = record && record._migratePicklistRemap;
+		if (remap) {
+			Object.keys(remap).forEach(function (field) {
+				var key = Object.keys(out).find(function (k) {
+					return k.toLowerCase() === field.toLowerCase();
+				});
+				if (!key) {
+					return;
+				}
+				var map = remap[field] || {};
+				var parts = String(out[key]).split(';').map(function (part) {
+					return Object.prototype.hasOwnProperty.call(map, part) ? map[part] : part;
+				}).filter(function (part) {
+					return part !== '';
+				});
+				if (parts.length) {
+					out[key] = parts.join(';');
+				} else {
+					delete out[key];
+				}
+			});
+		}
+		return out;
+	}
+
 	var api = {
 		computeMigrationStatus: computeMigrationStatus,
 		resolveTargetRecordTypeId: resolveTargetRecordTypeId,
 		annotateRecords: annotateRecords,
 		summarize: summarize,
+		prepareMigrationValues: prepareMigrationValues,
 	};
 
 	if (typeof window !== 'undefined') {

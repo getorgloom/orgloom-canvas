@@ -77,7 +77,7 @@ throw new Error('type-node.mount: missing deps object');
 					y: worldY,
 				});
 				renderBulkView();
-				showBulkToast('Added ' + label + ' \u2014 click "Pick record" to load one.');
+				showBulkToast('Added ' + label + ' - click "Pick record" to load one.');
 			}
 
 			function pickRecordForFreeTypeNode(rec, anchorEl) {
@@ -228,6 +228,12 @@ _smoothScrollCanvas(canvas, targetLeft, targetTop, 600);
 }
 					}
 					showBulkToast('That record is already on the canvas.');
+					return;
+				}
+
+				const cap = canvasCapCheck(1);
+				if (cap.blocked) {
+					showBulkToast(cap.reason);
 					return;
 				}
 				let targetSel = canvasState.selectedObjects.find((s) => s.name === typeNodeRec.objectName);

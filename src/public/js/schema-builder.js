@@ -732,7 +732,19 @@ return false;
 
 					if (typeof pushUndo === 'function') {
 						const _spawnedId = newRec.id;
+						const _spawnedFingerprint = JSON.stringify(newRec);
+						const _linkFingerprint = JSON.stringify(
+							canvasState.bulkAssociations.filter((a) => a && (a.fromId === _spawnedId || a.toId === _spawnedId)),
+						);
 						pushUndo('Add record', function () {
+							const current = canvasState.bulkRecords.find((r) => r && r.id === _spawnedId);
+							const currentLinks = canvasState.bulkAssociations.filter(
+								(a) => a && (a.fromId === _spawnedId || a.toId === _spawnedId),
+							);
+							if (!current || JSON.stringify(current) !== _spawnedFingerprint || JSON.stringify(currentLinks) !== _linkFingerprint) {
+								showBulkToast('Can’t undo the schema add because that record or its relationships were edited afterward.', 'info');
+								return false;
+							}
 							canvasState.bulkRecords = canvasState.bulkRecords.filter(
 								(r) => !r || r.id !== _spawnedId,
 							);
@@ -1557,10 +1569,10 @@ html += '<div class="obj-name">' + escapeHtml(name) + '</div>';
 				}
 				div.innerHTML = html;
 				if (relation) {
-div.title = (div.title ? div.title + ' \u2014 ' : '') + relation;
+div.title = (div.title ? div.title + ' -' : '') + relation;
 }
 				if (loading) {
-div.title = (div.title ? div.title + ' \u2014 ' : '') + 'Loading related objects\u2026';
+div.title = (div.title ? div.title + ' -' : '') + 'Loading related objects\u2026';
 }
 				if (removable) {
 					const btn = div.querySelector('[data-node-remove]');

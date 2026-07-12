@@ -200,7 +200,7 @@ describe('computeMigrationStatus', () => {
 		assert.equal(res.resolvedRecordTypeId, null);
 	});
 
-	test('matched record (loadedFromId set) skips required-unfilled — it is an update', () => {
+	test('matched record (loadedFromId set) skips required-unfilled: it is an update', () => {
 		const d = describe_([field('Name', { required: true })]);
 		const rec = {
 			objectName: 'Account',
@@ -285,5 +285,29 @@ describe('annotateRecords + summarize', () => {
 		assert.equal(counts.total, 2);
 		assert.equal(counts.ready, 1);
 		assert.equal(counts.blocked, 1);
+	});
+});
+
+describe('prepareMigrationValues: destination-safe upload payload', () => {
+	test('omits destination-missing fields instead of sending an INVALID_FIELD payload', () => {
+		const record = { values: { Name: 'Acme', Source_Only__c: 'must not cross' } };
+		const ann = { issues: [{ kind: 'missing-field', severity: 'warning', field: 'Source_Only__c' }] };
+		assert.equal(JSON.stringify(annotate.prepareMigrationValues(record, ann)), JSON.stringify({ Name: 'Acme' }));
+	});
+
+	test('drops only unresolved invalid multipicklist members', () => {
+		const record = { values: { Tags__c: 'Valid;SourceOnly;AlsoValid' } };
+		const ann = { issues: [{ kind: 'picklist-mismatch', severity: 'warning', field: 'Tags__c', invalidValues: ['SourceOnly'] }] };
+		assert.equal(JSON.stringify(annotate.prepareMigrationValues(record, ann)), JSON.stringify({ Tags__c: 'Valid;AlsoValid' }));
+	});
+
+	test('applies explicit remaps and target record type without mutating canvas values', () => {
+		const record = {
+			values: { Stage__c: 'Source', Keep__c: 'same' },
+			_migratePicklistRemap: { Stage__c: { Source: 'Target' } },
+		};
+		const result = annotate.prepareMigrationValues(record, { issues: [], resolvedRecordTypeId: '012TARGET' });
+		assert.equal(JSON.stringify(result), JSON.stringify({ Stage__c: 'Target', Keep__c: 'same', RecordTypeId: '012TARGET' }));
+		assert.equal(record.values.Stage__c, 'Source');
 	});
 });

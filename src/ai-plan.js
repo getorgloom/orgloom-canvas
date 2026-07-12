@@ -43,7 +43,7 @@ export function buildAiSystemPrompt(summary) {
 	return 'You are a Salesforce test-data planner. You produce structured plans of records to create and the foreign-key associations between them.\n\n' +
 		'Available objects and createable fields:\n\n' +
 		summary +
-		'\n\nRules — you MUST follow all of them:\n' +
+		'\n\nRules - you MUST follow all of them:\n' +
 		'1. Generate ONLY records of the objects listed above. Never invent new object types.\n' +
 		'2. Use ONLY field API names that are listed for that object. Do not hallucinate fields.\n' +
 		'3. For picklist fields, pick ONLY from the listed values. For multipicklists, use semicolon-delimited values.\n' +
@@ -75,7 +75,7 @@ export const AI_PLAN_TOOL = {
 						objectName: { type: 'string', description: 'API name of one of the available objects.' },
 						values: {
 							type: 'object',
-							description: 'Field API name → value. Only set fields from the object\'s listed schema. Do not set reference fields here — use associations.',
+							description: 'Field API name → value. Only set fields from the object\'s listed schema. Do not set reference fields here - use associations.',
 							additionalProperties: true,
 						},
 					},
@@ -103,14 +103,26 @@ export function validateAiPlan(plan, describes) {
 	const describeByName = new Map(describes.map(({ name, describe }) => [name, describe]));
 	const records = [];
 	const tempIdToRecord = new Map();
-	(plan.records || []).forEach((r, idx) => {
+	const rawRecords = Array.isArray(plan.records) ? plan.records : [];
+	if (rawRecords.length > AI_MAX_RECORDS) {
+		warnings.push('Plan contained ' + rawRecords.length + ' records - only the first ' + AI_MAX_RECORDS + ' were kept.');
+	}
+	rawRecords.slice(0, AI_MAX_RECORDS).forEach((r, idx) => {
 		if (!r || typeof r !== 'object') {
-			warnings.push('Record #' + idx + ' was malformed — dropped.');
+			warnings.push('Record #' + idx + ' was malformed - dropped.');
+			return;
+		}
+		if (!Number.isInteger(r.tempId) || r.tempId < 1) {
+			warnings.push('Record #' + idx + ' has an invalid tempId - dropped.');
+			return;
+		}
+		if (tempIdToRecord.has(r.tempId)) {
+			warnings.push('Record tempId=' + r.tempId + ' is duplicated - later record dropped.');
 			return;
 		}
 		const describe = describeByName.get(r.objectName);
 		if (!describe) {
-			warnings.push('Record tempId=' + r.tempId + ' targets unknown object "' + r.objectName + '" — dropped.');
+			warnings.push('Record tempId=' + r.tempId + ' targets unknown object "' + r.objectName + '" - dropped.');
 			return;
 		}
 		const fieldByName = new Map((describe.fields || []).map((f) => [f.name, f]));
@@ -118,19 +130,19 @@ export function validateAiPlan(plan, describes) {
 		Object.entries(r.values || {}).forEach(([fname, fval]) => {
 			const f = fieldByName.get(fname);
 			if (!f) {
- warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): unknown field "' + fname + '" — dropped.'); return; 
+ warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): unknown field "' + fname + '" - dropped.'); return; 
 }
 			if (!f.createable) {
- warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): non-createable field "' + fname + '" — dropped.'); return; 
+ warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): non-createable field "' + fname + '" - dropped.'); return; 
 }
 			if (f.type === 'reference') {
-				warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): reference field "' + fname + '" must come from an association — dropped.');
+				warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): reference field "' + fname + '" must come from an association - dropped.');
 				return;
 			}
 			if (f.type === 'picklist') {
 				const allowed = new Set((f.picklistValues || []).filter((v) => v.active).map((v) => v.value));
 				if (!allowed.has(fval)) {
-					warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): picklist "' + fname + '" value "' + fval + '" not allowed — dropped.');
+					warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): picklist "' + fname + '" value "' + fval + '" not allowed - dropped.');
 					return;
 				}
 			}
@@ -139,7 +151,7 @@ export function validateAiPlan(plan, describes) {
 				const parts = String(fval || '').split(';').map((p) => p.trim()).filter(Boolean);
 				const valid = parts.filter((p) => allowed.has(p));
 				if (valid.length === 0) {
-					warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): no valid multipicklist values in "' + fname + '" — dropped.');
+					warnings.push('tempId=' + r.tempId + ' (' + r.objectName + '): no valid multipicklist values in "' + fname + '" - dropped.');
 					return;
 				}
 				cleanValues[fname] = valid.join(';');
@@ -163,19 +175,23 @@ return;
 		const from = tempIdToRecord.get(a.fromTempId);
 		const to = tempIdToRecord.get(a.toTempId);
 		if (!from || !to) {
-			warnings.push('Association references missing record (' + a.fromTempId + ' → ' + a.toTempId + ') — dropped.');
+			warnings.push('Association references missing record (' + a.fromTempId + ' → ' + a.toTempId + ') - dropped.');
 			return;
 		}
 		const describe = describeByName.get(from.objectName);
 		const field = (describe.fields || []).find((f) => f.name === a.fieldName);
 		if (!field) {
- warnings.push('Association field "' + a.fieldName + '" not on ' + from.objectName + ' — dropped.'); return; 
+ warnings.push('Association field "' + a.fieldName + '" not on ' + from.objectName + ' - dropped.'); return; 
 }
 		if (field.type !== 'reference') {
- warnings.push('Association field "' + a.fieldName + '" on ' + from.objectName + ' is not a reference — dropped.'); return; 
+ warnings.push('Association field "' + a.fieldName + '" on ' + from.objectName + ' is not a reference - dropped.'); return; 
 }
 		if (Array.isArray(field.referenceTo) && !field.referenceTo.includes(to.objectName)) {
-			warnings.push('Association target type mismatch on ' + from.objectName + '.' + a.fieldName + ' (expected ' + field.referenceTo.join('|') + ', got ' + to.objectName + ') — dropped.');
+			warnings.push('Association target type mismatch on ' + from.objectName + '.' + a.fieldName + ' (expected ' + field.referenceTo.join('|') + ', got ' + to.objectName + ') - dropped.');
+			return;
+		}
+		if (!field.createable) {
+			warnings.push('Association field "' + a.fieldName + '" on ' + from.objectName + ' is not createable - dropped.');
 			return;
 		}
 		associations.push({ fromTempId: a.fromTempId, toTempId: a.toTempId, fieldName: a.fieldName });

@@ -15,19 +15,20 @@ import {
 function mockSseRes() {
 	const writes = [];
 	const closeHandlers = [];
+	const errorHandlers = [];
 	return {
 		writes,
 		write(chunk) {
  writes.push(chunk); return true; 
 },
 		on(event, handler) {
- if (event === 'close') {
-closeHandlers.push(handler);
-} 
-},
+			if (event === 'close') closeHandlers.push(handler);
+			if (event === 'error') errorHandlers.push(handler);
+		},
 		fireClose() {
  closeHandlers.forEach((h) => h()); 
 },
+		fireError() { errorHandlers.forEach((h) => h(new Error('socket failed'))); },
 		lastDataEvent() {
 
 			for (let i = writes.length - 1; i >= 0; i--) {
@@ -46,6 +47,14 @@ beforeEach(() => {
 });
 
 describe('register / unregister symmetry', () => {
+	test('SSE error eagerly removes a half-open registration', () => {
+		const sse = mockSseRes();
+		const id = registerConnection({ accountId: 'a', workspaceId: 'ws-error', sseRes: sse });
+		registerCanvas({ connectionId: id, canvasId: 'cv', meta: {}, accountId: 'a' });
+		assert.equal(workspaceLiveSummary('ws-error').canvasCount, 1);
+		sse.fireError();
+		assert.equal(workspaceLiveSummary('ws-error').canvasCount, 0);
+	});
 	test('registerConnection writes the connectionId via SSE ready event', () => {
 		const sse = mockSseRes();
 		const id = registerConnection({ accountId: 'a1', workspaceId: 'ws1', sseRes: sse });

@@ -39,13 +39,15 @@ function describes() {
 						referenceTo: ['Account'] },
 					{ name: 'ReportsToId', type: 'reference', createable: true, nillable: true,
 						referenceTo: ['Contact'] },
+					{ name: 'ReadOnlyAccount__c', type: 'reference', createable: false, updateable: false,
+						referenceTo: ['Account'] },
 				],
 			},
 		},
 	];
 }
 
-describe('validateAiPlan — happy path', () => {
+describe('validateAiPlan: happy path', () => {
 	test('a well-formed plan passes with no warnings', () => {
 		const plan = {
 			records: [
@@ -74,7 +76,31 @@ describe('validateAiPlan — happy path', () => {
 	});
 });
 
-describe('validateAiPlan — record drops', () => {
+describe('validateAiPlan: record drops', () => {
+	test('caps a poisoned/model-invalid response at 100 records', () => {
+		const plan = {
+			records: Array.from({ length: 101 }, (_, i) => ({ tempId: i + 1, objectName: 'Account', values: { Name: `A${i}` } })),
+			associations: [],
+		};
+		const r = validateAiPlan(plan, describes());
+		assert.equal(r.records.length, 100);
+		assert.ok(r.warnings.some((w) => /only the first 100 were kept/.test(w)));
+	});
+
+	test('drops invalid and duplicate tempIds so associations are unambiguous', () => {
+		const plan = {
+			records: [
+				{ tempId: 0, objectName: 'Account', values: { Name: 'Invalid' } },
+				{ tempId: 1, objectName: 'Account', values: { Name: 'First' } },
+				{ tempId: 1, objectName: 'Account', values: { Name: 'Duplicate' } },
+			],
+			associations: [],
+		};
+		const r = validateAiPlan(plan, describes());
+		assert.deepEqual(r.records.map((record) => record.values.Name), ['First']);
+		assert.equal(r.warnings.length, 2);
+	});
+
 	test('record with unknown object is dropped with a warning', () => {
 		const plan = {
 			records: [{ tempId: 1, objectName: 'MadeUp__c', values: {} }],
@@ -114,7 +140,7 @@ describe('validateAiPlan — record drops', () => {
 		assert.ok(r.warnings.some((w) => /Bogus__c/.test(w)));
 	});
 
-	test('literal value in a reference field is dropped — references must come through associations', () => {
+	test('literal value in a reference field is dropped: references must come through associations', () => {
 		const plan = {
 			records: [{ tempId: 1, objectName: 'Contact', values: { LastName: 'Doe', AccountId: '001AAAAAAAAAAAA' } }],
 			associations: [],
@@ -124,7 +150,7 @@ describe('validateAiPlan — record drops', () => {
 		assert.ok(r.warnings.some((w) => /reference field "AccountId"/.test(w)));
 	});
 
-	test('picklist value not in allowlist is dropped (rejects "Retired" — inactive — and unknown values)', () => {
+	test('picklist value not in allowlist is dropped (rejects "Retired", which is inactive, and unknown values)', () => {
 		const plan = {
 			records: [
 				{ tempId: 1, objectName: 'Account', values: { Name: 'Acme', Industry: 'NotARealValue' } },
@@ -149,7 +175,20 @@ describe('validateAiPlan — record drops', () => {
 	});
 });
 
-describe('validateAiPlan — association drops', () => {
+describe('validateAiPlan: association drops', () => {
+	test('association on a read-only reference field is dropped', () => {
+		const plan = {
+			records: [
+				{ tempId: 1, objectName: 'Account', values: { Name: 'Acme' } },
+				{ tempId: 2, objectName: 'Contact', values: { LastName: 'Doe' } },
+			],
+			associations: [{ fromTempId: 2, toTempId: 1, fieldName: 'ReadOnlyAccount__c' }],
+		};
+		const r = validateAiPlan(plan, describes());
+		assert.equal(r.associations.length, 0);
+		assert.ok(r.warnings.some((w) => /not createable/.test(w)));
+	});
+
 	test('association pointing at a missing tempId is dropped', () => {
 		const plan = {
 			records: [{ tempId: 1, objectName: 'Contact', values: { LastName: 'Doe' } }],
@@ -201,7 +240,7 @@ describe('validateAiPlan — association drops', () => {
 	});
 });
 
-describe('validateAiPlan — empty input', () => {
+describe('validateAiPlan: empty input', () => {
 	test('empty plan returns empty arrays with no warnings', () => {
 		const r = validateAiPlan({ records: [], associations: [] }, describes());
 		assert.equal(r.records.length, 0);

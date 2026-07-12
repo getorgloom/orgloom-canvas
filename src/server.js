@@ -417,7 +417,7 @@ return res.status(400).send('Missing OAuth code.');
 
 		const state = typeof req.query.state === 'string' ? req.query.state : null;
 		if (!state || !req.session?.id || state !== req.session.id) {
-			console.warn('[sf-oauth] state missing/mismatch on /auth/callback — possible CSRF');
+			console.warn('[sf-oauth] state missing/mismatch on /auth/callback - possible CSRF');
 			return res.status(400).send('Salesforce sign-in failed a security check (state mismatch). Try again from the start.');
 		}
 		const oauth2 = createOAuth2(req.session.sfLoginUrl || null);

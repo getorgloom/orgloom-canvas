@@ -35,6 +35,7 @@ function csrfFetch(url, options) {
 		currentRecordRef: null,
 		savedRecords: {},
 		describeCache: {},
+		describeRequests: {},
 		_renderedRecIds: new Set(),
 		_prefetchedTypeNodeKeys: new Set(),
 		hiddenObjects: new Set(),
@@ -79,6 +80,7 @@ function csrfFetch(url, options) {
 	const _autosaveClear = _autosave.autosaveClear;
 	const _autosaveRestore = _autosave.autosaveRestore;
 	const _migrationResume = _autosave.migrationResume;
+	const _migrationSyncIfActive = _autosave.migrationSyncIfActive;
 
 	const _uif = window.OrgLoom.uiFeedback.mount({
 		escapeHtml: escapeHtml,
@@ -777,7 +779,7 @@ function csrfFetch(url, options) {
 				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
 				"<strong>Editor mode.</strong> " +
-				"You’re co-authoring a canvas owned by someone else. Saves go directly to the canvas — no Submit step needed." +
+				"You’re co-authoring a canvas owned by someone else. Saves go directly to the canvas - no Submit step needed." +
 				"</span>";
 		} else if (isViewer) {
 			host.innerHTML =
@@ -2278,7 +2280,7 @@ function csrfFetch(url, options) {
 	}
 	function _loadDescribeFromStorage(name) {
 		try {
-			const raw = localStorage.getItem(_describeStorageKey(name));
+			const raw = sessionStorage.getItem(_describeStorageKey(name));
 			if (!raw) {
 				return null;
 			}
@@ -2297,7 +2299,7 @@ function csrfFetch(url, options) {
 	}
 	function _saveDescribeToStorage(name, describe) {
 		try {
-			localStorage.setItem(
+			sessionStorage.setItem(
 				_describeStorageKey(name),
 				JSON.stringify({ savedAt: Date.now(), describe }),
 			);
@@ -2311,12 +2313,15 @@ function csrfFetch(url, options) {
 		if (canvasState.describeCache[name]) {
 			return Promise.resolve(canvasState.describeCache[name]);
 		}
+		if (canvasState.describeRequests[name]) {
+			return canvasState.describeRequests[name];
+		}
 		const cached = _loadDescribeFromStorage(name);
 		if (cached) {
 			canvasState.describeCache[name] = cached;
 			return Promise.resolve(cached);
 		}
-		return csrfFetch(
+		const request = csrfFetch(
 			"/api/objects/" + encodeURIComponent(name) + "/describe",
 		)
 			.then((r) => {
@@ -2329,7 +2334,12 @@ function csrfFetch(url, options) {
 				canvasState.describeCache[name] = d;
 				_saveDescribeToStorage(name, d);
 				return d;
+			})
+			.finally(() => {
+				delete canvasState.describeRequests[name];
 			});
+		canvasState.describeRequests[name] = request;
+		return request;
 	}
 
 	function enterMigrateMode(opts) {
@@ -2380,7 +2390,7 @@ function csrfFetch(url, options) {
 		const counts = parts.length ? parts.join(" · ") : "preparing…";
 		bar.innerHTML =
 			'<span class="mmb-label"><span class="mmb-dot" aria-hidden="true"></span>Migration mode</span>' +
-			'<span class="mmb-sub">Recreating these records in the destination org — review, then Upload. <strong>' +
+			'<span class="mmb-sub">Recreating these records in the destination org - review, then Upload. <strong>' +
 			escapeHtml(counts) +
 			"</strong></span>" +
 			'<span class="mmb-actions">' +
@@ -3335,7 +3345,11 @@ function csrfFetch(url, options) {
 			showBulkToast: showBulkToast,
 			ensureDescribe: ensureDescribe,
 			renderBulkView: renderBulkView,
-			onApplied: () => refreshMigrationAnnotations(),
+			onApplied: () => {
+
+				_migrationSyncIfActive();
+				return refreshMigrationAnnotations();
+			},
 		});
 		window.Orgloom.migrateMatch = { open: _mm.open };
 	}
@@ -3483,7 +3497,7 @@ function csrfFetch(url, options) {
 		const fileOrg = meta.exportedFrom || meta.savedFrom || null;
 		if (fileOrg && window.SF_ORG_ID && fileOrg !== window.SF_ORG_ID) {
 			lines.push(
-				"⚠ Exported from a different org — Salesforce id references may not match here.",
+				"⚠ Exported from a different org - Salesforce id references may not match here.",
 			);
 		}
 		return lines;
@@ -3588,7 +3602,7 @@ function csrfFetch(url, options) {
 			showBulkToast(
 				'Could not read file "' +
 					file.name +
-					'" — the file may be locked or unavailable.',
+					'" - the file may be locked or unavailable.',
 				"error",
 			);
 		};
@@ -3799,8 +3813,8 @@ function csrfFetch(url, options) {
 						(modCount === 1 ? "" : "s") +
 						" on this canvas " +
 						(modCount === 1 ? "has" : "have") +
-						" been edited locally. Edits to loaded records aren’t saved with the canvas — leaving without uploading will discard them."
-					: "This canvas has records that aren’t saved to Salesforce yet. Leaving will discard them — use “Save as new canvas” first to keep your work.";
+						" been edited locally. Edits to loaded records aren’t saved with the canvas - leaving without uploading will discard them."
+					: "This canvas has records that aren’t saved to Salesforce yet. Leaving will discard them - use “Save as new canvas” first to keep your work.";
 			showConfirmDialog({
 				title: "Leave canvas with unsaved changes?",
 				message,
@@ -4276,7 +4290,7 @@ function csrfFetch(url, options) {
 		}
 		if (!rec.loadedFromId) {
 			console.warn(
-				"markPendingDelete: refusing — record",
+				"markPendingDelete: refusing - record",
 				id,
 				"is a draft (use deleteRecord to remove drafts from canvas)",
 			);
@@ -4284,7 +4298,7 @@ function csrfFetch(url, options) {
 		}
 		if (rec.isTypeNode) {
 			console.warn(
-				"markPendingDelete: refusing — record",
+				"markPendingDelete: refusing - record",
 				id,
 				"is a type-node placeholder",
 			);
@@ -4292,7 +4306,7 @@ function csrfFetch(url, options) {
 		}
 		if (rec._inaccessible) {
 			console.warn(
-				"markPendingDelete: refusing — record",
+				"markPendingDelete: refusing - record",
 				id,
 				"is a no-access placeholder",
 			);
@@ -4306,7 +4320,7 @@ function csrfFetch(url, options) {
 			isRecordModified(rec) && opts && opts.discardEdits;
 		if (isRecordModified(rec) && !(opts && opts.discardEdits)) {
 			console.warn(
-				"markPendingDelete: refusing — record",
+				"markPendingDelete: refusing - record",
 				id,
 				"has unsaved edits; pass {discardEdits:true} after user confirms",
 			);
@@ -5297,7 +5311,7 @@ function csrfFetch(url, options) {
 			canvasState.bulkSelectedIds.add(dup.id);
 			renderBulkView();
 			showBulkToast(
-				"That record was already on the canvas \u2014 the slot now points at it.",
+				"That record was already on the canvas - the slot now points at it.",
 			);
 			return;
 		}
@@ -5415,6 +5429,15 @@ function csrfFetch(url, options) {
 					toId: a.toId,
 					fieldName: a.fieldName,
 				})),
+			getRenderedEdges: () => _cyInstance
+				? _cyInstance.edges().map((edge) => ({
+					id: edge.id(),
+					source: edge.data('source'),
+					target: edge.data('target'),
+					fieldName: edge.data('label') || '',
+					kind: edge.data('kind') || '',
+				}))
+				: [],
 
 			getSchemaViewObject: () => canvasState._schemaViewObject || null,
 
@@ -6172,6 +6195,9 @@ function csrfFetch(url, options) {
 		escapeHtml: escapeHtml,
 		showBulkToast: showBulkToast,
 		showConfirmDialog: showConfirmDialog,
+		showBulkSwitchWarning: function () {
+			return showBulkSwitchWarning.apply(null, arguments);
+		},
 		validateBulkRecords: validateBulkRecords,
 		computeUploadOrder: computeUploadOrder,
 		isRecordModified: function () {
@@ -6346,6 +6372,7 @@ function csrfFetch(url, options) {
 		csvNormalizeKey: csvNormalizeKey,
 		pingAuditEvent: pingAuditEvent,
 		addToSelection: addToSelection,
+		showConfirmDialog: showConfirmDialog,
 		showPromptModal: showPromptModal,
 		showReplaceOrMergeDialog: showReplaceOrMergeDialog,
 		canvasCapBlockReason: _canvasCapBlockReason,
@@ -6370,6 +6397,7 @@ function csrfFetch(url, options) {
 	const openLinkedCsvModal = _lcsv.openModal;
 	const closeLinkedCsvModal = _lcsv.closeModal;
 	const _isLinkedCsvQuickUploadMode = _lcsv.isQuickUploadMode;
+	const _restoreInterruptedQuickUpload = _lcsv.restoreInterruptedQuickUpload;
 
 	const _soql = window.OrgLoom.soqlImport.mount({
 		canvasState: canvasState,
@@ -6587,6 +6615,7 @@ function csrfFetch(url, options) {
 		bulkAutoFill: bulkAutoFill,
 		ensureDescribe: ensureDescribe,
 		renderBulkView: renderBulkView,
+		pushUndo: pushUndo,
 	});
 	const _proposalsPollCanvasId = _aip.getPollCanvasId;
 	const _openProposalsReview = _aip.openProposalsReview;
@@ -6708,7 +6737,7 @@ function csrfFetch(url, options) {
 		});
 
 		const _msg = _migrationResumed.justArrived
-			? "Migration canvas restored — review, then upload to the destination org."
+			? "Migration canvas restored - review, then upload to the destination org."
 			: "Resumed your in-progress migration.";
 		if (typeof showBulkToastWithAction === "function") {
 			showBulkToastWithAction(_msg, "Discard migration", function () {
@@ -6739,13 +6768,17 @@ function csrfFetch(url, options) {
 			: false;
 	const _restored =
 		_migrationResumed || _orgSwitchRestored || _autosaveRestore();
+	const _quickUploadRestored = !_migrationResumed && !_orgSwitchRestored &&
+		_restoreInterruptedQuickUpload && _restoreInterruptedQuickUpload();
 	if (
-		_restored &&
+		(_restored || _quickUploadRestored) &&
 		!_migrationResumed &&
 		!_orgSwitchRestored &&
 		typeof window.olToast === "function"
 	) {
-		window.olToast("Restored your unsaved canvas from this tab.", "info");
+		window.olToast(_quickUploadRestored
+			? "Quick Upload was interrupted. Restored your original canvas from this tab."
+			: "Restored your unsaved canvas from this tab.", "info");
 	}
 
 	renderStepper();

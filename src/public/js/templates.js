@@ -329,6 +329,9 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 
 				function _summaryToast(msg, variant, opts) {
 					if (opts && typeof opts.undo === 'function' && showBulkToastWithAction) {
+						if (typeof opts.undo.arm === 'function') {
+							opts.undo.arm();
+						}
 						showBulkToastWithAction(msg, 'Undo', opts.undo, variant);
 					} else {
 						showBulkToast(msg, variant);
@@ -527,7 +530,7 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 							msg += ' ' + demotedToDrafts + ' loaded record' + (demotedToDrafts === 1 ? '' : 's') +
 								' re-imported as draft' + (demotedToDrafts === 1 ? '' : 's') + ' (exported from a different org).';
 						} else if (_crossOrg) {
-							msg += ' Exported from a different org — Salesforce id references may not match here.';
+							msg += ' Exported from a different org - Salesforce id references may not match here.';
 						}
 						const _caveats = skippedRecords > 0 || skippedAssoc > 0 || demotedToDrafts > 0 || _crossOrg;
 						_summaryToast(msg, _caveats ? 'error' : undefined, opts);
@@ -549,7 +552,7 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 					opts = opts || {};
 					const merge = !!opts.merge;
 					if (!payload || typeof payload !== 'object') {
-						showBulkToast('Empty payload \u2014 nothing to load.', 'error');
+						showBulkToast('Empty payload - nothing to load.', 'error');
 						return;
 					}
 					const schemaObjects = (payload.schema && payload.schema.objects) || [];
@@ -885,7 +888,7 @@ setGraphView('bulk');
 						(draftById.size === 1 ? '' : 's') + '.';
 					if (droppedFromAccess > 0) {
 						msg += ' (' + droppedFromAccess + ' record' + (droppedFromAccess === 1 ? '' : 's') +
-							' shown as \u201cno access\u201d \u2014 Salesforce didn\u2019t return ' +
+							' shown as \u201cno access\u201d - Salesforce didn\u2019t return ' +
 							(droppedFromAccess === 1 ? 'it' : 'them') + '.)';
 					}
 					if (skippedExistingMerge > 0) {

@@ -52,9 +52,10 @@ function harness() {
 		_draftCanvasId: null,
 		bulkZoom: 1,
 		diffSuppressions: {},
+		migrateMode: { active: false, sourceSfOrgId: null, targetSfOrgId: null },
 	};
 	const api = win.OrgLoom.canvasAutosave.mount({ canvasState });
-	return { api, win, sessionStorage, canvasState };
+	return { api, win, sessionStorage, localStorage, canvasState };
 }
 
 function setScope(win, canvasState, { account, org, user }) {
@@ -111,5 +112,69 @@ describe('autosave scope-namespacing (playground vs real)', () => {
 		canvasState.bulkRecords = [];
 		api.autosaveRestore();
 		assert.equal(canvasState.bulkRecords[0].values.Name, 'Real', 'no demo bleed into the real canvas');
+	});
+});
+
+describe('cross-org migration session-only recovery and isolation', () => {
+	test('migration snapshot stays in sessionStorage and leaves no durable localStorage copy', () => {
+		const first = harness();
+		setScope(first.win, first.canvasState, REAL);
+		first.canvasState.bulkRecords = [{
+			id: 1,
+			objectName: 'Account',
+			loadedFromId: '001SOURCE',
+			values: { Id: '001SOURCE', Name: 'Durable Co' },
+		}];
+		assert.equal(first.api.migrationStash({ status: 'awaiting-target' }), true);
+		assert.ok(first.sessionStorage.getItem('orgloom:migration:v1'));
+		assert.equal(first.localStorage.getItem('orgloom:migration:v1'), null, 'Salesforce data is not persisted beyond the tab session');
+
+		setScope(first.win, first.canvasState, { account: REAL.account, org: '00DTARGET', user: REAL.user });
+		const resumed = first.api.migrationResume();
+		assert.equal(resumed.restored, true);
+		assert.equal(resumed.isCrossOrg, true);
+		assert.equal(first.canvasState.bulkRecords[0].loadedFromId, undefined, 'source Id stripped');
+		assert.equal(first.canvasState.bulkRecords[0].values.Id, undefined, 'source values.Id stripped');
+	});
+
+	test('another Org Loom account cannot resume the same-tab migration', () => {
+		const first = harness();
+		setScope(first.win, first.canvasState, REAL);
+		first.canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Private Co' } }];
+		first.api.migrationStash({ status: 'awaiting-target' });
+
+		setScope(first.win, first.canvasState, { account: 'acc_other', org: '00DTARGET', user: '005OTHER' });
+		assert.equal(first.api.migrationResume(), false);
+	});
+
+	test('an in-progress migration is synced only by its bound destination page', () => {
+		const h = harness();
+		setScope(h.win, h.canvasState, REAL);
+		h.canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Bound Co' } }];
+		h.api.migrationStash({ status: 'awaiting-target' });
+
+		const target = { account: REAL.account, org: '00DTARGET', user: REAL.user };
+		setScope(h.win, h.canvasState, target);
+		assert.equal(h.api.migrationResume().restored, true);
+		h.canvasState.migrateMode.active = true;
+		h.canvasState.migrateMode.targetSfOrgId = target.org;
+		h.canvasState.bulkRecords[0].loadedFromId = '001TARGET';
+		h.canvasState.bulkRecords[0]._migrateMatchedId = '001TARGET';
+		h.api.migrationSyncIfActive();
+
+		setScope(h.win, h.canvasState, REAL);
+		h.canvasState.migrateMode.active = false;
+		h.canvasState.bulkRecords = [{ id: 99, objectName: 'Contact', values: { LastName: 'Wrong page' } }];
+		h.api.autosaveSchedule();
+		const stored = JSON.parse(h.sessionStorage.getItem('orgloom:migration:v1'));
+		assert.equal(stored.targetSfOrgId, target.org);
+		assert.equal(stored.state.bulkRecords[0].loadedFromId, '001TARGET', 'destination match survives wrong-org autosave');
+		assert.equal(stored.state.bulkRecords[0].objectName, 'Account');
+
+		setScope(h.win, h.canvasState, target);
+		h.canvasState.bulkRecords = [];
+		const recovered = h.api.migrationResume();
+		assert.equal(recovered.restored, true);
+		assert.equal(h.canvasState.bulkRecords[0].loadedFromId, '001TARGET');
 	});
 });

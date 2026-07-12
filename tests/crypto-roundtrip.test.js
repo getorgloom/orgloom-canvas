@@ -33,7 +33,7 @@ describe('crypto round-trip', () => {
 		const pt = 'identical-token-across-rows';
 		const a = encrypt(pt);
 		const b = encrypt(pt);
-		assert.notEqual(a, b, 'IV randomization not visible — would leak duplicates');
+		assert.notEqual(a, b, 'IV randomization not visible (would leak duplicates)');
 		assert.equal(decrypt(a), pt);
 		assert.equal(decrypt(b), pt);
 	});

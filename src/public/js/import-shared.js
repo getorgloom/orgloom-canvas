@@ -6,12 +6,12 @@
 	function gateImportFile(file, opts) {
 		const extRe = opts.extRe;
 		if (!extRe.test(String(file.name || ''))) {
-			return '"' + file.name + '" isn\'t a ' + opts.extLabel + ' file — ' +
+			return '"' + file.name + '" isn\'t a ' + opts.extLabel + ' file - ' +
 				opts.flowLabel + ' only accepts ' + opts.extLabel + ' files.';
 		}
 		if (file.size > opts.maxBytes) {
 			return '"' + file.name + '" is ' + (file.size / (1024 * 1024)).toFixed(1) +
-				' MB — over the ' + Math.round(opts.maxBytes / (1024 * 1024)) +
+				' MB - over the ' + Math.round(opts.maxBytes / (1024 * 1024)) +
 				' MB limit for ' + opts.flowLabel + '. Was this the right file?';
 		}
 		return null;
@@ -72,7 +72,37 @@
 				bulkInitialized: canvasState.bulkInitialized,
 				currentCanvas: canvasState.currentCanvas,
 			};
-			return function restore() {
+			let armed = null;
+			function fingerprint() {
+				try {
+					return JSON.stringify({
+						records: (canvasState.bulkRecords || []).map((r) => ({
+							id: r.id,
+							objectName: r.objectName,
+							loadedFromId: r.loadedFromId || null,
+							pendingDelete: !!r.pendingDelete,
+							values: r.values || {},
+						})),
+						associations: (canvasState.bulkAssociations || []).map((a) => ({
+							fromId: a.fromId,
+							toId: a.toId,
+							fieldName: a.fieldName,
+						})),
+						selected: (canvasState.selectedObjects || []).map((s) => s && s.name),
+						hidden: Array.from(canvasState.hiddenObjects || []),
+						currentCanvasId: canvasState.currentCanvas && canvasState.currentCanvas.id,
+					});
+				} catch (_e) {
+					return null;
+				}
+			}
+			function restore() {
+				if (armed && (canvasState.bulkRecords !== armed.records ||
+					canvasState.bulkAssociations !== armed.associations ||
+					fingerprint() !== armed.fingerprint)) {
+					showBulkToast('Can’t undo the import because the canvas was edited afterward.', 'info');
+					return;
+				}
 				canvasState.selectedObjects = snap.selectedObjects;
 				canvasState.selectedIdSeq = snap.selectedIdSeq;
 				canvasState.activeIndex = snap.activeIndex;
@@ -90,7 +120,16 @@
 				canvasState._renderedRecIds.clear();
 				renderAll();
 				showBulkToast('Import undone.');
+			}
+			restore.arm = function () {
+				armed = {
+					records: canvasState.bulkRecords,
+					associations: canvasState.bulkAssociations,
+					fingerprint: fingerprint(),
+				};
+				return restore;
 			};
+			return restore;
 		};
 	}
 

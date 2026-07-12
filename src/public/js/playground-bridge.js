@@ -65,7 +65,7 @@ return;
 				showConversionPrompt({
 					kind: 'save',
 					title: 'Save this canvas for real?',
-					body: 'You’re in demo mode — saved canvases only stick to this browser. Start a free trial to save them to your account and pick up where you left off on any device.',
+					body: 'You’re in demo mode, so saved canvases only stick to this browser. Start a free trial to save them to your account and pick up where you left off on any device.',
 					primary: 'Start free trial →',
 					secondary: 'Save in demo only',
 					captureEvent: 'playground_save_attempted',
@@ -82,7 +82,7 @@ return;
 				showConversionPrompt({
 					kind: 'upload',
 					title: 'Push to a real Salesforce org?',
-					body: 'You’re in demo mode — uploads don’t reach a real org. Start a free trial to connect your Salesforce and ship these records for real.',
+					body: 'You’re in demo mode, so uploads don’t reach a real org. Start a free trial to connect your Salesforce and ship these records for real.',
 					primary: 'Sign up & connect SF →',
 					secondary: 'Run demo upload',
 					captureEvent: 'playground_upload_attempted',

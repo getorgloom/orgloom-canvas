@@ -2,7 +2,7 @@
 const _ts_user = (typeof user !== 'undefined') ? user : null;
 const _ts_connection = (typeof connection !== 'undefined') ? connection : null;
 // SF connection state derives from the `connection` local rather than
-// any var declared inside a parent template's scriptlet — EJS scriptlet
+// any var declared inside a parent template's scriptlet: EJS scriptlet
 // var declarations don't reliably cross include() boundaries, so a
 // typeof-check on such a var would always return 'undefined' here.
 // `connection` is a top-level local from the server route, which EJS
@@ -17,11 +17,11 @@ const _ts_sfConnected = !!(_ts_user && _ts_connection);
 // ambiguous when the user has more than one connection.
 const _ts_sfLabel = (_ts_connection && (_ts_connection.display_username || _ts_connection.email || _ts_connection.display_name)) || 'Connected';
 const _ts_userName = _ts_user ? (_ts_user.username || _ts_user.displayName || _ts_user.id) : '';
-// Hide nav links pointing at the page the user is already on — no
+// Hide nav links pointing at the page the user is already on: no
 // value offering a nav target to where they are. currentPath comes
 // from the res.locals middleware in server.js. Docs subpages
 // (/docs/walkthroughs/*) keep the Docs link because clicking it
-// goes "back to docs index" — useful nav. Only the exact /docs
+// goes "back to docs index" (useful nav). Only the exact /docs
 // index hides it.
 const _ts_path = (typeof currentPath !== 'undefined') ? currentPath : null;
 const _ts_onCanvas = _ts_path === '/';
@@ -97,7 +97,7 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 			<% } %>
 
 			<% if (_ts_saas) { %>
-				<button type="button" class="app-sf-chip<%= _ts_sfConnected ? '' : ' app-sf-chip--disconnected' %>" id="app-sf-chip" title="<%= _ts_sfConnected ? 'Active Salesforce connection — manage' : 'No active Salesforce connection — click to connect' %>">
+				<button type="button" class="app-sf-chip<%= _ts_sfConnected ? '' : ' app-sf-chip--disconnected' %>" id="app-sf-chip" title="<%= _ts_sfConnected ? 'Active Salesforce connection: manage' : 'No active Salesforce connection: click to connect' %>">
 					<span class="app-sf-chip-dot" aria-hidden="true"></span>
 					<span class="app-sf-chip-label"><%= _ts_sfConnected ? _ts_sfLabel : 'Not connected' %></span>
 					<span class="app-sf-chip-caret" aria-hidden="true">&#9662;</span>
@@ -145,7 +145,7 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 	<% if (typeof user !== 'undefined' && user && user.id) { %>
 	posthog.identify(<%- jsonForScript(user.id) %>, {
 		// Light, non-PII identity stitch. Email is intentionally
-		// omitted from properties — PostHog stores the distinct_id
+		// omitted from properties; PostHog stores the distinct_id
 		// and we can join in dashboards via the audit_log if needed.
 		signed_in: true,
 	});

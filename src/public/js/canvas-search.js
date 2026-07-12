@@ -58,6 +58,8 @@ throw new Error('canvas-search.mount: missing deps object');
 
 			function closeModal() {
 				modal.classList.add('hidden');
+
+				input.blur();
 			}
 			function openModal(initialQuery) {
 				modal.classList.remove('hidden');
@@ -77,6 +79,7 @@ throw new Error('canvas-search.mount: missing deps object');
 			});
 			document.addEventListener('keydown', (e) => {
 				if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+					e.preventDefault();
 					closeModal();
 				}
 			});
@@ -217,7 +220,7 @@ return escapeHtml(value);
 					return;
 				}
 				const cap = matches.length >= MAX_RESULTS
-					? ' (showing first ' + MAX_RESULTS + ' — refine to narrow)'
+					? ' (showing first ' + MAX_RESULTS + ' - refine to narrow)'
 					: '';
 				statsEl.textContent = matches.length + ' match' + (matches.length === 1 ? '' : 'es') +
 					' across ' + recordsScanned + ' record' + (recordsScanned === 1 ? '' : 's') + cap + '.';

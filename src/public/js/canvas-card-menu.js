@@ -190,20 +190,20 @@
 						slotItems =
 							'<button type="button" class="fop-item" data-card-action="to-slot">' +
 							'<span class="fop-label">Convert to slot</span>' +
-							'<span class="fop-name">Whole record — recipient creates a fresh draft</span>' +
+							'<span class="fop-name">Whole record: recipient creates a fresh draft</span>' +
 							'</button>';
 						if (isLoaded) {
 							slotItems +=
 								'<button type="button" class="fop-item" data-card-action="to-field-slot">' +
 								'<span class="fop-label">Mark fields for recipient&hellip;</span>' +
-								'<span class="fop-name">Field-level &mdash; recipient updates only the fields you pick</span>' +
+								'<span class="fop-name">Field-level: recipient updates only the fields you pick</span>' +
 								'</button>';
 						} else {
 							slotItems +=
 								'<button type="button" class="fop-item is-disabled" disabled aria-disabled="true" ' +
 								'title="Field-level slots target an existing Salesforce record. Upload this draft first, then return here.">' +
 								'<span class="fop-label">Mark fields for recipient&hellip;</span>' +
-								'<span class="fop-name">Upload this draft first &mdash; field-level slots target an existing record</span>' +
+								'<span class="fop-name">Upload this draft first: field-level slots target an existing record</span>' +
 								'</button>';
 						}
 					} else {
@@ -229,8 +229,8 @@
 						'<span class="fop-label">Remove from canvas</span>' +
 						'<span class="fop-name">' +
 						(isLoaded
-							? 'Take this card off the canvas — the Salesforce record stays intact'
-							: 'Delete this draft — it only exists in your browser') +
+							? 'Take this card off the canvas; the Salesforce record stays intact'
+							: 'Delete this draft; it only exists in your browser') +
 						'</span>' +
 						'</button>';
 					if (isLoaded && !isInaccessible) {
@@ -238,7 +238,7 @@
 							dangerItems +=
 								'<button type="button" class="fop-item fop-item-warn" data-card-action="unmark-delete">' +
 								'<span class="fop-label">Keep this record</span>' +
-								'<span class="fop-name">Unmark — Salesforce DELETE on next upload is cancelled</span>' +
+								'<span class="fop-name">Unmark: Salesforce DELETE on next upload is cancelled</span>' +
 								'</button>';
 						} else {
 							dangerItems +=
@@ -317,7 +317,7 @@
 							const ok = await showConfirmDialog({
 								title: 'Discard unsaved edits?',
 								message:
-									"This record has unsaved edits. Marking it for delete will discard those edits — the record will be DELETE'd in Salesforce on next upload regardless.",
+									"This record has unsaved edits. Marking it for delete will discard those edits: the record will be DELETE'd in Salesforce on next upload regardless.",
 								confirmLabel: 'Discard edits and mark for delete',
 								cancelLabel: 'Cancel',
 								danger: true,
@@ -600,7 +600,7 @@
 						const records = (data && data.records) || [];
 						if (records.length === 0) {
 							list.innerHTML =
-								'<div class="fop-empty">No matches. (Empty results may also mean limited sharing access — ask your admin if you expected to see this record.)</div>';
+								'<div class="fop-empty">No matches. (Empty results may also mean limited sharing access; ask your admin if you expected to see this record.)</div>';
 							return;
 						}
 						const onCanvas = new Set(

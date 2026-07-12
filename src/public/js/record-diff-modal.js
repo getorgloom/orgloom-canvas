@@ -41,6 +41,15 @@ throw new Error('record-diff-modal.mount: missing deps object');
 				} else {
 					delete rec.values[fieldName];
 				}
+				rec._valuesRevision = (Number(rec._valuesRevision) || 0) + 1;
+			}
+			function _writeField(rec, fieldName, value) {
+				rec.values[fieldName] = value;
+				rec._valuesRevision = (Number(rec._valuesRevision) || 0) + 1;
+			}
+			function _fieldUndoIsCurrent(rec, revision, fieldName, expected) {
+				return (Number(rec._valuesRevision) || 0) === revision &&
+					rec.values && rec.values[fieldName] === expected;
 			}
 
 			function _pairKey(idA, idB) {
@@ -241,9 +250,9 @@ return 'auto-number';
 				let leftBtn = '';
 				if (variant === 'diff' || variant === 'b-only') {
 					if (!ctx.aIsTargetable) {
-						leftBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-left" disabled aria-disabled="true" title="A is marked for delete — copy is disabled">◀</button>';
+						leftBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-left" disabled aria-disabled="true" title="A is marked for delete, so copy is disabled">◀</button>';
 					} else if (!aIsWritable) {
-						leftBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-left" disabled aria-disabled="true" title="Field is ' + readOnlyReason(fieldDefForA) + ' on A — Salesforce won’t accept the write">◀</button>';
+						leftBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-left" disabled aria-disabled="true" title="Field is ' + readOnlyReason(fieldDefForA) + ' on A, so Salesforce won’t accept the write">◀</button>';
 					} else {
 						leftBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-left" data-rdm-copy="b-to-a" data-rdm-field="' + escapeHtml(fieldName) + '" title="Copy B’s value to A">◀</button>';
 					}
@@ -252,9 +261,9 @@ return 'auto-number';
 
 				if (!ctx.incoming && (variant === 'diff' || variant === 'a-only')) {
 					if (!ctx.bIsTargetable) {
-						rightBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-right" disabled aria-disabled="true" title="B is marked for delete — copy is disabled">▶</button>';
+						rightBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-right" disabled aria-disabled="true" title="B is marked for delete, so copy is disabled">▶</button>';
 					} else if (!bIsWritable) {
-						rightBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-right" disabled aria-disabled="true" title="Field is ' + readOnlyReason(fieldDefForB) + ' on B — Salesforce won’t accept the write">▶</button>';
+						rightBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-right" disabled aria-disabled="true" title="Field is ' + readOnlyReason(fieldDefForB) + ' on B, so Salesforce won’t accept the write">▶</button>';
 					} else {
 						rightBtn = '<button type="button" class="rdm-copy-btn rdm-copy-btn-right" data-rdm-copy="a-to-b" data-rdm-field="' + escapeHtml(fieldName) + '" title="Copy A’s value to B">▶</button>';
 					}
@@ -266,9 +275,9 @@ return 'auto-number';
 				const rowAction = ctx.incoming
 					? ''
 					: (isResolvable
-						? '<button type="button" class="rdm-ignore-btn" data-rdm-ignore data-rdm-field="' + escapeHtml(fieldName) + '" title="Ignore this field — stop flagging it as a difference for this pair">⊘</button>'
+						? '<button type="button" class="rdm-ignore-btn" data-rdm-ignore data-rdm-field="' + escapeHtml(fieldName) + '" title="Ignore this field: stop flagging it as a difference for this pair">⊘</button>'
 						: (isSuppressed
-							? '<button type="button" class="rdm-restore-btn" data-rdm-restore data-rdm-field="' + escapeHtml(fieldName) + '" title="Restore — flag this field as a difference again">↶</button>'
+							? '<button type="button" class="rdm-restore-btn" data-rdm-restore data-rdm-field="' + escapeHtml(fieldName) + '" title="Restore: flag this field as a difference again">↶</button>'
 							: ''));
 				const rowActionsContent = rowAction
 					? '<div class="rdm-row-actions">' + rowAction + '</div>'
@@ -373,7 +382,7 @@ kept.push(f);
 							'Field-level diff assumes the same object. ' +
 							escapeHtml(diff.objectA || '?') + ' vs ' +
 							escapeHtml(diff.objectB || '?') +
-							' — comparison shows shared field names but values may not be semantically comparable.' +
+							'; comparison shows shared field names but values may not be semantically comparable.' +
 						'</div>'
 					: '';
 
@@ -382,7 +391,7 @@ kept.push(f);
 							'<strong>' +
 							(!aIsTargetable && !bIsTargetable ? 'Both records are' : (!aIsTargetable ? 'Record A is' : 'Record B is')) +
 							' marked for delete.</strong> ' +
-							'Copy actions are disabled — value edits would be discarded when the upload commits the DELETE.' +
+							'Copy actions are disabled, since value edits would be discarded when the upload commits the DELETE.' +
 						'</div>'
 					: '';
 
@@ -423,12 +432,12 @@ kept.push(f);
 				const aToBDisabled = aToBCount === 0 || !bIsTargetable;
 				const bToADisabled = bToACount === 0 || !aIsTargetable;
 				const aToBTitle = !bIsTargetable
-					? 'B is marked for delete — bulk copy is disabled'
+					? 'B is marked for delete, so bulk copy is disabled'
 					: (aToBCount === 0
 						? 'No fields to copy from A → B'
 						: 'Push A’s values into B for ' + aToBCount + ' field' + (aToBCount === 1 ? '' : 's') + ' (overwrites where they differ, fills where B is empty)');
 				const bToATitle = !aIsTargetable
-					? 'A is marked for delete — bulk copy is disabled'
+					? 'A is marked for delete, so bulk copy is disabled'
 					: (bToACount === 0
 						? 'No fields to copy from B → A'
 						: 'Push B’s values into A for ' + bToACount + ' field' + (bToACount === 1 ? '' : 's') + ' (overwrites where they differ, fills where A is empty)');
@@ -537,10 +546,16 @@ target.values = {};
 				const _snap = pushUndo ? _snapField(target, fieldName) : null;
 
 				const newValue = source.values ? source.values[fieldName] : undefined;
-				target.values[fieldName] = newValue == null ? '' : newValue;
+				_writeField(target, fieldName, newValue == null ? '' : newValue);
 				if (pushUndo && _snap) {
 					const _tgt = target, _fn = fieldName, _s = _snap;
+					const _expectedRevision = Number(target._valuesRevision) || 0;
+					const _expectedValue = target.values[fieldName];
 					pushUndo('Undo diff copy', () => {
+						if (!_fieldUndoIsCurrent(_tgt, _expectedRevision, _fn, _expectedValue)) {
+							showBulkToast('Can’t undo the diff copy because the target record was edited afterward.', 'info');
+							return;
+						}
 						_restoreField(_tgt, _fn, _s);
 						renderBulkView();
 						showBulkToast('Reverted the copied field.');
@@ -597,11 +612,19 @@ target.values = {};
 				const _snaps = pushUndo ? eligible.map((f) => ({ f: f, snap: _snapField(target, f) })) : null;
 				for (const f of eligible) {
 					const v = source.values ? source.values[f] : undefined;
-					target.values[f] = v == null ? '' : v;
+					_writeField(target, f, v == null ? '' : v);
 				}
 				if (pushUndo && _snaps) {
 					const _tgt = target, _all = _snaps, _n = eligible.length;
+					const _expectedRevision = Number(target._valuesRevision) || 0;
+					const _expectedValues = new Map(eligible.map((f) => [f, target.values[f]]));
 					pushUndo('Undo diff apply-all', () => {
+						const stale = (Number(_tgt._valuesRevision) || 0) !== _expectedRevision ||
+							eligible.some((f) => !_tgt.values || _tgt.values[f] !== _expectedValues.get(f));
+						if (stale) {
+							showBulkToast('Can’t undo the diff copy because the target record was edited afterward.', 'info');
+							return;
+						}
 						_all.forEach((e) => _restoreField(_tgt, e.f, e.snap));
 						renderBulkView();
 						showBulkToast('Reverted ' + _n + ' copied field' + (_n === 1 ? '' : 's') + '.');

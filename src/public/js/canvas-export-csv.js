@@ -193,7 +193,7 @@ return;
 				const scopeAllDisabled = _state.allCount === 0 ? ' disabled' : '';
 				const scopeSelectedDisabled = _state.selectedCount === 0 ? ' disabled' : '';
 				body.innerHTML =
-					'<p class="tag">Downloads the records on this canvas as CSV &mdash; one file per object type. System-managed fields (audit timestamps, IsDeleted) are excluded.</p>' +
+					'<p class="tag">Downloads the records on this canvas as CSV, one file per object type. System-managed fields (audit timestamps, IsDeleted) are excluded.</p>' +
 					'<div class="cec-section">' +
 						'<label class="cec-section-head">Scope</label>' +
 						'<label class="cec-opt"><input type="radio" name="cec-scope" value="all"' +

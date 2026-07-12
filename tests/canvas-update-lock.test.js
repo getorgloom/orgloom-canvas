@@ -56,7 +56,7 @@ function makeStatefulConn(canvasId, opts = {}) {
 	};
 }
 
-describe('canvas update — per-canvas optimistic-lock serialization', () => {
+describe('canvas update: per-canvas optimistic-lock serialization', () => {
 	test('two concurrent overwrites from the same base version: one wins, one 409s', async () => {
 		const conn = makeStatefulConn(CANVAS, { initialVersion: '068V0', createDelayMs: 10 });
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID, { sessionId: 'lock-sess' });

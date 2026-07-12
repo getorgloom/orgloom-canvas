@@ -4,6 +4,8 @@ const _presenceByCanvas = new Map();
 
 const IDLE_THRESHOLD_MS = 90 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 1000;
+export const MAX_PRESENCE_FIELDS = 100;
+export const MAX_PRESENCE_PAYLOAD_BYTES = 64 * 1024;
 
 const _COLOR_PALETTE = [
 	'#e09240',
@@ -46,9 +48,15 @@ res.write('event: ' + event + '\n');
 
 function _ownsConnection(entry, requestingAccountId) {
 	if (!requestingAccountId) {
-return false;
-}
+		return false;
+	}
 	return entry.accountId === requestingAccountId;
+}
+
+function _acceptSequence(entry, sequence) {
+	if (!Number.isSafeInteger(sequence) || sequence <= entry.lastSequence) return false;
+	entry.lastSequence = sequence;
+	return true;
 }
 
 function _toPeerPayload(entry) {
@@ -79,7 +87,7 @@ delivered++;
 	return delivered;
 }
 
-export function subscribe({ canvasId, workspaceId, accountId, displayName, sseRes }) {
+export function subscribe({ canvasId, workspaceId, accountId, displayName, canEdit = true, sseRes }) {
 	if (!canvasId || !workspaceId || !accountId || !sseRes) {
 		throw new Error('subscribe: missing required field');
 	}
@@ -94,10 +102,12 @@ _presenceByCanvas.set(canvasId, new Map());
 		workspaceId,
 		accountId,
 		displayName: displayName || 'Someone',
+		canEdit: !!canEdit,
 		color,
 		cursor: null,
 		focus: null,
 		lastSeenAt: Date.now(),
+		lastSequence: 0,
 		sseRes,
 	};
 
@@ -113,10 +123,23 @@ _presenceByCanvas.set(canvasId, new Map());
 
 	const keepalive = setInterval(() => {
 		try {
- sseRes.write(': keepalive\n\n'); 
-} catch (e) {                            }
+			if (sseRes.destroyed || sseRes.writableEnded) {
+				clearInterval(keepalive);
+				unsubscribe({ canvasId, connectionId });
+				return;
+			}
+			sseRes.write(': keepalive\n\n');
+		} catch (e) {
+			clearInterval(keepalive);
+			unsubscribe({ canvasId, connectionId });
+		}
 	}, 25 * 1000);
+	entry.keepalive = keepalive;
 	sseRes.on('close', () => {
+		clearInterval(keepalive);
+		unsubscribe({ canvasId, connectionId });
+	});
+	sseRes.on('error', () => {
 		clearInterval(keepalive);
 		unsubscribe({ canvasId, connectionId });
 	});
@@ -134,6 +157,7 @@ return false;
 	if (!entry) {
 return false;
 }
+	if (entry.keepalive) clearInterval(entry.keepalive);
 	conns.delete(connectionId);
 	if (conns.size === 0) {
 _presenceByCanvas.delete(canvasId);
@@ -142,7 +166,7 @@ _presenceByCanvas.delete(canvasId);
 	return true;
 }
 
-export function updateCursor({ canvasId, connectionId, x, y, world, requestingAccountId }) {
+export function updateCursor({ canvasId, connectionId, x, y, world, sequence, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
 return false;
@@ -154,6 +178,7 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
+	if (!_acceptSequence(entry, sequence)) return false;
 	const cx = typeof x === 'number' ? x : null;
 	const cy = typeof y === 'number' ? y : null;
 	entry.cursor = (cx == null || cy == null) ? null : { x: cx, y: cy, world: !!world };
@@ -166,7 +191,7 @@ return false;
 	return true;
 }
 
-export function updateDraft({ canvasId, connectionId, tempId, fields, kind, objectName, x, y, position, requestingAccountId }) {
+export function updateDraft({ canvasId, connectionId, tempId, fields, kind, objectName, x, y, position, sequence, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
 return false;
@@ -178,12 +203,17 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
+	if (!entry.canEdit) return false;
+	if (!_acceptSequence(entry, sequence)) return false;
 	if (tempId == null) {
 return false;
 }
 	if (!fields || typeof fields !== 'object') {
 return false;
 }
+	const keys = Object.keys(fields);
+	if (keys.length > MAX_PRESENCE_FIELDS || keys.some((key) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(key))) return false;
+	if (Buffer.byteLength(JSON.stringify(fields), 'utf8') > MAX_PRESENCE_PAYLOAD_BYTES) return false;
 	entry.lastSeenAt = Date.now();
 	const payload = {
 		type: 'draft-update',
@@ -214,7 +244,7 @@ payload.y = y;
 	return true;
 }
 
-export function updateDraftLink({ canvasId, connectionId, kind, fromSyncId, toSyncId, fieldName, requestingAccountId }) {
+export function updateDraftLink({ canvasId, connectionId, kind, fromSyncId, toSyncId, fieldName, sequence, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
 return false;
@@ -226,6 +256,8 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
+	if (!entry.canEdit) return false;
+	if (!_acceptSequence(entry, sequence)) return false;
 	if (kind !== 'add' && kind !== 'remove') {
 return false;
 }
@@ -244,7 +276,7 @@ return false;
 	return true;
 }
 
-export function removeLoadedRecord({ canvasId, connectionId, sfId, requestingAccountId }) {
+export function removeLoadedRecord({ canvasId, connectionId, sfId, sequence, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
 return false;
@@ -256,6 +288,8 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
+	if (!entry.canEdit) return false;
+	if (!_acceptSequence(entry, sequence)) return false;
 	if (!sfId) {
 return false;
 }
@@ -268,7 +302,7 @@ return false;
 	return true;
 }
 
-export function updateFocus({ canvasId, connectionId, focus, requestingAccountId }) {
+export function updateFocus({ canvasId, connectionId, focus, sequence, requestingAccountId }) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
 return false;
@@ -280,6 +314,7 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
+	if (!_acceptSequence(entry, sequence)) return false;
 	entry.focus = focus || null;
 	entry.lastSeenAt = Date.now();
 	_broadcast(canvasId, {
@@ -310,6 +345,30 @@ export function summary({ canvasId }) {
 return { count: 0 };
 }
 	return { count: conns.size };
+}
+
+export function purgeAccountFromWorkspace({ workspaceId, accountId }) {
+	let removed = 0;
+	for (const [canvasId, conns] of _presenceByCanvas.entries()) {
+		for (const entry of [...conns.values()]) {
+			if (entry.workspaceId === workspaceId && entry.accountId === accountId) {
+				if (unsubscribe({ canvasId, connectionId: entry.connectionId })) removed++;
+			}
+		}
+	}
+	return removed;
+}
+
+export function purgeWorkspace({ workspaceId }) {
+	let removed = 0;
+	for (const [canvasId, conns] of _presenceByCanvas.entries()) {
+		for (const entry of [...conns.values()]) {
+			if (entry.workspaceId === workspaceId) {
+				if (unsubscribe({ canvasId, connectionId: entry.connectionId })) removed++;
+			}
+		}
+	}
+	return removed;
 }
 
 function _sweep() {

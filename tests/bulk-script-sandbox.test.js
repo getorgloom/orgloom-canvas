@@ -15,7 +15,7 @@ before(() => {
 
 	const ANCHOR = 'return {\n\t\t\t\topenModal: openBulkScriptModal,';
 	if (!src.includes(ANCHOR)) {
-		throw new Error('Could not find injection anchor in bulk-script.js — refactor may have moved mount\'s return. Update ANCHOR.');
+		throw new Error('Could not find injection anchor in bulk-script.js: refactor may have moved mount\'s return. Update ANCHOR.');
 	}
 	const INJECTED = 'globalThis.__bsTestInternals = { _bsTokenize, _bsParse, _bsInterpret, _BS_FORBIDDEN_PROPS };\n\t\t\t';
 	const modifiedSrc = src.replace(ANCHOR, INJECTED + ANCHOR);
@@ -78,7 +78,7 @@ return 0;
 
 	const internals = sandbox.__bsTestInternals;
 	if (!internals) {
-throw new Error('Internals not captured — bulk-script.js may have changed shape.');
+throw new Error('Internals not captured: bulk-script.js may have changed shape.');
 }
 	_bsTokenize = internals._bsTokenize;
 	_bsParse = internals._bsParse;
@@ -406,7 +406,7 @@ describe('Sandbox: forbidden-props list inventory', () => {
 			'__lookupGetter__', '__lookupSetter__',
 		];
 		for (const name of required) {
-			assert.ok(_BS_FORBIDDEN_PROPS.has(name), `Forbidden-props list is missing "${name}" — this is a critical sandbox guarantee.`);
+			assert.ok(_BS_FORBIDDEN_PROPS.has(name), `Forbidden-props list is missing "${name}", a critical sandbox guarantee.`);
 		}
 	});
 });

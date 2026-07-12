@@ -46,13 +46,13 @@
 
 	function _tierLabel(f) {
 		if (f.externalId || f.idLookup) {
-			return ' — external id';
+			return ' - external id';
 		}
 		if (f.unique) {
-			return ' — unique';
+			return ' - unique';
 		}
 		if (f.nameField) {
-			return ' — name';
+			return ' - name';
 		}
 		return '';
 	}
@@ -82,7 +82,7 @@
 							'<button class="modal-close" data-mm-close>&times;</button>' +
 						'</div>' +
 						'<div class="modal-content mm-content">' +
-							'<p class="tag">Pick a field per object to look up records that already exist in this org. Matching runs automatically as you choose — matches become <strong>updates</strong> instead of new inserts, so re-running a migration won’t create duplicates. Switch a field back to “insert as new” to undo its matches.</p>' +
+							'<p class="tag">Pick a field per object to look up records that already exist in this org. Matching runs automatically as you choose - matches become <strong>updates</strong> instead of new inserts, so re-running a migration won’t create duplicates. Switch a field back to “insert as new” to undo its matches.</p>' +
 							'<div class="mm-rows"></div>' +
 							'<div class="mm-summary"></div>' +
 						'</div>' +
@@ -135,7 +135,7 @@
 						).join('');
 						const disabled = candidates.length === 0 ? ' disabled' : '';
 						const note = candidates.length === 0
-							? '<span class="mm-row-note">No queryable key fields — these will insert as new.</span>'
+							? '<span class="mm-row-note">No queryable key fields - these will insert as new.</span>'
 							: '';
 						return '<div class="mm-row" data-mm-object="' + escapeHtml(name) + '">' +
 							'<div class="mm-row-meta">' +
@@ -256,7 +256,7 @@
 						resultEl.textContent = converted > 0
 							? converted + ' matched → update' +
 								(ambiguous.size ? ', ' + ambiguous.size + ' ambiguous (left as new)' : '')
-							: (ambiguous.size ? ambiguous.size + ' ambiguous (left as new)' : 'no matches — all insert as new');
+							: (ambiguous.size ? ambiguous.size + ' ambiguous (left as new)' : 'no matches - all insert as new');
 					}
 				}
 

@@ -143,9 +143,9 @@ close();
 							.join(' \u00b7 ');
 
 						const truncationNote = body.capped
-							? '<div class="banner">Hit the ' + (body.cap || 500) + '-record import cap — showing the first ' + body.returned + '. There may be more; add a WHERE clause or a smaller LIMIT to narrow.</div>'
+							? '<div class="banner">Hit the ' + (body.cap || 500) + '-record import cap - showing the first ' + body.returned + '. There may be more; add a WHERE clause or a smaller LIMIT to narrow.</div>'
 							: body.truncated
-							? '<div class="banner">Query matches ' + body.totalSize + ' records — showing the first ' + body.returned + '. Add a WHERE clause or LIMIT to narrow.</div>'
+							? '<div class="banner">Query matches ' + body.totalSize + ' records - showing the first ' + body.returned + '. Add a WHERE clause or LIMIT to narrow.</div>'
 							: '';
 
 						const sfBase = (window.SF_INSTANCE_URL || '').replace(/[/]+$/, '');
@@ -273,7 +273,7 @@ close();
 								lastResultFullFields = fullFields;
 							}
 							if (!result.records || result.records.length === 0) {
-								previewPane.innerHTML = '<div class="banner">Query returned 0 records — nothing to add.</div>';
+								previewPane.innerHTML = '<div class="banner">Query returned 0 records - nothing to add.</div>';
 								return;
 							}
 							_undo = captureUndoSnapshot ? captureUndoSnapshot() : null;
@@ -287,7 +287,7 @@ close();
 								? ' \u00b7 ' + summary.skipped + ' already on canvas (skipped)'
 								: '';
 							if (summary.added === 0) {
-								previewPane.innerHTML = '<div class="banner">All ' + summary.skipped + ' record' + (summary.skipped === 1 ? '' : 's') + ' from this query are already on the canvas — nothing new to add.</div>';
+								previewPane.innerHTML = '<div class="banner">All ' + summary.skipped + ' record' + (summary.skipped === 1 ? '' : 's') + ' from this query are already on the canvas - nothing new to add.</div>';
 								return;
 							}
 							const fkNote = summary.associationsSkippedFk > 0
@@ -306,7 +306,7 @@ close();
 								_undo();
 							}
 							_shared.captureImportFailure('soql', 'commit', err.message || String(err));
-							previewPane.innerHTML = '<div class="banner error">Could not add to canvas: ' + escapeHtml(err.message || String(err)) + (_undo ? ' The canvas was restored — nothing changed.' : '') + '</div>';
+							previewPane.innerHTML = '<div class="banner error">Could not add to canvas: ' + escapeHtml(err.message || String(err)) + (_undo ? ' The canvas was restored - nothing changed.' : '') + '</div>';
 						} finally {
 							commitBtn.disabled = false;
 							previewBtn.disabled = false;

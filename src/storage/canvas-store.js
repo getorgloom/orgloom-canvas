@@ -192,18 +192,33 @@ return 0;
 			const cv = await conn.sobject('ContentVersion').retrieve(result.id);
 			const canvasId = cv.ContentDocumentId;
 
-			await canvasKeys.persist({ sfOrgId, canvasId, dataKey, kekProvider, sessionId });
+			try {
+				await canvasKeys.persist({ sfOrgId, canvasId, dataKey, kekProvider, sessionId });
 
 			const recordCount = _countCanvasRecords(safe);
 			const bodySha256 = crypto.createHash('sha256').update(envelope).digest('hex');
-			await _writeHybridCanvasRecord(conn, {
+				await _writeHybridCanvasRecord(conn, {
 				canvasId,
 				contentDocumentId: canvasId,
 				sfUserId,
 				recordCount,
 				bodySha256,
 				encryptionKeyVersion: 'v1',
-			});
+				});
+			} catch (persistErr) {
+
+				try {
+					await conn.sobject('ContentDocument').destroy(canvasId);
+				} catch (cleanupErr) {
+					console.warn('canvas-store: failed to clean up partial canvas ' + canvasId + ':', cleanupErr && cleanupErr.message);
+				}
+				try {
+					await canvasKeys.remove({ sfOrgId, canvasId });
+				} catch (cleanupErr) {
+					console.warn('canvas-store: failed to clean up partial canvas key ' + canvasId + ':', cleanupErr && cleanupErr.message);
+				}
+				throw persistErr;
+			}
 
 			return { id: canvasId, versionId: result.id };
 		},
@@ -292,7 +307,7 @@ return 0;
 			const _hybridMeta = (probe.records || [])[0] || null;
 			if (!_hybridMeta) {
 
-				const err = new Error('Canvas not found — or you no longer have access to it.');
+				const err = new Error('Canvas not found - or you no longer have access to it.');
 				err.statusCode = 404;
 				err.code = 'canvas-not-accessible';
 				throw err;

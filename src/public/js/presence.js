@@ -27,6 +27,8 @@
 			let _eventSource = null;
 			let _myConnectionId = null;
 			let _currentCanvasId = null;
+			let _outboundSequence = 0;
+			function _nextSequence() { _outboundSequence += 1; return _outboundSequence; }
 			const _peers = new Map();
 
 			let _cursorLayer = null;
@@ -331,6 +333,7 @@ out[k] = v;
 			}
 
 			function _postDraftPayload(payload) {
+				payload.sequence = _nextSequence();
 				return csrfFetch(
 					'/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/draft',
 					{
@@ -480,6 +483,7 @@ removedLoadedIds.push(sfId);
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
 								connectionId: _myConnectionId,
+								sequence: _nextSequence(),
 								sfId: sfId,
 							}),
 						},
@@ -547,6 +551,7 @@ continue;
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
 								connectionId: _myConnectionId,
+								sequence: _nextSequence(),
 								kind: 'remove',
 								fromSyncId: parts.fromSyncId,
 								toSyncId: parts.toSyncId,
@@ -568,6 +573,7 @@ continue;
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
 								connectionId: _myConnectionId,
+								sequence: _nextSequence(),
 								kind: 'add',
 								fromSyncId: link.fromSyncId,
 								toSyncId: link.toSyncId,
@@ -855,7 +861,7 @@ return;
 					if (ok) {
 
 						try {
-							showBulkToast(name + ' saved this canvas — your view updated.', 'info');
+							showBulkToast(name + ' saved this canvas, and your view updated.', 'info');
 						} catch (_) {}
 						return;
 					}
@@ -1002,10 +1008,10 @@ _pendingCursorAbort.abort();
 						method: 'POST',
 						credentials: 'same-origin',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ connectionId: _myConnectionId, x, y, world: isWorld }),
+						body: JSON.stringify({ connectionId: _myConnectionId, sequence: _nextSequence(), x, y, world: isWorld }),
 						signal: ctl.signal,
 					},
-				).catch(() => {                              });
+				).catch(() => {                             });
 			}
 
 			function _onMouseLeave() {
@@ -1018,7 +1024,7 @@ return;
 						method: 'POST',
 						credentials: 'same-origin',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ connectionId: _myConnectionId, x: null, y: null }),
+						body: JSON.stringify({ connectionId: _myConnectionId, sequence: _nextSequence(), x: null, y: null }),
 					},
 				).catch(() => {});
 			}
@@ -1046,6 +1052,7 @@ return;
 }
 				unsubscribe();
 				_currentCanvasId = canvasId;
+				_outboundSequence = 0;
 				_ensureCursorLayer();
 				_attachMouseTracking();
 				try {
@@ -1097,7 +1104,7 @@ return;
 						method: 'POST',
 						credentials: 'same-origin',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ connectionId: _myConnectionId, focus: focus || null }),
+						body: JSON.stringify({ connectionId: _myConnectionId, sequence: _nextSequence(), focus: focus || null }),
 					},
 				).catch(() => {});
 			}

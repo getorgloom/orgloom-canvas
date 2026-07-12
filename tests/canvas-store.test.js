@@ -98,7 +98,7 @@ function hybridMetaRow(canvasId, extra = {}) {
 	}, extra);
 }
 
-describe('canvas store — list / ownedByMe', () => {
+describe('canvas store: list / ownedByMe', () => {
 	test('owner sees ownedByMe=true; non-owner sees false', async () => {
 		const conn = mockConn({
 			queries: [{
@@ -147,7 +147,7 @@ describe('canvas store — list / ownedByMe', () => {
 	});
 });
 
-describe('canvas store — save (encrypt + key persistence + metadata)', () => {
+describe('canvas store: save (encrypt + key persistence + metadata)', () => {
 	test('emits OLE2 envelope, persists key, writes Canvas__c row, drafts pass through', async () => {
 		const conn = mockConn({
 
@@ -209,7 +209,7 @@ describe('canvas store — save (encrypt + key persistence + metadata)', () => {
 	});
 });
 
-describe('canvas store — get (probe + decrypt + legacy plaintext)', () => {
+describe('canvas store: get (probe + decrypt + legacy plaintext)', () => {
 	test('returns null when the body ContentDocument is missing', async () => {
 
 		const conn = mockConn({
@@ -328,7 +328,7 @@ describe('canvas store — get (probe + decrypt + legacy plaintext)', () => {
 	});
 });
 
-describe('canvas store — update / optimistic lock', () => {
+describe('canvas store: update / optimistic lock', () => {
 	test('stale expectedVersionId throws 409 with currentVersionId', async () => {
 		const conn = mockConn({
 			queries: [
@@ -438,7 +438,7 @@ describe('canvas store — update / optimistic lock', () => {
 	});
 });
 
-describe('canvas store — SOQL escaping', () => {
+describe('canvas store: SOQL escaping', () => {
 	test('canvas id with a quote is escaped in the SOQL the store issues', async () => {
 
 		const conn = mockConn({ queries: [{ records: [] }] });
@@ -449,7 +449,7 @@ describe('canvas store — SOQL escaping', () => {
 	});
 });
 
-describe('canvas store — countOwned', () => {
+describe('canvas store: countOwned', () => {
 	test('returns the totalSize value', async () => {
 		const conn = mockConn({ queries: [{ totalSize: 7, records: [] }] });
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
@@ -464,7 +464,7 @@ describe('canvas store — countOwned', () => {
 	});
 });
 
-describe('canvas store — remove', () => {
+describe('canvas store: remove', () => {
 	test('deletes the canvas_keys row alongside the SF ContentDocument', async () => {
 
 		await canvasKeys.persist({ sfOrgId: ORG_ID, canvasId: '069DEL', dataKey: generateDataKey(), kekProvider: TEST_KEK });

@@ -87,7 +87,7 @@ export async function up(db) {
 		const code = e && e.code;
 		if (code === "ERR_MODULE_NOT_FOUND" || /cannot find/i.test(msg)) {
 			console.log(
-				"[migration 001_init] orgloom-saas not installed — running canvas-standalone schema (no workspaces/billing/oauth tables).",
+				"[migration 001_init] orgloom-saas not installed; running canvas-standalone schema (no workspaces/billing/oauth tables).",
 			);
 			return;
 		}

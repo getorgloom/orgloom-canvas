@@ -139,7 +139,7 @@ return true;
 										'</div>' +
 										(b.note ? '<div class="uh-note">' + escapeHtml(b.note) + '</div>' : '') +
 										(typeof b.deletedCount === 'number' && b.deletedCount > 0
-											? '<div class="uh-note uh-note-danger">' + b.deletedCount + ' record' + (b.deletedCount === 1 ? '' : 's') + ' deleted in Salesforce. Org Loom can’t undelete — restore from the SF recycle bin within 15 days.</div>'
+											? '<div class="uh-note uh-note-danger">' + b.deletedCount + ' record' + (b.deletedCount === 1 ? '' : 's') + ' deleted in Salesforce. Org Loom can’t undelete - restore from the SF recycle bin within 15 days.</div>'
 											: '') +
 									'</div>' +
 									'<div class="uh-row-actions">' +
@@ -217,7 +217,7 @@ throw new Error(preflight.error || 'Preflight failed');
 						: 'modified after the upload window';
 					return '<li>' +
 						'<code>' + escapeHtml(r.objectName) + ' ' + escapeHtml(r.sfId) + '</code> ' +
-						'<span class="tag">&mdash; ' + reason + ' on ' + escapeHtml(when) + '</span>' +
+						'<span class="tag"> - ' + reason + ' on ' + escapeHtml(when) + '</span>' +
 					'</li>';
 				}).join('');
 
@@ -297,7 +297,7 @@ counts.push(rec.drifted.length + ' drifted');
 							' carry value-revert data. Clean fields are checked by default; ' +
 							(totalDriftedFieldCount > 0
 								? 'drifted fields (where someone else changed the value after our upload) are ' +
-									'<strong>unchecked</strong> by default — tick them to overwrite their change.'
+									'<strong>unchecked</strong> by default - tick them to overwrite their change.'
 								: 'no fields have drifted since the upload.') +
 						'</p>' +
 						valueRevertSections +
@@ -308,13 +308,13 @@ counts.push(rec.drifted.length + ' drifted');
 					const reason = r.probeError ? r.probeError : 'reason unknown';
 					return '<li>' +
 						'<code>' + escapeHtml(r.objectName) + ' ' + escapeHtml(r.sfId) + '</code> ' +
-						'<span class="tag">&mdash; ' + escapeHtml(reason) + '</span>' +
+						'<span class="tag"> - ' + escapeHtml(reason) + '</span>' +
 					'</li>';
 				}).join('');
 				const unverifiedSection = unverifiedList.length > 0
 					? '<div class="uh-drifted-block">' +
 						'<h5 class="uh-drifted-title">' + unverifiedList.length + ' record' + (unverifiedList.length === 1 ? '' : 's') + ' couldn’t be verified</h5>' +
-						'<p class="tag">Salesforce returned an error when we tried to look up the current state of ' + (unverifiedList.length === 1 ? 'this record' : 'these records') + '. Recall is skipping ' + (unverifiedList.length === 1 ? 'it' : 'them') + ' by default. Common cause: your Salesforce user lost read access to the object since upload — ask your admin to check.</p>' +
+						'<p class="tag">Salesforce returned an error when we tried to look up the current state of ' + (unverifiedList.length === 1 ? 'this record' : 'these records') + '. Recall is skipping ' + (unverifiedList.length === 1 ? 'it' : 'them') + ' by default. Common cause: your Salesforce user lost read access to the object since upload - ask your admin to check.</p>' +
 						'<ul class="uh-drifted-list">' + unverifiedRows + '</ul>' +
 					'</div>'
 					: '';
@@ -337,7 +337,7 @@ counts.push(rec.drifted.length + ' drifted');
 						: 'modified since upload';
 					return '<li>' +
 						'<code>' + escapeHtml(c.childObjectName) + ' ' + escapeHtml(c.childSfId) + '</code> ' +
-						'<span class="tag">&mdash; ' + bucketLabel + '</span>' +
+						'<span class="tag"> - ' + bucketLabel + '</span>' +
 					'</li>';
 				}).join('');
 
@@ -351,21 +351,21 @@ counts.push(rec.drifted.length + ' drifted');
 						'<h5 class="uh-cascade-title">⚠ Master-detail cascade conflict</h5>' +
 						'<p class="tag">' + cascadeConflicts.length + ' ' + cascadeChildLabel +
 							(cascadeConflicts.length === 1 ? '' : 's') + ' will be deleted ANYWAY because their parent records are being recalled. ' +
-							'Salesforce cascade-deletes master-detail children when their parents go &mdash; we can’t skip them.' +
+							'Salesforce cascade-deletes master-detail children when their parents go - we can’t skip them.' +
 						'</p>' +
 						'<ul class="uh-cascade-list">' + cascadeRows + '</ul>' +
 						'<label class="uh-cascade-ack">' +
 							'<input type="checkbox" data-uh-cascade-ack> ' +
-							'I understand &mdash; proceed knowing these records will be deleted by cascade.' +
+							'I understand - proceed knowing these records will be deleted by cascade.' +
 						'</label>' +
 					'</div>'
 					: '';
 
 				const initialActionCount = cleanList.length;
 				const noCleanReason = driftedList.length > 0
-					? ' &mdash; everything in this batch has been modified since upload.'
+					? ' - everything in this batch has been modified since upload.'
 					: updatesList.length > 0 && cleanList.length === 0
-						? ' &mdash; this batch only updated existing records; nothing was newly created to delete.'
+						? ' - this batch only updated existing records; nothing was newly created to delete.'
 						: '.';
 
 				const batchDeletedCount = Array.isArray(batch && batch.deletedIds)
@@ -376,7 +376,7 @@ counts.push(rec.drifted.length + ' drifted');
 						'<ul><li>' + batchDeletedCount + ' record' +
 						(batchDeletedCount === 1 ? '' : 's') +
 						' in this batch ' + (batchDeletedCount === 1 ? 'was' : 'were') +
-						' DELETE\'d in Salesforce. Org Loom can’t undelete — restore from the SF recycle bin within 15 days. Recall only reverses the inserts/updates above.</li></ul>'
+						' DELETE\'d in Salesforce. Org Loom can’t undelete - restore from the SF recycle bin within 15 days. Recall only reverses the inserts/updates above.</li></ul>'
 					: '';
 				content.innerHTML =
 					'<div class="uh-confirm">' +
@@ -392,7 +392,7 @@ counts.push(rec.drifted.length + ' drifted');
 						driftedSection +
 						cascadeSection +
 						'<p class="tag uh-warn">' +
-							'⚠ Soft delete only &mdash; records go to the Recycle Bin (15-day retention; recoverable via Salesforce).' +
+							'⚠ Soft delete only - records go to the Recycle Bin (15-day retention; recoverable via Salesforce).' +
 						'</p>' +
 						'<div class="uh-confirm-actions">' +
 							'<button type="button" class="button secondary" data-uh-back>Back</button>' +
@@ -517,9 +517,9 @@ throw new Error(body.error || 'Recall failed');
 					let banner;
 					if (body.status === 'recalled') {
 						if (succeeded === 0 && alreadyDeleted > 0 && preservedUpdates === 0) {
-							banner = '<div class="banner">All ' + alreadyDeleted + ' record' + (alreadyDeleted === 1 ? '' : 's') + ' had already been removed in Salesforce — nothing to delete.</div>';
+							banner = '<div class="banner">All ' + alreadyDeleted + ' record' + (alreadyDeleted === 1 ? '' : 's') + ' had already been removed in Salesforce - nothing to delete.</div>';
 						} else if (succeeded === 0 && alreadyDeleted === 0 && preservedUpdates > 0) {
-							banner = '<div class="banner">No records deleted — this batch only updated existing records, all left in place.</div>';
+							banner = '<div class="banner">No records deleted - this batch only updated existing records, all left in place.</div>';
 						} else {
 							banner = '<div class="banner success">' + deletedFragment + alreadyFragment + preservedFragment + '.</div>';
 						}

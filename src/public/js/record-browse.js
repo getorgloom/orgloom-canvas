@@ -203,7 +203,7 @@ return null;
 						.map((p) => '<option value="' + escapeHtml(p.value) + '"' + (String(v) === p.value ? ' selected' : '') + '>' + escapeHtml(p.label || p.value) + '</option>')
 						.join('');
 					return '<select class="rb-filter-value" id="' + id + '" data-filter-id="' + filter.id + '">' +
-						'<option value="">— pick —</option>' + opts +
+						'<option value="">(pick)</option>' + opts +
 					'</select>';
 				}
 				if (field && (field.type === 'picklist' || field.type === 'combobox') && filter.op === 'in') {
@@ -218,7 +218,7 @@ return null;
 				}
 				if (field && field.type === 'boolean') {
 					return '<select class="rb-filter-value" id="' + id + '" data-filter-id="' + filter.id + '">' +
-						'<option value="">— pick —</option>' +
+						'<option value="">(pick)</option>' +
 						'<option value="true"' + (String(v) === 'true' ? ' selected' : '') + '>Yes</option>' +
 						'<option value="false"' + (String(v) === 'false' ? ' selected' : '') + '>No</option>' +
 					'</select>';
@@ -247,7 +247,7 @@ return null;
 				).join('');
 				return '<div class="rb-filter-chip" data-filter-id="' + filter.id + '">' +
 					'<select class="rb-filter-field" data-filter-id="' + filter.id + '">' +
-						'<option value="">— field —</option>' + fieldOptions +
+						'<option value="">(field)</option>' + fieldOptions +
 					'</select>' +
 					'<select class="rb-filter-op" data-filter-id="' + filter.id + '">' + opOptions + '</select>' +
 					_renderValueInput(filter, fieldDef) +
@@ -398,6 +398,10 @@ throw new Error((body && (body.message || body.error)) || 'HTTP ' + r.status);
 				if (_fetchTimer) {
 clearTimeout(_fetchTimer);
 }
+
+				_fetchSeq += 1;
+				_state.lastResult = null;
+				_updateLoadButton(content);
 				_fetchTimer = setTimeout(() => _fetchResults(content), 300);
 			}
 
@@ -490,7 +494,7 @@ return;
 						const opts = objs.map((o) =>
 							'<option value="' + escapeHtml(o.name) + '"' + (_state.objectName === o.name ? ' selected' : '') + '>' + escapeHtml(o.label || o.name) + ' (' + escapeHtml(o.name) + ')</option>'
 						).join('');
-						objectPicker.innerHTML = '<option value="">— pick an object —</option>' + opts;
+						objectPicker.innerHTML = '<option value="">(pick an object)</option>' + opts;
 						objectPicker.dataset.populated = '1';
 					}).catch((e) => {
 						const msg = (e && e.message) || String(e);
@@ -781,8 +785,16 @@ sel.delete(id);
 								const summary = await runAndCommitSoql(job.soql, { knownTotal: job.count });
 								if (summary.blocked) {
 
-									showErr(summary.capReason || 'Canvas is at the record limit.');
-									showBulkToast(summary.capReason || 'Canvas is at the record limit.', 'error');
+									const rolledBack = added > 0 && _undo;
+									if (rolledBack) {
+										_undo();
+									}
+									const reason = summary.capReason || 'Canvas is at the record limit.';
+									const msg = reason + (rolledBack
+										? ' (rolled back the ' + added + ' record' + (added === 1 ? '' : 's') + ' already added; nothing changed).'
+										: '');
+									showErr(msg);
+									showBulkToast(msg, 'error');
 									return;
 								}
 								added += summary.added || 0;
@@ -795,7 +807,7 @@ sel.delete(id);
 								_undo();
 							}
 							const _msg = 'Load failed: ' + (err.message || String(err)) +
-								(rolledBack ? ' — rolled back the ' + added + ' record' + (added === 1 ? '' : 's') + ' already added; nothing changed.' : '');
+								(rolledBack ? ' (rolled back the ' + added + ' record' + (added === 1 ? '' : 's') + ' already added; nothing changed).' : '');
 							_shared.captureImportFailure('browse', 'load', err.message || String(err));
 							showErr(_msg);
 

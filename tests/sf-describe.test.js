@@ -6,7 +6,22 @@ import {
 	cleanLabel,
 	isNoiseSObject,
 	getQueryableSObjects,
+	listObjects,
 } from '../src/sf-describe.js';
+
+test('AF-040: describe-global preserves create permission for object gating', async () => {
+	const conn = {
+		async describeGlobal() {
+			return { sobjects: [
+				{ name: 'Allowed__c', label: 'Allowed', labelPlural: 'Allowed', queryable: true, createable: true },
+				{ name: 'Denied__c', label: 'Denied', labelPlural: 'Denied', queryable: true, createable: false },
+			] };
+		},
+	};
+	const objects = await listObjects(conn, 'af-040');
+	assert.equal(objects.find((object) => object.name === 'Allowed__c').createable, true);
+	assert.equal(objects.find((object) => object.name === 'Denied__c').createable, false);
+});
 
 function fakeConn(objectNames) {
 	let calls = 0;
@@ -135,7 +150,7 @@ describe('getQueryableSObjects cache isolation', () => {
 		assert.equal(set1, set2, 'same cached Set instance');
 	});
 
-	test('falsy orgId is NEVER cached — two orgs never cross-contaminate', async () => {
+	test('falsy orgId is NEVER cached - two orgs never cross-contaminate', async () => {
 
 		const orgA = fakeConn(['Account', 'CustomA__c']);
 		const orgB = fakeConn(['Account', 'CustomB__c']);

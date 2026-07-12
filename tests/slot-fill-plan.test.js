@@ -11,7 +11,7 @@ function slotRec({ slotId, kind = 'whole-record', fields, assigneeSfUserId, load
 	return rec;
 }
 
-describe('planSlotFills — assignment authorization', () => {
+describe('planSlotFills - assignment authorization', () => {
 	test('generic slot is fillable by any recipient with a loadedFromId', () => {
 		const out = planSlotFills({
 			records: [slotRec({ slotId: 1, loadedFromId: '001ABC' })],
@@ -33,7 +33,7 @@ describe('planSlotFills — assignment authorization', () => {
 		assert.equal(out.recordPlan.Account[0].Industry, 'Tech');
 	});
 
-	test('slot assigned to someone else is skipped — no update row produced', () => {
+	test('slot assigned to someone else is skipped - no update row produced', () => {
 		const out = planSlotFills({
 			records: [slotRec({
 				slotId: 1,
@@ -73,7 +73,7 @@ describe('planSlotFills — assignment authorization', () => {
 	});
 });
 
-describe('planSlotFills — draft handling', () => {
+describe('planSlotFills - draft handling', () => {
 	test('draft slot (no loadedFromId) is skipped with reason=no_record_to_update', () => {
 		const out = planSlotFills({
 			records: [slotRec({ slotId: 1, kind: 'whole-record' })],
@@ -101,7 +101,7 @@ describe('planSlotFills — draft handling', () => {
 	});
 });
 
-describe('planSlotFills — record coalescing', () => {
+describe('planSlotFills - record coalescing', () => {
 	test('two slots on the same loadedFromId merge into one update row', () => {
 
 		const out = planSlotFills({
@@ -165,7 +165,7 @@ describe('planSlotFills — record coalescing', () => {
 	});
 });
 
-describe('planSlotFills — field allowlist enforcement', () => {
+describe('planSlotFills - field allowlist enforcement', () => {
 	test('field-level slot drops keys outside the allowlist', () => {
 		const out = planSlotFills({
 			records: [slotRec({
@@ -220,7 +220,7 @@ describe('planSlotFills — field allowlist enforcement', () => {
 	});
 });
 
-describe('planSlotFills — purity', () => {
+describe('planSlotFills - purity', () => {
 	test('does not mutate input records', () => {
 		const original = [slotRec({
 			slotId: 1, loadedFromId: '001ABC',
@@ -246,7 +246,7 @@ describe('planSlotFills — purity', () => {
 	});
 });
 
-describe('planSlotFills — input edge cases', () => {
+describe('planSlotFills - input edge cases', () => {
 	test('non-array records → empty plan, all fills become unknown_slot', () => {
 		const out = planSlotFills({
 			records: null,
@@ -289,7 +289,7 @@ describe('planSlotFills — input edge cases', () => {
 	});
 });
 
-describe('planSlotFills — applied bookkeeping', () => {
+describe('planSlotFills - applied bookkeeping', () => {
 	test('applied entry includes recordId + objectName for downstream audit', () => {
 		const out = planSlotFills({
 			records: [slotRec({

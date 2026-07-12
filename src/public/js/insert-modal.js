@@ -116,7 +116,7 @@ return;
 					if (typeof isRecordModified === 'function' && isRecordModified(rec)) {
 						const ok = await showConfirmDialog({
 							title: 'Discard unsaved edits?',
-							message: 'This record has unsaved edits. Marking it for delete will discard those edits — the record will be DELETE\'d in Salesforce on next upload regardless.',
+							message: 'This record has unsaved edits. Marking it for delete will discard those edits: the record will be DELETE\'d in Salesforce on next upload regardless.',
 							confirmLabel: 'Discard edits and mark for delete',
 							cancelLabel: 'Cancel',
 							danger: true,
@@ -866,11 +866,11 @@ subtitleEl.textContent = subtitleText;
 								if (getCanvasShareRole() === 'viewer') {
 
 									submitBtn.disabled = true;
-									submitBtn.title = 'View only — you can’t make changes to this canvas.';
+									submitBtn.title = 'View only - you can’t make changes to this canvas.';
 								} else if (canvasState.currentRecordRef && canvasState.currentRecordRef._recipientSlot
 									&& _slotAssignmentState(canvasState.currentRecordRef) === 'other') {
 									submitBtn.disabled = true;
-									submitBtn.title = 'Reserved for the assigned teammate — read-only for you.';
+									submitBtn.title = 'Reserved for the assigned teammate; read-only for you.';
 								}
 
 								let initialValues = canvasState.currentRecordRef
@@ -880,9 +880,6 @@ subtitleEl.textContent = subtitleText;
 								if (!hasExplicit && currentLayout && currentLayout.defaults && Object.keys(currentLayout.defaults).length > 0) {
 									initialValues = Object.assign({}, currentLayout.defaults);
 
-									if (canvasState.currentRecordRef) {
-										canvasState.currentRecordRef.values = Object.assign({}, initialValues, canvasState.currentRecordRef.values || {});
-									}
 								}
 								if (initialValues && Object.keys(initialValues).length > 0) {
 									populateForm(initialValues);
@@ -980,7 +977,7 @@ n++;
 					const n = partialFieldSet.size;
 					html += '<div class="banner info" style="margin-bottom:0.7em">' +
 						'<strong>Showing ' + n + ' loaded field' + (n === 1 ? '' : 's') + '.</strong> ' +
-						'This record was imported via SOQL with a focused SELECT — fields you didn\'t query aren\'t shown here. ' +
+						'This record was imported via SOQL with a focused SELECT - fields you didn\'t query aren\'t shown here. ' +
 						'They\'re preserved on Salesforce; an Update only sends the fields below. ' +
 						'To edit other fields, re-import via SOQL with <strong>Load all fields</strong> checked.' +
 						'</div>';
@@ -1023,14 +1020,14 @@ return '';
 					const who = (canvasState.currentRecordRef.slot && (canvasState.currentRecordRef.slot.assigneeName || canvasState.currentRecordRef.slot.assigneeEmail)) || 'another teammate';
 					html += '<div class="banner info slot-banner">' +
 						'<strong>Reserved for ' + escapeHtml(who) + '.</strong>' + _bannerProgressChip + ' ' +
-						'Only the assigned teammate can fill this slot — everything is read-only for you.' +
+						'Only the assigned teammate can fill this slot - everything is read-only for you.' +
 						_bannerLastModifiedHtml +
 					'</div>';
 				} else if (viewerReadOnly && slotFieldNames && slotFieldNames.size > 0) {
 
 					html += '<div class="banner info slot-banner">' +
 						'<strong>View only.</strong>' + _bannerProgressChip + ' ' +
-						'These fields were marked as slots, but this canvas was shared with you as view-only — they’re read-only for you.' +
+						'These fields were marked as slots, but this canvas was shared with you as view-only - they’re read-only for you.' +
 						_bannerLastModifiedHtml +
 					'</div>';
 				} else if (slotLockNonSlot) {
@@ -1041,7 +1038,7 @@ return '';
 
 					const hiddenNote = inaccessible > 0
 						? ' <strong>' + inaccessible + ' slot field' + (inaccessible === 1 ? '' : 's') +
-							' ' + (inaccessible === 1 ? 'isn’t' : 'aren’t') + ' shown</strong> — ' +
+							' ' + (inaccessible === 1 ? 'isn’t' : 'aren’t') + ' shown</strong> - ' +
 							(inaccessible === 1 ? "it's" : "they're") +
 							' hidden by field-level security or read-only for your Salesforce user, so ' +
 							(inaccessible === 1 ? "it can't" : "they can't") + ' be filled here.'
@@ -1088,7 +1085,7 @@ return '';
 						? '<a href="' + escapeHtml(recordUrl) + '" target="_blank" rel="noopener"><code>' + escapeHtml(loadedId) + '</code></a>'
 						: '<code>' + escapeHtml(loadedId) + '</code>';
 					html += '<div class="edit-mode-existing-banner">' +
-						'<span>Editing existing record ' + idHtml + ' \u2014 Upload will update it in Salesforce.</span>' +
+						'<span>Editing existing record ' + idHtml + ' - Upload will update it in Salesforce.</span>' +
 						'<button type="button" class="link-button" data-unlink-existing>Unlink</button>' +
 					'</div>';
 				}
@@ -1180,7 +1177,7 @@ return;
 					'<div class="field-section-header">Required <span class="count">(' + required.length + ')</span></div>' +
 					'<div class="fields">' +
 						(required.length === 0
-							? '<div class="field-section-empty">This object has no required fields — fill in anything below that matters to you.</div>'
+							? '<div class="field-section-empty">This object has no required fields - fill in anything below that matters to you.</div>'
 							: required.map((f) => {
 								const isSlotField = !!(slotFieldNames && slotFieldNames.has(f.name));
 								const readOnly = forceReadOnly || !!(slotLockNonSlot && !isSlotField);
@@ -1298,14 +1295,14 @@ return false;
 								'<div class="migrate-meta">' +
 									'<div class="migrate-label">Record type</div>' +
 									'<div class="migrate-sub">Source: <code>' + escapeHtml(_srcDev) + '</code>' +
-										(_rtIssue ? ' — not in this org' : '') + '</div>' +
+										(_rtIssue ? ' - not in this org' : '') + '</div>' +
 								'</div>' +
 								'<select class="migrate-select" data-migrate-rt-select>' +
 									'<option value="">Pick a record type…</option>' +
 									_rtOpts +
 									'<option value="__clear__"' +
 										(_migRec._migrateClearRecordType ? ' selected' : '') +
-										'>— No record type —</option>' +
+										'> - No record type - </option>' +
 								'</select>' +
 							'</div>';
 						}
@@ -1327,7 +1324,7 @@ return false;
 									'<select class="migrate-select" data-migrate-pl-field="' + escapeHtml(iss.field) + '" data-migrate-pl-source="' + escapeHtml(sv) + '">' +
 										'<option value="__keep__">Keep as-is (will warn)</option>' +
 										_plOpts +
-										'<option value="">— Drop value —</option>' +
+										'<option value=""> - Drop value - </option>' +
 									'</select>' +
 								'</div>';
 							});
@@ -1544,7 +1541,7 @@ return;
 
 					const disclaimer = '<div class="field-section-note">'
 						+ 'Predictions are client-side based on the values in this form. '
-						+ 'Salesforce checks every rule on upload &mdash; that\u2019s the source of truth.'
+						+ 'Salesforce checks every rule on upload - that\u2019s the source of truth.'
 						+ '</div>';
 					inner = disclaimer + currentRules.map(renderRuleHtml).join('');
 				}
@@ -1704,7 +1701,7 @@ sb.style.display = 'none';
 								status = {
 									cls: 'status-unknown',
 									label: "Can't predict",
-									title: 'Formula didn’t return a boolean — engine can’t map the result onto pass/fail. Salesforce will enforce it on upload.',
+									title: 'Formula didn’t return a boolean - engine can’t map the result onto pass/fail. Salesforce will enforce it on upload.',
 								};
 							}
 						} catch (e) {
@@ -1744,7 +1741,7 @@ unknown++;
 
 						cls = 'status-unknown';
 						text = unknown + ' to verify';
-						title = unknown + ' rule' + (unknown === 1 ? '' : 's') + " the engine can't evaluate client-side — Salesforce will check on upload";
+						title = unknown + ' rule' + (unknown === 1 ? '' : 's') + " the engine can't evaluate client-side - Salesforce will check on upload";
 					} else if (passing > 0) {
 						cls = 'status-ok';
 						text = 'looks clear';
@@ -2264,7 +2261,7 @@ return (f) => isCustomField(f);
 						escapeHtml(label) + (isDefault ? ' <span class="fm-tag">default</span>' : '') +
 					'</button>';
 				pop.innerHTML =
-					'<div class="fm-subheader">Applies to draft records only \u2014 loaded-existing records are not touched.</div>' +
+					'<div class="fm-subheader">Applies to draft records only - loaded-existing records are not touched.</div>' +
 					'<div class="fm-header">Required fields only</div>' +
 					item('required', 'both', 'Required fields', true) +
 					item('required', 'standard', 'Required, standard only', false) +

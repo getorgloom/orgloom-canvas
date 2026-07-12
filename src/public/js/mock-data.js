@@ -319,7 +319,7 @@
 		const subject = pick(TASK_SUBJECTS, i);
 		TASKS.push({
 			Id: mockId('00T', i + 1),
-			Subject: subject + ' — follow up on ' + acct.Name,
+			Subject: subject + ': follow up on ' + acct.Name,
 			Status: status,
 			Priority: priority,
 			ActivityDate: new Date(2025, i % 12, 1 + (i % 27)).toISOString().slice(0, 10),
@@ -371,7 +371,7 @@
 		{ name: 'Q1 Email Nurture', type: 'Email', cost: 1500, expected: 25_000 },
 		{ name: 'Dreamforce 2024 Booth', type: 'Conference', cost: 75_000, expected: 500_000 },
 		{ name: 'Partner Referral Program 2025', type: 'Partners', cost: 10_000, expected: 100_000 },
-		{ name: 'Cold Outreach — North America', type: 'Telemarketing', cost: 8_000, expected: 60_000 },
+		{ name: 'Cold Outreach: North America', type: 'Telemarketing', cost: 8_000, expected: 60_000 },
 	].map((c, i) => {
 		const owner = pick(USERS, i);
 		const start = new Date(2024 + (i % 2), (i * 2) % 12, 1);
@@ -417,9 +417,9 @@
 	}
 
 	const PRODUCTS = [
-		{ name: 'Platform — Starter', family: 'Software', sku: 'PLT-STR' },
-		{ name: 'Platform — Pro', family: 'Software', sku: 'PLT-PRO' },
-		{ name: 'Platform — Enterprise', family: 'Software', sku: 'PLT-ENT' },
+		{ name: 'Platform: Starter', family: 'Software', sku: 'PLT-STR' },
+		{ name: 'Platform: Pro', family: 'Software', sku: 'PLT-PRO' },
+		{ name: 'Platform: Enterprise', family: 'Software', sku: 'PLT-ENT' },
 		{ name: 'Mobile App Add-on', family: 'Software', sku: 'MOB-ADD' },
 		{ name: 'Integration Hub', family: 'Software', sku: 'INT-HUB' },
 		{ name: 'Onsite Server Appliance', family: 'Hardware', sku: 'HW-APP-01' },
@@ -591,7 +591,7 @@
 		QUOTES.push({
 			Id: mockId('0Q0', i + 1),
 			QuoteNumber: String(4000 + i).padStart(8, '0'),
-			Name: opp.Name + ' — Quote v' + (1 + (i % 3)),
+			Name: opp.Name + ': Quote v' + (1 + (i % 3)),
 			OpportunityId: opp.Id,
 			AccountId: acct.Id,
 			ContactId: contact.Id,
@@ -649,7 +649,7 @@
 		const installDate = new Date(2024, i % 12, 1 + (i % 27));
 		ASSETS.push({
 			Id: mockId('02i', i + 1),
-			Name: product.Name + ' — ' + acct.Name,
+			Name: product.Name + ' for ' + acct.Name,
 			SerialNumber: 'SN-' + String(10000 + i).padStart(6, '0'),
 			AccountId: acct.Id,
 			ContactId: contact ? contact.Id : null,

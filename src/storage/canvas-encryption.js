@@ -126,7 +126,7 @@ export async function ensureSfApexKek(conn) {
 	}
 	const response = await _apexKekRequest(conn, '/ensure', {});
 	if (!response || response.ok !== true) {
-		throw new Error('ensureSfApexKek: Apex did not return {ok:true} — got ' + JSON.stringify(response));
+		throw new Error('ensureSfApexKek: Apex did not return {ok:true} - got ' + JSON.stringify(response));
 	}
 	return true;
 }

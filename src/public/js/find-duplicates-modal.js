@@ -330,8 +330,8 @@ return;
 							const isWinner = group.winnerId === rec.id;
 							const rowClass = 'fdm-row' + (isWinner ? ' fdm-row--keep' : ' fdm-row--remove');
 							const badge = rec.loadedFromId
-								? '<span class="fdm-badge fdm-badge--loaded" title="Loaded from Salesforce — will be marked for delete on Apply">loaded</span>'
-								: '<span class="fdm-badge fdm-badge--draft" title="Draft record — will be removed from canvas on Apply">draft</span>';
+								? '<span class="fdm-badge fdm-badge--loaded" title="Loaded from Salesforce, will be marked for delete on Apply">loaded</span>'
+								: '<span class="fdm-badge fdm-badge--draft" title="Draft record, will be removed from canvas on Apply">draft</span>';
 
 							const gotoBtn = '<button type="button" class="fdm-row-goto" data-fdm-goto="' + rec.id + '" title="Pan the canvas to this record and flash it" aria-label="Go to this record on the canvas">' +
 								'<span aria-hidden="true">&#8689;</span>' +
@@ -467,7 +467,26 @@ parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for 
 				const msg = parts.length === 0
 					? 'No duplicates removed.'
 					: parts.join(' · ');
+				const _postBulk = canvasState.bulkRecords;
+				const _postAssoc = canvasState.bulkAssociations;
+				const _postFingerprint = JSON.stringify({
+					records: canvasState.bulkRecords,
+					associations: canvasState.bulkAssociations,
+				});
 				const _undo = () => {
+					let currentFingerprint = null;
+					try {
+						currentFingerprint = JSON.stringify({
+							records: canvasState.bulkRecords,
+							associations: canvasState.bulkAssociations,
+						});
+					} catch (_e) {}
+					if (canvasState.bulkRecords !== _postBulk ||
+						canvasState.bulkAssociations !== _postAssoc ||
+						currentFingerprint !== _postFingerprint) {
+						showBulkToast('Can’t undo duplicate removal because the canvas was edited afterward.', 'info');
+						return;
+					}
 					canvasState.bulkRecords = _snapBulk;
 					canvasState.bulkAssociations = _snapAssoc;
 					canvasState.bulkSelectedIds = _snapSelected;
@@ -620,7 +639,7 @@ intro.innerHTML = '';
 									'<label class="fdm-mode-opt">' +
 										'<input type="radio" name="fdm-op" value="or"' + orChecked + '>' +
 										'<span class="fdm-mode-label">Any selected field agrees <span class="fdm-mode-tag">OR &middot; transitive</span></span>' +
-										'<span class="fdm-mode-sub">Records group whenever they share a value on any checked field. Catches "same person, different contact methods" — A↔B by Email and B↔C by Phone groups {A, B, C}.</span>' +
+										'<span class="fdm-mode-sub">Records group whenever they share a value on any checked field. Catches "same person, different contact methods": A↔B by Email and B↔C by Phone groups {A, B, C}.</span>' +
 									'</label>' +
 								'</div>' +
 							'</div>' +

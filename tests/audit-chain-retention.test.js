@@ -58,7 +58,7 @@ describe('unchained (data-touching) rows', () => {
 	});
 });
 
-describe('purgeExpired — chain-safe retention', () => {
+describe('purgeExpired: chain-safe retention', () => {
 	test('purges expired unchained rows unconditionally', async () => {
 		const { audit } = await import('../src/database/index.js');
 		const a = await makeAccount();
@@ -103,7 +103,7 @@ describe('purgeExpired — chain-safe retention', () => {
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: future });
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', expiresAt: past });
 		const dropped = await audit.purgeExpired();
-		assert.equal(dropped, 0, 'nothing purged — the expired row is not a prefix');
+		assert.equal(dropped, 0, 'nothing purged: the expired row is not a prefix');
 		const result = await audit.verifyChain({ workspaceId: ws.id });
 		assert.equal(result.ok, true);
 		assert.equal(result.totalRows, 2);
@@ -152,7 +152,7 @@ describe('GDPR payload redaction', () => {
 		assert.equal(result.redactedCount, 1);
 	});
 
-	test('redaction preserves STRUCTURAL integrity — deleting a neighbor is still detected', async () => {
+	test('redaction preserves STRUCTURAL integrity: deleting a neighbor is still detected', async () => {
 		const { audit } = await import('../src/database/index.js');
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();

@@ -58,7 +58,11 @@ return;
 		if (f.type === 'address' || f.type === 'location') {
 return;
 }
-		if (isUpdate ? f.updateable : f.createable) {
+
+		const writableForOperation = isUpdate === 'upsert'
+			? (f.createable || f.updateable)
+			: (isUpdate ? f.updateable : f.createable);
+		if (writableForOperation) {
 writable.add(f.name);
 }
 	});

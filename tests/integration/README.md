@@ -1,10 +1,10 @@
 # Live SF integration tests
 
 Tests in this folder hit a real Salesforce org. They're skipped by
-default — `npm test` only runs the unit suite. To turn them on,
+default: `npm test` only runs the unit suite. To turn them on,
 point the harness at an SF org alias already configured via
 `sf org login`. The scratch orgs in this dev environment (`dev1`,
-`dev2`, etc.) work. Avoid pointing at a real customer org — the
+`dev2`, etc.) work. Avoid pointing at a real customer org; the
 tests CREATE + DELETE validation rules and Account records by design.
 
 ### PowerShell (Windows)
@@ -17,7 +17,7 @@ $env:SF_TEST_ORG_ALIAS = "dev1"
 npm run test:integration
 ```
 
-From the monorepo root (note the `=` in `--workspace=...` — npm's
+From the monorepo root (note the `=` in `--workspace=...`: npm's
 arg parser dislikes the space form for path-style workspace names):
 
 ```powershell
@@ -44,7 +44,7 @@ RUN_SF_LIVE=1 SF_TEST_ORG_ALIAS=dev1 npm run test:integration --workspace=packag
 
 The harness uses the `sf` CLI to fetch a current access token via
 `sf org display --target-org <alias> --json`. No password / OAuth
-plumbing needed — if `sf` can talk to your org, the tests can too.
+plumbing needed: if `sf` can talk to your org, the tests can too.
 
 ## What the tests do
 
@@ -104,4 +104,4 @@ RUN_SF_LIVE=1 SF_TEST_ORG_ALIAS=dev1 \
 
 The unit-test suite at `tests/validation-formula.test.js` covers the
 cross-object resolution path with fully-mocked field metadata, so
-that side of the engine is exercised — just not against a live SF.
+that side of the engine is exercised, just not against a live SF.

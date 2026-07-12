@@ -5,7 +5,7 @@ const missing = required.filter((v) => !process.env[v]);
 if (missing.length > 0) {
 	const canvasStandalone = process.env.ORGLOOM_CANVAS_ONLY === '1';
 	if (canvasStandalone) {
-		console.warn('[setup] ' + missing.join(', ') + ' unset — visiting / will route to the first-boot setup wizard.');
+		console.warn('[setup] ' + missing.join(', ') + ' unset - visiting / will route to the first-boot setup wizard.');
 	} else {
 		console.error(`Missing required env vars: ${missing.join(', ')}`);
 		console.error('Copy .env.example to .env and fill in your External Client App credentials.');

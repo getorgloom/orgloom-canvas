@@ -23,7 +23,7 @@
 	}
 
 	function notImplemented(method, path) {
-		console.warn('[mock-sf] Unhandled ' + method + ' ' + path + ' — returning 501. Add a handler if the canvas needs this surface.');
+		console.warn('[mock-sf] Unhandled ' + method + ' ' + path + ' - returning 501. Add a handler if the canvas needs this surface.');
 		return jsonResponse({
 			error: 'mock-not-implemented',
 			message: 'This action is disabled in the demo. Sign up to use it on your real Salesforce org.',
@@ -61,7 +61,7 @@ return false;
 	const PRESEED_CANVAS = {
 		id: PRESEED_CANVAS_ID,
 		versionId: PRESEED_CANVAS_VERSION,
-		title: 'Acme Corporation — sample canvas',
+		title: 'Acme Corporation - sample canvas',
 		ownerId: '005DEMO000000000AAA',
 		ownedByMe: true,
 		createdAt: Date.UTC(2025, 0, 15),
@@ -531,6 +531,17 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		const id = params.get('id');
 		const count = recordsFor(objectName).filter((r) => idMatches(r[field], id)).length;
 		return jsonResponse({ count });
+	}
+
+	function handleByRef(objectName, params) {
+		const field = params.get('field');
+		const id = params.get('id');
+		const requested = Number(params.get('limit')) || 50;
+		const limit = Math.max(1, Math.min(requested, 200));
+		const records = recordsFor(objectName)
+			.filter((r) => idMatches(r[field], id))
+			.slice(0, limit);
+		return jsonResponse({ records, skipped: false });
 	}
 
 	async function handleRelatedCountsPost(req) {
@@ -1330,6 +1341,11 @@ out[fn] = rec[fn];
 		{ method: 'GET', match: (u) => {
 			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/records\/([^/]+)$/);
 			return m && handleRecord(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+		}},
+
+		{ method: 'GET', match: (u) => {
+			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/by-ref$/);
+			return m && handleByRef(decodeURIComponent(m[1]), u.searchParams);
 		}},
 
 		{ method: 'GET', match: (u) => {

@@ -49,6 +49,16 @@ describe('mcpTokens.issue', () => {
 		assert.notEqual(t1.plaintext, t2.plaintext);
 		assert.notEqual(t1.id, t2.id);
 	});
+
+	test('caps an account at ten live tokens and frees capacity on revoke', async () => {
+		const { mcpTokens } = await import('../src/database/index.js');
+		const a = await makeAccount();
+		const issued = [];
+		for (let i = 0; i < 10; i++) issued.push(await mcpTokens.issue({ accountId: a.id, name: `client-${i}` }));
+		await assert.rejects(() => mcpTokens.issue({ accountId: a.id, name: 'eleven' }), /mcp-token-cap-reached/);
+		await mcpTokens.revoke(issued[0].id, a.id);
+		assert.ok(await mcpTokens.issue({ accountId: a.id, name: 'replacement' }));
+	});
 });
 
 describe('mcpTokens.authenticate', () => {
@@ -129,7 +139,7 @@ describe('mcpTokens.revoke', () => {
 		const a = await makeAccount();
 		const tok = await mcpTokens.issue({ accountId: a.id, name: 'cli' });
 		assert.equal(await mcpTokens.revoke(tok.id, a.id), true);
-		assert.equal(await mcpTokens.revoke(tok.id, a.id), false, 'idempotent — already revoked');
+		assert.equal(await mcpTokens.revoke(tok.id, a.id), false, 'idempotent, already revoked');
 	});
 });
 

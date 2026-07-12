@@ -8,7 +8,7 @@ import {
 	_classifyShareError,
 } from '../src/sf-record-share.js';
 
-describe('shareSchemaFor — standard objects use <Object>Id / <Object>AccessLevel', () => {
+describe('shareSchemaFor: standard objects use <Object>Id / <Object>AccessLevel', () => {
 	test('Account → AccountShare with multi-axis access fields (AccountShare special-case)', () => {
 
 		assert.deepEqual(shareSchemaFor('Account'), {
@@ -55,7 +55,7 @@ describe('shareSchemaFor — standard objects use <Object>Id / <Object>AccessLev
 	});
 });
 
-describe('shareSchemaFor — custom objects use ParentId / AccessLevel', () => {
+describe('shareSchemaFor: custom objects use ParentId / AccessLevel', () => {
 	test('MyCustom__c → MyCustom__Share with ParentId + AccessLevel', () => {
 		assert.deepEqual(shareSchemaFor('MyCustom__c'), {
 			shareTable: 'MyCustom__Share',
@@ -74,7 +74,7 @@ describe('shareSchemaFor — custom objects use ParentId / AccessLevel', () => {
 	});
 });
 
-describe('shareSchemaFor — defensive', () => {
+describe('shareSchemaFor: defensive', () => {
 	test('throws on empty / null / undefined / non-string', () => {
 		assert.throws(() => shareSchemaFor(''), /objectName is required/);
 		assert.throws(() => shareSchemaFor(null), /objectName is required/);
@@ -83,7 +83,7 @@ describe('shareSchemaFor — defensive', () => {
 	});
 });
 
-describe('shareTableFor — standard objects', () => {
+describe('shareTableFor: standard objects', () => {
 	test('Account → AccountShare', () => {
 		assert.equal(shareTableFor('Account'), 'AccountShare');
 	});
@@ -101,7 +101,7 @@ describe('shareTableFor — standard objects', () => {
 	});
 });
 
-describe('shareTableFor — custom objects', () => {
+describe('shareTableFor: custom objects', () => {
 	test('MyCustom__c → MyCustom__Share', () => {
 		assert.equal(shareTableFor('MyCustom__c'), 'MyCustom__Share');
 	});
@@ -113,7 +113,7 @@ describe('shareTableFor — custom objects', () => {
 	});
 });
 
-describe('shareTableFor — defensive', () => {
+describe('shareTableFor: defensive', () => {
 	test('throws on empty string', () => {
 		assert.throws(() => shareTableFor(''), /objectName is required/);
 	});
@@ -140,7 +140,7 @@ describe('recordsToShareFromManifest', () => {
 		]);
 	});
 
-	test('de-dupes by recordId — multi-slot on same record yields one share', () => {
+	test('de-dupes by recordId: multi-slot on same record yields one share', () => {
 		const out = recordsToShareFromManifest({
 			records: [
 				{ objectName: 'Account', loadedFromId: '001A', slot: { slotId: 1, kind: 'fields', fields: ['Industry'] } },
@@ -206,7 +206,7 @@ describe('recordsToShareFromManifest', () => {
 	});
 });
 
-describe('grantRecordAccess — connection interaction (mocked)', () => {
+describe('grantRecordAccess: connection interaction (mocked)', () => {
 	function makeMockConn(behavior) {
 
 		const calls = [];
@@ -263,9 +263,9 @@ describe('grantRecordAccess — connection interaction (mocked)', () => {
 		assert.equal(conn.calls[0].row.UserOrGroupId, '005me');
 		assert.equal(conn.calls[0].row.RowCause, 'Manual');
 		assert.equal(conn.calls[0].row.ParentId, undefined,
-			'AccountShare must NOT have ParentId — that field does not exist on it');
+			'AccountShare must NOT have ParentId; that field does not exist on it');
 		assert.equal(conn.calls[0].row.AccessLevel, undefined,
-			'AccountShare must NOT have AccessLevel — uses AccountAccessLevel instead');
+			'AccountShare must NOT have AccessLevel; uses AccountAccessLevel instead');
 		assert.equal(conn.calls[1].row.ContactId, '003B');
 		assert.equal(conn.calls[1].row.ContactAccessLevel, 'Edit');
 	});
@@ -278,7 +278,7 @@ describe('grantRecordAccess — connection interaction (mocked)', () => {
 		], '005me');
 		const row = conn.calls[0].row;
 		assert.equal(row.AccountAccessLevel, 'Edit', 'primary access = Edit');
-		assert.equal(row.OpportunityAccessLevel, 'None', 'extras default to None — no cascade');
+		assert.equal(row.OpportunityAccessLevel, 'None', 'extras default to None (no cascade)');
 		assert.equal(row.CaseAccessLevel, 'None');
 	});
 
@@ -379,7 +379,7 @@ describe('grantRecordAccess — connection interaction (mocked)', () => {
 		assert.equal(out.granted[0].coveredByOWD, true,
 			'OWD-coverage rejections should report as granted (recipient HAS access)');
 		assert.equal(out.granted[0].alreadyShared, undefined,
-			'OWD-coverage is distinct from already-shared — different flag');
+			'OWD-coverage is distinct from already-shared: different flag');
 		assert.equal(out.failed.length, 0);
 	});
 
@@ -434,7 +434,7 @@ describe('grantRecordAccess — connection interaction (mocked)', () => {
 	});
 });
 
-describe('_classifyShareError — error-string buckets', () => {
+describe('_classifyShareError: error-string buckets', () => {
 	test('DUPLICATE_VALUE classifies as duplicate', () => {
 		assert.equal(_classifyShareError('DUPLICATE_VALUE: duplicate row'), 'duplicate');
 		assert.equal(_classifyShareError('User already shared on this record'), 'duplicate');

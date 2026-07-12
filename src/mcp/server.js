@@ -21,8 +21,20 @@ const ERR_INVALID_PARAMS = -32602;
 const ERR_INTERNAL = -32603;
 const ERR_AUTH = -32001;
 const ERR_NO_WORKSPACE = -32002;
+const ERR_RATE_LIMIT = -32006;
 const ERR_FORBIDDEN = -32004;
 const ERR_NOT_FOUND = -32005;
+export const MCP_TOKEN_RATE_LIMIT = Object.freeze({ windowMs: 60_000, max: 120 });
+const _tokenRequestWindows = new Map();
+export function _resetMcpTokenRateLimitForTests() { _tokenRequestWindows.clear(); }
+function _consumeTokenRequest(tokenId, now = Date.now()) {
+	const cutoff = now - MCP_TOKEN_RATE_LIMIT.windowMs;
+	const recent = (_tokenRequestWindows.get(tokenId) || []).filter((t) => t > cutoff);
+	if (recent.length >= MCP_TOKEN_RATE_LIMIT.max) return false;
+	recent.push(now);
+	_tokenRequestWindows.set(tokenId, recent);
+	return true;
+}
 
 const TOOLS = [
 	{
@@ -53,7 +65,7 @@ const TOOLS = [
 			"objectName + the relationship name) and `requiredFields` " +
 			"(field API names that MUST be filled on new-drafts before " +
 			"upload). Use referenceFields to compose valid " +
-			"new-association calls — pick a field whose referenceTo " +
+			"new-association calls: pick a field whose referenceTo " +
 			"includes the parent objectName, and use that fieldName in " +
 			"the association change. Use requiredFields to make sure " +
 			"every new-draft you propose includes the mandatory fields " +
@@ -67,7 +79,7 @@ const TOOLS = [
 				canvasId: {
 					type: "string",
 					description:
-						'Canvas id — either a 15/18-char Salesforce ContentDocument id (for saved canvases, also visible in the Orgloom canvas URL) or a "draft-<uuid>" id (for canvases the user has open but has not yet saved). Always use the id field from list_canvases.',
+						'Canvas id: either a 15/18-char Salesforce ContentDocument id (for saved canvases, also visible in the Orgloom canvas URL) or a "draft-<uuid>" id (for canvases the user has open but has not yet saved). Always use the id field from list_canvases.',
 				},
 			},
 			required: ["canvasId"],
@@ -77,12 +89,12 @@ const TOOLS = [
 	{
 		name: "propose_record_changes",
 		description:
-			"Submit a proposal of canvas changes — add new records, " +
+			"Submit a proposal of canvas changes: add new records, " +
 			"edit existing ones, modify drafts, and wire associations " +
 			"(parent → child relationships). The proposal lands in " +
 			"Orgloom's pending-proposals queue for the human to review " +
 			"+ apply in the web UI. This tool DOES NOT modify the canvas " +
-			"or write to Salesforce directly — it writes a pending " +
+			"or write to Salesforce directly; it writes a pending " +
 			"proposal record.\n\n" +
 			"NINE change shapes (each is one element in the changes array):\n" +
 			"  1. ADD a brand-new draft record: provide objectName + " +
@@ -107,7 +119,7 @@ const TOOLS = [
 			'(use exactly one key per endpoint): {recordId: "<sf-id>"} for ' +
 			"an existing loaded record, {tempId: <number>} for an existing " +
 			'draft, {tempRef: "<string>"} for a same-proposal new-draft. ' +
-			"Mix freely — e.g. add a new Contact as child of an existing " +
+			"Mix freely, e.g. add a new Contact as child of an existing " +
 			"Account in one proposal.\n" +
 			'  5. REMOVE an association: set kind="delete-association", ' +
 			"provide fieldName + from + to using the same endpoint shape " +
@@ -120,7 +132,7 @@ const TOOLS = [
 			'kind="delete-record", provide recordId. Only removes the ' +
 			"record's reference from the canvas view + cleans up its " +
 			"associations. The underlying Salesforce record is NOT " +
-			"deleted — use this when the user is reorganizing what their " +
+			"deleted; use this when the user is reorganizing what their " +
 			"canvas tracks, not to delete data.\n" +
 			"  8. AUTO-FILL required fields on one or more drafts: set " +
 			'kind="autofill-required". Optionally provide tempIds (an ' +
@@ -138,15 +150,15 @@ const TOOLS = [
 			"fields (omit for all). On accept, the user's browser " +
 			"fetches the record from Salesforce via the user's session " +
 			"(this is the only AI-proposed shape that triggers SF " +
-			"traffic; it is fully user-mediated — the user sees what " +
+			"traffic; it is fully user-mediated, meaning the user sees what " +
 			"will be loaded in the proposal review before they accept). " +
 			"Use this when you want to edit/reference a record the user " +
-			'has not added to the canvas yet — for example: "I need to ' +
+			'has not added to the canvas yet, for example: "I need to ' +
 			"pull Account 001abc onto the canvas before I can propose " +
 			'changes to it." Duplicate (already-on-canvas) targets are ' +
 			"skipped, not erroneous.\n\n" +
 			"Targets for shapes 2, 3, 6, 7 are validated against the " +
-			"LIVE canvas state at submission time — the proposal tool " +
+			"LIVE canvas state at submission time; the proposal tool " +
 			"reaches into the user's open browser via the MCP relay. If " +
 			"the user doesn't have the canvas open in any tab right now, " +
 			"the proposal call fails with NOT_FOUND and you should ask " +
@@ -165,7 +177,7 @@ const TOOLS = [
 				canvasId: {
 					type: "string",
 					description:
-						'Canvas id — either a 15/18-char Salesforce ContentDocument id (saved canvases) or a "draft-<uuid>" id (canvases the user has open but has not saved yet). Use list_canvases to discover ids; the `id` field is what to pass here, not the `title`.',
+						'Canvas id: either a 15/18-char Salesforce ContentDocument id (saved canvases) or a "draft-<uuid>" id (canvases the user has open but has not saved yet). Use list_canvases to discover ids; the `id` field is what to pass here, not the `title`.',
 				},
 				summary: {
 					type: "string",
@@ -191,7 +203,7 @@ const TOOLS = [
 									"load-record",
 								],
 								description:
-									"Set explicitly for association changes (shapes 4 + 5), delete shapes (6 + 7), autofill (shape 8), and load-record (shape 9). For record/draft adds and edits, omit `kind` — it is inferred from the presence of recordId / tempId / neither.",
+									"Set explicitly for association changes (shapes 4 + 5), delete shapes (6 + 7), autofill (shape 8), and load-record (shape 9). For record/draft adds and edits, omit `kind`; it is inferred from the presence of recordId / tempId / neither.",
 							},
 							recordId: {
 								type: "string",
@@ -211,13 +223,13 @@ const TOOLS = [
 							fields: {
 								type: "object",
 								description:
-									"Field-name → new-value map. Required for new-draft / record / draft. Ignored for association changes. Values must match the field types in the SF schema. (Ask the user for the schema if you need it — this server intentionally does not call Salesforce.)",
+									"Field-name → new-value map. Required for new-draft / record / draft. Ignored for association changes. Values must match the field types in the SF schema. (Ask the user for the schema if you need it; this server intentionally does not call Salesforce.)",
 								additionalProperties: true,
 							},
 							tempRef: {
 								type: "string",
 								description:
-									'OPTIONAL short identifier for a new-draft. Pick any string (e.g. "acme") — same-proposal association changes use this to point at the not-yet-minted tempId. Only allowed on new-draft shapes.',
+									'OPTIONAL short identifier for a new-draft. Pick any string (e.g. "acme"); same-proposal association changes use this to point at the not-yet-minted tempId. Only allowed on new-draft shapes.',
 								maxLength: 64,
 							},
 							fieldName: {
@@ -228,7 +240,7 @@ const TOOLS = [
 							from: {
 								type: "object",
 								description:
-									"For association changes. The CHILD endpoint — the record that holds the FK. Exactly one of recordId / tempId / tempRef.",
+									"For association changes. The CHILD endpoint (the record that holds the FK). Exactly one of recordId / tempId / tempRef.",
 								properties: {
 									recordId: {
 										type: "string",
@@ -288,7 +300,7 @@ const TOOLS = [
 	{
 		name: "describe_object",
 		description:
-			"Return the cached Salesforce describe for an SObject — field " +
+			"Return the cached Salesforce describe for an SObject: field " +
 			"list, types, required flags, length limits, default values, " +
 			"picklist values (with validFor masks for dependent picklists), " +
 			"and reference targets. Use this to pick valid picklist values " +
@@ -300,16 +312,16 @@ const TOOLS = [
 			"which parent object a FK field targets).\n\n" +
 			"IMPORTANT: this tool reads ONLY from the user's browser-side " +
 			"describe cache. It will NEVER trigger a fresh Salesforce " +
-			"describe call on your behalf — that would violate the " +
+			"describe call on your behalf; that would violate the " +
 			'"AI cannot talk to Salesforce" guarantee. If the requested ' +
 			"object is not in the cache, the response will be NOT_FOUND " +
 			"with a hint to ask the user to add the object to the canvas " +
 			"(which auto-caches its describe through the user's own SF " +
 			"session). Every object the user has on the canvas is cached " +
-			"automatically — so if you just need Subject's picklist " +
+			"automatically, so if you just need Subject's picklist " +
 			"values and Task is on the canvas, this will work.\n\n" +
 			"`fields` (optional) slices the describe to just the named " +
-			"fields. Use it when you only need a couple of fields — the " +
+			"fields. Use it when you only need a couple of fields; the " +
 			"full describe for a heavy object (User, Account) can be " +
 			"hundreds of KB.",
 		inputSchema: {
@@ -345,7 +357,7 @@ const TOOLS = [
 				canvasId: {
 					type: "string",
 					description:
-						'Canvas id — either a 15/18-char Salesforce ContentDocument id or a "draft-<uuid>" id.',
+						'Canvas id: either a 15/18-char Salesforce ContentDocument id or a "draft-<uuid>" id.',
 				},
 			},
 			required: ["canvasId"],
@@ -358,14 +370,14 @@ const TOOLS = [
 			"Retract a proposal YOU previously submitted that is still " +
 			"pending review. Use this when you realize a proposal was " +
 			"incorrect, made against a stale snapshot, or has been " +
-			"superseded by a better one — instead of leaving a bad " +
+			"superseded by a better one, so instead of leaving a bad " +
 			"proposal sitting in the user's review queue, withdraw it " +
 			"and submit a fresh one.\n\n" +
 			"Constraints (enforced server-side):\n" +
 			"  • Only YOUR token's proposals can be withdrawn. Other " +
 			"AI clients' proposals are not visible / actionable.\n" +
 			"  • The proposal must still be `pending`. Already-applied " +
-			"or already-rejected proposals cannot be unwound — use " +
+			"or already-rejected proposals cannot be unwound; use " +
 			"list_pending_proposals to confirm before calling.\n\n" +
 			"Withdrawn proposals stay in the audit log but disappear " +
 			"from the user-facing review banner on the next ~5s poll.",
@@ -394,7 +406,7 @@ const TOOLS = [
 			"changes succeeded on the canvas vs which failed (e.g., a temp-id " +
 			"reference that did not resolve). Use this after submitting a " +
 			'proposal to close the loop instead of asking the user "did that ' +
-			'work?" — and BEFORE re-proposing similar changes, to avoid ' +
+			'work?", and BEFORE re-proposing similar changes, to avoid ' +
 			"duplicates if the prior proposal is already applied or pending.\n\n" +
 			"Only YOUR token's proposals are visible. Other AI clients' " +
 			"proposals return NOT_FOUND.",
@@ -416,19 +428,19 @@ const TOOLS = [
 		description:
 			"Lightweight schema-only read of a canvas. Returns the list of " +
 			"SF object types present, per-object counts (loaded vs draft), " +
-			"total association count, and pending-proposal count — but NOT " +
+			"total association count, and pending-proposal count, but NOT " +
 			'field values. Use this when you want to cheaply orient ("what ' +
 			'am I working with?") before deciding whether to spend tokens on ' +
 			"the full read_canvas call. Routes through the same browser relay " +
 			'as read_canvas, so the "user must have the canvas open" rule ' +
-			"still applies — NOT_FOUND when no live browser holds the canvas.",
+			"still applies: NOT_FOUND when no live browser holds the canvas.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				canvasId: {
 					type: "string",
 					description:
-						'Canvas id — 15/18-char SF ContentDocument id or "draft-<uuid>". Use list_canvases to discover valid ids.',
+						'Canvas id: 15/18-char SF ContentDocument id or "draft-<uuid>". Use list_canvases to discover valid ids.',
 				},
 			},
 			required: ["canvasId"],
@@ -458,9 +470,9 @@ const TOOLS = [
 			"answers it (with free-form text, or by picking one of the " +
 			"optional choices you provide), and the response becomes " +
 			"available via read_clarification. Use this for ambiguous cases " +
-			'where guessing would produce a bad proposal — e.g., "Which ' +
+			'where guessing would produce a bad proposal, e.g., "Which ' +
 			"field should the contact full name go in: Name or FirstName + " +
-			'LastName?" — instead of submitting a low-confidence proposal ' +
+			'LastName?", instead of submitting a low-confidence proposal ' +
 			"that wastes the user's review attention.\n\n" +
 			"Returns immediately with a clarificationId; poll " +
 			"read_clarification to check whether the user has responded. " +
@@ -477,7 +489,7 @@ const TOOLS = [
 				question: {
 					type: "string",
 					description:
-						"The question to show the user. Keep it short and specific — the user is reading it in a banner, not a chat thread.",
+						"The question to show the user. Keep it short and specific: the user is reading it in a banner, not a chat thread.",
 				},
 				options: {
 					type: "array",
@@ -496,7 +508,7 @@ const TOOLS = [
 		description:
 			"Read the response to a clarification you previously submitted. " +
 			"Returns one of: pending (user has not responded yet), answered " +
-			"(user has responded — includes their response text and/or " +
+			"(user has responded - includes their response text and/or " +
 			"picked option), withdrawn (you retracted it), expired (24h " +
 			"lapsed without a response). Poll this after request_clarification " +
 			"to detect when the user has answered. Only YOUR token's " +
@@ -528,7 +540,7 @@ function _validateCanvasId(rawCanvasId) {
 	}
 	let receivedKind;
 	if (rawCanvasId == null) {
-		receivedKind = "(no canvasId field — missing from args)";
+		receivedKind = "(no canvasId field - missing from args)";
 	} else if (typeof rawCanvasId !== "string") {
 		receivedKind =
 			"(non-string value of type " +
@@ -539,7 +551,7 @@ function _validateCanvasId(rawCanvasId) {
 	} else if (canvasId === "") {
 		receivedKind = "(empty string)";
 	} else {
-		receivedKind = '("' + canvasId + '" — length ' + canvasId.length + ")";
+		receivedKind = '("' + canvasId + '" - length ' + canvasId.length + ")";
 	}
 	throw _appError(
 		ERR_INVALID_PARAMS,
@@ -547,7 +559,7 @@ function _validateCanvasId(rawCanvasId) {
 			'or a draft id of the form "draft-<uuid>" (unsaved canvases). ' +
 			"Received: " +
 			receivedKind +
-			". Use list_canvases to discover valid ids — the `id` field in each row is what to pass here, not the `title`.",
+			". Use list_canvases to discover valid ids - the `id` field in each row is what to pass here, not the `title`.",
 	);
 }
 
@@ -563,7 +575,7 @@ async function _toolListCanvases(ctx) {
 			})),
 			hint:
 				rows.length === 0
-					? "No canvases are open in any browser in this workspace right now. Orgloom routes AI reads through the user's open browser tabs — close the tab, lose the read. Ask the user to open Orgloom and load the canvas they want you to see; the AI's list_canvases / read_canvas calls become live again instantly. If the workspace's ai_on_canvas_data_enabled toggle is off, no canvases will be visible regardless of what's open."
+					? "No canvases are open in any browser in this workspace right now. Orgloom routes AI reads through the user's open browser tabs - close the tab, lose the read. Ask the user to open Orgloom and load the canvas they want you to see; the AI's list_canvases / read_canvas calls become live again instantly. If the workspace's ai_on_canvas_data_enabled toggle is off, no canvases will be visible regardless of what's open."
 					: undefined,
 		}),
 	);
@@ -587,7 +599,7 @@ async function _toolReadCanvas(ctx, args) {
 				ERR_NOT_FOUND,
 				"No browser in this workspace currently has canvas " +
 					canvasId +
-					" open. Ask the user to open the canvas in Orgloom — reads become available immediately after the page loads. If they already have it open and you still see this, the ai_on_canvas_data_enabled toggle may be off.",
+					" open. Ask the user to open the canvas in Orgloom - reads become available immediately after the page loads. If they already have it open and you still see this, the ai_on_canvas_data_enabled toggle may be off.",
 			);
 		}
 		if (code === "relay-request-timeout") {
@@ -713,7 +725,7 @@ async function _toolProposeRecordChanges(ctx, args) {
 					ERR_INVALID_PARAMS,
 					'duplicate tempRef "' +
 						ref +
-						'" — each new-draft tempRef must be unique within a proposal',
+						'" - each new-draft tempRef must be unique within a proposal',
 				);
 			}
 			tempRefIndex.set(ref, { objectName: c.objectName });
@@ -838,7 +850,7 @@ async function _toolProposeRecordChanges(ctx, args) {
 					ERR_INVALID_PARAMS,
 					"delete-record.recordId " +
 						c.recordId +
-						" is not a loaded record on this canvas — only canvas-loaded records can be removed via this tool. (Note: this removes the reference from the canvas view; the underlying Salesforce record is NOT deleted.)",
+						" is not a loaded record on this canvas - only canvas-loaded records can be removed via this tool. (Note: this removes the reference from the canvas view; the underlying Salesforce record is NOT deleted.)",
 				);
 			}
 			normalized.push({
@@ -1129,7 +1141,7 @@ async function _toolProposeRecordChanges(ctx, args) {
 				"Created proposal: " +
 				parts.join(" + ") +
 				". " +
-				"On accept, changes land on the canvas — they are NOT written " +
+				"On accept, changes land on the canvas - they are NOT written " +
 				"to Salesforce. The user pushes to Salesforce later via the " +
 				"canvas upload flow. Direct them to " +
 				reviewUrl +
@@ -1141,10 +1153,12 @@ async function _toolProposeRecordChanges(ctx, args) {
 async function _toolListPendingProposals(ctx, args) {
 	const rawCanvasId = args && args.canvasId;
 	const canvasId = String(rawCanvasId || "");
-	if (!/^[a-zA-Z0-9]{15,18}$/.test(canvasId)) {
+	const isSfId = /^[a-zA-Z0-9]{15,18}$/.test(canvasId);
+	const isDraftId = /^draft-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(canvasId);
+	if (!isSfId && !isDraftId) {
 		let receivedKind;
 		if (rawCanvasId == null) {
-			receivedKind = "(no canvasId field — missing from args)";
+			receivedKind = "(no canvasId field - missing from args)";
 		} else if (typeof rawCanvasId !== "string") {
 			receivedKind =
 				"(non-string value of type " +
@@ -1158,15 +1172,15 @@ async function _toolListPendingProposals(ctx, args) {
 			receivedKind =
 				'("' +
 				canvasId +
-				'" — length ' +
+				'" - length ' +
 				canvasId.length +
 				", expected 15 or 18 alphanumeric chars)";
 		}
 		throw _appError(
 			ERR_INVALID_PARAMS,
-			"canvasId must be a 15- or 18-char Salesforce id. Received: " +
+			"canvasId must be a 15/18-char Salesforce id or draft-<uuid>. Received: " +
 				receivedKind +
-				". Use list_canvases to discover valid ids — the `id` field in each row is what to pass here, not the `title`.",
+				". Use list_canvases to discover valid ids - the `id` field in each row is what to pass here, not the `title`.",
 		);
 	}
 	const rows = await proposalsDb.listPendingForCanvas(canvasId);
@@ -1200,7 +1214,7 @@ async function _toolDescribeObject(ctx, args) {
 	if (liveCanvases.length === 0) {
 		throw _appError(
 			ERR_NOT_FOUND,
-			"No canvases are currently open in any browser in this workspace, so I have no browser to fetch the describe cache from. Ask the user to open a canvas in Org Loom — any object on the canvas is auto-cached.",
+			"No canvases are currently open in any browser in this workspace, so I have no browser to fetch the describe cache from. Ask the user to open a canvas in Org Loom - any object on the canvas is auto-cached.",
 		);
 	}
 
@@ -1229,7 +1243,7 @@ async function _toolDescribeObject(ctx, args) {
 		if (code === "relay-request-timeout") {
 			throw _appError(
 				ERR_INTERNAL,
-				"Timed out waiting for the user's browser to respond. The tab may be backgrounded — ask the user to bring the canvas tab to the foreground and retry.",
+				"Timed out waiting for the user's browser to respond. The tab may be backgrounded - ask the user to bring the canvas tab to the foreground and retry.",
 			);
 		}
 		throw _appError(ERR_INTERNAL, "Relay error: " + (code || "unknown"));
@@ -1239,7 +1253,7 @@ async function _toolDescribeObject(ctx, args) {
 			ERR_NOT_FOUND,
 			"Object '" +
 				objectName +
-				"' is not in the workspace describe cache. I cannot fetch fresh schema from Salesforce on my own — that would violate the no-direct-SF-access guarantee. Ask the user to add '" +
+				"' is not in the workspace describe cache. I cannot fetch fresh schema from Salesforce on my own - that would violate the no-direct-SF-access guarantee. Ask the user to add '" +
 				objectName +
 				"' to the canvas (the canvas auto-caches describes for every object on it through the user's own SF session), then retry.",
 		);
@@ -1293,7 +1307,7 @@ async function _toolWithdrawProposal(ctx, args) {
 			ERR_INVALID_PARAMS,
 			"Proposal " +
 				proposalId +
-				" is no longer pending — another action changed its status between read and withdraw.",
+				" is no longer pending - another action changed its status between read and withdraw.",
 		);
 	}
 	try {
@@ -1452,7 +1466,7 @@ async function _toolGetCanvasSummary(ctx, args) {
 		if (code === "relay-request-timeout") {
 			throw _appError(
 				ERR_INTERNAL,
-				"Timed out waiting for the user's browser. The tab may be backgrounded — ask them to bring it forward and retry.",
+				"Timed out waiting for the user's browser. The tab may be backgrounded - ask them to bring it forward and retry.",
 			);
 		}
 		throw _appError(ERR_INTERNAL, "Relay error: " + (code || "unknown"));
@@ -1601,7 +1615,7 @@ async function _toolGetMyCapabilities(ctx) {
 	}
 	if (settings.mcp_required_review) {
 		notes.push(
-			"mcp_required_review is ON. Proposals always require human review before apply — same as the default.",
+			"mcp_required_review is ON. Proposals always require human review before apply - same as the default.",
 		);
 	}
 
@@ -1647,7 +1661,7 @@ async function _toolRequestClarification(ctx, args) {
 	if (question.length > 500) {
 		throw _appError(
 			ERR_INVALID_PARAMS,
-			"question is too long (max 500 chars). Keep it short — the user reads it in a banner.",
+			"question is too long (max 500 chars). Keep it short - the user reads it in a banner.",
 		);
 	}
 	const rawOptions = args && args.options;
@@ -1912,6 +1926,9 @@ export async function mcpHandler(req, res) {
 
 		if (code === ERR_AUTH) {
 			res.status(401);
+		} else if (code === ERR_RATE_LIMIT) {
+			res.status(429);
+			res.setHeader("Retry-After", "60");
 		}
 		return _sendError(res, id, code, message, data);
 	}
@@ -1931,6 +1948,9 @@ async function _resolveContext(req) {
 	const tokenRow = await mcpTokensDb.authenticate(plaintext);
 	if (!tokenRow) {
 		throw _appError(ERR_AUTH, "Invalid or revoked token");
+	}
+	if (!_consumeTokenRequest(tokenRow.id)) {
+		throw _appError(ERR_RATE_LIMIT, "MCP token request limit exceeded", { retryAfterSeconds: 60 });
 	}
 
 	const account = await accountsDb.findById(tokenRow.account_id);

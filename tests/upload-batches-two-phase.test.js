@@ -21,7 +21,7 @@ async function decodeWithKey(conn, versionDataB64, batchId) {
 	return JSON.parse(decryptPayload(buf, key));
 }
 
-describe('upload-batches store — layer 4: VersionData-as-URL', () => {
+describe('upload-batches store - layer 4: VersionData-as-URL', () => {
 	test('a batch whose VersionData comes back as a URL decodes correctly', async () => {
 		const stub = installSfFetchStub();
 		try {
@@ -55,7 +55,7 @@ describe('upload-batches store — layer 4: VersionData-as-URL', () => {
 	});
 });
 
-describe('upload-batches store — two-phase write', () => {
+describe('upload-batches store - two-phase write', () => {
 	test('createPending records intent (pending, no ids); finalize flips to uploaded with ids', async () => {
 		const stub = installSfFetchStub();
 		try {
@@ -97,7 +97,7 @@ describe('upload-batches store — two-phase write', () => {
 	});
 });
 
-describe('upload-batches store — idempotency index (attemptId)', () => {
+describe('upload-batches store - idempotency index (attemptId)', () => {
 	test('create() encodes attemptId into PathOnClient', async () => {
 		const stub = installSfFetchStub();
 		try {

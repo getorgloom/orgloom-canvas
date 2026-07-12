@@ -110,7 +110,7 @@ return;
 				pop.innerHTML =
 					'<div class="fop-header">' +
 						'<div class="fop-title">Record was deleted in Salesforce</div>' +
-						'<div class="fop-sub">The card&rsquo;s Salesforce Id can no longer be read &mdash; the record was deleted, or your access to it was removed. Pick what to do.</div>' +
+						'<div class="fop-sub">The card&rsquo;s Salesforce Id can no longer be read: the record was deleted, or your access to it was removed. Pick what to do.</div>' +
 					'</div>' +
 					'<button type="button" class="fop-item fop-item--primary" data-stale-action="convert">' +
 						'<span class="fop-label">Convert to draft and re-create</span>' +
@@ -122,7 +122,7 @@ return;
 					'</button>' +
 					'<button type="button" class="fop-item" data-stale-action="keep">' +
 						'<span class="fop-label">Dismiss (won’t re-upload until fixed)</span>' +
-						'<span class="fop-name">Hides the warning, but the card stays linked to a missing Id — uploads will skip it as "no changes."</span>' +
+						'<span class="fop-name">Hides the warning, but the card stays linked to a missing Id; uploads will skip it as "no changes."</span>' +
 					'</button>';
 				document.body.appendChild(pop);
 				const cleanup = () => {

@@ -109,8 +109,8 @@ return;
 								summaryHtml +
 								'<p>You already have records on the canvas. Loading this file can either start fresh or add to what’s here.</p>' +
 								'<ul style="margin:0.5em 0 0 1.2em; color: var(--ink-soft); font-size: 0.88rem; line-height: 1.5;">' +
-									'<li><strong>Replace canvas</strong> — drop everything currently on the canvas, then load the file.</li>' +
-									'<li><strong>Merge</strong> — keep existing records and add the file’s records alongside.</li>' +
+									'<li><strong>Replace canvas</strong>: drop everything currently on the canvas, then load the file.</li>' +
+									'<li><strong>Merge</strong>: keep existing records and add the file’s records alongside.</li>' +
 								'</ul>' +
 							'</div>' +
 							'<div class="modal-footer">' +
@@ -167,15 +167,15 @@ overlay.remove();
 									' has <strong>' + fmtCount + '</strong> related <strong>' + escapeHtml(targetLabel) + '</strong> record' +
 									(count === 1 ? '' : 's') + '.</p>' +
 								(aboveHard
-									? '<p>That’s too many to load onto the canvas at once — the renderer would slow to a crawl. Use search to pull specific records instead.</p>'
+									? '<p>That’s too many to load onto the canvas at once - the renderer would slow to a crawl. Use search to pull specific records instead.</p>'
 									: '<p>Loading them all at once will slow the canvas and make bulk edits hard to review. You can:</p>' +
 									  '<ul style="margin:0.4em 0 0 1.2em; color: var(--ink-soft); font-size: 0.88rem; line-height: 1.55;">' +
-										'<li><strong>' + escapeHtml(loadBtnLabel) + '</strong> — ' +
+										'<li><strong>' + escapeHtml(loadBtnLabel) + '</strong> - ' +
 											(truncates
 												? 'pulls the first ' + fmtWill + ' (server caps each load at ' + _RELATED_BULK_LOAD_CAP.toLocaleString() + ').'
 												: 'pulls every record at once.') +
 										'</li>' +
-										'<li><strong>Search</strong> — pick specific records by name and add them one at a time.</li>' +
+										'<li><strong>Search</strong>: pick specific records by name and add them one at a time.</li>' +
 									  '</ul>') +
 							'</div>' +
 							'<div class="modal-footer">' +
@@ -328,10 +328,10 @@ status.textContent = 'Search failed: ' + (e.message || e);
 								reasonsHtml +
 								'<p style="margin-top:0.8em">Falling back to <strong>Bulk API v2</strong> means:</p>' +
 								'<ul style="margin:0.4em 0 0 1.2em; color: var(--ink-soft); font-size: 0.88rem; line-height: 1.55;">' +
-									'<li><strong>Not atomic</strong> &mdash; records commit independently. Some may succeed while others fail; there is no all-or-nothing rollback.</li>' +
-									'<li><strong>Per-record errors</strong> &mdash; failures are reported individually so you can fix and retry just the failed rows.</li>' +
-									'<li><strong>Separate API quota</strong> &mdash; Bulk requests are tracked against your org’s Bulk API limit, not the standard REST limit.</li>' +
-									'<li><strong>Faster at scale</strong> &mdash; throughput climbs to ~1000 records/sec once jobs are running.</li>' +
+									'<li><strong>Not atomic</strong>: records commit independently. Some may succeed while others fail; there is no all-or-nothing rollback.</li>' +
+									'<li><strong>Per-record errors</strong>: failures are reported individually so you can fix and retry just the failed rows.</li>' +
+									'<li><strong>Separate API quota</strong>: Bulk requests are tracked against your org’s Bulk API limit, not the standard REST limit.</li>' +
+									'<li><strong>Faster at scale</strong>: throughput climbs to ~1000 records/sec once jobs are running.</li>' +
 								'</ul>' +
 							'</div>' +
 							'<div class="modal-footer">' +

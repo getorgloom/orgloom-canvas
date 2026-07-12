@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Org Loom Canvas &mdash; First-boot setup</title>
+	<title>Org Loom Canvas: First-boot setup</title>
 	<link rel="stylesheet" href="/css/app.css">
 
 </head>
@@ -59,7 +59,7 @@
 				<p class="tag">
 					Older orgs may still surface the legacy
 					<strong>App Manager</strong> with a <em>New Connected App</em>
-					button instead &mdash; that path also works. Salesforce
+					button instead; that path also works. Salesforce
 					renamed Connected Apps to External Client Apps in Summer
 					&rsquo;24; the OAuth flow is identical.
 				</p>
@@ -72,7 +72,7 @@
 					<li><strong>External Client App Name</strong>: <code>Org Loom Canvas (Self-hosted)</code></li>
 					<li><strong>API Name</strong>: <code>Org_Loom_Canvas_Self_Hosted</code></li>
 					<li><strong>Contact Email</strong>: your email</li>
-					<li><strong>Distribution State</strong>: <code>Local</code> &mdash; this is a single-org install, not a managed package.</li>
+					<li><strong>Distribution State</strong>: <code>Local</code> (this is a single-org install, not a managed package).</li>
 				</ul>
 			</section>
 
@@ -98,7 +98,7 @@
 					<strong>Uncheck</strong> "Require Proof Key for Code
 					Exchange (PKCE)" and <strong>uncheck</strong> "Require
 					Secret for Web Server Flow" only if your org has it
-					checked by default and PKCE setup fails &mdash; Org
+					checked by default and PKCE setup fails; Org
 					Loom Canvas uses the standard OAuth2 web flow with
 					client secret.
 				</p>
@@ -110,7 +110,7 @@
 				<p>
 					Click <strong>Create</strong> (or <strong>Save</strong>
 					in the legacy UI). External Client Apps come up with
-					policies disabled by default &mdash; open the app you
+					policies disabled by default; open the app you
 					just created, go to <strong>Policies</strong>, and
 					verify <em>OAuth Policies &rarr; Permitted Users</em>
 					is set to <strong>All users may self-authorize</strong>
@@ -119,7 +119,7 @@
 				</p>
 				<p>
 					Salesforce then shows a warning: "Allow ~10 minutes for
-					changes to take effect." This is not a joke &mdash; the
+					changes to take effect." This is not a joke; the
 					next step will fail if you don&rsquo;t wait. Get a coffee.
 				</p>
 			</section>

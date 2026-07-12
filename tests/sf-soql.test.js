@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { escapeSoqlLiteral } from '../src/sf-soql.js';
 
-describe('escapeSoqlLiteral — single quote', () => {
+describe('escapeSoqlLiteral: single quote', () => {
 	test('escapes a single quote', () => {
 		assert.equal(escapeSoqlLiteral("O'Brien"), "O\\'Brien");
 	});
@@ -16,7 +16,7 @@ describe('escapeSoqlLiteral — single quote', () => {
 	});
 });
 
-describe('escapeSoqlLiteral — backslash', () => {
+describe('escapeSoqlLiteral: backslash', () => {
 	test('escapes a backslash', () => {
 
 		assert.equal(escapeSoqlLiteral('a\\b'), 'a\\\\b');
@@ -32,7 +32,7 @@ describe('escapeSoqlLiteral — backslash', () => {
 	});
 });
 
-describe('escapeSoqlLiteral — combined', () => {
+describe('escapeSoqlLiteral: combined', () => {
 	test('escapes backslash before quote (order matters: \\ first, then \')', () => {
 
 		assert.equal(escapeSoqlLiteral("a\\'b"), "a\\\\\\'b");
@@ -54,7 +54,7 @@ describe('escapeSoqlLiteral — combined', () => {
 	});
 });
 
-describe('escapeSoqlLiteral — null / undefined / non-string inputs', () => {
+describe('escapeSoqlLiteral: null / undefined / non-string inputs', () => {
 	test('null → empty string', () => {
 		assert.equal(escapeSoqlLiteral(null), '');
 	});
@@ -81,7 +81,7 @@ describe('escapeSoqlLiteral — null / undefined / non-string inputs', () => {
 	});
 });
 
-describe('escapeSoqlLiteral — wildcards passed through (NOT escaped)', () => {
+describe('escapeSoqlLiteral: wildcards passed through (NOT escaped)', () => {
 	test('% is preserved (used as LIKE wildcard by callers)', () => {
 
 		assert.equal(escapeSoqlLiteral('100%'), '100%');
@@ -96,7 +96,7 @@ describe('escapeSoqlLiteral — wildcards passed through (NOT escaped)', () => {
 	});
 });
 
-describe('escapeSoqlLiteral — defends against the classic injection attempts', () => {
+describe('escapeSoqlLiteral: defends against the classic injection attempts', () => {
 	test('OR injection: quote-break + clause-append', () => {
 
 		const malicious = "x' OR Id != null --";

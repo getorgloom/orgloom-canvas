@@ -18,8 +18,8 @@ const ORG_ALIAS = process.env.SF_TEST_ORG_ALIAS;
 const OBJECT_NAME = 'Account';
 
 if (!RUN_LIVE || !ORG_ALIAS) {
-	describe('validation engine — live SF integration', () => {
-		test('skipped — set RUN_SF_LIVE=1 and SF_TEST_ORG_ALIAS=<alias> to enable', () => {
+	describe('validation engine: live SF integration', () => {
+		test('skipped: set RUN_SF_LIVE=1 and SF_TEST_ORG_ALIAS=<alias> to enable', () => {
 
 			assert.ok(true);
 		});
@@ -98,7 +98,7 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 		}
 	}
 
-	describe('validation engine — live SF integration', () => {
+	describe('validation engine: live SF integration', () => {
 		test('LEN comparison: Description over 50 chars fires the rule', async () => {
 			await runRulePattern({
 				ruleName: nextTestRuleName(),

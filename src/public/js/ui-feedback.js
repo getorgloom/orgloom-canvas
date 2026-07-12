@@ -146,7 +146,7 @@ continue;
 					const moreCount = diffRows.length - shown.length;
 					const trim = (s) => s.length > 60 ? s.slice(0, 57) + '\u2026' : s;
 					const rowsHtml = shown.length === 0
-						? '<div class="hc-empty">No field-value differences \u2014 only the Salesforce id will be linked.</div>'
+						? '<div class="hc-empty">No field-value differences - only the Salesforce id will be linked.</div>'
 						: shown.map(r => {
 							const flabel = fieldLabelLookup ? (fieldLabelLookup(r.field) || r.field) : r.field;
 							return '<div class="hc-row">' +

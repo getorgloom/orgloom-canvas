@@ -29,7 +29,7 @@ before(() => {
 	T = api._test;
 });
 
-describe('csvEscape — formula-injection guard', () => {
+describe('csvEscape - formula-injection guard', () => {
 	test('prefixes an apostrophe on values starting with = + - @', () => {
 		assert.equal(T.csvEscape('=HYPERLINK("x","y")'), '"\'=HYPERLINK(""x"",""y"")"');
 		assert.equal(T.csvEscape('+1'), "'+1");
@@ -54,7 +54,7 @@ describe('csvEscape — formula-injection guard', () => {
 	});
 });
 
-describe('csvEscape — RFC 4180 quoting', () => {
+describe('csvEscape - RFC 4180 quoting', () => {
 	test('quotes values containing comma / quote / newline; doubles inner quotes', () => {
 		assert.equal(T.csvEscape('a,b'), '"a,b"');
 		assert.equal(T.csvEscape('he said "hi"'), '"he said ""hi"""');

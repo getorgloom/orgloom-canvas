@@ -301,7 +301,6 @@ return;
 	});
 
 	const fields = describe.fields
-		.filter((f) => f.createable)
 		.map((f) => {
 			const resolvedControllerName = f.controllerName
 				|| uiApiControllerByField[f.name]

@@ -79,10 +79,10 @@ throw new Error('canvas-save-load.mount: missing deps object');
 				const _canExportCanvas = _hasCap('export-canvas');
 				const _canExportRecords = _hasCap('export-records');
 				const _exportJsonBtn = _canExportCanvas
-					? '<button type="button" class="tpl-action" data-tpl-action="export-file"' + exportDisabled + '>Export canvas (JSON) <span class="tpl-action-sub">lossless &mdash; re-import to restore exactly</span></button>'
+					? '<button type="button" class="tpl-action" data-tpl-action="export-file"' + exportDisabled + '>Export canvas (JSON) <span class="tpl-action-sub">lossless - re-import to restore exactly</span></button>'
 					: '';
 				const _exportCsvBtn = _canExportRecords
-					? '<button type="button" class="tpl-action" data-tpl-action="export-csv"' + exportDisabled + '>Export records (CSV) <span class="tpl-action-sub">records only &mdash; opens in Excel</span></button>'
+					? '<button type="button" class="tpl-action" data-tpl-action="export-csv"' + exportDisabled + '>Export records (CSV) <span class="tpl-action-sub">records only - opens in Excel</span></button>'
 					: '';
 				const _downloadHeader = (_canExportCanvas || _canExportRecords)
 					? '<div class="tpl-header">Download to your machine</div>'
@@ -206,7 +206,7 @@ return;
 					return;
 				}
 				if (canvasState.selectedObjects.length === 0) {
-					showBulkToast('Nothing to save \u2014 canvas is empty.', 'error');
+					showBulkToast('Nothing to save - canvas is empty.', 'error');
 					return;
 				}
 				let payload;
@@ -349,7 +349,7 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 				const ok = await showConfirmDialog({
 					title: 'Migrate this canvas to another Salesforce org?',
 					message:
-						'Your canvas is saved in this browser first, so the org switch is safe — close the tab and it’s still here. ' +
+						'Your canvas is kept for this tab while you switch orgs. Keep this tab open until the migration finishes. ' +
 						'Next you’ll connect or switch to the destination org and this canvas comes with you to review and upload. ' +
 						'Records keep their field values but are recreated as new records in the destination (a source record’s Salesforce Id doesn’t exist in another org).',
 					confirmLabel: 'Save and choose destination',
@@ -364,7 +364,7 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 					: false;
 				if (!stashed) {
 					showBulkToast(
-						'Couldn’t save this canvas for migration — it may be too large for this browser’s storage. Export it to a file instead, then re-import after switching orgs.',
+						'Couldn’t save this canvas for migration - it may be too large for this browser’s storage. Export it to a file instead, then re-import after switching orgs.',
 						'error',
 					);
 					return;
@@ -483,7 +483,7 @@ finish(null);
 								'<li>Assign you the <strong>Salesforce Standard</strong> permission set (Setup → Permission Sets), OR</li>' +
 								'<li>Grant your profile <strong>Create</strong> on the <strong>ContentVersion</strong> object.</li>' +
 							'</ul>' +
-							'<p class="tag" style="margin-top:0.8em">In the meantime, you can <strong>export this canvas to a JSON file</strong> and re-import it next session — your work won’t be lost. Records you upload directly to Salesforce don’t need Content permissions, so the rest of Org Loom keeps working.</p>' +
+							'<p class="tag" style="margin-top:0.8em">In the meantime, you can <strong>export this canvas to a JSON file</strong> and re-import it next session - your work won’t be lost. Records you upload directly to Salesforce don’t need Content permissions, so the rest of Org Loom keeps working.</p>' +
 							sfErrorSnippet +
 						'</div>' +
 						'<div class="modal-footer" style="justify-content:flex-end;gap:0.5em">' +

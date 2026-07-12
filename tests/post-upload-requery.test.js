@@ -5,7 +5,7 @@ import {
 	_buildBatchEntryFromResult,
 } from '../src/canvas-routes.js';
 
-describe('_buildBatchEntryFromResult — canonical-values preference', () => {
+describe('_buildBatchEntryFromResult (canonical-values preference)', () => {
 	test('without canonical → uploadedValues mirrors rec.values (legacy path)', () => {
 		const r = { tempId: 1, id: '001abc', objectName: 'Account', mode: 'update', success: true };
 		const rec = {
