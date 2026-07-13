@@ -39,7 +39,10 @@ export async function record(opts = {}) {
 	const actorKind = opts.actorKind || "web";
 	const mcpTokenId = opts.mcpTokenId || null;
 	const status = opts.status || "ok";
-	const errorCode = opts.errorCode || null;
+	const rawErrorCode = opts.errorCode == null ? null : String(opts.errorCode);
+	const errorCode = rawErrorCode == null
+		? null
+		: (/^[A-Za-z0-9_.:-]{1,100}$/.test(rawErrorCode) ? rawErrorCode : "error");
 	const requestId = opts.requestId || null;
 
 	if (req && req.session) {
@@ -75,7 +78,7 @@ export async function record(opts = {}) {
 		}
 	}
 
-	const chained = opts.chained !== false;
+	const chained = opts.chained === true;
 	const payloadJson = payload ? JSON.stringify(payload) : null;
 
 	const release = chained ? await _acquireChainLock(workspaceId || "") : null;
@@ -161,19 +164,21 @@ export function newRequestId() {
 
 export async function recordFailure(req, action, err, extras = {}) {
 	try {
+		const candidateCode =
+			extras.errorCode ||
+			(err && (err.errorCode || err.name)) ||
+			"error";
+		const safeErrorCode = /^[A-Za-z0-9_.:-]{1,100}$/.test(String(candidateCode))
+			? String(candidateCode)
+			: "error";
 		await record({
 			req,
 			action,
 			...extras,
 			status: "failed",
-			errorCode:
-				extras.errorCode ||
-				(err && (err.errorCode || err.name)) ||
-				"error",
-			payload: {
-				...(extras.payload || {}),
-				error: (err && err.message) || String(err),
-			},
+			errorCode: safeErrorCode,
+
+			payload: extras.payload || null,
 		});
 	} catch (_eAudit) {
 

@@ -187,17 +187,12 @@
 			<% var __ts_saas = (typeof saasEnabled !== 'undefined') ? !!saasEnabled : false; %>
 			<section class="signin-gate">
 				<% if (__ts_saas) { %>
-					<a class="button signin-gate-btn" href="/signup">Sign up</a>
-					<p class="signin-gate-existing">
-						Already have an account? <a href="/sign-in">Sign in</a>.
-					</p>
+					<a class="button signin-gate-btn" href="/sign-in">Sign in</a>
 				<% } else { %>
 					<a class="button signin-gate-btn" href="/auth/login">Connect Salesforce to get started</a>
 					<p class="signin-gate-existing">
 						Org Loom Canvas runs entirely on your local machine. Connect a Salesforce org once and the canvas opens.
 					</p>
-				<% } %>
-				<div class="signin-gate-video">
 
 					<div class="video-embed video-embed--placeholder video-embed--aspect-16-9" role="img" aria-label="Demo video placeholder">
 						<div class="video-embed-empty">
@@ -205,14 +200,6 @@
 							<span class="video-embed-empty-text">Demo video coming soon</span>
 						</div>
 					</div>
-				</div>
-				<% if (__ts_saas && typeof betaGateEnabled !== 'undefined' && betaGateEnabled) { %>
-					<p class="landing-note">Currently in private beta. <a href="/waitlist">Join the waitlist</a> to get early access.</p>
-				<% } %>
-				<% if (__ts_saas) { %>
-					<p class="landing-note">
-						Source-available: <a href="https://github.com/getorgloom/orgloom-canvas" rel="noopener" target="_blank">read the canvas source</a> on GitHub.
-					</p>
 				<% } %>
 			</section>
 		<% } %>

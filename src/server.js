@@ -7,7 +7,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { doubleCsrf } from 'csrf-csrf';
 import jsforce from 'jsforce';
-import betterSqliteSessionStoreFactory from 'better-sqlite3-session-store';
+import { createSqliteSessionStore } from './database/sqlite-session-store.js';
 import connectPgSimpleFactory from 'connect-pg-simple';
 import { config } from './config.js';
 import { createOAuth2 } from './auth.js';
@@ -63,10 +63,10 @@ return null;
 const _rawDb = ext.getRawClient();
 let _sessionStore = null;
 if (_rawDb.dialect === 'sqlite') {
-	const SqliteStore = betterSqliteSessionStoreFactory(session);
+	const SqliteStore = createSqliteSessionStore(session.Store);
 	_sessionStore = new SqliteStore({
 		client: _rawDb.client,
-		expired: { clear: true, intervalMs: 1000 * 60 * 15 },
+		cleanupIntervalMs: 1000 * 60 * 15,
 	});
 } else {
 	const PgStore = connectPgSimpleFactory(session);

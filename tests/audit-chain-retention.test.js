@@ -28,13 +28,13 @@ async function rawRow(id) {
 	return ext.getDb().selectFrom('audit_log').selectAll().where('id', '=', id).executeTakeFirst();
 }
 
-describe('unchained (data-touching) rows', () => {
-	test('chained:false writes a NULL chain_hash and is excluded from verifyChain', async () => {
+describe('unchained Activity History rows', () => {
+	test('unchained is the default; explicit legacy chained rows still verify', async () => {
 		const { audit } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
-		const chainedId = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed' });
-		const dataId = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'upload', chained: false });
+		const chainedId = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', chained: true });
+		const dataId = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'upload' });
 		assert.ok((await rawRow(chainedId)).chain_hash, 'chained row has a hash');
 		assert.equal((await rawRow(dataId)).chain_hash, null, 'unchained row has NULL hash');
 		const result = await audit.verifyChain({ workspaceId: ws.id });
@@ -48,9 +48,9 @@ describe('unchained (data-touching) rows', () => {
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
 
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created' });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', chained: true });
 		const dataId = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'upload', chained: false });
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed' });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', chained: true });
 		await ext.getDb().deleteFrom('audit_log').where('id', '=', dataId).execute();
 		const result = await audit.verifyChain({ workspaceId: ws.id });
 		assert.equal(result.ok, true, 'chain intact after unchained row deleted');
@@ -80,10 +80,10 @@ describe('purgeExpired: chain-safe retention', () => {
 		const past = Date.now() - 1000;
 		const future = Date.now() + 1_000_000;
 
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: past });
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', expiresAt: past });
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_grant', expiresAt: future });
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_revoke', expiresAt: future });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: past, chained: true });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', expiresAt: past, chained: true });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_grant', expiresAt: future, chained: true });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_revoke', expiresAt: future, chained: true });
 		const dropped = await audit.purgeExpired();
 		assert.equal(dropped, 2, 'the two expired prefix rows dropped');
 		const result = await audit.verifyChain({ workspaceId: ws.id });
@@ -100,8 +100,8 @@ describe('purgeExpired: chain-safe retention', () => {
 		const past = Date.now() - 1000;
 		const future = Date.now() + 1_000_000;
 
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: future });
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', expiresAt: past });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: future, chained: true });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', expiresAt: past, chained: true });
 		const dropped = await audit.purgeExpired();
 		assert.equal(dropped, 0, 'nothing purged: the expired row is not a prefix');
 		const result = await audit.verifyChain({ workspaceId: ws.id });
@@ -114,10 +114,10 @@ describe('purgeExpired: chain-safe retention', () => {
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
 		const past = Date.now() - 1000;
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: past });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: past, chained: true });
 		await audit.purgeExpired();
 
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed' });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', chained: true });
 		const result = await audit.verifyChain({ workspaceId: ws.id });
 		assert.equal(result.ok, true);
 		assert.equal(result.totalRows, 1);
@@ -130,12 +130,13 @@ describe('GDPR payload redaction', () => {
 		const { audit } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created' });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', chained: true });
 		const inviteId = await audit.record({
 			workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_invite_created',
 			payload: { note: 'invited alice@example.com to the team', role: 'member' },
+			chained: true,
 		});
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed' });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', chained: true });
 
 		const n = await audit.redactPayloadByEmail('alice@example.com');
 		assert.equal(n, 1, 'one row contained the email');
@@ -157,12 +158,13 @@ describe('GDPR payload redaction', () => {
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
-		const id0 = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created' });
+		const id0 = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', chained: true });
 		await audit.record({
 			workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_invite_created',
 			payload: { email: 'bob@example.com' },
+			chained: true,
 		});
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed' });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', chained: true });
 		await audit.redactPayloadByEmail('bob@example.com');
 
 		await ext.getDb().deleteFrom('audit_log').where('id', '=', id0).execute();
@@ -175,9 +177,9 @@ describe('GDPR payload redaction', () => {
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
-		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_invite_created', payload: { email: 'dave@example.com' } });
-		const id1 = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_grant', payload: { capability: 'x' } });
-		const id2 = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_revoke', payload: { capability: 'y' } });
+		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_invite_created', payload: { email: 'dave@example.com' }, chained: true });
+		const id1 = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_grant', payload: { capability: 'x' }, chained: true });
+		const id2 = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_revoke', payload: { capability: 'y' }, chained: true });
 		await audit.redactPayloadByEmail('dave@example.com');
 
 		const r1 = await rawRow(id1);
@@ -210,7 +212,7 @@ describe('concurrent chained writes', () => {
 
 		await Promise.all(
 			Array.from({ length: 20 }, (_, i) =>
-				audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_grant', payload: { i } }),
+				audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_grant', payload: { i }, chained: true }),
 			),
 		);
 		const result = await audit.verifyChain({ workspaceId: ws.id });

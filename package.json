@@ -24,12 +24,11 @@
     "test:integration": "node --test tests/integration/*.test.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
     "better-sqlite3": "^12.9.0",
-    "better-sqlite3-session-store": "^0.1.0",
     "cookie-parser": "^1.4.7",
     "csrf-csrf": "^4.0.3",
     "cytoscape": "^3.33.2",

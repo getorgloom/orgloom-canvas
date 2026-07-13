@@ -28,6 +28,7 @@ async function writeN(workspaceId, actorAccountId, n) {
 	const ids = [];
 	for (let i = 0; i < n; i++) {
 		ids.push(await audit.record({
+			chained: true,
 			workspaceId,
 			actorAccountId,
 			action: 'test_event_' + i,

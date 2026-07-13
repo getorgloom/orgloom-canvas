@@ -1856,7 +1856,9 @@ async function _handleToolsCall(ctx, params) {
 			mcpTokenId: ctx.mcpToken.id,
 			action: "mcp_tool_call_failed",
 			targetObject: "mcp",
-			payload: { tool: name, error: err.message || String(err) },
+			status: "failed",
+			errorCode: "mcp-tool-failed",
+			payload: { tool: name },
 		}).catch(() => {});
 		throw err;
 	}

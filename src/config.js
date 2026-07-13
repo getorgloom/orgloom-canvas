@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { installOperationalConsoleGuard } from './operational-console.js';
 
 const required = ['SF_CLIENT_ID', 'SF_CLIENT_SECRET', 'SF_REDIRECT_URI'];
 const missing = required.filter((v) => !process.env[v]);
@@ -61,6 +62,10 @@ if (_isProd && !_canvasStandalone) {
 		console.error('[config] Production startup checks failed:');
 		for (const msg of fatal) {
 console.error('  - ' + msg);
+}
+
+if (_isProd) {
+	installOperationalConsoleGuard();
 }
 		console.error('[config] Refusing to start. Fix the env vars and retry.');
 		process.exit(1);

@@ -997,7 +997,6 @@ return res.status(400).json({ error: 'name-required' });
 			await auditDb.recordFailure(req, 'canvas_created', err, {
 				targetObject: 'canvas',
 				targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
-				payload: { attemptedName: String((req.body && req.body.name) || '').trim(), sfError: err && err.sfError },
 			});
 
 			if (err && err.statusCode === 403 && err.code) {
@@ -1084,7 +1083,6 @@ return res.status(404).json({ error: 'not-found' });
 				targetObject: 'canvas',
 				targetId: req.params.id,
 				targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
-				payload: { sfError: err && err.sfError },
 			});
 
 			if (err && err.statusCode && err.code) {
@@ -1733,7 +1731,7 @@ return;
 							targetSfOrgId: req.sf.sfOrgId,
 							status: 'failed',
 							errorCode: 'sf-session-expired',
-							payload: { sfError: msg.slice(0, 200), objectNames },
+							payload: { objectNames },
 						});
 					} catch (_eAudit) {                   }
 
@@ -1872,7 +1870,7 @@ continue;
 					targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
 					status: 'failed',
 					errorCode: (err && (err.errorCode || err.name)) || 'ai-error',
-					payload: { error: (err && err.message) || String(err) },
+					payload: null,
 				});
 			} catch (_eAudit) {                   }
 			next(err);
@@ -2146,7 +2144,6 @@ continue;
 						payload: {
 							tempId: r.tempId != null ? r.tempId : null,
 							mode: r.mode || (r.success ? 'create' : null),
-							error: r.success ? undefined : (r.error || null),
 						},
 					});
 				}
@@ -2167,7 +2164,6 @@ continue;
 						errorCode: d.success ? null : 'sf-delete-failed',
 						payload: {
 							tempId: d.tempId != null ? d.tempId : null,
-							error: d.success ? undefined : (d.error || null),
 						},
 					});
 				}
@@ -2745,7 +2741,9 @@ objNamesToDescribe.add(rec.objectName);
 						workspaceId,
 						action: 'upload',
 						targetSfOrgId: req.sf.sfOrgId,
-						payload: { mode: 'graph', requested: records.length, error: (err && err.message || 'graph upload failed').slice(0, 200) },
+						status: 'failed',
+						errorCode: 'graph-upload-failed',
+						payload: { mode: 'graph', requested: records.length },
 					});
 				} catch (e) {
  console.warn('[audit] graph error log failed:', e.message || e); 
@@ -2942,7 +2940,6 @@ continue;
 						payload: {
 							tempId: r.tempId != null ? r.tempId : null,
 							mode: r.mode || (r.success ? 'create' : null),
-							error: r.success ? undefined : (r.error || null),
 						},
 					});
 				}
@@ -2963,7 +2960,6 @@ continue;
 						errorCode: d.success ? null : 'sf-delete-failed',
 						payload: {
 							tempId: d.tempId != null ? d.tempId : null,
-							error: d.success ? undefined : (d.error || null),
 						},
 					});
 				}
@@ -3392,11 +3388,10 @@ return;
 					action: 'preflight',
 					targetSfOrgId: req.sf.sfOrgId,
 					payload: {
-						sampled: orderedSample.length,
-						total: records.length,
-						errorCount: errors.length,
-						firstError: errors[0] && errors[0].message ? errors[0].message.slice(0, 200) : null,
-					},
+							sampled: orderedSample.length,
+							total: records.length,
+							errorCount: errors.length,
+						},
 				});
 			} catch (e) {
  console.warn('[audit]:', e.message || e); 
@@ -3927,7 +3922,6 @@ continue;
 							payload: {
 								tempId: r.tempId != null ? r.tempId : null,
 								mode: r.mode || (r.success ? 'create' : null),
-								error: r.success ? undefined : (r.error || null),
 							},
 						});
 					}
@@ -3948,7 +3942,6 @@ continue;
 							errorCode: d.success ? null : 'sf-delete-failed',
 							payload: {
 								tempId: d.tempId != null ? d.tempId : null,
-								error: d.success ? undefined : (d.error || null),
 							},
 						});
 					}
@@ -4056,7 +4049,9 @@ continue;
 						workspaceId,
 						action: 'upload_bulk',
 						targetSfOrgId: req.sf.sfOrgId,
-						payload: { requested: records.length, error: ((err && err.message) || 'failed').slice(0, 200) },
+						status: 'failed',
+						errorCode: 'bulk-upload-failed',
+						payload: { requested: records.length },
 					});
 				} catch (e) {
  console.warn('[audit]:', e.message || e); 
@@ -4606,7 +4601,6 @@ v[k] = full[k];
 					targetObject: objectName,
 					targetSfOrgId: req.sf.sfOrgId,
 					payload: {
-						soql: soqlRaw.slice(0, 500),
 						objectName,
 						returnedRows: result.records.length,
 						totalRecordsAdded: records.length,
@@ -4632,14 +4626,13 @@ v[k] = full[k];
 			console.error('[api/query] failed:', err);
 
 			try {
-				const soqlRaw = String((req.body && req.body.soql) || '').trim();
 				await ext.auditWrite({
 					req,
 					action: 'soql_query',
 					targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
 					status: 'failed',
 					errorCode: (err && (err.errorCode || err.name)) || 'query-failed',
-					payload: { soql: soqlRaw.slice(0, 500), error: (err && err.message) || String(err) },
+					payload: null,
 				});
 			} catch (_eAudit) {                   }
 			res.status(500).json({ error: 'query-failed', message: (err && err.message) || 'Query failed.' });
@@ -5615,7 +5608,9 @@ return;
 					action: 'record_insert',
 					targetObject: req.params.name,
 					targetSfOrgId: req.sf.sfOrgId,
-					payload: { error: (err && err.message) || String(err), errorCode: err && err.errorCode || null },
+					status: 'failed',
+					errorCode: (err && err.errorCode) || 'record-insert-failed',
+					payload: null,
 				});
 			} catch (e) {                   }
 			res.status(400).json({

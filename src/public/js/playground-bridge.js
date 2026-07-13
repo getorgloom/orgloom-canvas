@@ -17,6 +17,13 @@
 			}
 		} catch (_) {}
 	}
+	function referrerOrigin() {
+		try {
+			return document.referrer ? new URL(document.referrer).origin : '';
+		} catch (_) {
+			return '';
+		}
+	}
 
 	function safeReadLocalStorage(key) {
 		try {
@@ -39,7 +46,7 @@
 	function installSendSide() {
 
 		capture('playground_started', {
-			referrer: document.referrer || '',
+			referrer_origin: referrerOrigin(),
 			source: 'mock',
 		});
 

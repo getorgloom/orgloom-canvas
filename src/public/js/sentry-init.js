@@ -8,16 +8,6 @@
 return;
 }
 
-	var SF_ID_RE = /\b0[0-9A-Za-z]{14}(?:[0-9A-Za-z]{3})?\b/g;
-	var EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-
-	function scrubString(s) {
-		if (typeof s !== 'string') {
-return s;
-}
-		return s.replace(EMAIL_RE, '<email>').replace(SF_ID_RE, '<sfId>');
-	}
-
 	function scrubEvent(event) {
 
 		if (event.request && typeof event.request.url === 'string') {
@@ -26,13 +16,17 @@ return s;
 event.request.url = event.request.url.slice(0, i);
 }
 		}
+
 		if (event.message) {
-event.message = scrubString(event.message);
+event.message = '<redacted-error-message>';
+}
+		if (event.extra) {
+event.extra = {};
 }
 		if (event.breadcrumbs) {
 			event.breadcrumbs.forEach(function (b) {
 				if (b && typeof b.message === 'string') {
-b.message = scrubString(b.message);
+b.message = '<redacted-breadcrumb>';
 }
 
 				if (b && b.data) {
@@ -43,7 +37,7 @@ b.data = {};
 		if (event.exception && event.exception.values) {
 			event.exception.values.forEach(function (ex) {
 				if (ex && typeof ex.value === 'string') {
-ex.value = scrubString(ex.value);
+ex.value = '<redacted-error-message>';
 }
 			});
 		}
@@ -65,9 +59,9 @@ ex.value = scrubString(ex.value);
 return null;
 }
 
-			if (b && b.category === 'ui.click' && b.message) {
-				b.message = scrubString(b.message);
-			}
+			if (b && b.category === 'ui.click') {
+return null;
+}
 			return b;
 		},
 	});

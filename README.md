@@ -24,7 +24,6 @@ The hosted SaaS (orgloom.com) adds these on top; they live in a closed package a
 - Multi-user accounts + workspaces: signup, invite, member roles, admin promotion/demotion, pending-join approval queue, soft-delete + restore
 - Email magic-link + SSO sign-in (Google, Microsoft)
 - Workspace-level policy and feature flags: production-org approval gate, script-runner toggle, bulk-delete, duplicate-rule bypass, AI-on-real-data, MCP human-review, email-domain restrictions
-- Tamper-evident audit chain retention + verification sweep
 - Stripe billing + plan-based quotas
 - Managed updates, backups, uptime SLA, security incident response
 

@@ -1,0 +1,39 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const src = path.resolve(here, '../src');
+const saasSrc = path.resolve(here, '../../../apps/saas/src');
+
+test('PostHog disables DOM capture for signed-in pages and hashes identity', () => {
+	const template = fs.readFileSync(
+		path.join(src, 'views/partials/top-strip.ejs'),
+		'utf8',
+	);
+	assert.match(template, /const _ph_signedIn =/);
+	assert.match(template, /autocapture: <%= _ph_signedIn \? 'false' : 'true' %>/);
+	assert.match(template, /disable_session_recording: <%= _ph_signedIn \? 'true' : 'false' %>/);
+	assert.match(template, /posthog\.identify\(<%- jsonForScript\('acct:' \+ accountIdHash\) %>/);
+	assert.doesNotMatch(template, /posthog\.identify\(<%- jsonForScript\(user\.id\) %>/);
+	assert.match(template, /delete properties\.\$current_url/);
+	assert.match(template, /delete properties\.\$referrer/);
+	assert.match(template, /properties\.page_path = window\.location\.pathname/);
+});
+
+test('browser error telemetry drops free-form messages, context, and click crumbs', () => {
+	const source = fs.readFileSync(path.join(src, 'public/js/sentry-init.js'), 'utf8');
+	assert.match(source, /event\.message = '<redacted-error-message>'/);
+	assert.match(source, /event\.extra = \{\}/);
+	assert.match(source, /b\.category === 'ui\.click'[\s\S]*?return null/);
+	assert.match(source, /ex\.value = '<redacted-error-message>'/);
+});
+
+test('server error telemetry drops free-form messages and extra context', () => {
+	const source = fs.readFileSync(path.join(saasSrc, 'lib/sentry.js'), 'utf8');
+	assert.match(source, /event\.message = '<redacted-error-message>'/);
+	assert.match(source, /event\.extra = \{\}/);
+	assert.match(source, /ex\.value = '<redacted-error-message>'/);
+});
