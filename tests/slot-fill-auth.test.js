@@ -4,8 +4,12 @@ import { mergeSlotFills } from '../src/slot-helpers.js';
 
 function slotRec({ slotId, kind = 'whole-record', fields, assigneeSfUserId, values, objectName = 'Account' }) {
 	const slot = { slotId, kind };
-	if (fields) slot.fields = fields;
-	if (assigneeSfUserId) slot.assigneeSfUserId = assigneeSfUserId;
+	if (fields) {
+slot.fields = fields;
+}
+	if (assigneeSfUserId) {
+slot.assigneeSfUserId = assigneeSfUserId;
+}
 	return {
 		objectName,
 		values: values || {},

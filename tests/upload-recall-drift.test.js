@@ -279,7 +279,7 @@ describe('detectCascadeConflicts', () => {
 		assert.deepEqual(conflicts, []);
 	});
 
-	test('lookup field (cascadeDelete=false) - no conflict even with parent clean + child drifted', async () => {
+	test('lookup field (cascadeDelete=false): no conflict even with parent clean + child drifted', async () => {
 
 		const conn = makeFakeConnWithDescribe({
 			Contact: [{ name: 'AccountId', cascadeDelete: false }],

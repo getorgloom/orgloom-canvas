@@ -6,12 +6,12 @@
 	function gateImportFile(file, opts) {
 		const extRe = opts.extRe;
 		if (!extRe.test(String(file.name || ''))) {
-			return '"' + file.name + '" isn\'t a ' + opts.extLabel + ' file - ' +
+			return '"' + file.name + '" isn\'t a ' + opts.extLabel + ' file: ' +
 				opts.flowLabel + ' only accepts ' + opts.extLabel + ' files.';
 		}
 		if (file.size > opts.maxBytes) {
 			return '"' + file.name + '" is ' + (file.size / (1024 * 1024)).toFixed(1) +
-				' MB - over the ' + Math.round(opts.maxBytes / (1024 * 1024)) +
+				' MB, over the ' + Math.round(opts.maxBytes / (1024 * 1024)) +
 				' MB limit for ' + opts.flowLabel + '. Was this the right file?';
 		}
 		return null;

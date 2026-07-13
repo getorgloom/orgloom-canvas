@@ -270,7 +270,9 @@ return levelById.get(id);
 }
 					if (stack.has(id)) {
 						const start = stackArr.indexOf(id);
-						for (let i = Math.max(0, start); i < stackArr.length; i++) cycleIds.add(stackArr[i]);
+						for (let i = Math.max(0, start); i < stackArr.length; i++) {
+cycleIds.add(stackArr[i]);
+}
 						return 0;
 }
 					stack.add(id);

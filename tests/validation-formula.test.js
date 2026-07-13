@@ -8,6 +8,7 @@ import {
 	looseEq,
 	resolveFieldValue,
 	evaluateRule,
+	UNRESOLVED_FIELD,
 } from '../src/validation-formula.js';
 
 describe('tokenize', () => {
@@ -167,7 +168,7 @@ function ev(formula, vals = {}, opts = {}) {
 	return evalNode(parseFormula(formula), vals, opts);
 }
 
-describe('evalNode - literals and fields', () => {
+describe('evalNode: literals and fields', () => {
 	test('literal number', () => assert.equal(ev('42'), 42));
 	test('literal string', () => assert.equal(ev('"hi"'), 'hi'));
 	test('TRUE literal', () => assert.equal(ev('TRUE'), true));
@@ -186,7 +187,7 @@ describe('evalNode - literals and fields', () => {
 	});
 });
 
-describe('evalNode - comparisons', () => {
+describe('evalNode: comparisons', () => {
 	test('= and == are aliases', () => {
 		assert.equal(ev('5 = 5'), true);
 		assert.equal(ev('5 == 5'), true);
@@ -212,7 +213,7 @@ describe('evalNode - comparisons', () => {
 	});
 });
 
-describe('evalNode - arithmetic + concatenation', () => {
+describe('evalNode: arithmetic + concatenation', () => {
 	test('+ adds', () => assert.equal(ev('2 + 3'), 5));
 	test('- subtracts', () => assert.equal(ev('5 - 2'), 3));
 	test('* multiplies', () => assert.equal(ev('3 * 4'), 12));
@@ -224,7 +225,7 @@ describe('evalNode - arithmetic + concatenation', () => {
 	});
 });
 
-describe('evalNode - boolean functions', () => {
+describe('evalNode: boolean functions', () => {
 	test('AND requires every arg truthy', () => {
 		assert.equal(ev('AND(TRUE, TRUE)'), true);
 		assert.equal(ev('AND(TRUE, FALSE)'), false);
@@ -247,7 +248,7 @@ describe('evalNode - boolean functions', () => {
 	});
 });
 
-describe('evalNode - string functions', () => {
+describe('evalNode: string functions', () => {
 	test('ISBLANK true for null / undefined / empty / whitespace', () => {
 		assert.equal(ev('ISBLANK(Name)', { Name: null }), true);
 		assert.equal(ev('ISBLANK(Name)', { Name: '' }), true);
@@ -306,13 +307,13 @@ describe('evalNode - string functions', () => {
 	});
 });
 
-describe('evalNode - unsupported function throws', () => {
+describe('evalNode: unsupported function throws', () => {
 	test('VLOOKUP is not in the supported set', () => {
 		assert.throws(() => ev('VLOOKUP(x, y, z)'), /unsupported function VLOOKUP/);
 	});
 });
 
-describe('resolveFieldValue - cross-object via savedRecords', () => {
+describe('resolveFieldValue: cross-object via savedRecords', () => {
 	const fields = [
 		{ name: 'Name' },
 		{ name: 'AccountId', relationshipName: 'Account', referenceTo: ['Account'] },
@@ -334,13 +335,13 @@ describe('resolveFieldValue - cross-object via savedRecords', () => {
 		assert.equal(resolveFieldValue('account.Name', {}, opts), 'Acme Corp');
 	});
 
-	test('returns null when the relationship field is unknown', () => {
-		assert.equal(resolveFieldValue('Bogus.Name', {}, opts), null);
+	test('returns the unresolved sentinel when the relationship field is unknown', () => {
+		assert.equal(resolveFieldValue('Bogus.Name', {}, opts), UNRESOLVED_FIELD);
 	});
 
-	test('returns null when the related object has no saved draft', () => {
+	test('returns the unresolved sentinel when the related object has no saved draft', () => {
 		const opts2 = Object.assign({}, opts, { savedRecords: {} });
-		assert.equal(resolveFieldValue('Account.Name', {}, opts2), null);
+		assert.equal(resolveFieldValue('Account.Name', {}, opts2), UNRESOLVED_FIELD);
 	});
 
 	test('a direct field on the current record wins over chasing the dot', () => {
@@ -352,7 +353,7 @@ describe('resolveFieldValue - cross-object via savedRecords', () => {
 	});
 });
 
-describe('resolveFieldValue - cross-object via bulk associations', () => {
+describe('resolveFieldValue: cross-object via bulk associations', () => {
 	const fields = [
 		{ name: 'AccountId', relationshipName: 'Account', referenceTo: ['Account'] },
 	];
@@ -482,7 +483,7 @@ describe('real-world rule patterns', () => {
 		assert.equal(evaluateRule(rules.titleAtImportantAccount, { Title: null }, opts2), 'pass');
 	});
 
-	test('cross-object rule returns pass when describe cache is empty (we treat null parent as blank)', () => {
+	test('cross-object rule returns unknown when related data is not loaded', () => {
 
 		const opts = {
 			currentFields: [
@@ -492,7 +493,7 @@ describe('real-world rule patterns', () => {
 			savedRecords: {},
 			describeCache: {},
 		};
-		assert.equal(evaluateRule(rules.titleAtImportantAccount, { Title: null }, opts), 'pass');
+		assert.equal(evaluateRule(rules.titleAtImportantAccount, { Title: null }, opts), 'unknown');
 	});
 });
 

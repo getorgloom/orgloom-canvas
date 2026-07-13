@@ -79,10 +79,10 @@ throw new Error('canvas-save-load.mount: missing deps object');
 				const _canExportCanvas = _hasCap('export-canvas');
 				const _canExportRecords = _hasCap('export-records');
 				const _exportJsonBtn = _canExportCanvas
-					? '<button type="button" class="tpl-action" data-tpl-action="export-file"' + exportDisabled + '>Export canvas (JSON) <span class="tpl-action-sub">lossless - re-import to restore exactly</span></button>'
+					? '<button type="button" class="tpl-action" data-tpl-action="export-file"' + exportDisabled + '>Export canvas (JSON) <span class="tpl-action-sub">lossless, re-import to restore exactly</span></button>'
 					: '';
 				const _exportCsvBtn = _canExportRecords
-					? '<button type="button" class="tpl-action" data-tpl-action="export-csv"' + exportDisabled + '>Export records (CSV) <span class="tpl-action-sub">records only - opens in Excel</span></button>'
+					? '<button type="button" class="tpl-action" data-tpl-action="export-csv"' + exportDisabled + '>Export records (CSV) <span class="tpl-action-sub">records only, opens in Excel</span></button>'
 					: '';
 				const _downloadHeader = (_canExportCanvas || _canExportRecords)
 					? '<div class="tpl-header">Download to your machine</div>'
@@ -180,7 +180,7 @@ return;
 					if (typeof opts.afterSave === 'function' && data && data.id) {
 						try {
  opts.afterSave({ id: data.id, title: name }); 
-} catch (cbErr) {                             }
+} catch (cbErr) {                            }
 					}
 				} catch (e) {
 					showBulkToast('Save failed: ' + (e.message || e), 'error');
@@ -206,7 +206,7 @@ return;
 					return;
 				}
 				if (canvasState.selectedObjects.length === 0) {
-					showBulkToast('Nothing to save - canvas is empty.', 'error');
+					showBulkToast('Nothing to save: canvas is empty.', 'error');
 					return;
 				}
 				let payload;
@@ -309,7 +309,9 @@ throw new Error((data && data.error) || 'HTTP ' + r.status);
 						});
 						try {
  rehydrateSessionDraftValues(canvasState.currentCanvas.id);
-} catch (err) { window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'canvas-save-load.js/reload/rehydrateSession' }); }
+} catch (err) {
+ window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'canvas-save-load.js/reload/rehydrateSession' }); 
+}
 						showBulkToast('Reloaded the latest version from Salesforce.');
 					} catch (err) {
 						showBulkToast('Reload failed: ' + (err.message || err), 'error');
@@ -364,7 +366,7 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 					: false;
 				if (!stashed) {
 					showBulkToast(
-						'Couldn’t save this canvas for migration - it may be too large for this browser’s storage. Export it to a file instead, then re-import after switching orgs.',
+						'Couldn’t save this canvas for migration: it may be too large for this browser’s storage. Export it to a file instead, then re-import after switching orgs.',
 						'error',
 					);
 					return;
@@ -483,7 +485,7 @@ finish(null);
 								'<li>Assign you the <strong>Salesforce Standard</strong> permission set (Setup → Permission Sets), OR</li>' +
 								'<li>Grant your profile <strong>Create</strong> on the <strong>ContentVersion</strong> object.</li>' +
 							'</ul>' +
-							'<p class="tag" style="margin-top:0.8em">In the meantime, you can <strong>export this canvas to a JSON file</strong> and re-import it next session - your work won’t be lost. Records you upload directly to Salesforce don’t need Content permissions, so the rest of Org Loom keeps working.</p>' +
+							'<p class="tag" style="margin-top:0.8em">In the meantime, you can <strong>export this canvas to a JSON file</strong> and re-import it next session; your work won’t be lost. Records you upload directly to Salesforce don’t need Content permissions, so the rest of Org Loom keeps working.</p>' +
 							sfErrorSnippet +
 						'</div>' +
 						'<div class="modal-footer" style="justify-content:flex-end;gap:0.5em">' +
@@ -681,7 +683,9 @@ throw new Error(td && td.error || 'HTTP ' + tr.status);
 
 								try {
  rehydrateSessionDraftValues(id);
-} catch (err) { window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'canvas-save-load.js/loadFromList/rehydrateSession' }); }
+} catch (err) {
+ window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'canvas-save-load.js/loadFromList/rehydrateSession' }); 
+}
 
 								if (mode !== 'merge') {
 									_setStaleRefsFromLoad(td.staleRefs);

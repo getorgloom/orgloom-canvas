@@ -35,7 +35,9 @@ throw new Error('type-node.mount: missing deps object');
 
 			const canvasCapCheck = typeof deps.canvasCapCheck === 'function'
 				? deps.canvasCapCheck
-				: function () { return { ok: true, blocked: false, reason: null }; };
+				: function () {
+ return { ok: true, blocked: false, reason: null }; 
+};
 			const _smoothScrollCanvas = deps._smoothScrollCanvas;
 			const addToSelection = deps.addToSelection;
 			const inferAssociationsForRecord = deps.inferAssociationsForRecord;
@@ -77,7 +79,7 @@ throw new Error('type-node.mount: missing deps object');
 					y: worldY,
 				});
 				renderBulkView();
-				showBulkToast('Added ' + label + ' - click "Pick record" to load one.');
+				showBulkToast('Added ' + label + '; click "Pick record" to load one.');
 			}
 
 			function pickRecordForFreeTypeNode(rec, anchorEl) {

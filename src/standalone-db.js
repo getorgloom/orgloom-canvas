@@ -44,6 +44,8 @@ export async function initializeStandaloneDatabase() {
 		},
 	});
 	const { error } = await migrator.migrateToLatest();
-	if (error) throw error;
+	if (error) {
+throw error;
+}
 	return db;
 }

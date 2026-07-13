@@ -6,8 +6,12 @@ import vm from 'node:vm';
 function makeStorage() {
 	const map = new Map();
 	return {
-		get length() { return map.size; },
-		key(i) { return Array.from(map.keys())[i] ?? null; },
+		get length() {
+ return map.size; 
+},
+		key(i) {
+ return Array.from(map.keys())[i] ?? null; 
+},
 		getItem: (k) => (map.has(k) ? map.get(k) : null),
 		setItem: (k, v) => map.set(k, String(v)),
 		removeItem: (k) => map.delete(k),
@@ -33,7 +37,9 @@ function harness() {
 
 		sessionStorage,
 		localStorage,
-		setTimeout: (fn) => { fn(); return 1; },
+		setTimeout: (fn) => {
+ fn(); return 1; 
+},
 		clearTimeout: () => {},
 	};
 	vm.createContext(sandbox);

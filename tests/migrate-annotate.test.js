@@ -75,6 +75,17 @@ describe('computeMigrationStatus', () => {
 		assert.equal(annotate.computeMigrationStatus(rec, d).status, 'ready');
 	});
 
+	test('non-createable compound field never blocks required-on-create', () => {
+		const d = describe_([
+			field('Name', { label: 'Full Name', required: true, createable: false }),
+			field('LastName', { label: 'Last Name', required: true }),
+		]);
+		const rec = { objectName: 'Contact', values: { LastName: 'Migration Contact' } };
+		const res = annotate.computeMigrationStatus(rec, d);
+		assert.equal(res.status, 'ready');
+		assert.ok(!res.issues.some((i) => i.field === 'Name'));
+	});
+
 	test('required reference field is NOT flagged (association may satisfy it)', () => {
 		const d = describe_([
 			field('Name', { required: true }),

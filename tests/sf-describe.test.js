@@ -26,7 +26,9 @@ test('AF-040: describe-global preserves create permission for object gating', as
 function fakeConn(objectNames) {
 	let calls = 0;
 	return {
-		get describeGlobalCalls() { return calls; },
+		get describeGlobalCalls() {
+ return calls; 
+},
 		async describeGlobal() {
 			calls++;
 			return { sobjects: objectNames.map((name) => ({ name, queryable: true })) };
@@ -150,7 +152,7 @@ describe('getQueryableSObjects cache isolation', () => {
 		assert.equal(set1, set2, 'same cached Set instance');
 	});
 
-	test('falsy orgId is NEVER cached - two orgs never cross-contaminate', async () => {
+	test('falsy orgId is NEVER cached: two orgs never cross-contaminate', async () => {
 
 		const orgA = fakeConn(['Account', 'CustomA__c']);
 		const orgB = fakeConn(['Account', 'CustomB__c']);

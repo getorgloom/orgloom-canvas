@@ -307,7 +307,7 @@ return 0;
 			const _hybridMeta = (probe.records || [])[0] || null;
 			if (!_hybridMeta) {
 
-				const err = new Error('Canvas not found - or you no longer have access to it.');
+				const err = new Error('Canvas not found, or you no longer have access to it.');
 				err.statusCode = 404;
 				err.code = 'canvas-not-accessible';
 				throw err;

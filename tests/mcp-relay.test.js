@@ -22,13 +22,19 @@ function mockSseRes() {
  writes.push(chunk); return true; 
 },
 		on(event, handler) {
-			if (event === 'close') closeHandlers.push(handler);
-			if (event === 'error') errorHandlers.push(handler);
+			if (event === 'close') {
+closeHandlers.push(handler);
+}
+			if (event === 'error') {
+errorHandlers.push(handler);
+}
 		},
 		fireClose() {
  closeHandlers.forEach((h) => h()); 
 },
-		fireError() { errorHandlers.forEach((h) => h(new Error('socket failed'))); },
+		fireError() {
+ errorHandlers.forEach((h) => h(new Error('socket failed'))); 
+},
 		lastDataEvent() {
 
 			for (let i = writes.length - 1; i >= 0; i--) {

@@ -398,7 +398,7 @@ apply.disabled = true;
 					const _loaded = bulkEditLoadedInScope();
 					const sfHint = _loaded > 0
 						? ' Includes ' + _loaded + ' Salesforce-loaded record' + (_loaded === 1 ? '' : 's') +
-							' - the next upload writes these changes to Salesforce.'
+							'; the next upload writes these changes to Salesforce.'
 						: '';
 					if (_beState.action === 'replace') {
 						const n = bulkEditMatchCount();

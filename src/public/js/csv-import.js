@@ -23,7 +23,9 @@
 				cur += c; i++; continue;
 			}
 			if (c === '"') {
-				if (cur === '') { inQuotes = true; i++; continue; }
+				if (cur === '') {
+ inQuotes = true; i++; continue; 
+}
 
 				malformedQuotes = true; cur += c; i++; continue;
 }
@@ -42,7 +44,9 @@ i++;
 			}
 			cur += c; i++;
 		}
-		if (inQuotes) malformedQuotes = true;
+		if (inQuotes) {
+malformedQuotes = true;
+}
 		if (cur !== '' || row.length > 0) {
  row.push(cur); rows.push(row); 
 }
@@ -53,14 +57,22 @@ rows.pop();
 return { headers: [], rows: [], errors: [] };
 }
 		const headers = rows[0].map(h => h.trim());
-		if (headers.length > 0) headers[0] = headers[0].replace(/^\uFEFF/, '');
+		if (headers.length > 0) {
+headers[0] = headers[0].replace(/^\uFEFF/, '');
+}
 		const errors = [];
-		if (malformedQuotes) errors.push('Malformed or unclosed quoted field.');
+		if (malformedQuotes) {
+errors.push('Malformed or unclosed quoted field.');
+}
 		const seenHeaders = new Set();
 		headers.forEach((header) => {
 			const key = String(header || '').trim().toLowerCase();
-			if (!key) return;
-			if (seenHeaders.has(key)) errors.push('Duplicate header: "' + header + '".');
+			if (!key) {
+return;
+}
+			if (seenHeaders.has(key)) {
+errors.push('Duplicate header: "' + header + '".');
+}
 			seenHeaders.add(key);
 		});
 		return { headers, rows: rows.slice(1), errors };

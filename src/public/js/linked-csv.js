@@ -63,6 +63,7 @@
 				: null;
 
 				const linkedCsvModal = document.createElement('div');
+				linkedCsvModal.id = 'linked-csv-modal';
 
 				linkedCsvModal.className = 'modal hidden';
 				linkedCsvModal.innerHTML =
@@ -110,7 +111,7 @@ closeLinkedCsvModal();
 
 					const header = linkedCsvModal.querySelector('.modal-header h3');
 					if (header) {
-header.textContent = _linkedCsvQuickUploadMode ? 'Quick Upload - Import from CSV' : 'Import from CSV';
+header.textContent = _linkedCsvQuickUploadMode ? 'Quick Upload: Import from CSV' : 'Import from CSV';
 }
 
 					linkedCsvState = {
@@ -357,12 +358,18 @@ return;
 }
 							const raggedRows = parsed.rows.filter((r) => r.length !== parsed.headers.length).length;
 							const blankDataHeaders = parsed.headers.reduce((out, header, idx) => {
-								if (!header && parsed.rows.some((row) => String(row[idx] || '').trim() !== '')) out.push(idx + 1);
+								if (!header && parsed.rows.some((row) => String(row[idx] || '').trim() !== '')) {
+out.push(idx + 1);
+}
 								return out;
 							}, []);
 							const blockingErrors = (parsed.errors || []).slice();
-							if (raggedRows > 0) blockingErrors.push(raggedRows + ' row' + (raggedRows === 1 ? ' has' : 's have') + ' a different column count than the header.');
-							if (blankDataHeaders.length > 0) blockingErrors.push('Data appears under blank header column' + (blankDataHeaders.length === 1 ? '' : 's') + ' ' + blankDataHeaders.join(', ') + '.');
+							if (raggedRows > 0) {
+blockingErrors.push(raggedRows + ' row' + (raggedRows === 1 ? ' has' : 's have') + ' a different column count than the header.');
+}
+							if (blankDataHeaders.length > 0) {
+blockingErrors.push('Data appears under blank header column' + (blankDataHeaders.length === 1 ? '' : 's') + ' ' + blankDataHeaders.join(', ') + '.');
+}
 							resolve({
 								name: f.name,
 								headers: parsed.headers,
@@ -929,7 +936,9 @@ fieldByName.set(f.name, f);
 return;
 }
 
-						if (fieldName === 'Id') return;
+						if (fieldName === 'Id') {
+return;
+}
 						const field = fieldByName.get(fieldName);
 						if (!field) {
 return;
@@ -957,18 +966,26 @@ return;
 				(state.links || []).forEach((link, linkIdx) => {
 					const fromFile = state.files[link.fromFileIdx];
 					const toFile = state.files[link.toFileIdx];
-					if (!fromFile || !toFile || link.toColumnIdx == null) return;
+					if (!fromFile || !toFile || link.toColumnIdx == null) {
+return;
+}
 					const targetRows = new Map();
 					toFile.rows.forEach((row, rowIdx) => {
 						const value = String(row[link.toColumnIdx] || '').trim();
-						if (!value) return;
-						if (!targetRows.has(value)) targetRows.set(value, []);
+						if (!value) {
+return;
+}
+						if (!targetRows.has(value)) {
+targetRows.set(value, []);
+}
 						targetRows.get(value).push(rowIdx);
 					});
 					const sourceCounts = new Map();
 					fromFile.rows.forEach((row) => {
 						const value = String(row[link.fromColumnIdx] || '').trim();
-						if (value) sourceCounts.set(value, (sourceCounts.get(value) || 0) + 1);
+						if (value) {
+sourceCounts.set(value, (sourceCounts.get(value) || 0) + 1);
+}
 					});
 					targetRows.forEach((rows, value) => {
 						if (rows.length > 1 && sourceCounts.has(value)) {
@@ -1177,7 +1194,9 @@ return;
 							cancelLabel: 'Back to mapping',
 							danger: true,
 						});
-						if (!skip) return;
+						if (!skip) {
+return;
+}
 						ambiguousJoins.forEach((issue) => state._skippedAmbiguousJoinKeys.add(issue.linkIdx + '::' + issue.value));
 					}
 
@@ -1510,7 +1529,9 @@ return;
 							getGraph().classList.remove('csv-direct-upload-active');
 
 							_linkedCsvQuickUploadMode = false;
-							try { sessionStorage.removeItem(_QU_RESTORE_KEY); } catch (e) {}
+							try {
+ sessionStorage.removeItem(_QU_RESTORE_KEY); 
+} catch (e) {}
 							renderBulkView();
 						});
 
@@ -1602,11 +1623,15 @@ relayoutNewRecords(newRecIds);
 				let snapshot;
 				try {
 					const raw = sessionStorage.getItem(_QU_RESTORE_KEY);
-					if (!raw) return false;
+					if (!raw) {
+return false;
+}
 					snapshot = JSON.parse(raw);
 					sessionStorage.removeItem(_QU_RESTORE_KEY);
 				} catch (e) {
-					try { sessionStorage.removeItem(_QU_RESTORE_KEY); } catch (_e) {}
+					try {
+ sessionStorage.removeItem(_QU_RESTORE_KEY); 
+} catch (_e) {}
 					return false;
 				}
 				if (!snapshot || snapshot.version !== 1 ||
@@ -1617,16 +1642,24 @@ relayoutNewRecords(newRecIds);
 				canvasState.bulkAssociations = Array.isArray(snapshot.associations) ? snapshot.associations : [];
 				canvasState.selectedObjects = Array.isArray(snapshot.selectedObjects) ? snapshot.selectedObjects : [];
 				canvasState.bulkSelectedIds = new Set(Array.isArray(snapshot.selectedIds) ? snapshot.selectedIds : []);
-				if (Number.isFinite(snapshot.bulkIdSeq)) canvasState.bulkIdSeq = snapshot.bulkIdSeq;
+				if (Number.isFinite(snapshot.bulkIdSeq)) {
+canvasState.bulkIdSeq = snapshot.bulkIdSeq;
+}
 				canvasState.currentCanvas = snapshot.currentCanvas || null;
 				_linkedCsvQuickUploadMode = false;
 				getGraph().classList.remove('csv-direct-upload-active');
 				if (snapshot.viewport) {
 					setTimeout(() => {
 						const cy = getCyInstance();
-						if (!cy) return;
-						if (Number.isFinite(snapshot.viewport.zoom)) cy.zoom(snapshot.viewport.zoom);
-						if (snapshot.viewport.pan) cy.pan(snapshot.viewport.pan);
+						if (!cy) {
+return;
+}
+						if (Number.isFinite(snapshot.viewport.zoom)) {
+cy.zoom(snapshot.viewport.zoom);
+}
+						if (snapshot.viewport.pan) {
+cy.pan(snapshot.viewport.pan);
+}
 					}, 0);
 				}
 				return true;

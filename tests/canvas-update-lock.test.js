@@ -9,8 +9,14 @@ const CANVAS = '069LOCK0000001';
 
 let _stub;
 before(initTestDb);
-before(() => { _stub = installSfFetchStub(); });
-after(() => { if (_stub) { _stub.restore(); } });
+before(() => {
+ _stub = installSfFetchStub(); 
+});
+after(() => {
+ if (_stub) {
+ _stub.restore(); 
+} 
+});
 beforeEach(clearTestDb);
 
 function makeStatefulConn(canvasId, opts = {}) {
@@ -47,10 +53,18 @@ function makeStatefulConn(canvasId, opts = {}) {
 					}
 					return { success: true, id: 'x_' + name };
 				},
-				async upsert() { return { success: true }; },
-				async update() { return { success: true }; },
-				async retrieve() { return null; },
-				async destroy() { return { success: true }; },
+				async upsert() {
+ return { success: true }; 
+},
+				async update() {
+ return { success: true }; 
+},
+				async retrieve() {
+ return null; 
+},
+				async destroy() {
+ return { success: true }; 
+},
 			};
 		},
 	};

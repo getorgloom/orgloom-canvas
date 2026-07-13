@@ -74,15 +74,21 @@ import { withSfRetry } from './sf-upload.js';
 
 const _activeUploadAttempts = new Set();
 export function _claimUploadAttemptForTests(req, res, attemptId) {
-	if (!attemptId) return true;
+	if (!attemptId) {
+return true;
+}
 	const accountId = req.account && req.account.id ? req.account.id : 'anonymous';
 	const sfUserId = req.sf && req.sf.sfUserId ? req.sf.sfUserId : 'no-sf-user';
 	const key = accountId + ':' + sfUserId + ':' + attemptId;
-	if (_activeUploadAttempts.has(key)) return false;
+	if (_activeUploadAttempts.has(key)) {
+return false;
+}
 	_activeUploadAttempts.add(key);
 	let released = false;
 	const release = () => {
-		if (released) return;
+		if (released) {
+return;
+}
 		released = true;
 		_activeUploadAttempts.delete(key);
 	};
@@ -329,6 +335,39 @@ export async function requireAccount(req, res, next) {
 }
 }
 
+async function _auditWorkspaceAccessDenied(req, attemptedWorkspaceId, errorCode, actualRole, requiredRole) {
+	try {
+		let auditWorkspaceId = attemptedWorkspaceId;
+		if (!actualRole) {
+			const view = await viewStateDb.get(req.account.id);
+			auditWorkspaceId = (view && view.current_workspace_id) || null;
+		}
+		await ext.auditWrite({
+			req,
+			workspaceId: auditWorkspaceId,
+			actorAccountId: req.account.id,
+			action: 'workspace_access_denied',
+			targetObject: 'workspaces',
+			targetId: attemptedWorkspaceId,
+			status: 'denied',
+			errorCode,
+			payload: {
+				attemptedWorkspaceId,
+				actualRole: actualRole || null,
+				requiredRole,
+			},
+		});
+	} catch (err) {
+		try {
+			ext.captureException(err, {
+				where: 'workspace-access-denied-audit',
+				attemptedWorkspaceId,
+				errorCode,
+			});
+		} catch (_) {}
+	}
+}
+
 export function requireWorkspaceAdmin(extractWorkspaceId = (req) => req.params.id) {
 	return async (req, res, next) => {
 		try {
@@ -338,10 +377,12 @@ export function requireWorkspaceAdmin(extractWorkspaceId = (req) => req.params.i
 			}
 			const role = await workspacesDb.findMemberRole(workspaceId, req.account.id);
 			if (!role) {
-return res.status(403).json({ error: 'not-a-member' });
+				await _auditWorkspaceAccessDenied(req, workspaceId, 'not-a-member', null, 'admin');
+				return res.status(403).json({ error: 'not-a-member' });
 }
 			if (role !== 'admin') {
-return res.status(403).json({ error: 'admin-only' });
+				await _auditWorkspaceAccessDenied(req, workspaceId, 'admin-only', role, 'admin');
+				return res.status(403).json({ error: 'admin-only' });
 }
 			req.workspaceId = workspaceId;
 			req.workspaceRole = role;
@@ -361,7 +402,8 @@ export function requireWorkspaceMember(extractWorkspaceId = (req) => req.params.
 			}
 			const role = await workspacesDb.findMemberRole(workspaceId, req.account.id);
 			if (!role) {
-return res.status(403).json({ error: 'not-a-member' });
+				await _auditWorkspaceAccessDenied(req, workspaceId, 'not-a-member', null, 'member');
+				return res.status(403).json({ error: 'not-a-member' });
 }
 			req.workspaceId = workspaceId;
 			req.workspaceRole = role;
@@ -1941,7 +1983,9 @@ return res.status(409).json({ error: 'no-active-workspace' });
 						intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
 					});
 					_pendingBatchId = pendingB.id;
-				} catch (e) { console.warn('[two-phase pending/rest]:', e.message || e); }
+				} catch (e) {
+ console.warn('[two-phase pending/rest]:', e.message || e); 
+}
 			}
 
 			const conn = req.sf.conn;
@@ -2266,7 +2310,9 @@ continue;
 			}
 
 			if (_pendingBatchId && successCount === 0 && successfulDeletes.length === 0) {
-				try { await _twoPhaseStore.remove(_pendingBatchId); } catch (e) {                   }
+				try {
+ await _twoPhaseStore.remove(_pendingBatchId); 
+} catch (e) {                   }
 			}
 
 			const canonicalForResponse = {};
@@ -2391,7 +2437,9 @@ return res.status(404).json({ error: 'not-found' });
 			});
 			const skipAtExecution = new Set(skipSfIds.map(String));
 			for (const row of [...(executionCreateDrift.drifted || []), ...(executionCreateDrift.unverified || [])]) {
-				if (row && row.sfId) skipAtExecution.add(String(row.sfId));
+				if (row && row.sfId) {
+skipAtExecution.add(String(row.sfId));
+}
 			}
 			skipSfIds.splice(0, skipSfIds.length, ...skipAtExecution);
 
@@ -2637,7 +2685,9 @@ continue;
 						intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
 					});
 					_pendingBatchId = pendingB.id;
-				} catch (e) { console.warn('[two-phase pending/graph]:', e.message || e); }
+				} catch (e) {
+ console.warn('[two-phase pending/graph]:', e.message || e); 
+}
 			}
 
 			const objNamesToDescribe = new Set();
@@ -3050,7 +3100,9 @@ continue;
 			}
 
 			if (_pendingBatchId && successCount === 0 && successfulDeletes.length === 0) {
-				try { await _twoPhaseStore.remove(_pendingBatchId); } catch (e) {                   }
+				try {
+ await _twoPhaseStore.remove(_pendingBatchId); 
+} catch (e) {                   }
 			}
 
 			const canonicalForResponse = {};
@@ -3419,7 +3471,9 @@ return res.status(409).json({ error: 'no-active-workspace' });
 			if (_attemptId) {
 				try {
 					_twoPhaseStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
-				} catch (e) { console.warn('[two-phase store/bulk]:', e.message || e); }
+				} catch (e) {
+ console.warn('[two-phase store/bulk]:', e.message || e); 
+}
 			}
 			if (_twoPhaseStore) {
 
@@ -3435,7 +3489,9 @@ return res.status(409).json({ error: 'no-active-workspace' });
 								: 'A previous upload with this attempt id did not finish. Refresh to reconcile, or verify in Salesforce before retrying.',
 						});
 					}
-				} catch (e) { console.warn('[two-phase lookup/bulk]:', e.message || e); }
+				} catch (e) {
+ console.warn('[two-phase lookup/bulk]:', e.message || e); 
+}
 				try {
 					const pendingB = await _twoPhaseStore.createPending({
 						source: directUpload ? 'csv-bulk' : 'canvas-bulk',
@@ -3444,7 +3500,9 @@ return res.status(409).json({ error: 'no-active-workspace' });
 						intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
 					});
 					_pendingBatchId = pendingB.id;
-				} catch (e) { console.warn('[two-phase pending/bulk]:', e.message || e); }
+				} catch (e) {
+ console.warn('[two-phase pending/bulk]:', e.message || e); 
+}
 			}
 						res.setHeader('Content-Type', 'text/event-stream');
 			res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -3985,7 +4043,9 @@ continue;
 				}
 
 				if (_pendingBatchId && successCount === 0 && successfulDeletes.length === 0) {
-					try { await _twoPhaseStore.remove(_pendingBatchId); } catch (e) {                   }
+					try {
+ await _twoPhaseStore.remove(_pendingBatchId); 
+} catch (e) {                   }
 				}
 			} catch (err) {
 				console.error('[upload/bulk] fatal:', err);
@@ -6444,7 +6504,9 @@ return res.status(409).json({ error: 'no-active-workspace' });
 					return res.status(404).json({ error: 'not-found' });
 				}
 				const grant = await _findCanvasShareGrant(req, canvasId);
-				if (grant && grant.role !== 'editor') canEditPresence = false;
+				if (grant && grant.role !== 'editor') {
+canEditPresence = false;
+}
 			}
 			res.setHeader('Content-Type', 'text/event-stream');
 			res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -6478,7 +6540,9 @@ return res.status(409).json({ error: 'no-active-workspace' });
 return res.status(400).json({ error: 'missing-connectionId' });
 }
 			const accepted = canvasPresence.updateCursor({ canvasId, connectionId, x, y, world, sequence, requestingAccountId: req.account.id });
-			if (!accepted) return res.status(409).json({ error: 'presence-event-rejected' });
+			if (!accepted) {
+return res.status(409).json({ error: 'presence-event-rejected' });
+}
 			res.json({ ok: true });
 		} catch (err) {
  next(err); 
@@ -6495,7 +6559,9 @@ return res.status(400).json({ error: 'missing-connectionId' });
 return res.status(400).json({ error: 'missing-connectionId' });
 }
 			const accepted = canvasPresence.updateFocus({ canvasId, connectionId, focus, sequence, requestingAccountId: req.account.id });
-			if (!accepted) return res.status(409).json({ error: 'presence-event-rejected' });
+			if (!accepted) {
+return res.status(409).json({ error: 'presence-event-rejected' });
+}
 			res.json({ ok: true });
 		} catch (err) {
  next(err); 
@@ -6521,7 +6587,9 @@ return res.status(400).json({ error: 'invalid-kind' });
 return res.status(400).json({ error: 'missing-endpoint-or-field' });
 }
 			const accepted = canvasPresence.updateDraftLink({ canvasId, connectionId, kind, fromSyncId, toSyncId, fieldName, sequence: body.sequence, requestingAccountId: req.account.id });
-			if (!accepted) return res.status(409).json({ error: 'presence-event-rejected' });
+			if (!accepted) {
+return res.status(409).json({ error: 'presence-event-rejected' });
+}
 			res.json({ ok: true });
 		} catch (err) {
  next(err); 
@@ -6541,7 +6609,9 @@ return res.status(400).json({ error: 'missing-connectionId' });
 return res.status(400).json({ error: 'missing-sfId' });
 }
 			const accepted = canvasPresence.removeLoadedRecord({ canvasId, connectionId, sfId, sequence: body.sequence, requestingAccountId: req.account.id });
-			if (!accepted) return res.status(409).json({ error: 'presence-event-rejected' });
+			if (!accepted) {
+return res.status(409).json({ error: 'presence-event-rejected' });
+}
 			res.json({ ok: true });
 		} catch (err) {
  next(err); 
@@ -6579,7 +6649,9 @@ return res.status(400).json({ error: 'missing-fields' });
 				y: typeof body.y === 'number' ? body.y : undefined,
 				requestingAccountId: req.account.id,
 			});
-			if (!accepted) return res.status(409).json({ error: 'presence-event-rejected' });
+			if (!accepted) {
+return res.status(409).json({ error: 'presence-event-rejected' });
+}
 			res.json({ ok: true });
 		} catch (err) {
  next(err); 

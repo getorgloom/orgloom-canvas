@@ -167,10 +167,10 @@ overlay.remove();
 									' has <strong>' + fmtCount + '</strong> related <strong>' + escapeHtml(targetLabel) + '</strong> record' +
 									(count === 1 ? '' : 's') + '.</p>' +
 								(aboveHard
-									? '<p>That’s too many to load onto the canvas at once - the renderer would slow to a crawl. Use search to pull specific records instead.</p>'
+									? '<p>That’s too many to load onto the canvas at once: the renderer would slow to a crawl. Use search to pull specific records instead.</p>'
 									: '<p>Loading them all at once will slow the canvas and make bulk edits hard to review. You can:</p>' +
 									  '<ul style="margin:0.4em 0 0 1.2em; color: var(--ink-soft); font-size: 0.88rem; line-height: 1.55;">' +
-										'<li><strong>' + escapeHtml(loadBtnLabel) + '</strong> - ' +
+										'<li><strong>' + escapeHtml(loadBtnLabel) + '</strong>: ' +
 											(truncates
 												? 'pulls the first ' + fmtWill + ' (server caps each load at ' + _RELATED_BULK_LOAD_CAP.toLocaleString() + ').'
 												: 'pulls every record at once.') +

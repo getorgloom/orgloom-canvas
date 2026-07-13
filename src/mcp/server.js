@@ -26,11 +26,15 @@ const ERR_FORBIDDEN = -32004;
 const ERR_NOT_FOUND = -32005;
 export const MCP_TOKEN_RATE_LIMIT = Object.freeze({ windowMs: 60_000, max: 120 });
 const _tokenRequestWindows = new Map();
-export function _resetMcpTokenRateLimitForTests() { _tokenRequestWindows.clear(); }
+export function _resetMcpTokenRateLimitForTests() {
+ _tokenRequestWindows.clear(); 
+}
 function _consumeTokenRequest(tokenId, now = Date.now()) {
 	const cutoff = now - MCP_TOKEN_RATE_LIMIT.windowMs;
 	const recent = (_tokenRequestWindows.get(tokenId) || []).filter((t) => t > cutoff);
-	if (recent.length >= MCP_TOKEN_RATE_LIMIT.max) return false;
+	if (recent.length >= MCP_TOKEN_RATE_LIMIT.max) {
+return false;
+}
 	recent.push(now);
 	_tokenRequestWindows.set(tokenId, recent);
 	return true;

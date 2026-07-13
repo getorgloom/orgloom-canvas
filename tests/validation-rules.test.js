@@ -22,7 +22,7 @@ function row({ id = '03dxxx', fullName = 'Account.Rule', name, active = true,
 	};
 }
 
-describe('transformToolingRecords - input shapes', () => {
+describe('transformToolingRecords: input shapes', () => {
 	test('returns [] for null / undefined / non-array input', () => {
 		assert.deepEqual(transformToolingRecords(null), []);
 		assert.deepEqual(transformToolingRecords(undefined), []);
@@ -50,7 +50,7 @@ describe('transformToolingRecords - input shapes', () => {
 	});
 });
 
-describe('transformToolingRecords - active filter', () => {
+describe('transformToolingRecords: active filter', () => {
 	test('keeps active=true rules', () => {
 		const out = transformToolingRecords([
 			row({ name: 'a', active: true }),
@@ -82,7 +82,7 @@ describe('transformToolingRecords - active filter', () => {
 	});
 });
 
-describe('transformToolingRecords - field mapping', () => {
+describe('transformToolingRecords: field mapping', () => {
 	test('passes every documented field through to the normalized shape', () => {
 		const out = transformToolingRecords([
 			row({
@@ -152,7 +152,7 @@ describe('transformToolingRecords - field mapping', () => {
 	});
 });
 
-describe('transformToolingRecords - sorting', () => {
+describe('transformToolingRecords: sorting', () => {
 	test('sorts active rules by name (case-sensitive locale compare)', () => {
 		const out = transformToolingRecords([
 			row({ name: 'zeta_rule' }),
@@ -186,7 +186,7 @@ describe('transformToolingRecords - sorting', () => {
 	});
 });
 
-describe('transformToolingRecords - realistic Tooling-API responses', () => {
+describe('transformToolingRecords: realistic Tooling-API responses', () => {
 	test('two active rules + one inactive → only the actives, sorted', () => {
 		const out = transformToolingRecords([
 			{

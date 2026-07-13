@@ -54,7 +54,9 @@ describe('mcpTokens.issue', () => {
 		const { mcpTokens } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const issued = [];
-		for (let i = 0; i < 10; i++) issued.push(await mcpTokens.issue({ accountId: a.id, name: `client-${i}` }));
+		for (let i = 0; i < 10; i++) {
+issued.push(await mcpTokens.issue({ accountId: a.id, name: `client-${i}` }));
+}
 		await assert.rejects(() => mcpTokens.issue({ accountId: a.id, name: 'eleven' }), /mcp-token-cap-reached/);
 		await mcpTokens.revoke(issued[0].id, a.id);
 		assert.ok(await mcpTokens.issue({ accountId: a.id, name: 'replacement' }));

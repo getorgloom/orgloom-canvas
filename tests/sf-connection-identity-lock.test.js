@@ -34,7 +34,7 @@ function reqFor({ accountId, sfAuth, currentConnectionId }) {
 	};
 }
 
-describe('getActiveSfConnection - basic gates', () => {
+describe('getActiveSfConnection: basic gates', () => {
 	test('no session.accountId → null', async () => {
 		assert.equal(await getActiveSfConnection({ session: {} }), null);
 		assert.equal(await getActiveSfConnection({}), null);
@@ -78,7 +78,7 @@ describe('getActiveSfConnection - basic gates', () => {
 	});
 });
 
-describe('getActiveSfConnection - account isolation', () => {
+describe('getActiveSfConnection: account isolation', () => {
 	test('connection owned by a different account → null', async () => {
 		const alice = await makeAccount('alice@x.com');
 		const bob = await makeAccount('bob@x.com');
@@ -106,7 +106,7 @@ describe('getActiveSfConnection - account isolation', () => {
 	});
 });
 
-describe('getActiveSfConnection - identity-mismatch lockout', () => {
+describe('getActiveSfConnection: identity-mismatch lockout', () => {
 	test('userMismatch (sfAuth.sfUserId != conn.sf_user_id) → null', async () => {
 		const a = await makeAccount();
 		const conn = await makeConnection(a.id);

@@ -115,7 +115,7 @@ ncls += ' selected';
 
 						if (_isRecordStale(rec)) {
 							return '<div class="cy-card-shell"><div class="' + ncls + ' record-card-stale" data-rec-id="' + rec.id + '" ' +
-								'title="This record was deleted in Salesforce - or your access to it was removed - after it was loaded onto the canvas. Uploading changes to it will fail until you resolve it.">' +
+								'title="This record was deleted in Salesforce (or your access to it was removed) after it was loaded onto the canvas. Uploading changes to it will fail until you resolve it.">' +
 								'<div class="record-noaccess-tag record-stale-badge">deleted in SF</div>' +
 								'<div class="record-noaccess-type">' + escapeHtml(objLabel) + '</div>' +
 								'<div class="record-noaccess-note">This record is no longer reachable in Salesforce.</div>' +
@@ -145,7 +145,7 @@ scls += ' selected';
 						const assigneeBadge = _slotAssigneeBadgeHtml(rec);
 						const isLocked = _slotAssignmentState(rec) === 'other';
 						const ctas = isLocked
-							? '<div class="record-slot-locked-note">Reserved for ' + escapeHtml(rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate') + ' - they need to fill this slot.</div>'
+							? '<div class="record-slot-locked-note">Reserved for ' + escapeHtml(rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate') + '; they need to fill this slot.</div>'
 							: '<div class="record-slot-ctas">' +
 								'<button class="record-slot-cta record-slot-cta-load" data-slot-fill-load title="Search and load an existing record into this slot">\u2197 Load existing</button>' +
 								'<button class="record-slot-cta record-slot-cta-blank" data-slot-fill-blank title="Create a blank draft for this slot">+ Create blank</button>' +
@@ -224,7 +224,7 @@ return String(generic);
 					if (isPendingDelete) {
 badge = '<span class="record-pending-delete-badge" title="Staged for SF DELETE on next upload. Click Keep to unmark.">delete on upload</span>';
 } else if (isModified) {
-badge = '<span class="record-modified-badge" title="Unsaved changes since load - Upload to Salesforce will push them">modified</span>';
+badge = '<span class="record-modified-badge" title="Unsaved changes since load: Upload to Salesforce will push them">modified</span>';
 } else if (isExisting) {
 badge = '<span class="record-existing-badge" title="Loaded from Salesforce id ' + escapeHtml(rec.loadedFromId) + '">existing</span>';
 } else {
@@ -238,7 +238,7 @@ badge = '<span class="record-draft-badge">draft</span>';
 							const _n = Array.isArray(_ann.issues) ? _ann.issues.length : 0;
 							const _issueText = _n === 1 ? '1 issue' : _n + ' issues';
 							if (_ann.status === 'blocked') {
-								badge += '<span class="record-migrate-badge record-migrate-blocked" title="This record can’t be migrated yet - ' + _issueText + ' must be resolved. Open the record to fix them.">blocked</span>';
+								badge += '<span class="record-migrate-badge record-migrate-blocked" title="This record can’t be migrated yet: ' + _issueText + ' must be resolved. Open the record to fix them.">blocked</span>';
 							} else if (_ann.status === 'warning') {
 								badge += '<span class="record-migrate-badge record-migrate-warning" title="This record will migrate, but ' + _issueText + ' will be skipped or dropped (missing fields / picklist values). Open the record to review.">review</span>';
 							} else if (_ann.status === 'pending') {
@@ -248,13 +248,13 @@ badge = '<span class="record-draft-badge">draft</span>';
 					}
 
 					if (_isRecordStale(rec)) {
-						badge += '<span class="record-stale-badge" title="This record was deleted in Salesforce - or your access to it was removed - after it was loaded onto the canvas. Uploading changes to it will fail until you resolve it.">deleted in SF</span>';
+						badge += '<span class="record-stale-badge" title="This record was deleted in Salesforce (or your access to it was removed) after it was loaded onto the canvas. Uploading changes to it will fail until you resolve it.">deleted in SF</span>';
 						badge += '<button type="button" class="record-stale-action" data-stale-menu="' + rec.id + '" title="Choose how to handle this stale reference">fix ▾</button>';
 					}
 
 					if (Array.isArray(rec._loadedFieldNames)) {
 						const n = rec._loadedFieldNames.length;
-						badge += '<span class="record-partial-badge" title="Loaded with ' + n + ' field' + (n === 1 ? '' : 's') + ' only - the rest are preserved on Salesforce, not editable here. Re-import via SOQL with Load all fields checked to see them.">partial</span>';
+						badge += '<span class="record-partial-badge" title="Loaded with ' + n + ' field' + (n === 1 ? '' : 's') + ' only; the rest are preserved on Salesforce, not editable here. Re-import via SOQL with Load all fields checked to see them.">partial</span>';
 					}
 
 					if (rec.values && rec._wasLoadedFromOrgId) {
@@ -319,7 +319,7 @@ badge = '<span class="record-draft-badge">draft</span>';
 				const moreBtn = '<button class="record-more" data-card-more title="More actions">\u22EE</button>';
 
 				const keepBtn = isPendingDelete
-					? '<button class="record-keep" data-card-keep title="Unmark - cancels the delete">Keep</button>'
+					? '<button class="record-keep" data-card-keep title="Unmark: cancels the delete">Keep</button>'
 					: '';
 					return '<div class="cy-card-shell"><div class="' + cls + '" data-rec-id="' + rec.id + '">' +
 						badge +
@@ -789,7 +789,7 @@ return;
 						}
 						if (_slotAssignmentState(rec) === 'other') {
 							const who = rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate';
-							showBulkToast('Reserved for ' + who + ' - only they can fill this slot.', 'info');
+							showBulkToast('Reserved for ' + who + ': only they can fill this slot.', 'info');
 							return;
 						}
 						openInsertModal(rec.objectName, { record: rec });
@@ -815,7 +815,7 @@ return;
 							renderBulkView();
 							const a = canvasState.bulkAssociations.find((x) => x.id === assocId);
 							const fieldLabel = a && a.fieldName ? a.fieldName : 'connection';
-							showBulkToast('Selected ' + fieldLabel + ' - press Delete to unlink.');
+							showBulkToast('Selected ' + fieldLabel + ': press Delete to unlink.');
 						} else if (eid[0] === 'd') {
 
 							const recId = edge.data('holderRecId');
@@ -826,7 +826,7 @@ return;
 							canvasState.bulkSelectedEdgeId = null;
 							setSelectedDerivedEdge({ recId: recId, fieldName: fieldName });
 							renderBulkView();
-							showBulkToast('Selected ' + fieldName + ' - press Delete to unlink.');
+							showBulkToast('Selected ' + fieldName + ': press Delete to unlink.');
 						}
 					});
 					getCyInstance().on('tap', (evt) => {
@@ -1043,7 +1043,7 @@ return;
 							}
 							if (_slotAssignmentState(rec) === 'other') {
 								const who = rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate';
-								showBulkToast('Reserved for ' + who + ' - only they can fill this slot.', 'info');
+								showBulkToast('Reserved for ' + who + ': only they can fill this slot.', 'info');
 								return;
 							}
 							openInsertModal(rec.objectName, { record: rec });

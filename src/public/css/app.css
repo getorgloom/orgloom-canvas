@@ -4070,7 +4070,7 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 .acct-flag-msg { font-size: 0.78rem; margin-top: 0.4em; min-height: 1em; }
 
 .field.field-invalid-ref input { border-color: var(--danger); background: var(--danger-soft); }
-.field.field-invalid-ref::after { content: 'Invalid Salesforce ID - 15 or 18 alphanumeric characters'; display: block; margin-top: 0.3em; font-size: 0.74rem; color: var(--danger); font-family: var(--font-mono); }
+.field.field-invalid-ref::after { content: 'Invalid Salesforce ID: expected 15 or 18 alphanumeric characters'; display: block; margin-top: 0.3em; font-size: 0.74rem; color: var(--danger); font-family: var(--font-mono); }
 
 .field.is-readonly input[disabled] { cursor: not-allowed; color: var(--ink-soft); background: var(--bg); opacity: 0.9; }
 .field.is-readonly label { color: var(--muted); }

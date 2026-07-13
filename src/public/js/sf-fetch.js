@@ -84,7 +84,7 @@ return;
 					'<h3>Your Salesforce session ended</h3>' +
 				'</div>' +
 				'<div class="modal-content">' +
-					'<p>Your access token expired. Pick how to continue - the canvas itself stays usable in every option.</p>' +
+					'<p>Your access token expired. Pick how to continue: the canvas itself stays usable in every option.</p>' +
 					'<div class="sf-reauth-options">' +
 						'<button type="button" class="sf-reauth-card sf-reauth-card--primary" data-rap-action="signin">' +
 							'<span class="sf-reauth-card-title">Sign in again</span>' +
@@ -208,7 +208,7 @@ h.set('x-csrf-token', _csrfToken);
 			if (label) {
 				label.textContent = 'Reconnect';
 			}
-			chip.setAttribute('title', 'Working offline - click to reconnect to Salesforce');
+			chip.setAttribute('title', 'Working offline: click to reconnect to Salesforce');
 		} catch (_) {}
 	}
 

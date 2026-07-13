@@ -1,3 +1,5 @@
+export const UNRESOLVED_FIELD = Symbol('validation-rule-unresolved-field');
+
 export function tokenize(s) {
 	const toks = [];
 	let i = 0;
@@ -196,7 +198,7 @@ export function resolveFieldValue(path, vals, opts) {
 		|| fields.find((f) => (f.relationshipName || '').toLowerCase() === head.toLowerCase())
 		|| fields.find((f) => f.name.toLowerCase() === head.toLowerCase());
 	if (!refField || !refField.referenceTo || refField.referenceTo.length === 0) {
-return null;
+return UNRESOLVED_FIELD;
 }
 	const targetObjectName = refField.referenceTo[0];
 
@@ -208,16 +210,28 @@ return null;
 			const target = opts.bulkRecords.find((r) => r.id === assoc.toId);
 			if (target) {
 				const targetDesc = opts.describeCache && opts.describeCache[target.objectName];
+				if (!targetDesc) {
+return UNRESOLVED_FIELD;
+}
 				const nestedOpts = Object.assign({}, opts, {
 					currentFields: (targetDesc && targetDesc.fields) || [],
 					currentRecord: target,
 				});
 				return resolveFieldValue(tail, target.values || {}, nestedOpts);
 			}
+			return UNRESOLVED_FIELD;
 		}
 	}
-	const targetVals = (opts && opts.savedRecords && opts.savedRecords[targetObjectName]) || {};
+	const hasSavedTarget = !!(opts && opts.savedRecords
+		&& Object.prototype.hasOwnProperty.call(opts.savedRecords, targetObjectName));
+	if (!hasSavedTarget) {
+return UNRESOLVED_FIELD;
+}
+	const targetVals = opts.savedRecords[targetObjectName] || {};
 	const targetDescribe = opts && opts.describeCache && opts.describeCache[targetObjectName];
+	if (!targetDescribe) {
+return UNRESOLVED_FIELD;
+}
 	const targetFields = (targetDescribe && targetDescribe.fields) || [];
 	const nestedOpts = Object.assign({}, opts, { currentFields: targetFields, currentRecord: null });
 	return resolveFieldValue(tail, targetVals, nestedOpts);
@@ -227,7 +241,11 @@ export function evalNode(n, vals, opts) {
 	switch (n.k) {
 		case 'lit': return n.v;
 		case 'field': {
-			return resolveFieldValue(n.name, vals, opts);
+			const value = resolveFieldValue(n.name, vals, opts);
+			if (value === UNRESOLVED_FIELD) {
+throw new Error('unresolved relationship field ' + n.name);
+}
+			return value;
 		}
 		case 'neg': return -evalNode(n.x, vals, opts);
 		case 'cmp': {

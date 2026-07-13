@@ -1,5 +1,5 @@
 # Org Loom security contact information.
-# RFC 9116 - see https://securitytxt.org/
+# RFC 9116 (see https://securitytxt.org/)
 #
 # IMPORTANT: refresh `Expires` annually. Per RFC 9116 a stale Expires
 # makes this file invalid; researchers will assume your security

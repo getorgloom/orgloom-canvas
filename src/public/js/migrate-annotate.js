@@ -110,7 +110,7 @@
 		var _isUpdate = !!(record && record.loadedFromId);
 		for (var r = 0; !_isUpdate && r < fields.length; r++) {
 			var tf = fields[r];
-			if (!tf || tf.required !== true) {
+			if (!tf || tf.required !== true || tf.createable === false) {
 				continue;
 			}
 			if (_isIgnoredKey(tf.name)) {

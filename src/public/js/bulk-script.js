@@ -45,8 +45,8 @@
 								'}</pre>' +
 								'<h4>What you can use</h4>' +
 								'<ul class="bs-vars">' +
-									'<li><code>records</code> - every card on the canvas. Each has <code>id</code>, <code>objectName</code>, <code>label</code>, <code>values</code>, and (for loaded SF rows) <code>loadedFromId</code>. Edit a field with <code>r.values.FieldName = ...</code>.</li>' +
-									'<li><code>r.loadedFromId</code> - the Salesforce Id of the row a card was pulled from. Set on cards loaded via Browse / SOQL / record-browse; empty on drafts you created on the canvas. At Upload time, cards <em>with</em> <code>loadedFromId</code> become UPDATEs and cards <em>without</em> become INSERTs - so this is the field to check when you want to touch only one or the other:' +
+									'<li><code>records</code>: every card on the canvas. Each has <code>id</code>, <code>objectName</code>, <code>label</code>, <code>values</code>, and (for loaded SF rows) <code>loadedFromId</code>. Edit a field with <code>r.values.FieldName = ...</code>.</li>' +
+									'<li><code>r.loadedFromId</code>: the Salesforce Id of the row a card was pulled from. Set on cards loaded via Browse / SOQL / record-browse; empty on drafts you created on the canvas. At Upload time, cards <em>with</em> <code>loadedFromId</code> become UPDATEs and cards <em>without</em> become INSERTs, so this is the field to check when you want to touch only one or the other:' +
 										'<pre class="bs-recipe">// Only update existing SF rows, leave drafts alone\n' +
 										'for (const r of records) {\n' +
 										'  if (r.loadedFromId) {\n' +
@@ -69,7 +69,7 @@
 										'<li><strong>Functions you write</strong> (arrow fns, function declarations), <code>this</code>, <code>new</code>, <code>try/catch</code>, <code>while</code>, classic <code>for(;;)</code>, regex literals, template strings, spread, destructuring, <code>async</code>/<code>await</code>.</li>' +
 										'<li><strong>Browser surface</strong>: <code>fetch</code>, <code>document</code>, <code>window</code>, <code>localStorage</code>, <code>setTimeout</code>. None are exposed.</li>' +
 										'<li><strong>Property names that escape sandboxes</strong>: <code>constructor</code>, <code>__proto__</code>, <code>prototype</code>. Blocked.</li>' +
-										'<li>SOQL, DML, <code>@future</code> - not available here. Use Upload to push changes to Salesforce.</li>' +
+										'<li>SOQL, DML, <code>@future</code>: not available here. Use Upload to push changes to Salesforce.</li>' +
 									'</ul>' +
 								'</details>' +
 								'<details class="bs-nested">' +
@@ -849,7 +849,7 @@ changed++;
 					rollbackAll();
 					const raw = (err && err.message) ? err.message : String(err);
 					const msg = /circular/i.test(raw)
-						? 'A field was set to point back at its own record (circular reference). Nothing was applied - set r.values fields to plain values, not the record or values object itself.'
+						? 'A field was set to point back at its own record (circular reference). Nothing was applied; set r.values fields to plain values, not the record or values object itself.'
 						: raw;
 					renderScriptError(msg);
 					return;
@@ -888,7 +888,7 @@ lines.push('--- log ---', logs.join('\n'), '');
 						title: 'Run script on ' + loadedCount + ' loaded record' + (loadedCount === 1 ? '' : 's') + '?',
 						message: 'This script will modify ' + loadedCount + ' record' + (loadedCount === 1 ? '' : 's') +
 							' that map' + (loadedCount === 1 ? 's' : '') + ' to existing Salesforce rows. ' +
-							'Edits run locally - your next Upload is what would push them to Salesforce. Make sure you trust this script before running.',
+							'Edits run locally; your next Upload is what would push them to Salesforce. Make sure you trust this script before running.',
 						confirmLabel: 'Run script',
 						cancelLabel: 'Cancel',
 						danger: true,

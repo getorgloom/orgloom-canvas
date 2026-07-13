@@ -29,7 +29,9 @@
 				const subText = opts.sub || 'Adds any object to the schema, related or not. Use this to pick standalone objects alongside your FK-driven selections.';
 
 				if (_activeCleanup) {
-					try { _activeCleanup(); } catch (_) {                    }
+					try {
+ _activeCleanup(); 
+} catch (_) {                    }
 				}
 				document.querySelectorAll('.find-object-popup').forEach(el => el.remove());
 				const pop = document.createElement('div');
@@ -115,7 +117,9 @@ return true;
 					const capped = filtered.slice(0, 60);
 					if (canvasState.allObjects === null) {
 						list.innerHTML = '<div class="fop-empty">Loading objects\u2026</div>';
-						if (summary) summary.textContent = '';
+						if (summary) {
+summary.textContent = '';
+}
 						return;
 					}
 

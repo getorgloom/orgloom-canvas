@@ -24,7 +24,9 @@ function mountSchemaGraph(csrfFetch) {
 test('schema graph shares concurrent requests for the same object and caches success', async () => {
 	let calls = 0;
 	let release;
-	const gate = new Promise((resolve) => { release = resolve; });
+	const gate = new Promise((resolve) => {
+ release = resolve; 
+});
 	const api = mountSchemaGraph(async () => {
 		calls += 1;
 		await gate;
@@ -44,7 +46,9 @@ test('schema graph does not make a failed pending request sticky', async () => {
 	let calls = 0;
 	const api = mountSchemaGraph(async () => {
 		calls += 1;
-		if (calls === 1) throw new Error('network down');
+		if (calls === 1) {
+throw new Error('network down');
+}
 		return { ok: true, json: async () => ({ name: 'Contact' }) };
 	});
 

@@ -32,7 +32,9 @@
 
 			const canvasCapCheck = typeof deps.canvasCapCheck === 'function'
 				? deps.canvasCapCheck
-				: function () { return { ok: true, blocked: false, reason: null }; };
+				: function () {
+ return { ok: true, blocked: false, reason: null }; 
+};
 
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction
@@ -89,7 +91,9 @@
 						return null;
 					}
 					const changes = {};
-					changed.forEach((f) => { changes[f] = (r.values || {})[f]; });
+					changed.forEach((f) => {
+ changes[f] = (r.values || {})[f]; 
+});
 					return changes;
 				}
 
@@ -511,7 +515,8 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 					const _objectCount = (t.schema.objects || []).length;
 					if (schemaOnly) {
 						_summaryToast('Imported schema: ' + _objectCount + ' object' + (_objectCount === 1 ? '' : 's') + '. Records were not included.', undefined, opts);
-						if (opts.importFileName) pingAuditEvent('canvas_load_file', {
+						if (opts.importFileName) {
+pingAuditEvent('canvas_load_file', {
 							recordCount: 0,
 							payload: {
 								name: opts.importFileName || null,
@@ -520,6 +525,7 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 								objectCount: _objectCount,
 							},
 						});
+}
 					} else {
 						const totalRecords = t.records.length;
 						const importedCount = totalRecords - skippedRecords;
@@ -530,11 +536,12 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 							msg += ' ' + demotedToDrafts + ' loaded record' + (demotedToDrafts === 1 ? '' : 's') +
 								' re-imported as draft' + (demotedToDrafts === 1 ? '' : 's') + ' (exported from a different org).';
 						} else if (_crossOrg) {
-							msg += ' Exported from a different org - Salesforce id references may not match here.';
+							msg += ' Exported from a different org; Salesforce id references may not match here.';
 						}
 						const _caveats = skippedRecords > 0 || skippedAssoc > 0 || demotedToDrafts > 0 || _crossOrg;
 						_summaryToast(msg, _caveats ? 'error' : undefined, opts);
-						if (opts.importFileName) pingAuditEvent('canvas_load_file', {
+						if (opts.importFileName) {
+pingAuditEvent('canvas_load_file', {
 							recordCount: importedCount,
 							payload: {
 								name: opts.importFileName || null,
@@ -545,6 +552,7 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 								skippedAssoc,
 							},
 						});
+}
 					}
 				}
 
@@ -552,7 +560,7 @@ setGraphView(schemaOnly ? 'schema' : 'bulk');
 					opts = opts || {};
 					const merge = !!opts.merge;
 					if (!payload || typeof payload !== 'object') {
-						showBulkToast('Empty payload - nothing to load.', 'error');
+						showBulkToast('Empty payload: nothing to load.', 'error');
 						return;
 					}
 					const schemaObjects = (payload.schema && payload.schema.objects) || [];
@@ -888,7 +896,7 @@ setGraphView('bulk');
 						(draftById.size === 1 ? '' : 's') + '.';
 					if (droppedFromAccess > 0) {
 						msg += ' (' + droppedFromAccess + ' record' + (droppedFromAccess === 1 ? '' : 's') +
-							' shown as \u201cno access\u201d - Salesforce didn\u2019t return ' +
+							' shown as \u201cno access\u201d, since Salesforce didn\u2019t return ' +
 							(droppedFromAccess === 1 ? 'it' : 'them') + '.)';
 					}
 					if (skippedExistingMerge > 0) {
@@ -901,7 +909,8 @@ setGraphView('bulk');
 					const _skips = _skipSuffix(skippedRecords, skippedAssoc);
 					msg += _skips;
 					_summaryToast(msg, _skips ? 'error' : undefined, opts);
-					if (opts.importFileName) pingAuditEvent('canvas_load_file', {
+					if (opts.importFileName) {
+pingAuditEvent('canvas_load_file', {
 						recordCount: loadedById.size + draftById.size,
 						payload: {
 							name: opts.importFileName || null,
@@ -915,6 +924,7 @@ setGraphView('bulk');
 							skippedAssoc,
 						},
 					});
+}
 				}
 
 			return {

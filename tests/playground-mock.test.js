@@ -35,7 +35,9 @@ before(() => {
 	};
 	const sandbox = {
 		window: windowShim,
-		document: { addEventListener() {}, getElementById() { return null; } },
+		document: { addEventListener() {}, getElementById() {
+ return null; 
+} },
 		console: { log() {}, warn() {}, error() {} },
 		URL, Response, Request, Headers,
 		JSON, Math, Date,

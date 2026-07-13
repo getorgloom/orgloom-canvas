@@ -20,7 +20,9 @@
 
 			const canvasCapCheck = typeof deps.canvasCapCheck === 'function'
 				? deps.canvasCapCheck
-				: function () { return { ok: true, blocked: false, reason: null }; };
+				: function () {
+ return { ok: true, blocked: false, reason: null }; 
+};
 			const addToSelection = deps.addToSelection;
 			const renderBulkView = deps.renderBulkView;
 			const getGraph = deps.getGraph;
@@ -143,24 +145,32 @@ close();
 							.join(' \u00b7 ');
 
 						const truncationNote = body.capped
-							? '<div class="banner">Hit the ' + (body.cap || 500) + '-record import cap - showing the first ' + body.returned + '. There may be more; add a WHERE clause or a smaller LIMIT to narrow.</div>'
+							? '<div class="banner">Hit the ' + (body.cap || 500) + '-record import cap; showing the first ' + body.returned + '. There may be more; add a WHERE clause or a smaller LIMIT to narrow.</div>'
 							: body.truncated
-							? '<div class="banner">Query matches ' + body.totalSize + ' records - showing the first ' + body.returned + '. Add a WHERE clause or LIMIT to narrow.</div>'
+							? '<div class="banner">Query matches ' + body.totalSize + ' records; showing the first ' + body.returned + '. Add a WHERE clause or LIMIT to narrow.</div>'
 							: '';
 
 						const sfBase = (window.SF_INSTANCE_URL || '').replace(/[/]+$/, '');
 
 						const ID_PRIORITY = ['Name', 'CaseNumber', 'Subject', 'Title', 'Label', 'DeveloperName', 'Username', 'Email', 'FullName', 'LastName'];
 						function pickIdentifier(values) {
-							if (!values) { return null; }
+							if (!values) {
+ return null; 
+}
 							for (const k of ID_PRIORITY) {
 								const v = values[k];
-								if (v != null && typeof v !== 'object' && String(v).trim() !== '') { return { field: k, value: String(v) }; }
+								if (v != null && typeof v !== 'object' && String(v).trim() !== '') {
+ return { field: k, value: String(v) }; 
+}
 							}
 							for (const k of Object.keys(values)) {
-								if (k === 'Id' || k === 'attributes') { continue; }
+								if (k === 'Id' || k === 'attributes') {
+ continue; 
+}
 								const v = values[k];
-								if (v != null && typeof v !== 'object' && String(v).trim() !== '') { return { field: k, value: String(v) }; }
+								if (v != null && typeof v !== 'object' && String(v).trim() !== '') {
+ return { field: k, value: String(v) }; 
+}
 							}
 							return null;
 						}
@@ -174,7 +184,9 @@ close();
 						const COLLATE = { numeric: true, sensitivity: 'base' };
 						decorated.sort((a, b) => {
 							const byObj = String(a.rec.objectName || '').localeCompare(String(b.rec.objectName || ''), undefined, COLLATE);
-							if (byObj !== 0) { return byObj; }
+							if (byObj !== 0) {
+ return byObj; 
+}
 							return String(a.sortName || '').localeCompare(String(b.sortName || ''), undefined, COLLATE);
 						});
 						const shownRows = decorated.slice(0, MAX_PREVIEW_ROWS);
@@ -273,7 +285,7 @@ close();
 								lastResultFullFields = fullFields;
 							}
 							if (!result.records || result.records.length === 0) {
-								previewPane.innerHTML = '<div class="banner">Query returned 0 records - nothing to add.</div>';
+								previewPane.innerHTML = '<div class="banner">Query returned 0 records; nothing to add.</div>';
 								return;
 							}
 							_undo = captureUndoSnapshot ? captureUndoSnapshot() : null;
@@ -287,7 +299,7 @@ close();
 								? ' \u00b7 ' + summary.skipped + ' already on canvas (skipped)'
 								: '';
 							if (summary.added === 0) {
-								previewPane.innerHTML = '<div class="banner">All ' + summary.skipped + ' record' + (summary.skipped === 1 ? '' : 's') + ' from this query are already on the canvas - nothing new to add.</div>';
+								previewPane.innerHTML = '<div class="banner">All ' + summary.skipped + ' record' + (summary.skipped === 1 ? '' : 's') + ' from this query are already on the canvas; nothing new to add.</div>';
 								return;
 							}
 							const fkNote = summary.associationsSkippedFk > 0
@@ -306,7 +318,7 @@ close();
 								_undo();
 							}
 							_shared.captureImportFailure('soql', 'commit', err.message || String(err));
-							previewPane.innerHTML = '<div class="banner error">Could not add to canvas: ' + escapeHtml(err.message || String(err)) + (_undo ? ' The canvas was restored - nothing changed.' : '') + '</div>';
+							previewPane.innerHTML = '<div class="banner error">Could not add to canvas: ' + escapeHtml(err.message || String(err)) + (_undo ? ' The canvas was restored; nothing changed.' : '') + '</div>';
 						} finally {
 							commitBtn.disabled = false;
 							previewBtn.disabled = false;

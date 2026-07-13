@@ -23,7 +23,7 @@
 	}
 
 	function notImplemented(method, path) {
-		console.warn('[mock-sf] Unhandled ' + method + ' ' + path + ' - returning 501. Add a handler if the canvas needs this surface.');
+		console.warn('[mock-sf] Unhandled ' + method + ' ' + path + ': returning 501. Add a handler if the canvas needs this surface.');
 		return jsonResponse({
 			error: 'mock-not-implemented',
 			message: 'This action is disabled in the demo. Sign up to use it on your real Salesforce org.',
@@ -61,7 +61,7 @@ return false;
 	const PRESEED_CANVAS = {
 		id: PRESEED_CANVAS_ID,
 		versionId: PRESEED_CANVAS_VERSION,
-		title: 'Acme Corporation - sample canvas',
+		title: 'Acme Corporation: sample canvas',
 		ownerId: '005DEMO000000000AAA',
 		ownedByMe: true,
 		createdAt: Date.UTC(2025, 0, 15),

@@ -10,11 +10,15 @@ export function stripDraftValuesForSave(payload) {
 }
 
 export function payloadContainsSlots(payload) {
-	if (!payload || typeof payload !== 'object') return false;
+	if (!payload || typeof payload !== 'object') {
+return false;
+}
 	for (const key of ['loadedRecords', 'drafts']) {
 		const records = Array.isArray(payload[key]) ? payload[key] : [];
 		if (records.some((record) => record && typeof record === 'object'
-			&& record.slot && record.slot.slotId != null)) return true;
+			&& record.slot && record.slot.slotId != null)) {
+return true;
+}
 	}
 	return false;
 }

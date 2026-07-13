@@ -23,10 +23,18 @@ function fakeRes() {
 		statusCode: 200,
 		body: undefined,
 		ended: false,
-		status(code) { this.statusCode = code; return this; },
-		setHeader(name, value) { this.headers = this.headers || {}; this.headers[name] = value; return this; },
-		json(obj) { this.body = obj; this.ended = true; return this; },
-		end() { this.ended = true; return this; },
+		status(code) {
+ this.statusCode = code; return this; 
+},
+		setHeader(name, value) {
+ this.headers = this.headers || {}; this.headers[name] = value; return this; 
+},
+		json(obj) {
+ this.body = obj; this.ended = true; return this; 
+},
+		end() {
+ this.ended = true; return this; 
+},
 	};
 	return res;
 }

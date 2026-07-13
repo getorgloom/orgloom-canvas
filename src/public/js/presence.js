@@ -28,7 +28,9 @@
 			let _myConnectionId = null;
 			let _currentCanvasId = null;
 			let _outboundSequence = 0;
-			function _nextSequence() { _outboundSequence += 1; return _outboundSequence; }
+			function _nextSequence() {
+ _outboundSequence += 1; return _outboundSequence; 
+}
 			const _peers = new Map();
 
 			let _cursorLayer = null;
@@ -1066,12 +1068,16 @@ return;
 				_eventSource.addEventListener('presence-init', (e) => {
 					try {
  _onPresenceInit(JSON.parse(e.data));
-} catch (err) { window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'presence.js/sse/init' }); }
+} catch (err) {
+ window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'presence.js/sse/init' }); 
+}
 				});
 				_eventSource.addEventListener('presence', (e) => {
 					try {
  _onPresenceEvent(JSON.parse(e.data));
-} catch (err) { window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'presence.js/sse/event' }); }
+} catch (err) {
+ window.ORGLOOM_capture && window.ORGLOOM_capture(err, { where: 'presence.js/sse/event' }); 
+}
 				});
 				_eventSource.addEventListener('error', () => {
 

@@ -30,7 +30,9 @@
 
 			const canvasCapCheck = typeof deps.canvasCapCheck === "function"
 				? deps.canvasCapCheck
-				: function () { return { ok: true, blocked: false, reason: null }; };
+				: function () {
+ return { ok: true, blocked: false, reason: null }; 
+};
 
 			let _aiEnabled = null;
 			let _aiUsage = null;

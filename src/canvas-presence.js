@@ -54,7 +54,9 @@ function _ownsConnection(entry, requestingAccountId) {
 }
 
 function _acceptSequence(entry, sequence) {
-	if (!Number.isSafeInteger(sequence) || sequence <= entry.lastSequence) return false;
+	if (!Number.isSafeInteger(sequence) || sequence <= entry.lastSequence) {
+return false;
+}
 	entry.lastSequence = sequence;
 	return true;
 }
@@ -157,7 +159,9 @@ return false;
 	if (!entry) {
 return false;
 }
-	if (entry.keepalive) clearInterval(entry.keepalive);
+	if (entry.keepalive) {
+clearInterval(entry.keepalive);
+}
 	conns.delete(connectionId);
 	if (conns.size === 0) {
 _presenceByCanvas.delete(canvasId);
@@ -178,7 +182,9 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
-	if (!_acceptSequence(entry, sequence)) return false;
+	if (!_acceptSequence(entry, sequence)) {
+return false;
+}
 	const cx = typeof x === 'number' ? x : null;
 	const cy = typeof y === 'number' ? y : null;
 	entry.cursor = (cx == null || cy == null) ? null : { x: cx, y: cy, world: !!world };
@@ -203,8 +209,12 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
-	if (!entry.canEdit) return false;
-	if (!_acceptSequence(entry, sequence)) return false;
+	if (!entry.canEdit) {
+return false;
+}
+	if (!_acceptSequence(entry, sequence)) {
+return false;
+}
 	if (tempId == null) {
 return false;
 }
@@ -212,8 +222,12 @@ return false;
 return false;
 }
 	const keys = Object.keys(fields);
-	if (keys.length > MAX_PRESENCE_FIELDS || keys.some((key) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(key))) return false;
-	if (Buffer.byteLength(JSON.stringify(fields), 'utf8') > MAX_PRESENCE_PAYLOAD_BYTES) return false;
+	if (keys.length > MAX_PRESENCE_FIELDS || keys.some((key) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(key))) {
+return false;
+}
+	if (Buffer.byteLength(JSON.stringify(fields), 'utf8') > MAX_PRESENCE_PAYLOAD_BYTES) {
+return false;
+}
 	entry.lastSeenAt = Date.now();
 	const payload = {
 		type: 'draft-update',
@@ -256,8 +270,12 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
-	if (!entry.canEdit) return false;
-	if (!_acceptSequence(entry, sequence)) return false;
+	if (!entry.canEdit) {
+return false;
+}
+	if (!_acceptSequence(entry, sequence)) {
+return false;
+}
 	if (kind !== 'add' && kind !== 'remove') {
 return false;
 }
@@ -288,8 +306,12 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
-	if (!entry.canEdit) return false;
-	if (!_acceptSequence(entry, sequence)) return false;
+	if (!entry.canEdit) {
+return false;
+}
+	if (!_acceptSequence(entry, sequence)) {
+return false;
+}
 	if (!sfId) {
 return false;
 }
@@ -314,7 +336,9 @@ return false;
 	if (!_ownsConnection(entry, requestingAccountId)) {
 return false;
 }
-	if (!_acceptSequence(entry, sequence)) return false;
+	if (!_acceptSequence(entry, sequence)) {
+return false;
+}
 	entry.focus = focus || null;
 	entry.lastSeenAt = Date.now();
 	_broadcast(canvasId, {
@@ -352,7 +376,9 @@ export function purgeAccountFromWorkspace({ workspaceId, accountId }) {
 	for (const [canvasId, conns] of _presenceByCanvas.entries()) {
 		for (const entry of [...conns.values()]) {
 			if (entry.workspaceId === workspaceId && entry.accountId === accountId) {
-				if (unsubscribe({ canvasId, connectionId: entry.connectionId })) removed++;
+				if (unsubscribe({ canvasId, connectionId: entry.connectionId })) {
+removed++;
+}
 			}
 		}
 	}
@@ -364,7 +390,9 @@ export function purgeWorkspace({ workspaceId }) {
 	for (const [canvasId, conns] of _presenceByCanvas.entries()) {
 		for (const entry of [...conns.values()]) {
 			if (entry.workspaceId === workspaceId) {
-				if (unsubscribe({ canvasId, connectionId: entry.connectionId })) removed++;
+				if (unsubscribe({ canvasId, connectionId: entry.connectionId })) {
+removed++;
+}
 			}
 		}
 	}

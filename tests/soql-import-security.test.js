@@ -100,7 +100,9 @@ function makeMockConn() {
 		conn,
 		captured,
 		describes,
-		setNextQueryResult: (r) => { nextQueryResult = r; },
+		setNextQueryResult: (r) => {
+ nextQueryResult = r; 
+},
 	};
 }
 
@@ -124,7 +126,9 @@ before(async () => {
 
 	app = express();
 	app.use(express.json());
-	app.use((req, _res, next) => { req.session = {}; next(); });
+	app.use((req, _res, next) => {
+ req.session = {}; next(); 
+});
 
 	app.use('/api/query', (req, _res, next) => {
 		if (injectFakeSf && activeMock) {
@@ -167,7 +171,7 @@ beforeEach(() => {
 	}
 });
 
-describe('Finding #1 - safety LIMIT append is robust to string/subquery LIMITs', () => {
+describe('Finding #1: safety LIMIT append is robust to string/subquery LIMITs', () => {
 	test('control: a query with no LIMIT gets " LIMIT 500" appended', async () => {
 		activeMock.setNextQueryResult({ records: makeRows(2), totalSize: 2, done: true });
 		const soql = 'SELECT Id, Name FROM Account';
@@ -217,7 +221,7 @@ describe('Finding #1 - safety LIMIT append is robust to string/subquery LIMITs',
 	});
 });
 
-describe('Finding #2 - silent truncation is now surfaced via `capped`', () => {
+describe('Finding #2: silent truncation is now surfaced via `capped`', () => {
 	test('a capped 500-row result reports capped:true + truncated:true', async () => {
 		activeMock.setNextQueryResult({ records: makeRows(500), totalSize: 500, done: true });
 		const r = await post({ soql: 'SELECT Id FROM Account', fullFields: false });
@@ -278,7 +282,7 @@ describe('500-row cap boundary', () => {
 	});
 });
 
-describe('Finding #3 - denylist scope', () => {
+describe('Finding #3: denylist scope', () => {
 	test('control: ApexClass is blocked before any query runs', async () => {
 		const r = await post({ soql: 'SELECT Id, Name FROM ApexClass', fullFields: false });
 		assert.equal(r.status, 400);
@@ -321,7 +325,7 @@ describe('Finding #3 - denylist scope', () => {
 	});
 });
 
-describe('Finding #5 - full-fields rehydration amplifies the fetch', () => {
+describe('Finding #5: full-fields rehydration amplifies the fetch', () => {
 	test('default fullFields=true triggers a retrieve() beyond the projection', async () => {
 		activeMock.setNextQueryResult({ records: makeRows(3), totalSize: 3, done: true });
 		const r = await post({ soql: 'SELECT Id FROM Account' });
@@ -333,7 +337,7 @@ describe('Finding #5 - full-fields rehydration amplifies the fetch', () => {
 	});
 });
 
-describe('Finding #4 - sliding-window rate limit', () => {
+describe('Finding #4: sliding-window rate limit', () => {
 	test('requests up to the limit pass, then 429 with Retry-After', async () => {
 		const max = (RATE_LIMIT && RATE_LIMIT.max) || 60;
 		let ok = 0;
@@ -355,7 +359,7 @@ describe('Finding #4 - sliding-window rate limit', () => {
 		assert.equal(activeMock.captured.queries.length, queriesBefore, 'throttled request never hit SF');
 	});
 
-	test('the limiter is per-account - a different account is unaffected', async () => {
+	test('the limiter is per-account: a different account is unaffected', async () => {
 
 		const max = (RATE_LIMIT && RATE_LIMIT.max) || 60;
 		for (let i = 0; i < max; i++) {
@@ -429,7 +433,7 @@ describe('regex guards behave as intended', () => {
 	});
 });
 
-describe('authz - no SF connection means no execution', () => {
+describe('authz: no SF connection means no execution', () => {
 	test('POST with no active connection returns 409 and runs nothing', async () => {
 		injectFakeSf = false;
 		const r = await post({ soql: 'SELECT Id FROM Account', fullFields: false });

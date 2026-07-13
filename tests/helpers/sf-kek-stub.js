@@ -1,5 +1,7 @@
 function jsonRes(obj) {
-	return { ok: true, status: 200, async json() { return obj; } };
+	return { ok: true, status: 200, async json() {
+ return obj; 
+} };
 }
 
 export function installSfFetchStub() {
@@ -34,8 +36,12 @@ export function installSfFetchStub() {
 
 	return {
 
-		registerVersionUrl(absoluteUrl, buf) { versionBlobs.set(absoluteUrl, buf); },
-		restore() { global.fetch = realFetch; },
+		registerVersionUrl(absoluteUrl, buf) {
+ versionBlobs.set(absoluteUrl, buf); 
+},
+		restore() {
+ global.fetch = realFetch; 
+},
 	};
 }
 
@@ -73,6 +79,8 @@ export function makeKekConn(initial = {}) {
 				},
 			};
 		},
-		async request() { throw new Error('makeKekConn.request() not stubbed; use the VersionData URL via global fetch'); },
+		async request() {
+ throw new Error('makeKekConn.request() not stubbed; use the VersionData URL via global fetch'); 
+},
 	};
 }

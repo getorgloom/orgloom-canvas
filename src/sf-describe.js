@@ -1,4 +1,5 @@
 import { withSfRetry } from './sf-upload.js';
+import { isRequiredOnCreate, isPolymorphicReference } from './sf-field-structure.js';
 
 export function cleanLabel(label, fallback) {
 	if (typeof label !== 'string' || label.startsWith('__MISSING LABEL__')) {
@@ -346,7 +347,12 @@ return;
 				custom: !!f.custom,
 				createable: !!f.createable,
 				updateable: !!f.updateable,
-				required: !f.nillable && !f.defaultedOnCreate,
+				required: isRequiredOnCreate(f),
+				nillable: !!f.nillable,
+				defaultedOnCreate: !!f.defaultedOnCreate,
+				calculated: !!f.calculated,
+				autoNumber: !!f.autoNumber,
+				restrictedPicklist: !!f.restrictedPicklist,
 				length: f.length,
 				precision: f.precision,
 				scale: f.scale,
@@ -358,6 +364,9 @@ return;
 				controllerValues: describeCtrlMap,
 				controllerValuesByRecordType,
 				referenceTo: f.referenceTo,
+				referenceTargetField: f.referenceTargetField || null,
+				polymorphicForeignKey: isPolymorphicReference(f),
+				reparentableMasterDetail: f.reparentableMasterDetail == null ? null : !!f.reparentableMasterDetail,
 				relationshipName: f.relationshipName,
 				defaultValue: f.defaultValue,
 				helpText: f.inlineHelpText,

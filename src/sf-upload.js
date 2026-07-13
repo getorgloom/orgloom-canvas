@@ -1,3 +1,5 @@
+import { isWritableForOperation } from './sf-field-structure.js';
+
 export const FAKE_REF_ID = '001000000000001';
 
 export const UPLOAD_PAYLOAD_BYTE_CAP = 5 * 1024 * 1024;
@@ -55,13 +57,9 @@ return Object.assign({}, values || {});
 		if (!f || !f.name) {
 return;
 }
-		if (f.type === 'address' || f.type === 'location') {
-return;
-}
 
-		const writableForOperation = isUpdate === 'upsert'
-			? (f.createable || f.updateable)
-			: (isUpdate ? f.updateable : f.createable);
+		const operation = isUpdate === 'upsert' ? 'upsert' : (isUpdate ? 'update' : 'create');
+		const writableForOperation = isWritableForOperation(f, operation);
 		if (writableForOperation) {
 writable.add(f.name);
 }

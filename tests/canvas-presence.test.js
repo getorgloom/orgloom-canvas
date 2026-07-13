@@ -10,9 +10,15 @@ function response() {
 	const writes = [];
 	return {
 		writes,
-		write(chunk) { writes.push(chunk); return true; },
-		on(event, fn) { handlers.set(event, fn); },
-		fire(event) { handlers.get(event)?.(new Error(event)); },
+		write(chunk) {
+ writes.push(chunk); return true; 
+},
+		on(event, fn) {
+ handlers.set(event, fn); 
+},
+		fire(event) {
+ handlers.get(event)?.(new Error(event)); 
+},
 	};
 }
 

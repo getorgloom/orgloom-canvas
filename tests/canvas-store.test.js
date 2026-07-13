@@ -18,8 +18,14 @@ const ORG_ID = '00DTEST00000001';
 
 let _stub;
 before(initTestDb);
-before(() => { _stub = installSfFetchStub(); });
-after(() => { if (_stub) { _stub.restore(); } });
+before(() => {
+ _stub = installSfFetchStub(); 
+});
+after(() => {
+ if (_stub) {
+ _stub.restore(); 
+} 
+});
 beforeEach(clearTestDb);
 
 const TEST_KEK = makeSfApexKekProvider(makeKekConn());

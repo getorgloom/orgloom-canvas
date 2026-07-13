@@ -18,8 +18,14 @@ const USER_ID = '005TESTUploader';
 
 let _stub;
 before(initTestDb);
-before(() => { _stub = installSfFetchStub(); });
-after(() => { if (_stub) { _stub.restore(); } });
+before(() => {
+ _stub = installSfFetchStub(); 
+});
+after(() => {
+ if (_stub) {
+ _stub.restore(); 
+} 
+});
 beforeEach(clearTestDb);
 
 const TEST_KEK = makeSfApexKekProvider(makeKekConn());
@@ -34,7 +40,7 @@ async function decryptStoredBlob(versionDataB64, batchId) {
 	return JSON.parse(decryptPayload(buf, key));
 }
 
-describe('upload-batches store - encryption on create', () => {
+describe('upload-batches store: encryption on create', () => {
 	test('emits OLE2 envelope, persists wrapped key, decrypted payload matches input', async () => {
 		const conn = mockConn({
 			creates: [{ success: true, id: '068NEW' }],
@@ -94,7 +100,7 @@ describe('upload-batches store - encryption on create', () => {
 	});
 });
 
-describe('upload-batches store - decryption on list / get', () => {
+describe('upload-batches store: decryption on list / get', () => {
 	test('list decrypts each batch payload using its persisted key', async () => {
 
 		const writeConn = mockConn({
@@ -180,7 +186,7 @@ describe('upload-batches store - decryption on list / get', () => {
 	});
 });
 
-describe('upload-batches store - remove drops the wrapped key', () => {
+describe('upload-batches store: remove drops the wrapped key', () => {
 	test('remove deletes the batch_keys row alongside the SF ContentDocument', async () => {
 
 		await batchKeys.persist({ sfOrgId: ORG_ID, batchId: '069DELXXXXXXXXX', dataKey: generateDataKey(), kekProvider: TEST_KEK });
