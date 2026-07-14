@@ -28,7 +28,7 @@ try {
 	console.error('[boot] canvas-standalone requires a DB provider registered before import:', err.message);
 	throw err;
 }
-console.log('[db] ready:', process.env.DATABASE_URL || 'sqlite:./data/orgloom.db');
+console.log('[db] ready:', ext.getRawClient().dialect);
 
 const LOCAL_ACCOUNT_ID = 'local';
 

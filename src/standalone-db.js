@@ -4,20 +4,21 @@ import { pathToFileURL } from 'node:url';
 import { Kysely, Migrator, PostgresDialect, SqliteDialect } from 'kysely';
 import { ext } from './extensions.js';
 import { canvasMigrationsDir } from './database/index.js';
+import { isPostgresDatabaseUrl, sqlitePathFromDatabaseUrl } from './database-url.js';
 
 export async function initializeStandaloneDatabase() {
 	const url = process.env.DATABASE_URL || 'sqlite:./data/orgloom.db';
 	let db;
 	let raw;
 	let dialect;
-	if (/^postgres(ql)?:\/\//.test(url)) {
+	if (isPostgresDatabaseUrl(url)) {
 		const pg = await import('pg');
 		const { Pool } = pg.default || pg;
 		raw = new Pool({ connectionString: url, max: 10 });
 		dialect = 'pg';
 		db = new Kysely({ dialect: new PostgresDialect({ pool: raw }) });
 	} else {
-		const sqlitePath = url.replace(/^sqlite:\/{0,2}/, '');
+		const sqlitePath = sqlitePathFromDatabaseUrl(url);
 		fs.mkdirSync(path.dirname(path.resolve(sqlitePath)), { recursive: true });
 		const Database = (await import('better-sqlite3')).default;
 		raw = new Database(sqlitePath);
