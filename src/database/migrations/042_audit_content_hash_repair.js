@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { migrationColumnExists } from "../migration-introspection.js";
 
 function _canonical(row) {
 	return JSON.stringify([
@@ -34,17 +35,13 @@ function _chainHash(prev, contentHash) {
 
 export async function up(db) {
 
-	try {
-		await db.schema
-			.alterTable("audit_log")
-			.addColumn("content_hash", "text")
-			.execute();
-	} catch (err) {
-		if (!/duplicate column/i.test(String(err && err.message))) {
-			throw err;
-		}
+	if (await migrationColumnExists(db, "audit_log", "content_hash")) {
 		return;
 	}
+	await db.schema
+		.alterTable("audit_log")
+		.addColumn("content_hash", "text")
+		.execute();
 
 	const rows = await db
 		.selectFrom("audit_log")
