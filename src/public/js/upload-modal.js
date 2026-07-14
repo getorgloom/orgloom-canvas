@@ -201,9 +201,6 @@ byRecordId.set(rid, rIssues);
 				)).join('');
 
 				const totalRecords = scopedRecords.length;
-				const totalAssoc = canvasState.bulkAssociations.filter((a) => (
-					scopedIds.has(a.fromId) && scopedIds.has(a.toId)
-				)).length;
 
 				const scopeToggleHtml = canScope
 					? '<div class="upload-scope-toggle">' +
@@ -304,15 +301,11 @@ summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
 							deleteRowsHtml +
 						'</div>'
 					: '';
-				const deletesTotalRow = willDeleteCount > 0
-					? '<div class="ut-row ut-row--danger"><span>Will delete</span><strong>' + willDeleteCount + '</strong></div>'
-					: '';
 				content.innerHTML =
 					scopeToggleHtml +
 					migrateBanner +
 					autoExtendNote +
 					preflightHtml +
-					'<p>Records will upload in the order below: parents first, so child FK lookups always resolve.</p>' +
 					unchangedNote +
 					'<div class="upload-section-head">Upload order</div>' +
 					'<div class="upload-summary upload-summary--ordered">' +
@@ -320,10 +313,7 @@ summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
 					'</div>' +
 					deletesBlock +
 					'<div class="upload-totals">' +
-						'<div class="ut-row"><span>' + (_uploadScopeSelected ? 'Selected records' : 'Total records') + '</span><strong>' + totalRecords + '</strong></div>' +
-						'<div class="ut-row"><span>Will sync</span><strong>' + willUploadCount + '</strong></div>' +
-						deletesTotalRow +
-						'<div class="ut-row"><span>Associations (FK links)</span><strong>' + totalAssoc + '</strong></div>' +
+						'<div class="ut-row"><span>Total records</span><strong>' + totalRecords + '</strong></div>' +
 					'</div>';
 
 				const _matchBtn = content.querySelector('[data-migrate-match]');

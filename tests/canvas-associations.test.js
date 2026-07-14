@@ -52,3 +52,10 @@ test('reverse read-only references are filtered and legacy metadata remains comp
 		[{ direction: 'rev', fieldName: 'Legacy_Parent__c' }],
 	);
 });
+
+test('occupied-reference guidance distinguishes an existing field from an available field', () => {
+	assert.match(source, /A matching relationship field connects/);
+	assert.match(source, /that field is/);
+	assert.match(source, /Each relationship field can point to only one record/);
+	assert.doesNotMatch(source, /No available lookup connects/);
+});

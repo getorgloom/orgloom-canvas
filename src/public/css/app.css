@@ -4885,7 +4885,12 @@ body.canvas-share-banner-active .canvas-status-strip {
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .install-env-toggle input { accent-color: var(--accent); }
-.install-required-button { width: 100%; }
+.install-required-button {
+	box-sizing: border-box;
+	display: flex;
+	justify-content: center;
+	width: 100%;
+}
 
 .install-custom-domain { margin: 0 0 1em; }
 .install-custom-domain[hidden] { display: none; }
@@ -4897,6 +4902,7 @@ body.canvas-share-banner-active .canvas-status-strip {
 	color: var(--ink);
 }
 .install-custom-domain-input {
+	box-sizing: border-box;
 	width: 100%;
 	padding: 0.55em 0.7em;
 	background: var(--bg-elev);
@@ -4998,6 +5004,55 @@ body.canvas-share-banner-active .canvas-status-strip {
 .install-waiting-text strong { color: var(--ink); }
 .install-waiting-text span { color: var(--ink-soft); font-size: 0.85rem; }
 .install-waiting-reopen { margin: 0.8em 0 0; font-size: 0.85rem; color: var(--ink-soft); }
+.install-policy-title {
+	margin: 1.1em 0 0.55em;
+	font-size: 1rem;
+	color: var(--ink);
+}
+.install-policy-steps {
+	margin: 0.7em 0 0.8em;
+	padding-left: 1.45em;
+	color: var(--ink-soft);
+	font-size: 0.9rem;
+	line-height: 1.5;
+}
+.install-policy-steps li { margin: 0.35em 0; }
+.install-policy-scope-note {
+	margin: 0.7em 0;
+	padding: 0.65em 0.8em;
+	background: var(--bg-inset);
+	border-left: 3px solid var(--accent);
+	border-radius: 3px;
+	color: var(--ink-soft);
+	font-size: 0.84rem;
+	line-height: 1.45;
+}
+.install-policy-confirm {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.55em;
+	margin: 0.9em 0 0.65em;
+	color: var(--ink);
+	font-size: 0.88rem;
+	line-height: 1.4;
+	cursor: pointer;
+}
+.install-policy-confirm input { margin-top: 0.2em; accent-color: var(--accent); }
+.install-required-button:disabled { opacity: 0.55; cursor: not-allowed; }
+.sf-oauth-recovery-notice {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25em;
+	margin: 0 0 1.1em;
+	padding: 0.85em 1em;
+	background: var(--warn-soft, rgba(245, 158, 11, 0.1));
+	border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border-soft));
+	border-radius: 6px;
+	font-size: 0.9rem;
+	line-height: 1.45;
+}
+.sf-oauth-recovery-notice strong { color: var(--ink); }
+.sf-oauth-recovery-notice span { color: var(--ink-soft); }
 
 .install-handoff {
 	margin: 1.6em 0 0;
@@ -5414,6 +5469,8 @@ body.canvas-share-banner-active .canvas-status-strip {
 
 .docs-main { padding: 1.5em 2em; }
 .docs-article { max-width: 760px; margin: 0 auto; line-height: 1.6; }
+
+.docs-article--form { max-width: 520px; }
 
 .blog-card { margin: 0 0 1.6em; padding-bottom: 1.4em; border-bottom: 1px solid var(--border-soft); }
 .blog-card:last-child { border-bottom: 0; padding-bottom: 0; }

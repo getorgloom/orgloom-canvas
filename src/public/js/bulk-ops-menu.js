@@ -7,7 +7,7 @@
 		mount: function mount(deps) {
 			const required = [
 				'canvasState', '_hasCap',
-				'bulkAutoFill', 'bulkClearAllFields',
+				'bulkAutoFill', 'bulkClearAllFields', 'summarizeAutoFillTargets',
 				'openLinkedCsvModal', 'openAiGenModal', 'openSoqlImportModal',
 				'openBrowseModal',
 				'openBulkEditModal', 'openBulkScriptModal',
@@ -35,6 +35,7 @@ throw new Error('bulk-ops-menu.mount: missing deps object');
 			const beginMigration = deps.beginMigration;
 			const bulkAutoFill = deps.bulkAutoFill;
 			const bulkClearAllFields = deps.bulkClearAllFields;
+			const summarizeAutoFillTargets = deps.summarizeAutoFillTargets;
 			const openLinkedCsvModal = deps.openLinkedCsvModal;
 			const openAiGenModal = deps.openAiGenModal;
 			const openSoqlImportModal = deps.openSoqlImportModal;
@@ -638,26 +639,8 @@ total++;
 							}
 							continue;
 						}
-						for (const f of desc.fields) {
-							if (!f || !f.name) {
-continue;
-}
-							if (!f.createable) {
-continue;
-}
-							if (f.autoNumber || f.calculated) {
-continue;
-}
-							if (mode === 'required' && f.nillable !== false) {
-continue;
-}
-							const cur = values[f.name];
-							if (cur == null || cur === '') {
-total++;
-}
-						}
 					}
-					return total;
+					return summarizeAutoFillTargets(records, mode, 'both');
 				}
 
 				function recordNoun(n) {
@@ -693,14 +676,24 @@ total++;
 							' across <strong>' + records.length + '</strong> ' + noun + ' will be cleared.' +
 							sfHint;
 					}
-					if (count === 0) {
+					const fillableCount = count.fillableFields;
+					const relationshipCount = count.unresolvedRelationships;
+					const relationshipHint = relationshipCount > 0
+						? ' <span class="af-preview-hint"><strong>' + relationshipCount + '</strong>' +
+							(mode === 'required' ? ' required' : '') + ' relationship' +
+							(relationshipCount === 1 ? '' : 's') + ' still need' +
+							(relationshipCount === 1 ? 's' : '') + ' a canvas connection.</span>'
+						: '';
+					if (fillableCount === 0 && relationshipCount === 0) {
 						return 'Nothing to do: every ' + (mode === 'required' ? 'required ' : '') +
 							'field already has a value across the <strong>' + records.length + '</strong> ' + noun + ' in scope.';
 					}
-					return '<strong>' + count + '</strong> empty ' + (mode === 'required' ? 'required ' : '') +
-						'field' + (count === 1 ? '' : 's') +
-						' across <strong>' + records.length + '</strong> ' + noun + ' will be filled.' +
-						sfHint;
+					const fillPreview = fillableCount > 0
+						? '<strong>' + fillableCount + '</strong> empty ' + (mode === 'required' ? 'required ' : '') +
+							'field' + (fillableCount === 1 ? '' : 's') +
+							' across <strong>' + records.length + '</strong> ' + noun + ' will be filled.'
+						: 'No sample values can be added to the fields in scope.';
+					return fillPreview + relationshipHint + sfHint;
 				}
 
 				overlay.innerHTML =
@@ -734,11 +727,11 @@ total++;
 							'<div class="af-actions" role="radiogroup" aria-label="Mode">' +
 								'<button type="button" class="af-action-card af-action-card--required af-action-card--selected" data-af-mode="required" aria-pressed="true">' +
 									'<div class="af-action-title">Fill required fields</div>' +
-									'<div class="af-action-sub">Empty required fields get sample data. Fields with a value are left alone; Salesforce-loaded values are never overwritten.</div>' +
+									'<div class="af-action-sub">Empty required fields get sample data. Required relationships still need canvas connections. Existing values are never overwritten.</div>' +
 								'</button>' +
 								'<button type="button" class="af-action-card af-action-card--all" data-af-mode="all" aria-pressed="false">' +
 									'<div class="af-action-title">Fill all fields</div>' +
-									'<div class="af-action-sub">Every empty writable field gets sample data. Fields with a value are left alone; Salesforce-loaded values are never overwritten.</div>' +
+									'<div class="af-action-sub">Empty writable fields get sample data. Relationship fields still need canvas connections. Existing values are never overwritten.</div>' +
 								'</button>' +
 								'<button type="button" class="af-action-card af-action-card--clear" data-af-mode="clear" aria-pressed="false">' +
 									'<div class="af-action-title">Clear all fields</div>' +

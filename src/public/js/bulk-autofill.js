@@ -76,6 +76,55 @@ throw new Error('bulk-autofill.mount: missing deps object');
 				};
 			}
 
+			function summarizeAutoFillTargets(records, scope, fieldType) {
+				const linkedFieldsByRecord = new Map();
+				(canvasState.bulkAssociations || []).forEach((association) => {
+					if (!association || association.fromId == null || !association.fieldName) {
+						return;
+					}
+					let linked = linkedFieldsByRecord.get(association.fromId);
+					if (!linked) {
+						linked = new Set();
+						linkedFieldsByRecord.set(association.fromId, linked);
+					}
+					linked.add(association.fieldName);
+				});
+
+				let fillableFields = 0;
+				let unresolvedRelationships = 0;
+				const relationshipLabels = new Set();
+				const typePick = fieldTypeFilter(fieldType || 'both');
+				for (const rec of records || []) {
+					const describe = canvasState.describeCache[rec.objectName];
+					if (!describe || !Array.isArray(describe.fields)) {
+						return null;
+					}
+					const values = rec.values || {};
+					const linkedFields = linkedFieldsByRecord.get(rec.id) || new Set();
+					for (const f of describe.fields) {
+						if (!f || !f.name || (scope === 'required' && !f.required) || !typePick(f)) {
+							continue;
+						}
+						const existing = values[f.name];
+						const hasValue = existing !== undefined && existing !== '' && existing !== null;
+						if (hasValue || (f.type === 'reference' && linkedFields.has(f.name))) {
+							continue;
+						}
+						if (f.type === 'reference' && !getSmartDefault(rec.objectName, f.name)) {
+							unresolvedRelationships++;
+							relationshipLabels.add(f.label || f.name);
+							continue;
+						}
+						fillableFields++;
+					}
+				}
+				return {
+					fillableFields,
+					unresolvedRelationships,
+					relationshipLabels: Array.from(relationshipLabels),
+				};
+			}
+
 			async function bulkAutoFill(scope, fieldType, opts) {
 				opts = opts || {};
 				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0
@@ -133,8 +182,8 @@ showBulkToast(msg);
 					const recordWord = draftRecords.length === 1 ? 'record' : 'records';
 					const scopeNoun = scope === 'required' ? 'required' : 'all';
 					const scopeLine = scope === 'required'
-						? '• Fills empty required fields only. Fields that already have a value are left alone.'
-						: '• Fills every empty field (required and optional). Fields that already have a value are left alone.';
+						? '• Adds sample data to empty required fields. Required relationships still need canvas connections.'
+						: '• Adds sample data to empty fields. Relationship fields still need canvas connections.';
 
 					const skipLine = selectionScope
 						? '• Only draft records in your selection are changed.'
@@ -231,7 +280,14 @@ return;
 
 						const recNoun = includeLoaded ? 'record' : 'draft record';
 						const scopeNote = selectionScope ? ' selected' : '';
-						const _msg = 'Pre-filled ' + label + ' on ' + touchedCount + scopeNote + ' ' + recNoun + (touchedCount === 1 ? '' : 's') + '.' + skipNote;
+						const remaining = summarizeAutoFillTargets(draftRecords, scope, fieldType);
+						const relationshipCount = remaining ? remaining.unresolvedRelationships : 0;
+						const relationshipNote = relationshipCount > 0
+							? ' ' + relationshipCount + (scope === 'required' ? ' required' : '') +
+								' relationship' + (relationshipCount === 1 ? '' : 's') +
+								' still need' + (relationshipCount === 1 ? 's' : '') + ' a canvas connection.'
+							: '';
+						const _msg = 'Pre-filled ' + label + ' on ' + touchedCount + scopeNote + ' ' + recNoun + (touchedCount === 1 ? '' : 's') + '.' + relationshipNote + skipNote;
 						if (!silent) {
 							if (touchedCount > 0 && showBulkToastWithAction) {
 								showBulkToastWithAction(_msg, 'Undo', _undo(touchedRecords));
@@ -364,6 +420,7 @@ return;
 			return {
 				bulkAutoFill: bulkAutoFill,
 				bulkClearAllFields: bulkClearAllFields,
+				summarizeAutoFillTargets: summarizeAutoFillTargets,
 			};
 		},
 	};

@@ -175,12 +175,20 @@
 							return !occupied;
 						});
 						if (remaining.length === 0) {
+							const fieldSubject = all.length === 1
+								? 'A matching relationship field connects '
+								: 'Matching relationship fields connect ';
+							const occupiedSubject = all.length === 1
+								? 'that field is'
+								: 'those fields are';
 							showBulkToast(
-								'No available lookup connects ' +
+								fieldSubject +
 									srcRec.label +
 									' and ' +
 									targetRec.label +
-									', but the relevant field is already in use (a lookup points to one record).',
+									', but ' +
+									occupiedSubject +
+									' already in use on this record. Each relationship field can point to only one record.',
 							);
 							renderBulkView();
 							return;

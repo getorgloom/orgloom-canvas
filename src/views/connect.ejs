@@ -112,11 +112,12 @@
 						<input type="hidden" name="force" value="" id="connect-custom-force">
 						<input
 							class="connect-custom-input"
-							type="url"
+							type="text"
+							inputmode="url"
 							id="connect-domain"
 							name="domain"
-							placeholder="https://yourcompany.my.salesforce.com"
-							pattern="https://.+\.(salesforce|force)\.com.*"
+							placeholder="yourcompany.my.salesforce.com"
+							pattern="(?:https://)?[A-Za-z0-9.-]+\.(salesforce|force)\.com(?:/.*)?"
 							autocomplete="off"
 							required>
 						<button class="button" type="submit">Continue with custom domain</button>
@@ -143,12 +144,21 @@
 				// anything manually.
 				(function () {
 					var link = document.querySelector('[data-force-custom]');
+					var form = document.querySelector('.connect-custom-form');
+					var domainInput = document.getElementById('connect-domain');
+					if (form && domainInput) {
+						form.addEventListener('submit', function () {
+							var value = String(domainInput.value || '').trim();
+							if (value && !/^[a-z][a-z0-9+.-]*:/i.test(value) && value.indexOf('//') !== 0) {
+								domainInput.value = 'https://' + value;
+							}
+						});
+					}
 					if (!link) return;
 					link.addEventListener('click', function (e) {
 						e.preventDefault();
 						var details = document.getElementById('connect-custom-section');
 						var forceInput = document.getElementById('connect-custom-force');
-						var domainInput = document.getElementById('connect-domain');
 						if (details) details.open = true;
 						if (forceInput) forceInput.value = '1';
 						if (domainInput) domainInput.focus();

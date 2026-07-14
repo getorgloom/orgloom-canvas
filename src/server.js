@@ -363,6 +363,16 @@ return res.redirect('/');
 });
 
 const _SF_HOST_PATTERN = /^https:\/\/[a-z0-9.-]+\.(salesforce|force)\.com(\/.*)?$/i;
+function _normalizeCustomSfDomain(value) {
+	const raw = typeof value === 'string' ? value.trim() : '';
+	if (!raw) {
+		return '';
+	}
+	if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('//')) {
+		return raw;
+	}
+	return `https://${raw}`;
+}
 function _resolveSfLoginUrl(req) {
 	const env = String(req.query.env || '').toLowerCase();
 	if (env === 'prod') {
@@ -370,9 +380,9 @@ return { url: 'https://login.salesforce.com', invalid: false };
 }
 	if (env === 'sandbox') {
 return { url: 'https://test.salesforce.com', invalid: false };
-}
+	}
 	if (env === 'custom') {
-		const raw = typeof req.query.domain === 'string' ? req.query.domain.trim() : '';
+		const raw = _normalizeCustomSfDomain(req.query.domain);
 		if (_SF_HOST_PATTERN.test(raw)) {
 return { url: raw.replace(/\/+$/, ''), invalid: false };
 }

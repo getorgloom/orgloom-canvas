@@ -5866,6 +5866,9 @@ function csrfFetch(url, options) {
 		bulkClearAllFields: function () {
 			return bulkClearAllFields.apply(null, arguments);
 		},
+		summarizeAutoFillTargets: function () {
+			return summarizeAutoFillTargets.apply(null, arguments);
+		},
 		openLinkedCsvModal: function () {
 			return openLinkedCsvModal.apply(null, arguments);
 		},
@@ -5954,6 +5957,7 @@ function csrfFetch(url, options) {
 	});
 	const bulkAutoFill = _baf.bulkAutoFill;
 	const bulkClearAllFields = _baf.bulkClearAllFields;
+	const summarizeAutoFillTargets = _baf.summarizeAutoFillTargets;
 
 	const _sb = window.OrgLoom.schemaBuilder.mount({
 		canvasState: canvasState,
