@@ -1282,7 +1282,7 @@ function csrfFetch(url, options) {
 		"</div>" +
 		"</li>" +
 		"</ol>" +
-		'<a class="bec-doclink" href="/docs/walkthroughs/build-canvas" target="_blank" rel="noopener">Read the full walkthrough &rarr;</a>' +
+		'<a class="bec-doclink" href="/docs/walkthroughs/quick-start" target="_blank" rel="noopener">Follow the Quick start &rarr;</a>' +
 		"</div>" +
 		"</div>" +
 		'<div class="bulk-canvas-hint" id="bulk-canvas-hint" style="display:none">' +

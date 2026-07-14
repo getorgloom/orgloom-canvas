@@ -210,6 +210,7 @@ a.aws-trigger.aws-trigger--solo { text-decoration: none; }
 .aws-menu-items { display: flex; flex-direction: column; }
 .aws-item {
 	display: flex; align-items: center; justify-content: space-between; gap: 0.5em;
+	width: 100%; box-sizing: border-box;
 	padding: 0.45em 0.85em;
 	background: transparent; color: var(--ink); border: 0;
 	font-size: 0.85rem; font-family: var(--font-sans); text-align: left;
@@ -222,23 +223,31 @@ a.aws-trigger.aws-trigger--solo { text-decoration: none; }
 .aws-item--manage { color: var(--accent); font-weight: 500; }
 .aws-item--manage:hover { background: var(--accent-soft); }
 
-.aws-item--current { background: var(--accent-soft); color: var(--ink); font-weight: 500; }
-.aws-item--current:hover { background: color-mix(in srgb, var(--accent) 18%, var(--bg-elev)); }
+.aws-item--current { background: transparent; color: var(--ink); font-weight: 500; }
+.aws-item--current:hover { background: var(--bg-hover); }
 .aws-item--current .aws-item-action { font-size: 0.78rem; color: var(--accent); font-weight: 500; white-space: nowrap; }
+.aws-settings-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 0.12em; }
+.aws-settings-title { color: var(--ink); font-weight: 600; }
+.aws-settings-meta { color: var(--muted); font-size: 0.72rem; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .aws-item--signout { color: var(--danger, #c44); }
 .aws-item--signout:hover { background: color-mix(in srgb, var(--danger, #c44) 10%, transparent); }
 
 .app-help-chip {
 	display: inline-flex; align-items: center; justify-content: center;
-	width: 26px; height: 26px;
-	padding: 0; border: 1px solid var(--border-soft);
-	border-radius: 50%; background: var(--bg-elev);
+	min-width: 26px; height: 26px; gap: 0.35em;
+	padding: 0 0.58em; border: 1px solid var(--border-soft);
+	border-radius: 999px; background: var(--bg-elev);
 	color: var(--ink-soft); font-family: inherit; font-weight: 600;
 	cursor: pointer;
 }
 .app-help-chip:hover { border-color: var(--accent); color: var(--accent); }
 .app-help-chip-mark { font-size: 0.85rem; line-height: 1; }
+.app-help-chip-label { font-size: 0.76rem; line-height: 1; }
+@media (max-width: 640px) {
+	.app-help-chip { width: 26px; padding: 0; gap: 0; }
+	.app-help-chip-label { display: none; }
+}
 .app-help-menu {
 	min-width: 240px; max-width: 320px;
 	background: var(--bg-elev); border: 1px solid var(--border);
@@ -651,7 +660,15 @@ a.aws-trigger.aws-trigger--solo { text-decoration: none; }
 }
 .pc-price-period { color: var(--muted); font-size: 0.85rem; }
 
-.pc-cta { display: block; width: 100%; text-align: center; box-sizing: border-box; }
+.pc-cta {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 40px;
+	text-align: center;
+	box-sizing: border-box;
+}
 
 .pricing-grid-aside {
 	text-align: center;
@@ -663,13 +680,17 @@ a.aws-trigger.aws-trigger--solo { text-decoration: none; }
 
 .pc-foot {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: 0.5em;
 	padding-top: 1em;
+
+	min-height: calc(1em + 2.8em + 1px);
+	box-sizing: border-box;
 	border-top: 1px solid var(--border-soft);
 	font-size: 0.8rem;
 	color: var(--muted);
 }
+.pc-foot-tag { line-height: 1.4; }
 .pc-foot-tag {
 	font-family: var(--font-mono);
 	font-size: 0.72rem;
@@ -1919,16 +1940,14 @@ button.confirm-danger:hover { background: color-mix(in srgb, var(--danger, #d358
 .bulk-canvas-cy.cy-edge-hover { cursor: crosshair; }
 
 .cy-card-shell .record-card.is-edge-link {
-
-	outline: 2px dashed var(--accent);
-	outline-offset: -2px;
+	border-color: var(--accent);
 
 	cursor: crosshair;
 }
 
 .modal.is-inline.is-edge-link .modal-body {
-	outline: 2px dashed var(--accent);
-	outline-offset: -2px;
+	outline: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+	outline-offset: -1px;
 	cursor: crosshair;
 }
 .modal.is-inline.is-edge-link .modal-header { cursor: crosshair; }

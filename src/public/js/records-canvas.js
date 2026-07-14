@@ -595,11 +595,9 @@ return;
 								selector: 'edge[kind = "fk"].edge-picked',
 								style: {
 									'line-color': '#f0a050',
-									width: 3,
-									color: '#1a1c20',
-									'text-background-color': '#f0a050',
-									'text-background-opacity': 1,
-									'text-background-padding': 3,
+									width: 2,
+
+									color: '#f0a050',
 									'font-weight': 600,
 								},
 							},

@@ -73,6 +73,38 @@ import { makeLimiter } from './rate-limit.js';
 import { withSfRetry } from './sf-upload.js';
 
 const _activeUploadAttempts = new Set();
+const UPLOAD_ATTEMPT_ID_RE = /^[a-zA-Z0-9-]{16,64}$/;
+
+export function _requireUploadAttemptIdForTests(req, res) {
+	const raw = req.body && req.body.attemptId;
+	if (typeof raw !== 'string' || raw.trim().length === 0) {
+		res.status(400).json({
+			error: 'attempt-id-required',
+			message: 'A stable upload attemptId is required so the operation can be reconciled safely.',
+		});
+		return null;
+	}
+	const attemptId = raw.trim();
+	if (!UPLOAD_ATTEMPT_ID_RE.test(attemptId)) {
+		res.status(400).json({
+			error: 'attempt-id-invalid',
+			message: 'Upload attemptId must be 16-64 letters, numbers, or hyphens.',
+		});
+		return null;
+	}
+	return attemptId;
+}
+
+const _requireUploadAttemptId = _requireUploadAttemptIdForTests;
+
+function _rejectUploadLedgerUnavailable(res, err, mode) {
+	console.warn('[two-phase unavailable/' + mode + ']:', err && (err.message || err));
+	return res.status(503).json({
+		error: 'upload-ledger-unavailable',
+		message: 'Org Loom could not establish the encrypted upload intent. No Salesforce records were written; retry when the connection is healthy.',
+	});
+}
+
 export function _claimUploadAttemptForTests(req, res, attemptId) {
 	if (!attemptId) {
 return true;
@@ -1922,7 +1954,10 @@ return;
 				return res.status(400).json({ error: 'no-records' });
 			}
 
-			const _attemptId = (req.body && typeof req.body.attemptId === 'string') ? req.body.attemptId : null;
+			const _attemptId = _requireUploadAttemptId(req, res);
+			if (!_attemptId) {
+				return;
+			}
 			if (!_claimUploadAttempt(req, res, _attemptId)) {
 				return res.status(409).json({
 					error: 'upload-attempt-in-progress',
@@ -1931,7 +1966,7 @@ return;
 			}
 			let _twoPhaseStore = null;
 			let _pendingBatchId = null;
-			if (_attemptId) {
+			try {
 				_twoPhaseStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
 				const prior = await _twoPhaseStore.findByAttemptId(_attemptId);
 				if (prior && prior.status === 'uploaded') {
@@ -1951,6 +1986,8 @@ return;
 						message: 'A previous upload with this attempt id did not finish. Refresh to reconcile, or verify in Salesforce before retrying.',
 					});
 				}
+			} catch (e) {
+				return _rejectUploadLedgerUnavailable(res, e, 'rest-prepare');
 			}
 
 			const view = await viewStateDb.get(req.account.id);
@@ -1972,18 +2009,16 @@ return res.status(409).json({ error: 'no-active-workspace' });
 				}
 			}
 
-			if (_twoPhaseStore) {
-				try {
-					const pendingB = await _twoPhaseStore.createPending({
-						source: directUpload ? 'csv-direct' : 'canvas',
-						note: (req.body && typeof req.body.note === 'string') ? req.body.note : null,
-						attemptId: _attemptId,
-						intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
-					});
-					_pendingBatchId = pendingB.id;
-				} catch (e) {
- console.warn('[two-phase pending/rest]:', e.message || e); 
-}
+			try {
+				const pendingB = await _twoPhaseStore.createPending({
+					source: directUpload ? 'csv-direct' : 'canvas',
+					note: (req.body && typeof req.body.note === 'string') ? req.body.note : null,
+					attemptId: _attemptId,
+					intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
+				});
+				_pendingBatchId = pendingB.id;
+			} catch (e) {
+				return _rejectUploadLedgerUnavailable(res, e, 'rest-intent');
 			}
 
 			const conn = req.sf.conn;
@@ -2576,7 +2611,10 @@ return;
 				return res.status(400).json({ error: 'no-records' });
 			}
 
-			const _attemptId = (req.body && typeof req.body.attemptId === 'string') ? req.body.attemptId : null;
+			const _attemptId = _requireUploadAttemptId(req, res);
+			if (!_attemptId) {
+				return;
+			}
 			if (!_claimUploadAttempt(req, res, _attemptId)) {
 				return res.status(409).json({
 					error: 'upload-attempt-in-progress',
@@ -2585,7 +2623,7 @@ return;
 			}
 			let _twoPhaseStore = null;
 			let _pendingBatchId = null;
-			if (_attemptId) {
+			try {
 				_twoPhaseStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
 				const prior = await _twoPhaseStore.findByAttemptId(_attemptId);
 				if (prior && prior.status === 'uploaded') {
@@ -2607,6 +2645,8 @@ return;
 						message: 'A previous upload with this attempt id did not finish. Refresh to reconcile, or verify in Salesforce before retrying.',
 					});
 				}
+			} catch (e) {
+				return _rejectUploadLedgerUnavailable(res, e, 'graph-prepare');
 			}
 
 			const view = await viewStateDb.get(req.account.id);
@@ -2672,18 +2712,16 @@ continue;
 				});
 			}
 
-			if (_twoPhaseStore) {
-				try {
-					const pendingB = await _twoPhaseStore.createPending({
-						source: directUpload ? 'csv-direct' : 'canvas-graph',
-						note: (req.body && typeof req.body.note === 'string') ? req.body.note : null,
-						attemptId: _attemptId,
-						intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
-					});
-					_pendingBatchId = pendingB.id;
-				} catch (e) {
- console.warn('[two-phase pending/graph]:', e.message || e); 
-}
+			try {
+				const pendingB = await _twoPhaseStore.createPending({
+					source: directUpload ? 'csv-direct' : 'canvas-graph',
+					note: (req.body && typeof req.body.note === 'string') ? req.body.note : null,
+					attemptId: _attemptId,
+					intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
+				});
+				_pendingBatchId = pendingB.id;
+			} catch (e) {
+				return _rejectUploadLedgerUnavailable(res, e, 'graph-intent');
 			}
 
 			const objNamesToDescribe = new Set();
@@ -3454,7 +3492,10 @@ return res.status(409).json({ error: 'no-active-workspace' });
 				}
 			}
 
-			const _attemptId = (req.body && typeof req.body.attemptId === 'string') ? req.body.attemptId : null;
+			const _attemptId = _requireUploadAttemptId(req, res);
+			if (!_attemptId) {
+				return;
+			}
 			if (!_claimUploadAttempt(req, res, _attemptId)) {
 				return res.status(409).json({
 					error: 'upload-attempt-in-progress',
@@ -3463,12 +3504,10 @@ return res.status(409).json({ error: 'no-active-workspace' });
 			}
 			let _twoPhaseStore = null;
 			let _pendingBatchId = null;
-			if (_attemptId) {
-				try {
-					_twoPhaseStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
-				} catch (e) {
- console.warn('[two-phase store/bulk]:', e.message || e); 
-}
+			try {
+				_twoPhaseStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			} catch (e) {
+				return _rejectUploadLedgerUnavailable(res, e, 'bulk-prepare');
 			}
 			if (_twoPhaseStore) {
 
@@ -3485,8 +3524,8 @@ return res.status(409).json({ error: 'no-active-workspace' });
 						});
 					}
 				} catch (e) {
- console.warn('[two-phase lookup/bulk]:', e.message || e); 
-}
+					return _rejectUploadLedgerUnavailable(res, e, 'bulk-lookup');
+				}
 				try {
 					const pendingB = await _twoPhaseStore.createPending({
 						source: directUpload ? 'csv-bulk' : 'canvas-bulk',
@@ -3496,8 +3535,8 @@ return res.status(409).json({ error: 'no-active-workspace' });
 					});
 					_pendingBatchId = pendingB.id;
 				} catch (e) {
- console.warn('[two-phase pending/bulk]:', e.message || e); 
-}
+					return _rejectUploadLedgerUnavailable(res, e, 'bulk-intent');
+				}
 			}
 						res.setHeader('Content-Type', 'text/event-stream');
 			res.setHeader('Cache-Control', 'no-cache, no-transform');
