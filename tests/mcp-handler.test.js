@@ -15,7 +15,6 @@ const ERR_INVALID_REQUEST = -32600;
 const ERR_METHOD_NOT_FOUND = -32601;
 const ERR_INVALID_PARAMS = -32602;
 const ERR_AUTH = -32001;
-const ERR_NO_WORKSPACE = -32002;
 const ERR_FORBIDDEN = -32004;
 
 function fakeRes() {
@@ -78,7 +77,7 @@ async function makeMcpFixture() {
 	const viewState = await import('../src/database/view-state.js');
 	await viewState.setCurrentWorkspace(account.id, ws.id);
 	const mcpTokens = await import('../src/database/mcp-tokens.js');
-	const issued = await mcpTokens.issue({ accountId: account.id, name: 'test client' });
+	const issued = await mcpTokens.issue({ accountId: account.id, workspaceId: ws.id, name: 'test client' });
 	return { account, ws, token: issued.plaintext, tokenId: issued.id };
 }
 
@@ -148,12 +147,19 @@ describe('auth resolution', () => {
 		assert.equal(res.body.error.code, ERR_AUTH);
 	});
 
-	test('valid token but no active workspace → ERR_NO_WORKSPACE', async () => {
-		const account = await makeAccount();
-		const mcpTokens = await import('../src/database/mcp-tokens.js');
-		const issued = await mcpTokens.issue({ accountId: account.id, name: 't' });
-		const res = await callMcp({ body: rpc('ping'), token: issued.plaintext });
-		assert.equal(res.body.error.code, ERR_NO_WORKSPACE);
+	test('workspace switch does not retarget an existing token', async () => {
+		const { account, ws, token } = await makeMcpFixture();
+		const other = await makeWorkspace(account.id, 'Other');
+		const viewState = await import('../src/database/view-state.js');
+		await viewState.setCurrentWorkspace(account.id, other.id);
+
+		const res = await callMcp({ body: rpc('tools/call', { name: 'list_canvases', arguments: {} }), token });
+		assert.ok(res.body.result, 'token remains usable in its issued workspace');
+		const { audit } = await import('../src/database/index.js');
+		const originalEvents = await audit.list({ workspaceId: ws.id });
+		const otherEvents = await audit.list({ workspaceId: other.id });
+		assert.ok(originalEvents.some((event) => event.action === 'mcp_tool_call'));
+		assert.equal(otherEvents.some((event) => event.action === 'mcp_tool_call'), false);
 	});
 });
 

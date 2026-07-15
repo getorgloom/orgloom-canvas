@@ -1,6 +1,5 @@
 import * as mcpTokensDb from "orgloom-canvas/database/mcp-tokens";
 import * as accountsDb from "orgloom-canvas/database/accounts";
-import * as viewStateDb from "orgloom-canvas/database/view-state";
 import {
 	aiProposals as proposalsDb,
 	audit as auditDb,
@@ -1964,10 +1963,9 @@ async function _resolveContext(req) {
 		throw _appError(ERR_AUTH, "Account not found or deleted");
 	}
 
-	const view = await viewStateDb.get(account.id);
-	const workspaceId = view && view.current_workspace_id;
+	const workspaceId = tokenRow.workspace_id;
 	if (!workspaceId) {
-		throw _appError(ERR_NO_WORKSPACE, "Account has no active workspace");
+		throw _appError(ERR_NO_WORKSPACE, "MCP token is not bound to a workspace");
 	}
 
 	return { account, workspaceId, mcpToken: tokenRow };

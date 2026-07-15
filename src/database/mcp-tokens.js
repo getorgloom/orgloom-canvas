@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { ext } from "../extensions.js";
 
 const TOKEN_PREFIX = "ol_mcp_";
-export const MAX_ACTIVE_TOKENS_PER_ACCOUNT = 10;
+export const MAX_ACTIVE_TOKENS_PER_ACCOUNT_WORKSPACE = 10;
 const TOKEN_RANDOM_BYTES = 32;
 
 function _hashToken(plaintext) {
@@ -15,9 +15,12 @@ function _generatePlaintext() {
 	);
 }
 
-export async function issue({ accountId, name, ttlMs = null }) {
+export async function issue({ accountId, workspaceId, name, ttlMs = null }) {
 	if (!accountId) {
 		throw new Error("accountId required");
+	}
+	if (!workspaceId) {
+		throw new Error("workspaceId required");
 	}
 	const trimmedName = String(name || "")
 		.trim()
@@ -29,9 +32,10 @@ export async function issue({ accountId, name, ttlMs = null }) {
 	const now = Date.now();
 	const active = await db.selectFrom("mcp_tokens").select("id")
 		.where("account_id", "=", accountId).where("revoked_at", "is", null)
+		.where("workspace_id", "=", workspaceId)
 		.where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", now)]))
 		.execute();
-	if (active.length >= MAX_ACTIVE_TOKENS_PER_ACCOUNT) {
+	if (active.length >= MAX_ACTIVE_TOKENS_PER_ACCOUNT_WORKSPACE) {
 		const err = new Error("mcp-token-cap-reached");
 		err.code = "mcp-token-cap-reached";
 		throw err;
@@ -54,6 +58,7 @@ export async function issue({ accountId, name, ttlMs = null }) {
 			.values({
 				id,
 				account_id: accountId,
+				workspace_id: workspaceId,
 				token_hash: tokenHash,
 				name: trimmedName,
 				created_at: now,
@@ -62,7 +67,7 @@ export async function issue({ accountId, name, ttlMs = null }) {
 				revoked_at: null,
 			})
 			.execute();
-		return { id, plaintext, name: trimmedName, createdAt: now, expiresAt };
+		return { id, plaintext, name: trimmedName, workspaceId, createdAt: now, expiresAt };
 	}
 	throw new Error("Could not allocate token");
 }
@@ -91,6 +96,10 @@ export async function authenticate(plaintext) {
 		return null;
 	}
 
+	if (!row.workspace_id) {
+		return null;
+	}
+
 	db.updateTable("mcp_tokens")
 		.set({ last_used_at: Date.now() })
 		.where("id", "=", row.id)
@@ -99,21 +108,38 @@ export async function authenticate(plaintext) {
 	return row;
 }
 
-export async function listForAccount(accountId) {
-	if (!accountId) {
+export async function listForWorkspace(accountId, workspaceId, { includeAllOwners = false } = {}) {
+	if ((!accountId && !includeAllOwners) || !workspaceId) {
 		return [];
 	}
 	const db = ext.getDb();
-	const rows = await db
+	let query = db
 		.selectFrom("mcp_tokens")
-		.select(["id", "name", "created_at", "last_used_at", "expires_at"])
-		.where("account_id", "=", accountId)
-		.where("revoked_at", "is", null)
-		.orderBy("created_at", "desc")
-		.execute();
+		.leftJoin("accounts", "accounts.id", "mcp_tokens.account_id")
+		.select([
+			"mcp_tokens.id as id",
+			"mcp_tokens.account_id as account_id",
+			"mcp_tokens.name as name",
+			"mcp_tokens.workspace_id as workspace_id",
+			"mcp_tokens.created_at as created_at",
+			"mcp_tokens.last_used_at as last_used_at",
+			"mcp_tokens.expires_at as expires_at",
+			"accounts.display_name as owner_display_name",
+			"accounts.email as owner_email",
+		])
+		.where("mcp_tokens.workspace_id", "=", workspaceId)
+		.where("mcp_tokens.revoked_at", "is", null);
+	if (!includeAllOwners) {
+		query = query.where("mcp_tokens.account_id", "=", accountId);
+	}
+	const rows = await query.orderBy("mcp_tokens.created_at", "desc").execute();
 	return rows.map((r) => ({
 		id: r.id,
+		accountId: r.account_id,
 		name: r.name,
+		workspaceId: r.workspace_id,
+		ownerDisplayName: r.owner_display_name || null,
+		ownerEmail: r.owner_email || null,
 		createdAt: r.created_at,
 		lastUsedAt: r.last_used_at,
 		expiresAt: r.expires_at,
@@ -121,7 +147,7 @@ export async function listForAccount(accountId) {
 	}));
 }
 
-export async function revoke(tokenId, accountId) {
+export async function revoke(tokenId, accountId, workspaceId = null) {
 	if (!tokenId) {
 		throw new Error("tokenId required");
 	}
@@ -135,6 +161,23 @@ export async function revoke(tokenId, accountId) {
 	if (accountId) {
 		q = q.where("account_id", "=", accountId);
 	}
+	if (workspaceId) {
+		q = q.where("workspace_id", "=", workspaceId);
+	}
 	const result = await q.execute();
 	return Number(result?.[0]?.numUpdatedRows || 0) > 0;
+}
+
+export async function revokeForAccountWorkspace(accountId, workspaceId) {
+	if (!accountId || !workspaceId) {
+		return 0;
+	}
+	const result = await ext.getDb()
+		.updateTable("mcp_tokens")
+		.set({ revoked_at: Date.now() })
+		.where("account_id", "=", accountId)
+		.where("workspace_id", "=", workspaceId)
+		.where("revoked_at", "is", null)
+		.execute();
+	return Number(result?.[0]?.numUpdatedRows || 0);
 }

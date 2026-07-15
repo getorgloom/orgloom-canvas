@@ -162,40 +162,11 @@ span.app-plan-chip:hover { filter: none; }
 	max-width: 220px;
 }
 .aws-trigger:hover { background: var(--bg-hover); color: var(--accent); border-color: var(--accent); }
-
-a.aws-trigger.aws-trigger--solo { text-decoration: none; }
-.aws-trigger-icon { font-size: 0.92rem; line-height: 1; opacity: 0.75; }
-.aws-trigger:hover .aws-trigger-icon { opacity: 1; }
 .aws-trigger-label {
 	max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	font-weight: 500;
 }
 .aws-trigger-caret { font-size: 0.72rem; opacity: 0.7; }
-
-.aws-item-plan {
-	display: inline-flex; align-items: center;
-	margin: 0 0.5em 0 0.4em;
-	padding: 0.05em 0.45em;
-	font-size: 0.68rem; font-weight: 600;
-	font-family: var(--font-sans);
-	border-radius: 999px;
-	white-space: nowrap;
-	line-height: 1.5;
-	letter-spacing: 0.02em;
-}
-.aws-item-plan--free {
-	background: transparent; color: var(--ink-faint);
-	border: 1px solid var(--border);
-}
-.aws-item-plan--pro {
-	background: var(--accent-soft); color: var(--accent);
-	border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
-}
-.aws-item-plan--team {
-	background: color-mix(in srgb, var(--accent) 22%, var(--bg-elev));
-	color: var(--accent);
-	border: 1px solid var(--accent);
-}
 .aws-menu {
 	position: absolute; top: calc(100% + 6px); right: 0;
 	min-width: 240px; max-width: 320px;
@@ -207,6 +178,12 @@ a.aws-trigger.aws-trigger--solo { text-decoration: none; }
 	font-size: 0.85rem;
 }
 .aws-menu-divider { height: 1px; background: var(--border-soft); margin: 0.25em 0; }
+.aws-menu-group { display: flex; flex-direction: column; }
+.aws-menu-label {
+	padding: 0.25em 1em 0.3em;
+	font-size: 0.66rem; font-weight: 600;
+	color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.08em;
+}
 .aws-menu-items { display: flex; flex-direction: column; }
 .aws-item {
 	display: flex; align-items: center; justify-content: space-between; gap: 0.5em;
@@ -218,17 +195,20 @@ a.aws-trigger.aws-trigger--solo { text-decoration: none; }
 }
 .aws-item:hover { background: var(--bg-hover); border-bottom-color: transparent; }
 .aws-item.is-busy { opacity: 0.5; cursor: wait; }
+.aws-item-leading {
+	flex: 0 0 1.1em; width: 1.1em;
+	text-align: center; color: var(--ink-faint); line-height: 1;
+}
+.aws-item-check { color: var(--accent); font-weight: 700; }
 .aws-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aws-item-role { font-size: 0.7rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; padding: 0.1em 0.5em; border: 1px solid var(--border-soft); border-radius: 999px; }
-.aws-item--manage { color: var(--accent); font-weight: 500; }
-.aws-item--manage:hover { background: var(--accent-soft); }
-
-.aws-item--current { background: transparent; color: var(--ink); font-weight: 500; }
-.aws-item--current:hover { background: var(--bg-hover); }
-.aws-item--current .aws-item-action { font-size: 0.78rem; color: var(--accent); font-weight: 500; white-space: nowrap; }
-.aws-settings-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 0.12em; }
-.aws-settings-title { color: var(--ink); font-weight: 600; }
-.aws-settings-meta { color: var(--muted); font-size: 0.72rem; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aws-item--selected { background: transparent; color: var(--ink); font-weight: 600; cursor: default; }
+.aws-item--selected:hover { background: transparent; }
+.aws-item--settings { font-weight: 500; }
+.aws-item--settings:hover { background: var(--accent-soft); }
+.aws-item-settings-icon,
+.aws-item--settings .aws-item-action { color: var(--accent); }
+.aws-item-action { font-size: 0.78rem; font-weight: 500; white-space: nowrap; }
 
 .aws-item--signout { color: var(--danger, #c44); }
 .aws-item--signout:hover { background: color-mix(in srgb, var(--danger, #c44) 10%, transparent); }
@@ -3979,6 +3959,114 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 }
 .billing-workspace-rollup h3 { margin: 0 0 0.3em; font-size: 0.92rem; color: var(--ink); }
 .billing-workspace-rollup .tag { display: block; margin-bottom: 0.7em; line-height: 1.45; }
+
+#billing-plan.team-panel-section { padding: 0; border: 0; background: transparent; }
+.billing-layout { display: grid; gap: 1em; }
+.billing-summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1.25em;
+	padding: 1.1em 1.2em;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--bg-card);
+}
+.billing-summary-copy { min-width: 0; }
+.billing-eyebrow {
+	display: block;
+	margin-bottom: 0.45em;
+	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 0.7rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.billing-plan-line { display: flex; align-items: baseline; gap: 0.65em; flex-wrap: wrap; }
+.billing-price { color: var(--ink); font-size: 1.45rem; line-height: 1.1; }
+.billing-price span { margin-left: 0.15em; color: var(--muted); font-size: 0.78rem; font-weight: 400; }
+.billing-summary-copy p { margin: 0.55em 0 0; color: var(--ink-soft); font-size: 0.84rem; }
+.billing-summary-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5em; flex-wrap: wrap; flex-shrink: 0; }
+
+.billing-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9em; align-items: start; }
+.billing-detail-grid--single { grid-template-columns: minmax(0, 1fr); }
+.billing-card {
+	min-width: 0;
+	padding: 1em;
+	border: 1px solid var(--border-soft);
+	border-radius: 8px;
+	background: var(--bg-card);
+}
+.billing-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75em; margin-bottom: 0.9em; }
+.billing-card-head h3 { margin: 0; color: var(--ink); font-size: 0.92rem; }
+.billing-card-head p { margin: 0.25em 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+.billing-card-kicker { flex-shrink: 0; color: var(--muted); font-size: 0.72rem; }
+
+.billing-seat-row { display: flex; align-items: center; gap: 0.75em; }
+.billing-seat-stepper {
+	display: inline-grid;
+	grid-template-columns: 2.25em 2.65em 2.25em;
+	align-items: stretch;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	overflow: hidden;
+	background: var(--bg-inset);
+}
+.billing-seat-stepper button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 2.25em;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--ink);
+	font: inherit;
+	font-size: 1rem;
+	cursor: pointer;
+}
+.billing-seat-stepper button:hover:not(:disabled) { background: var(--bg-hover); color: var(--accent); }
+.billing-seat-stepper button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.billing-seat-stepper button:disabled { color: var(--muted); cursor: not-allowed; opacity: 0.45; }
+.billing-seat-stepper output {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-right: 1px solid var(--border);
+	border-left: 1px solid var(--border);
+	color: var(--ink);
+	font-weight: 650;
+}
+.billing-seat-copy { display: flex; flex-direction: column; gap: 0.1em; font-size: 0.82rem; }
+.billing-seat-copy strong { color: var(--ink); }
+.billing-seat-copy span { color: var(--muted); font-size: 0.75rem; }
+.billing-seat-current { margin: 0.85em 0 0; color: var(--muted); font-size: 0.78rem; }
+.billing-seat-current strong { color: var(--ink-soft); }
+.billing-seat-pending {
+	margin-top: 0.7em;
+	padding: 0.65em 0.75em;
+	border: 1px solid var(--accent);
+	border-radius: 5px;
+	background: var(--accent-soft);
+	color: var(--ink);
+	font-size: 0.78rem;
+	line-height: 1.4;
+}
+.billing-seat-actions { display: flex; justify-content: flex-end; gap: 0.45em; margin-top: 0.8em; }
+.billing-seat-actions .button:disabled {
+	border-color: var(--border);
+	background: var(--bg-inset);
+	color: var(--muted);
+	opacity: 1;
+}
+.billing-card-help { margin: 0.55em 0 0; color: var(--muted); font-size: 0.7rem; text-align: right; }
+.billing-usage-list { grid-template-columns: 88px minmax(0, 1fr); }
+
+@media (max-width: 760px) {
+	.billing-summary { align-items: flex-start; flex-direction: column; }
+	.billing-summary-actions { justify-content: flex-start; }
+	.billing-detail-grid { grid-template-columns: minmax(0, 1fr); }
+}
 
 .team-member-row, .team-approval-row, .team-connection-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1em; padding: 0.6em 0; border-bottom: 1px solid var(--border-soft); }
 .team-member-row:last-child, .team-approval-row:last-child, .team-connection-row:last-child { border-bottom: 0; }
