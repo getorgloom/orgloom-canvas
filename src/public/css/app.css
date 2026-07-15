@@ -3856,6 +3856,16 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 
 .admin-section.admin-danger { border-left: 3px solid var(--danger); }
 .admin-section.admin-danger h2 { color: var(--danger); }
+.admin-hard-delete { margin-top: 1.2em; padding-top: 1.2em; border-top: 1px solid var(--border); }
+.admin-hard-delete h3 { margin: 0 0 0.45em; color: var(--danger); font-size: 0.95rem; }
+.admin-hard-delete-form { display: grid; gap: 0.75em; max-width: 520px; margin-top: 1em; }
+.admin-hard-delete-form label { display: grid; gap: 0.3em; color: var(--ink-soft); font-size: 0.82rem; }
+.admin-hard-delete-form input {
+	box-sizing: border-box; width: 100%; padding: 0.5em 0.65em;
+	background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: 4px;
+}
+.admin-hard-delete-form input:focus { outline: none; border-color: var(--danger); }
+.admin-hard-delete-form .button { justify-self: start; }
 
 .admin-subnav { display: flex; gap: 0.4em; border-bottom: 1px solid var(--border); margin-bottom: 1em; }
 .admin-subnav a { padding: 0.5em 1em; color: var(--ink-soft); border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 0.9rem; transition: color 100ms, border-color 100ms; }
