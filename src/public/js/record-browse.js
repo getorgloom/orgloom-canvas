@@ -1,8 +1,45 @@
+// Browse panel: explore records by filter without committing them to
+// the canvas. Pick an object, build filter chips (operators driven by
+// the field's describe type), see a live count + first-page preview,
+// then hand the compiled query off to the SOQL importer to load the
+// matched set onto the canvas.
+//
+// Distinct from SOQL import in two ways:
+//   1. No SOQL knowledge required: filter chips compile to the WHERE
+//      clause server-side.
+//   2. Browse is non-committal: the canvas isn't touched until the
+//      user explicitly clicks "Load to canvas." Useful for the
+//      "how many records match X?" question that SF list views and
+//      Reports answer today.
+//
+// Server endpoint: POST /api/browse, which takes { objectName, filters,
+// sort, limit, offset }, returns { count, records, hasMore,
+// previewFields, previewSoql, loadSoql }. The loadSoql comes back
+// pre-built so the Load-to-canvas hand-off doesn't need to re-derive
+// the WHERE clause client-side.
+//
+// Dependencies passed to mount():
+//   canvasState: describeCache lookups
+//   csrfFetch: XHR wrapper
+//   escapeHtml: XSS-safe HTML interpolation
+//   ensureDescribe: load a describe on-demand into canvasState.describeCache
+//   showBulkToast: success / error toasts
+//   openSoqlImportModal: hand-off target for Load to canvas
+//
+// Public API (returned from mount):
+//   openBrowseModal(initialObjectName?)
+//
+// Exposed as window.OrgLoom.recordBrowse. Load order: before app.js.
+
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	// Operator labels + value-input types per SF field type. Drives the
+	// filter chip's operator dropdown so users see only options that
+	// make sense for the field they picked (no "contains" on a number,
+	// no "greater than" on a picklist).
 	const STRING_TYPES = new Set(['string', 'textarea', 'phone', 'url', 'email', 'encryptedstring']);
 	const NUMERIC_TYPES = new Set(['int', 'double', 'currency', 'percent']);
 	const PICKLIST_TYPES = new Set(['picklist', 'combobox']);
@@ -66,6 +103,8 @@ return [{ op: 'equals', label: 'equals' }];
 		return [{ op: 'equals', label: 'equals' }];
 	}
 
+	// Some operators don't take a value (isNull / isNotNull). Centralized
+	// so the renderer can hide the value input cleanly.
 	function _opTakesValue(op) {
 		return op !== 'isNull' && op !== 'isNotNull';
 	}
@@ -92,22 +131,36 @@ throw new Error('record-browse.mount: missing deps object');
 			const showBulkToast = deps.showBulkToast;
 			const runAndCommitSoql = deps.runAndCommitSoql;
 			const canvasCapCheck = deps.canvasCapCheck;
-
+			// Optional (all present in the normal app.js mount):
+			//   captureUndoSnapshot: pre-load canvas snapshot; powers the
+			//                             Undo toast AND the all-or-nothing
+			//                             rollback on mid-basket failure.
+			//   showBulkToastWithAction: action-toast for that Undo.
+			//   pingAuditEvent: Activity History for Browse loads.
 			const captureUndoSnapshot = typeof deps.captureUndoSnapshot === 'function'
 				? deps.captureUndoSnapshot : null;
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction : null;
 			const pingAuditEvent = typeof deps.pingAuditEvent === 'function'
 				? deps.pingAuditEvent : null;
-
+			// Shared import helpers (telemetry). Loaded before app.js.
 			const _shared = window.OrgLoom.importShared;
 
+			// Object list cache: /api/objects is workspace-stable for the
+			// session, so fetch once on first open and reuse. The
+			// endpoint returns the array directly (not wrapped in
+			// { objects: [...] }). Defensively handle both shapes
+			// in case the response is ever wrapped in the future.
+			// Filter to queryable objects (SOQL won't work on the
+			// non-queryable ones, and surfacing them just makes the
+			// picker noisier).
 			let _objectsCache = null;
 			async function _loadObjects() {
 				if (_objectsCache) {
 return _objectsCache;
 }
-
+				// /api/objects is noise-filtered server-side (single source
+				// of truth), so the picker only sees real business objects.
 				const r = await csrfFetch('/api/objects', { credentials: 'same-origin' });
 				const data = await r.json().catch(() => null);
 				if (!r.ok) {
@@ -118,26 +171,48 @@ throw new Error((data && data.error) || 'HTTP ' + r.status);
 				return _objectsCache;
 			}
 
+			// State for an open modal. Reset on open. Keeping this at
+			// module scope (rather than reconstructing inside the modal
+			// fn) so the debounced fetcher closes over a stable ref.
 			let _state = null;
 			let _fetchTimer = null;
-
+			// Monotonic request token. The debounce only gates SENDING:
+			// two in-flight /api/browse responses can resolve out of
+			// order, and without this check the older one overwrites the
+			// newer count/preview AND lastResult.loadSoql (so Load would
+			// execute a stale query for records the user filtered away).
 			let _fetchSeq = 0;
 			function _newState(initialObjectName) {
 				return {
 					objectName: initialObjectName || null,
-					filters: [],
-					sort: null,
+					filters: [], // [{ id, field, op, value }]
+					sort: null, // { field, direction }
 					limit: 25,
 					offset: 0,
 					filterIdSeq: 1,
-					lastResult: null,
-
+					lastResult: null, // { count, records, hasMore, previewFields, loadSoql }
+					// Cross-object selection basket: objectName → Set<SF Id>.
+					// Selections survive pagination AND object switches, so a
+					// user can assemble a related working set across objects
+					// (3 Accounts + 5 Contacts + 10 Tasks) and load it in one
+					// go. The current object's set is the live target for the
+					// preview checkboxes; the others wait in the basket until
+					// load. Per-object filter state still resets on switch.
 					basket: new Map(),
 				};
 			}
-
+			// Cap on individual-Id selections: Salesforce's WHERE Id IN
+			// (...) tops out around 1000 elements per SOQL clause, but
+			// well before that the UX of "I clicked 800 checkboxes" is
+			// already bad. Cap conservatively; if users hit it they're
+			// asking for "load all matches" anyway.
 			const SELECTION_CAP = 500;
 
+			// --- Cross-object basket helpers ---
+			// The live selection target is the current object's Set, created
+			// lazily on first pick. _basketTotal / _basketEntries aggregate
+			// across every object so the Load button + basket section can
+			// reason about the whole working set, not just the current view.
 			function _currentSel() {
 				if (!_state.objectName) {
 					return new Set();
@@ -154,7 +229,7 @@ throw new Error((data && data.error) || 'HTTP ' + r.status);
 				}
 				return n;
 			}
-
+			// Non-empty basket entries in object insertion order.
 			function _basketEntries() {
 				const out = [];
 				for (const [name, set] of _state.basket) {
@@ -175,10 +250,12 @@ throw new Error((data && data.error) || 'HTTP ' + r.status);
 				if (!desc || !Array.isArray(desc.fields)) {
 return [];
 }
-
+				// Only offer fields Salesforce permits in a WHERE clause.
+				// The server repeats this validation because UI constraints
+				// cannot protect stale or forged requests.
 				const UNUSABLE_TYPES = new Set(['base64', 'address', 'location', 'anyType', 'complexvalue']);
 				return desc.fields
-					.filter((f) => f && f.name && f.type && !UNUSABLE_TYPES.has(f.type))
+					.filter((f) => f && f.name && f.type && f.filterable === true && !UNUSABLE_TYPES.has(f.type))
 					.slice()
 					.sort((a, b) => (a.label || a.name).localeCompare(b.label || b.name));
 			}
@@ -190,6 +267,13 @@ return null;
 				return desc.fields.find((f) => f && f.name === fieldName) || null;
 			}
 
+			// Render the value input appropriate for a filter's field+op.
+			// Picklist gets a <select>, multipicklist + "in" gets a multi-
+			// select, date gets type=date, boolean gets a yes/no select,
+			// number gets type=number, everything else is text. Inputs
+			// are named filter-${id}-value so the change handler can
+			// pluck them out without re-rendering the whole chip on
+			// every keystroke.
 			function _renderValueInput(filter, field) {
 				const id = 'filter-' + filter.id + '-value';
 				if (!_opTakesValue(filter.op)) {
@@ -255,6 +339,10 @@ return null;
 				'</div>';
 			}
 
+			// SF Ids already loaded on the canvas for the current object.
+			// These rows render as locked + pre-checked in the preview: they
+			// can't be unchecked (Browse only adds, never removes), and they
+			// don't count toward the selection: the canvas already has them.
 			function _onCanvasIds() {
 				const set = new Set();
 				const recs = (canvasState && canvasState.bulkRecords) || [];
@@ -271,20 +359,32 @@ return null;
 					return '<p class="rb-empty">No records match your filters.</p>';
 				}
 				const fields = result.previewFields || ['Id'];
-
+				// Checkbox column lives first. Header checkbox toggles
+				// the current page's selection state: checked when ALL
+				// records visible on this page are selected,
+				// indeterminate when some are. Per-row checkboxes track
+				// individual Ids; selection survives pagination via
+				// _state.selectedIds, so users can build a cross-page
+				// basket without losing prior picks.
 				const pageRecords = result.records || [];
 				const pageIds = pageRecords.map((r) => r.Id).filter(Boolean);
 				const onCanvas = _onCanvasIds();
 				const sel = _currentSel();
-
+				// Instance URL for deep-linking a cell to the record in
+				// Salesforce (new tab). Empty on canvas-standalone / mock,
+				// where we fall back to plain text.
 				const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
-
+				// Salesforce convention: the NAME field is the record link, not
+				// the opaque Id (Id stays plain text, easier to copy). Objects
+				// with no name field in the preview fall back to linking the Id.
 				const _desc = canvasState.describeCache[_state.objectName];
 				const _nameField = _desc && Array.isArray(_desc.fields)
 					? (_desc.fields.find((fl) => fl && fl.nameField) || null) : null;
 				const linkField = (_nameField && _nameField.name && fields.indexOf(_nameField.name) !== -1)
 					? _nameField.name : 'Id';
-
+				// Header "select page" reflects only the SELECTABLE rows:
+				// on-canvas (locked) rows are excluded so the checkbox isn't
+				// stuck unchecked just because some rows can't be picked.
 				const selectablePageIds = pageIds.filter((id) => !onCanvas.has(id));
 				const allPageSelected = selectablePageIds.length > 0 && selectablePageIds.every((id) => sel.has(id));
 				const head =
@@ -297,13 +397,18 @@ return null;
 					'</tr>';
 				const rows = pageRecords.map((rec) => {
 					const isOnCanvas = rec.Id && onCanvas.has(rec.Id);
-
+					// On-canvas rows are pre-checked + disabled (locked).
 					const checked = isOnCanvas || (rec.Id && sel.has(rec.Id)) ? ' checked' : '';
 					const idAttr = rec.Id ? ' data-rb-row-id="' + escapeHtml(rec.Id) + '"' : '';
 					const cells = fields.map((f) => {
 						const v = rec[f];
 						const s = v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
-
+						// Deep-link the record's NAME cell to Salesforce (new
+						// tab), following SF convention; the Id stays plain copyable text.
+						// Objects with no name field link the Id instead. The
+						// href always uses rec.Id; only the linked column varies.
+						// Lightning /r/.../view redirects correctly for Classic
+						// too. Plain text when there's no instance URL (mock).
 						if (f === linkField && s && rec.Id && sfBase) {
 							const url = sfBase + '/lightning/r/' + encodeURIComponent(_state.objectName) + '/' + encodeURIComponent(rec.Id) + '/view';
 							return '<td><a class="rb-id-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener" title="Open in Salesforce">' + escapeHtml(s) + '</a></td>';
@@ -348,12 +453,15 @@ return null;
 							sort: _state.sort,
 							limit: _state.limit,
 							offset: _state.offset,
-
+							// On-canvas ids for this object so the server can
+							// report a net-new "loadableCount" (these dedup on
+							// load: the "Load all N" number shouldn't count them).
 							onCanvasIds: Array.from(_onCanvasIds()),
 						}),
 					});
 					const body = await r.json().catch(() => ({}));
-
+					// A newer request superseded this one while it was in
+					// flight; drop the stale response (see _fetchSeq).
 					if (_seq !== _fetchSeq) {
 						return;
 					}
@@ -369,7 +477,7 @@ throw new Error((body && (body.message || body.error)) || 'HTTP ' + r.status);
 					content.querySelector('.rb-preview').innerHTML = _renderPreviewTable(body);
 					_renderSelectionSummary(content);
 					_updateLoadButton(content);
-
+					// Pagination: render simple prev/next when more pages exist.
 					const pageInfo = content.querySelector('.rb-page-info');
 					if (body.count > _state.limit) {
 						const start = _state.offset + 1;
@@ -398,7 +506,12 @@ throw new Error((body && (body.message || body.error)) || 'HTTP ' + r.status);
 				if (_fetchTimer) {
 clearTimeout(_fetchTimer);
 }
-
+				// Invalidate the displayed query immediately, not 300ms later when
+				// the debounced request starts. Otherwise Load remains clickable
+				// during the debounce window and can execute lastResult.loadSoql for
+				// a filter the user has already changed away from. Bumping the token
+				// here also prevents an older in-flight response from rendering in
+				// that window.
 				_fetchSeq += 1;
 				_state.lastResult = null;
 				_updateLoadButton(content);
@@ -406,19 +519,27 @@ clearTimeout(_fetchTimer);
 			}
 
 			function _updateLoadButton(content) {
-
+				// The Load button lives in .modal-footer (sibling of
+				// .rb-content), so query from the modal root rather
+				// than the content container: the previous version
+				// queried inside content, got null back, and the
+				// button never updated from its initial disabled state.
 				const overlay = content.closest('.record-browse-modal');
 				const loadBtn = overlay && overlay.querySelector('.rb-load-btn');
 				if (!loadBtn) {
 return;
 }
 				const count = (_state.lastResult && _state.lastResult.count) || 0;
-
+				// Net-new matches (gross minus what's already on the canvas):
+				// the "Load all N" number reflects what actually gets added.
 				const loadable = _state.lastResult && typeof _state.lastResult.loadableCount === 'number'
 					? _state.lastResult.loadableCount : count;
 				const basketTotal = _basketTotal();
 				const basketObjects = _basketEntries().length;
-
+				// Basket-mode: when the user has explicitly picked records (in
+				// ANY object), the button loads the whole cross-object basket,
+				// overriding the per-object "load all matches" default. An
+				// empty basket falls back to all NEW matches for the current object.
 				const hasBasket = basketTotal > 0;
 				loadBtn.disabled = hasBasket ? false : (!_state.objectName || loadable === 0);
 				if (hasBasket) {
@@ -428,13 +549,17 @@ return;
 				} else if (loadable > 0) {
 					loadBtn.textContent = 'Load all ' + loadable + ' to canvas';
 				} else if (count > 0) {
-
+					// Every match is already on the canvas: nothing to add.
 					loadBtn.textContent = 'All ' + count + ' already on canvas';
 				} else {
 					loadBtn.textContent = 'Load to canvas';
 				}
 			}
 
+			// Render the selection summary line, which sits between the
+			// page-info row and the preview table. Empty when nothing
+			// is selected. Surfaces a Clear button so users can dump
+			// the selection without per-row uncheck clicks.
 			function _renderSelectionSummary(content) {
 				const summary = content.querySelector('.rb-selection-summary');
 				if (!summary) {
@@ -465,6 +590,11 @@ return;
 					'</div>';
 			}
 
+			// Empty state shown when /api/objects reports no active SF
+			// connection (409 no-active-connection). Replaces the picker /
+			// filters with a clear "connect an org" prompt + a button that
+			// opens the connections modal (falls back to /connect on
+			// canvas-standalone where the modal isn't mounted).
 			function _renderNoConnection(content) {
 				content.innerHTML =
 					'<div class="rb-empty-state">' +
@@ -488,7 +618,9 @@ return;
 			function _renderBody(content) {
 				const objectPicker = content.querySelector('.rb-object-picker');
 				const filterArea = content.querySelector('.rb-filters');
-
+				// Object picker: only render if we don't already have one,
+				// or the cache changed. Keep state across re-renders by
+				// reading the live value.
 				if (!objectPicker.dataset.populated) {
 					_loadObjects().then((objs) => {
 						const opts = objs.map((o) =>
@@ -498,7 +630,9 @@ return;
 						objectPicker.dataset.populated = '1';
 					}).catch((e) => {
 						const msg = (e && e.message) || String(e);
-
+						// No active connection → show the connect empty state
+						// instead of a broken "Error: no-active-connection"
+						// option in the picker.
 						if (/no-active-connection|not-connected/i.test(msg)) {
 							_renderNoConnection(content);
 							return;
@@ -506,12 +640,17 @@ return;
 						objectPicker.innerHTML = '<option value="">' + escapeHtml('Error: ' + msg) + '</option>';
 					});
 				}
-
+				// Filter chips re-render on every body refresh so type
+				// changes (picking a new field) flip the operator menu
+				// and value input correctly.
 				filterArea.innerHTML = _state.filters.map(_renderFilterChip).join('') +
 					(_state.objectName
 						? '<button type="button" class="rb-add-filter" data-rb-add-filter>+ Add filter</button>'
 						: '<p class="tag">Pick an object above to start filtering.</p>');
-
+				// Results header carries a top border, so showing it before an
+				// object is chosen (e.g. no active connection) reads as a stray
+				// separator with nothing under it. Only show it once an object
+				// is selected and there are results to head.
 				const resultsHead = content.querySelector('.rb-results-head');
 				if (resultsHead) {
 					resultsHead.style.display = _state.objectName ? '' : 'none';
@@ -520,14 +659,17 @@ return;
 			}
 
 			function _wireBodyHandlers(content) {
-
+				// Object picker change.
 				content.querySelector('.rb-object-picker').addEventListener('change', async (ev) => {
 					const name = ev.target.value;
 					_state.objectName = name || null;
 					_state.filters = [];
 					_state.offset = 0;
 					_state.lastResult = null;
-
+					// Object change KEEPS the basket: selections persist across
+					// objects so the user can assemble a cross-object set. The
+					// new object's set (possibly empty) becomes the live target;
+					// the preview + on-canvas lock state re-render for it below.
 					content.querySelector('.rb-count').textContent = name ? 'Loading describe…' : '';
 					content.querySelector('.rb-preview').innerHTML = '';
 					content.querySelector('.rb-page-info').innerHTML = '';
@@ -545,10 +687,20 @@ return;
 					}
 					_renderBody(content);
 					content.querySelector('.rb-count').textContent = '';
-
+					// Auto-fetch on object change so the user sees a
+					// total-records count right away (no filters yet, so
+					// it's the unfiltered count).
 					_scheduleFetch(content);
 				});
 
+				// Delegated handlers for filter chips. These listen on the
+				// persistent `.rb-filters` CONTAINER (not the chips), so they
+				// survive `_renderBody` replacing the chips' innerHTML: wired
+				// ONCE here, never re-wired. (Re-wiring would stack duplicate
+				// listeners on every container, so one "+ Add filter" click
+				// would push several filters, Next would skip pages, etc.)
+				// For typing-into-text-inputs we listen on the area itself
+				// without re-rendering so focus persists.
 				content.querySelector('.rb-filters').addEventListener('input', (ev) => {
 					const t = ev.target;
 					if (!t || !t.dataset || !t.dataset.filterId) {
@@ -581,7 +733,8 @@ return;
 						filt.field = t.value;
 						const fieldDef = _fieldByName(_state.objectName, filt.field);
 						const ops = _operatorsFor(fieldDef);
-
+						// Reset op if the previously-selected one isn't valid
+						// for the new field type.
 						if (!ops.find((o) => o.op === filt.op)) {
 filt.op = ops[0] ? ops[0].op : 'equals';
 }
@@ -591,7 +744,8 @@ filt.op = ops[0] ? ops[0].op : 'equals';
 						_scheduleFetch(content);
 					} else if (t.classList.contains('rb-filter-op')) {
 						filt.op = t.value;
-
+						// Switching to a no-value op clears the value;
+						// switching FROM a no-value op resets to empty.
 						if (!_opTakesValue(filt.op)) {
 filt.value = '';
 }
@@ -622,6 +776,7 @@ filt.value = '';
 					}
 				});
 
+				// Pagination handlers (delegated on .rb-page-info).
 				content.querySelector('.rb-page-info').addEventListener('click', (ev) => {
 					if (ev.target.disabled) {
 return;
@@ -635,12 +790,20 @@ return;
 					}
 				});
 
+				// Preview-table selection: delegated on .rb-preview so
+				// the handler survives table re-renders on filter/page
+				// changes without re-wiring. Per-row checkboxes toggle
+				// individual ids; the page-header checkbox toggles every
+				// id on the current page in one shot. Cap-enforced so
+				// users can't blow past the SOQL Id-list limit by
+				// chord-clicking.
 				content.querySelector('.rb-preview').addEventListener('change', (ev) => {
 					const t = ev.target;
 					if (!t || t.type !== 'checkbox') {
 return;
 }
-
+					// Cap messages render on the in-modal status line; a canvas
+					// toast would sit behind the modal overlay, unreadable.
 					const _capNotice = (msg) => {
 						const statusEl = content.querySelector('.rb-count');
 						if (statusEl) {
@@ -652,7 +815,8 @@ return;
 					if (t.dataset && t.dataset.rbRowCheckbox) {
 						const id = t.dataset.rbRowCheckbox;
 						if (t.checked) {
-
+							// Cap is on the WHOLE basket (across objects), since
+							// the canvas cap is a single 500-record total.
 							if (_basketTotal() >= SELECTION_CAP) {
 								t.checked = false;
 								_capNotice('Selection cap is ' + SELECTION_CAP + ' records. Load these first, then come back to pick more.');
@@ -664,7 +828,10 @@ return;
 						}
 						_renderSelectionSummary(content);
 						_updateLoadButton(content);
-
+						// Refresh the header checkbox to reflect the new
+						// page-level state: checked when ALL page rows
+						// are selected. Cheaper than re-rendering the
+						// whole table.
 						const headerCb = content.querySelector('.rb-select-all');
 						if (headerCb) {
 							const pageRecords = (_state.lastResult && _state.lastResult.records) || [];
@@ -675,7 +842,8 @@ return;
 					} else if (t.dataset && t.dataset.rbSelectPage !== undefined) {
 						const pageRecords = (_state.lastResult && _state.lastResult.records) || [];
 						const onCanvas = _onCanvasIds();
-
+						// Only the selectable rows: locked on-canvas rows stay
+						// checked-and-disabled regardless of the page toggle.
 						const pageIds = pageRecords.map((r) => r.Id).filter((id) => id && !onCanvas.has(id));
 						if (t.checked) {
 							for (const id of pageIds) {
@@ -690,32 +858,35 @@ return;
 sel.delete(id);
 }
 						}
-
+						// Re-render to flip every row checkbox's checked state.
 						content.querySelector('.rb-preview').innerHTML = _renderPreviewTable(_state.lastResult);
 						_renderSelectionSummary(content);
 						_updateLoadButton(content);
 					}
 				});
 
+				// Clear-selection button lives in the selection-summary
+				// row; delegated on the row so a re-render doesn't lose
+				// the handler.
 				content.querySelector('.rb-selection-summary').addEventListener('click', (ev) => {
 					const t = ev.target;
 					if (!t || !t.dataset) {
 						return;
 					}
 					if (t.dataset.rbClearAll !== undefined) {
-
+						// Dump the whole cross-object basket.
 						_state.basket.clear();
 						content.querySelector('.rb-preview').innerHTML = _renderPreviewTable(_state.lastResult);
 						_renderSelectionSummary(content);
 						_updateLoadButton(content);
 					} else if (t.dataset.rbClearObject) {
-
+						// Drop one object's picks from the basket.
 						_state.basket.delete(t.dataset.rbClearObject);
 						content.querySelector('.rb-preview').innerHTML = _renderPreviewTable(_state.lastResult);
 						_renderSelectionSummary(content);
 						_updateLoadButton(content);
 					} else if (t.dataset.rbGotoObject) {
-
+						// Jump the picker to a basket object to refine it.
 						const obj = t.dataset.rbGotoObject;
 						if (obj === _state.objectName) {
 							return;
@@ -728,13 +899,24 @@ sel.delete(id);
 					}
 				});
 
+				// Load to canvas: runs the compiled SOQL directly via
+				// runAndCommitSoql so users get one-click load. The
+				// commit pipeline (FK auto-derivation, tree layout,
+				// autosave) is the same the SOQL importer uses; we
+				// just skip the importer's confirm step since the user
+				// already saw the count + preview here.
+				// Button lives in .modal-footer (sibling of .rb-content),
+				// so resolve via the modal root.
 				const overlay = content.closest('.record-browse-modal');
 				const loadBtn = overlay && overlay.querySelector('.rb-load-btn');
 				if (loadBtn) {
 					loadBtn.addEventListener('click', async () => {
 						const entries = _basketEntries();
 						const basketTotal = _basketTotal();
-
+						// Build the unit(s) of work. Basket-mode loads the whole
+						// cross-object selection (one WHERE Id IN query per object).
+						// All-mode loads the current object's full filter match via
+						// the server-supplied loadSoql.
 						let jobs;
 						if (basketTotal > 0) {
 							jobs = entries.map((e) => ({
@@ -749,7 +931,8 @@ sel.delete(id);
 							}
 							jobs = [{
 								objectName: _state.objectName,
-
+								// Net-new count for the cap pre-check: loadSoql
+								// pulls all matches but on-canvas ones dedup out.
 								count: (typeof _state.lastResult.loadableCount === 'number'
 									? _state.lastResult.loadableCount
 									: (_state.lastResult.count || 0)),
@@ -766,7 +949,9 @@ sel.delete(id);
 								statusEl.textContent = msg;
 							}
 						};
-
+						// Refuse the WHOLE batch up-front if the combined load would
+						// exceed the canvas cap: never partial-fill, and for a basket
+						// never load some objects but not others.
 						const attempt = jobs.reduce((sum, j) => sum + j.count, 0);
 						const cap = canvasCapCheck(attempt);
 						if (cap.blocked) {
@@ -776,7 +961,8 @@ sel.delete(id);
 						}
 						loadBtn.disabled = true;
 						loadBtn.textContent = 'Loading…';
-
+						// Snapshot before any commit: powers the post-load Undo
+						// toast AND the all-or-nothing rollback below.
 						const _undo = captureUndoSnapshot ? captureUndoSnapshot() : null;
 						let added = 0;
 						let skipped = 0;
@@ -784,7 +970,9 @@ sel.delete(id);
 							for (const job of jobs) {
 								const summary = await runAndCommitSoql(job.soql, { knownTotal: job.count });
 								if (summary.blocked) {
-
+									// The canvas can fill concurrently after the up-front
+									// check. Preserve basket atomicity even when the commit
+									// pipeline reports a block instead of throwing.
 									const rolledBack = added > 0 && _undo;
 									if (rolledBack) {
 										_undo();
@@ -801,7 +989,10 @@ sel.delete(id);
 								skipped += summary.skipped || 0;
 							}
 						} catch (err) {
-
+							// Multi-object baskets are all-or-nothing: if a later
+							// object's load fails after an earlier one committed,
+							// roll the canvas back to the pre-load snapshot rather
+							// than leaving a partial load.
 							const rolledBack = added > 0 && _undo;
 							if (rolledBack) {
 								_undo();
@@ -810,11 +1001,14 @@ sel.delete(id);
 								(rolledBack ? ' (rolled back the ' + added + ' record' + (added === 1 ? '' : 's') + ' already added; nothing changed).' : '');
 							_shared.captureImportFailure('browse', 'load', err.message || String(err));
 							showErr(_msg);
-
+							// Replaces the restore's own "Import undone." toast so
+							// the visible message explains WHY the canvas reverted.
 							showBulkToast(_msg, 'error');
 							return;
 						}
-
+						// Audit: a Browse load is a bulk SF read onto the canvas:
+						// record object names + counts (never filter values, which
+						// can carry PII in user-typed literals).
 						if (pingAuditEvent && (added > 0 || skipped > 0)) {
 							pingAuditEvent('canvas_browse_load', {
 								recordCount: added,
@@ -901,6 +1095,8 @@ cleanup();
 				_renderBody(content);
 				_wireBodyHandlers(content);
 
+				// Auto-trigger if an initial object was passed (caller
+				// opened browse with a specific object already in mind).
 				if (initialObjectName) {
 					ensureDescribe(initialObjectName).then(() => {
 						_renderBody(content);

@@ -1,3 +1,4 @@
+// AI proposals review banner + modal.
 (function () {
 	"use strict";
 
@@ -33,7 +34,8 @@
 			const ensureDescribe = deps.ensureDescribe;
 			const renderBulkView = deps.renderBulkView;
 			const pushUndo = typeof deps.pushUndo === "function" ? deps.pushUndo : null;
-
+			// Canvas record-cap gate (single source of truth). Optional dep
+			// so older mounts don't throw; defaults to "always allowed".
 			const canvasCapCheck = typeof deps.canvasCapCheck === "function"
 				? deps.canvasCapCheck
 				: function () {
@@ -121,7 +123,7 @@
 									silentToast: true,
 								});
 							} catch (_) {
-
+								/* surface via the per-call toast */
 							}
 						}
 						return;
@@ -159,12 +161,12 @@
 										: "saved",
 							});
 						} catch (_) {
-
+							/* analytics best-effort */
 						}
 					}
 					_proposalsBanner.hidden = false;
 				} catch (e) {
-
+					// Network error: keep whatever banner is up rather
 				}
 			}
 
@@ -225,7 +227,7 @@
 						);
 					}
 				} catch (_) {
-
+					/* quota / private mode */
 				}
 			}
 
@@ -853,7 +855,10 @@
 						const STEP_X = 260;
 						const STEP_Y = 170;
 						const PER_ROW = 5;
-
+						// ai-proposals is an extracted module and does not close over
+						// app.js's `graph` variable. Query the mounted canvas directly;
+						// the old free variable threw after the server had already marked
+						// the proposal applied, leaving the browser unchanged.
 						const _canvasEl = document.querySelector("#bulk-canvas");
 						const _cw = (_canvasEl && _canvasEl.clientWidth) || 0;
 						const _ch = (_canvasEl && _canvasEl.clientHeight) || 0;
@@ -867,7 +872,7 @@
 								_baseY = rr.y + STEP_Y;
 							}
 						}
-
+	
 						if (canvasState.bulkRecords.length === 0) {
 							_baseY = _ch > 0 ? _ch / 2 : 400;
 						}
@@ -905,6 +910,14 @@
 
 						const tempIdToRuntimeId = new Map();
 
+						// Canvas record-cap enforcement. Only two applied result
+						// kinds ADD records to the canvas: "new-draft" and
+						// "load-record". The rest mutate or delete existing
+						// cards (which never increases the count). Neither add
+						// path dedups, so the new-record count is exactly the
+						// number of applied add-results. Refuse the WHOLE apply
+						// (commit nothing) if it would exceed the cap (no
+						// partial-fill) and surface the reason to the user.
 						const _addResultCount = results.filter(
 							(r) =>
 								r &&
@@ -971,7 +984,7 @@
 									try {
 										await ensureDescribe(sel.name);
 									} catch (_) {
-
+										/* describe is optional here */
 									}
 									const fields = _canonicalizeFields(
 										sel.name,
@@ -1017,7 +1030,7 @@
 									try {
 										await ensureDescribe(rec.objectName);
 									} catch (_) {
-
+										/* describe is optional here */
 									}
 									const fields = _canonicalizeFields(
 										rec.objectName,
@@ -1052,7 +1065,7 @@
 												rec.objectName,
 											);
 										} catch (_) {
-
+											/* describe is optional here */
 										}
 										const fields = _canonicalizeFields(
 											rec.objectName,

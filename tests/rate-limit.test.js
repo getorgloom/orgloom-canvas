@@ -1,3 +1,8 @@
+// Unit tests for the sliding-window rate limiter that backs the invite-
+// code brute-force guard (canvas-routes.js _inviteJoinLimiter). The
+// guarantees this test locks: first N accepts succeed, N+1 fails,
+// window expiry releases budget, distinct keys don't share budget.
+
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeLimiter } from '../src/rate-limit.js';

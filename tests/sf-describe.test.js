@@ -1,3 +1,16 @@
+// Unit tests for the pure describe helpers in sf-describe.js: the parts
+// of the schema explorer's server side that don't need a live org.
+//
+//   decodeValidForBitmap: Salesforce's dependent-picklist validFor comes
+//     as a base64 bitmap, MSB-first per byte, indexed against the
+//     CONTROLLER field's full (incl. inactive) picklist list. Off-by-one
+//     or bit-order mistakes here silently break dependent picklists.
+//   inferScpController: State/Country Picklist controller inference by
+//     naming convention when describe + UI API both leave it null.
+//   cleanLabel: __MISSING LABEL__ placeholder scrubbing.
+//   isNoiseSObject: the system-object filter that keeps the explorer's
+//     object list to business objects.
+
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -23,6 +36,7 @@ test('AF-040: describe-global preserves create permission for object gating', as
 	assert.equal(objects.find((object) => object.name === 'Denied__c').createable, false);
 });
 
+// Fake jsforce connection whose describeGlobal returns a fixed object set.
 function fakeConn(objectNames) {
 	let calls = 0;
 	return {
@@ -57,7 +71,7 @@ describe('decodeValidForBitmap', () => {
 	});
 
 	test('mixed multi-byte bitmap decodes every set bit in order', () => {
-
+		// 0xA0 = bits 0,2 ; 0x05 = bits 13,15
 		assert.deepEqual(decodeValidForBitmap(b64(0xA0, 0x05)), [0, 2, 13, 15]);
 	});
 
@@ -78,7 +92,7 @@ describe('inferScpController', () => {
 		{ name: 'BillingStateCode' },
 		{ name: 'BillingCountryCode' },
 		{ name: 'ShippingState' },
-
+		// No ShippingCountry: inference must fail for ShippingState.
 		{ name: 'Status' },
 	];
 
@@ -153,14 +167,15 @@ describe('getQueryableSObjects cache isolation', () => {
 	});
 
 	test('falsy orgId is NEVER cached: two orgs never cross-contaminate', async () => {
-
+		// Two different orgs whose sfOrgId resolves falsy must each get
+		// their OWN object set, not a shared 'unknown' cache entry.
 		const orgA = fakeConn(['Account', 'CustomA__c']);
 		const orgB = fakeConn(['Account', 'CustomB__c']);
 		const setA = await getQueryableSObjects(orgA, null);
 		const setB = await getQueryableSObjects(orgB, null);
 		assert.ok(setA.has('CustomA__c') && !setA.has('CustomB__c'), 'org A gets only its own objects');
 		assert.ok(setB.has('CustomB__c') && !setB.has('CustomA__c'), 'org B not contaminated by org A');
-
+		// Each falsy-org call must hit SF fresh (no cache to serve).
 		assert.equal(orgA.describeGlobalCalls, 1);
 		assert.equal(orgB.describeGlobalCalls, 1);
 		const setA2 = await getQueryableSObjects(orgA, null);

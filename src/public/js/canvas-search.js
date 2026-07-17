@@ -1,8 +1,36 @@
+// Canvas search.
+//
+// Cmd/Ctrl+F-style "find any record on the canvas whose values contain
+// X." Walks canvasState.bulkRecords in memory, with no SF round-trip, so
+// it's instant on canvases of any size we'd realistically ship. Use
+// cases this fills that the existing tools don't:
+//   - "Where's the Acme record?" on a 60-card canvas
+//   - "Which records have 'Closed Won' anywhere?"
+//   - "Which card holds this loaded SF Id?"
+// Browse (the existing modal) searches SF. Diff compares two records.
+// Neither answers "find on the canvas." This module does.
+//
+// Match strategy: case-insensitive substring against every value in
+// rec.values (skipping system fields), plus the record's computed
+// display label. Click a result → close modal, pan cy to the card,
+// flash the card briefly.
+//
+// Public API (returned from mount):
+//   openModal(initialQuery): open the modal; preset the input if a
+//                              query is supplied.
+//
+// Exposed as window.OrgLoom.canvasSearch. Load order: before app.js.
+
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	// System fields we strip from match consideration. These are
+	// opaque Ids / timestamps the user never thinks of as field
+	// values, and including them produces noise (every record matches
+	// every Id query). Mirrors the SYSTEM_FIELDS_TO_STRIP set in
+	// app.js's org-switch conversion and the orphan-field filters.
 	const SYSTEM_FIELDS = new Set([
 		'Id',
 		'CreatedDate', 'CreatedById',
@@ -12,6 +40,10 @@
 		'IsDeleted',
 	]);
 
+	// Cap the result set per query. Past this the modal scrolls
+	// usefully without bogging down the layout; users with more
+	// matches than this should refine the query rather than scroll
+	// hundreds of rows.
 	const MAX_RESULTS = 100;
 
 	window.OrgLoom.canvasSearch = {
@@ -58,7 +90,10 @@ throw new Error('canvas-search.mount: missing deps object');
 
 			function closeModal() {
 				modal.classList.add('hidden');
-
+				// Do not leave focus trapped in a hidden search input. The
+				// global Cmd/Ctrl+F handler intentionally ignores shortcuts
+				// originating in inputs; without this blur, Escape followed by
+				// Cmd/Ctrl+F is swallowed and the modal cannot be reopened.
 				input.blur();
 			}
 			function openModal(initialQuery) {
@@ -67,7 +102,9 @@ throw new Error('canvas-search.mount: missing deps object');
 					input.value = initialQuery;
 				}
 				renderResults();
-
+				// rAF + focus so the input gets caret without
+				// fighting the show transition. select() picks any
+				// preset query so a second Cmd+F overwrites cleanly.
 				requestAnimationFrame(() => {
 					input.focus();
 					input.select();
@@ -84,6 +121,11 @@ throw new Error('canvas-search.mount: missing deps object');
 				}
 			});
 
+			// Compute a display label for a record. Mirrors the heuristic
+			// the canvas cards use - Name, FirstName+LastName, or the
+			// first non-empty string field. Used as both a search target
+			// (so "Acme" matches a card titled "Acme Corp" without
+			// requiring a field-value hit) and the result-row title.
 			function recordLabel(rec) {
 				const v = (rec && rec.values) || {};
 				if (v.Name) {
@@ -106,6 +148,9 @@ return String(v.CaseNumber);
 				return rec && rec.objectName ? '(unnamed ' + rec.objectName + ')' : '(unnamed)';
 			}
 
+			// One match per (record, field). Records with a label hit
+			// AND field hits surface multiple rows - that's the right
+			// signal: the user sees exactly which fields matched.
 			function search(query) {
 				const q = String(query || '').trim().toLowerCase();
 				if (!q) {
@@ -122,7 +167,9 @@ continue;
 					const label = recordLabel(rec);
 					const labelLower = label.toLowerCase();
 					const labelHit = labelLower.indexOf(q) !== -1;
-
+					// Surface label match as its own row when no field
+					// value matched the query (otherwise the field
+					// rows already convey the card to the user).
 					let perRecordFieldHits = 0;
 					const values = (rec && rec.values) || {};
 					for (const k of Object.keys(values)) {
@@ -157,7 +204,12 @@ continue;
 						});
 						perRecordFieldHits++;
 					}
-
+					// When no field value matched, surface a label hit OR a
+					// Salesforce-Id hit as the card's single row. Searching a
+					// loaded record's own SF Id is an explicit use case ("which
+					// card holds this Id?"), but the Id lives in rec.loadedFromId
+					// (and the `Id` field value is stripped as system noise), so
+					// match it here. One value per record → no per-field noise.
 					if (perRecordFieldHits === 0 && matches.length < MAX_RESULTS) {
 						if (labelHit) {
 							matches.push({
@@ -194,6 +246,9 @@ break;
 				return { matches, recordsScanned };
 			}
 
+			// Render the matched substring with a <mark>. value is
+			// the field value as a string; matchStart/matchLen come
+			// straight from indexOf so the slice is always valid.
 			function renderMatchedValue(value, matchStart, matchLen) {
 				if (matchStart < 0) {
 return escapeHtml(value);
@@ -255,6 +310,9 @@ return;
 				});
 			}
 
+			// Debounce keystrokes so each character doesn't re-walk
+			// the bulk list. 60ms is below the perception threshold
+			// while still coalescing fast typing.
 			let _debounce = null;
 			input.addEventListener('input', () => {
 				if (_debounce) {
@@ -262,7 +320,7 @@ clearTimeout(_debounce);
 }
 				_debounce = setTimeout(renderResults, 60);
 			});
-
+			// Enter on a single-match result: jump straight to it.
 			input.addEventListener('keydown', (e) => {
 				if (e.key !== 'Enter') {
 return;
@@ -273,6 +331,11 @@ first.click();
 }
 			});
 
+			// Pan + flash the target card. cy node id convention is
+			// 'r' + record.id (insert-modal.js:297 mirrors this for
+			// other surfaces). animate({center:...}) brings the node
+			// into view smoothly; .csr-flash applies a brief
+			// highlight outline via app.css.
 			function jumpToRecord(recordId) {
 				const cy = getCyInstance && getCyInstance();
 				if (!cy) {

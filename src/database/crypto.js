@@ -1,3 +1,4 @@
+// used for at-rest encryption of Salesforce refresh tokens
 import crypto from "node:crypto";
 
 const _key = process.env.ENCRYPTION_KEY
@@ -62,7 +63,9 @@ export function decrypt(encoded) {
 		throw new Error("decrypt: malformed IV");
 	}
 	const tag = Buffer.from(tagHex, "hex");
-
+	// Pin the GCM tag to the full 16 bytes. Node accepts short tags
+	// (4–16 bytes) when authTagLength is unspecified, and a truncated tag
+	// is dramatically easier to forge, so reject anything but a full tag.
 	if (tag.length !== 16) {
 		throw new Error("decrypt: invalid auth tag length");
 	}

@@ -1,3 +1,15 @@
+// Locks the identity-mismatch guards in getActiveSfConnection. These
+// prevent the worst-case "wrong-user OR wrong-org silent mismatch"
+// where the live SF access token in the session points at one
+// identity/org but the active connection row points at another; every
+// downstream SF call would run against the wrong target with the
+// wrong identity, misfiring owner-only checks and audit attribution.
+//
+// Each branch returns null instead of returning a "best-effort" mixed
+// pair. The route's requireSfConnection middleware translates null
+// into "reconnect SF" rather than running queries against a mismatched
+// identity.
+
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { initTestDb, clearTestDb } from './helpers/db.js';
@@ -83,7 +95,7 @@ describe('getActiveSfConnection: account isolation', () => {
 		const alice = await makeAccount('alice@x.com');
 		const bob = await makeAccount('bob@x.com');
 		const aliceConn = await makeConnection(alice.id);
-
+		// Bob's session points at Alice's connection; must be rejected.
 		const r = reqFor({
 			accountId: bob.id,
 			sfAuth: { accessToken: 'tok', instanceUrl: aliceConn.instance_url, sfUserId: '005USER1', sfOrgId: '00DORG1' },
@@ -115,7 +127,7 @@ describe('getActiveSfConnection: identity-mismatch lockout', () => {
 			sfAuth: {
 				accessToken: 'tok',
 				instanceUrl: conn.instance_url,
-				sfUserId: '005DIFFERENT',
+				sfUserId: '005DIFFERENT',  // doesn't match conn.sf_user_id
 				sfOrgId: '00DORG1',
 			},
 			currentConnectionId: conn.id,
@@ -132,7 +144,7 @@ describe('getActiveSfConnection: identity-mismatch lockout', () => {
 				accessToken: 'tok',
 				instanceUrl: conn.instance_url,
 				sfUserId: '005USER1',
-				sfOrgId: '00DDIFFERENT',
+				sfOrgId: '00DDIFFERENT',  // wrong org
 			},
 			currentConnectionId: conn.id,
 		});
@@ -178,12 +190,14 @@ describe('getActiveSfConnection: identity-mismatch lockout', () => {
 	});
 
 	test('sfAuth missing sfUserId does NOT trigger mismatch (legacy session)', async () => {
-
+		// Older sessions (pre-stamping) may not carry sfUserId. The guard
+		// only fires when BOTH sides have a value AND they differ; this
+		// keeps the legacy session path working until the user re-OAuths.
 		const a = await makeAccount();
 		const conn = await makeConnection(a.id);
 		const r = reqFor({
 			accountId: a.id,
-			sfAuth: { accessToken: 'tok', instanceUrl: conn.instance_url                               },
+			sfAuth: { accessToken: 'tok', instanceUrl: conn.instance_url /* no sfUserId, no sfOrgId */ },
 			currentConnectionId: conn.id,
 		});
 		const bundle = await getActiveSfConnection(r);

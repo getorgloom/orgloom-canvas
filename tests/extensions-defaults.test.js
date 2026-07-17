@@ -1,3 +1,6 @@
+// Locks the canvas-default behavior of the plug-point registry.
+// Phase 3 boundary file splits depend on these contracts holding.
+
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { ext } from '../src/extensions.js';

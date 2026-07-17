@@ -1,5 +1,5 @@
 export async function up(db) {
-
+	// mcp_tokens ----------------------------------------------------------
 	await db.schema
 		.createTable("mcp_tokens")
 		.addColumn("id", "text", (col) => col.primaryKey())

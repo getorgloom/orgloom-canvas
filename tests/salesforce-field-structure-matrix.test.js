@@ -92,10 +92,12 @@ describe('Salesforce field-structure matrix', () => {
 	test('projected describes preserve record-type, dependency, indirect-lookup, and master-detail metadata', async () => {
 		const fields = [
 			{ name: 'Controller__c', type: 'picklist', createable: true, updateable: true, nillable: true,
-				picklistValues: [{ label: 'A', value: 'A', active: true }] },
+				filterable: true, picklistValues: [{ label: 'A', value: 'A', active: true }] },
 			{ name: 'Dependent__c', type: 'picklist', createable: true, updateable: true, nillable: true,
 				dependentPicklist: true, controllerName: 'Controller__c', restrictedPicklist: true,
 				picklistValues: [{ label: 'A1', value: 'A1', active: true, validFor: 'gA==' }] },
+			{ name: 'Description__c', type: 'textarea', createable: true, updateable: true, nillable: true,
+				filterable: false },
 			{ name: 'ExternalParent__c', type: 'reference', createable: true, updateable: true, nillable: true,
 				referenceTo: ['ExternalParent__x'], referenceTargetField: 'External_Key__c' },
 			{ name: 'Master__c', type: 'reference', createable: true, updateable: false, nillable: false,
@@ -117,5 +119,7 @@ describe('Salesforce field-structure matrix', () => {
 		assert.equal(byName.get('ExternalParent__c').referenceTargetField, 'External_Key__c');
 		assert.equal(byName.get('Master__c').reparentableMasterDetail, false);
 		assert.equal(byName.get('Master__c').required, true);
+		assert.equal(byName.get('Controller__c').filterable, true);
+		assert.equal(byName.get('Description__c').filterable, false);
 	});
 });

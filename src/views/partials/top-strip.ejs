@@ -1,3 +1,29 @@
+<%# Shared top-strip header. Sits at the top of every page so
+    branding + nav + account access are consistent.
+
+    Locals consulted (all defensively-checked, OK to be undefined):
+      user: { id, username, displayName, organizationId,
+                        sfUserId } when signed in; falsy when signed out.
+      connection: the active SF connection row when SF is connected;
+                      null when not. Drives both the chip's connection
+                      state (green/amber) and its label (display_name /
+                      display_username / email).
+      instanceUrl: the active SF instance URL. Only used in callers'
+                      pages; the partial doesn't surface it.
+
+    Signed-out: renders ONLY the brand on the left. No nav, no chip,
+        no account button. Suitable for /sign-in, /signup, etc.
+
+    Signed-in: brand + workspace-switcher chip (hydrated by
+        /js/workspace-switcher.js; label is "Settings" for personal-
+        only users, workspace name for team) + Canvas / Docs nav
+        links + SF chip (conditional) + account dropdown with
+        sign-out form.
+
+    Modal behavior: clicking #app-account-btn opens the account modal
+    on the canvas (app.js intercepts the click). On other pages the
+    button has no attached handler; the dropdown sign-out form is
+    still available via the chip's hover dropdown CSS. -%>
 <%
 const _ts_user = (typeof user !== 'undefined') ? user : null;
 const _ts_connection = (typeof connection !== 'undefined') ? connection : null;
@@ -42,18 +68,34 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 <header class="app-top-strip">
 	<div class="app-top-strip-left">
 		<% if (_ts_playground) { %>
-
+			<%# Demo mode: brand is non-clickable so visitors can't click
+			    into the signed-out marketing page mid-exploration and
+			    lose their unsaved canvas. -%>
 			<span class="app-brand" title="Org Loom (demo)">Org Loom</span>
 		<% } else if (_ts_onCanvas) { %>
-
+			<%# Already on the canvas: clicking the brand would just
+			    reload the same page. Render as a span to remove the
+			    no-op link target (and the misleading "you can navigate
+			    home" affordance). -%>
 			<span class="app-brand" title="Org Loom">Org Loom</span>
 		<% } else { %>
 			<a class="app-brand" href="/" title="Org Loom">Org Loom</a>
 		<% } %>
-
+		<%# Brand-adjacent plan chip + Upgrade CTA. Hydrated by
+		    workspace-switcher.js once /api/me resolves; empty until
+		    then so signed-out pages and the initial paint don't show
+		    a flash of stale plan. SaaS only; canvas-standalone has no
+		    workspace/plan concept. The wrapper keeps brand + chip
+		    locked to the left edge of the header: without it, the
+		    header's justify-content:space-between would orphan the
+		    chip in the middle. -%>
 		<% if (_ts_user && _ts_saas) { %>
 			<% if (_ts_playground) { %>
-
+				<%# Static Pro badge in demo mode: no upgrade target,
+				    no hydration. workspace-switcher.js is skipped
+				    below, so the hydrated mount would never fill in.
+				    Rendered as a span (not a link) since there's
+				    nowhere for it to go. -%>
 				<span class="app-plan-chip app-plan-chip--pro" title="Demo runs on the Pro plan. Sign up to keep it.">Pro</span>
 			<% } else { %>
 				<div class="app-plan-mount" id="app-plan-mount" hidden></div>
@@ -61,7 +103,10 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 		<% } %>
 	</div>
 	<% if (_ts_user && _ts_playground) { %>
-
+		<%# Demo-mode top-right: prominent Sign up CTA + quiet Sign in
+		    link. Replaces the workspace/SF/help cluster that's
+		    suppressed in playground so the strip isn't empty + the
+		    conversion ask is always visible (not just on first save). -%>
 		<div class="app-top-strip-right">
 			<a class="app-playground-signin-link" href="/sign-in">Sign in</a>
 			<a class="app-playground-signup-cta" href="/signup?from=playground">Start free trial &rarr;</a>
@@ -69,11 +114,27 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 	<% } %>
 	<% if (_ts_user && !_ts_playground) { %>
 		<div class="app-top-strip-right">
-
+			<%# Order: Canvas / Docs (primary nav, brand-adjacent) →
+			    Settings chip (utility menu) → SF chip (status, when
+			    connected) → Account (identity, far right). Settings /
+			    SF / Account cluster on the right side as
+			    context+status+identity widgets; nav links stay
+			    brand-adjacent for the standard left-to-right scanning
+			    pattern. -%>
 			<% if (!_ts_onCanvas) { %>
 				<a class="app-nav-link" href="/">Canvas</a>
 			<% } %>
-
+			<%# App-level utility actions: Quick Upload and History sit
+			    here (not in the canvas toolbar) because they aren't
+			    canvas operations: Quick Upload is a CSV-direct-to-SF
+			    pipeline that bypasses the canvas entirely, and History
+			    is a cross-canvas timeline of recent uploads. Rendered
+			    only on the canvas page (`_ts_onCanvas`) since the
+			    underlying modal modules load in the canvas IIFE; off-
+			    canvas pages can navigate to /quick-upload via the
+			    standard URL if needed. Both use the existing document-
+			    level click delegation in app.js so no extra wiring
+			    here. -%>
 			<% if (_ts_onCanvas) { %>
 				<button type="button" class="app-utility-btn" data-app-canvases title="Open a saved canvas from your active workspace">
 					<svg class="app-utility-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -89,13 +150,36 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 					</svg>
 					<span>Quick Upload</span>
 				</a>
-
+				<%# History moved into the canvas toolbar's right cluster
+				    (bulk-toolbar.js) so it sits beside Upload: "I just
+				    uploaded; where do I undo?" no longer crosses bars.
+				    The same data-app-history hook is reused there; the
+				    document-level click delegation in app.js continues
+				    to handle the open. -%>
 			<% } %>
-
+			<%# Docs link moved into the Help chip dropdown below
+			    (help-chip.js) so a single "?" surface in the top-strip
+			    hosts docs + keyboard shortcuts + support + bug-report
+			    instead of having Docs as a parallel nav link. -%>
+			<%# Workspace switcher chip: populated by workspace-switcher.js
+			    once /api/me + /api/workspaces resolve. Renders "Settings"
+			    label for personal-only users; workspace name for users
+			    with team workspaces. Hidden until hydration.
+			    Canvas standalone has no workspaces; the chip is
+			    suppressed entirely. -%>
 			<% if (_ts_saas) { %>
 				<div class="app-workspace-switcher" id="app-workspace-switcher" hidden></div>
 			<% } %>
 
+			<%# SF connection chip: always rendered when signed in.
+			    Connected state: green dot + active org label.
+			    Disconnected: amber dot + "Not connected" CTA.
+			    SaaS mode: button opens the SF connections modal
+			    (sf-connections-modal.js, wired to #app-sf-chip),
+			    where the user can switch, re-authorize, disconnect,
+			    or connect a new org. Canvas-standalone: link directly
+			    to /connect since there's no multi-connection
+			    management: single implicit user, one connection. -%>
 			<% if (_ts_saas) { %>
 				<button type="button" class="app-sf-chip<%= _ts_sfConnected ? '' : ' app-sf-chip--disconnected' %>" id="app-sf-chip" title="<%= _ts_sfConnected ? 'Active Salesforce connection: manage' : 'No active Salesforce connection: click to connect' %>">
 					<span class="app-sf-chip-dot" aria-hidden="true"></span>
@@ -108,12 +192,23 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 					<span class="app-sf-chip-label"><%= _ts_sfConnected ? _ts_sfLabel : 'Not connected' %></span>
 				</a>
 			<% } %>
-
+			<%# Help chip: unified entry point for Canvas shortcuts,
+			    Documentation, Contact-support, and Report-a-bug.
+			    Replaces the standalone Docs nav link and the in-canvas
+			    "?" button so users have one obvious "I need help"
+			    surface instead of three buried ones. Hydrated by
+			    help-chip.js. Canvas-shortcuts row only shows on /
+			    (where window.Orgloom.canvasHelp exists). -%>
 			<button type="button" class="app-help-chip" id="app-help-chip" title="Help, shortcuts, docs, support" aria-label="Help">
 				<span class="app-help-chip-mark" aria-hidden="true">?</span>
 				<span class="app-help-chip-label" aria-hidden="true">Help</span>
 			</button>
-
+			<%# Account chip removed in favor of the SF chip + workspace
+			    chip combo. Identity / sign-out / upgrade / support live
+			    inside the workspace dropdown now (workspace-switcher.js).
+			    SF chip above owns everything Salesforce. Canvas
+			    standalone still shows a quiet display-only username
+			    since it has no workspace switcher to host identity. -%>
 			<% if (!_ts_saas) { %>
 				<div class="app-user-chip">
 					<span class="app-user-chip-btn" title="Signed in as <%= _ts_userName %>">
@@ -124,9 +219,20 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 		</div>
 	<% } %>
 </header>
-
+<%# Trial lifecycle banner: countdown while a Pro trial is active, soft
+    "your trial ended" wall once it expires. Populated by trial-banner.js
+    from /api/me's `trial` object. Hidden until that resolves; stays hidden
+    for paid / team / no-trial accounts. -%>
 <div class="trial-banner" id="trial-banner-mount" hidden></div>
-
+<%# PostHog product analytics. No-op when POSTHOG_KEY is unset (dev /
+    self-host without analytics configured). Standard loader pattern
+    from posthog.com docs (async, doesn't block paint). The init
+    options branch on authenticated vs public pages:
+      • Every signed-in page: recording and autocapture disabled; all
+        text masked. Customer and Salesforce data must not reach analytics.
+      • Public pages (landing, /pricing, /signup, /docs, /playground):
+        standard config with input-masked session recording for funnel QA.
+    Disable autocapture of password fields regardless of page. -%>
 <% if (typeof posthogKey !== 'undefined' && posthogKey) { %>
 	<%
 	const _ph_signedIn = !!(typeof user !== 'undefined' && user);
@@ -159,7 +265,13 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 		signed_in: true,
 	});
 	<% } %>
-
+	<%# oauth_success: closes the install funnel. /auth/callback sets
+	    req.session.justAuthed = { env, orgType } on the success path; the
+	    middleware in saas server.js consumes it into res.locals.justAuthed
+	    for exactly one render. Fires here so the event lands wherever the
+	    callback redirects (/, /onboarding, /workspace, etc.) without
+	    having to instrument each destination separately. See
+	    docs/install-funnel.md for the funnel this closes. -%>
 	<% if (typeof justAuthed !== 'undefined' && justAuthed) { %>
 	posthog.capture('oauth_success', <%- jsonForScript({
 		env: justAuthed.env || null,
@@ -168,16 +280,42 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 	<% } %>
 	</script>
 <% } %>
-
+<%# Styled dialog/toast helpers (olToast / olConfirm / olPrompt), loaded
+    before every other page script so they can use the same styled
+    surface instead of native alert/confirm/prompt. -%>
 <script src="/js/ui-dialogs.js" defer></script>
-
+<% if (typeof authNotice !== 'undefined' && authNotice && authNotice.message) { %>
+	<script nonce="<%= cspNonce %>">
+		document.addEventListener('DOMContentLoaded', function () {
+			if (typeof window.olToast === 'function') {
+				window.olToast(
+					<%- jsonForScript(authNotice.message) %>,
+					<%- jsonForScript(authNotice.variant || 'info') %>
+				);
+			}
+		}, { once: true });
+	</script>
+<% } %>
+<%# Signed-in scripts. workspace-switcher.js hydrates the Settings
+    chip; account-modal.js wires #app-account-btn to open the
+    in-context account overview (replaces the navigate-to-/workspace
+    fallback that the anchor href provides as a no-JS fallback).
+    Both are defer'd; both are idempotent / safe to load on pages
+    that don't end up using them.
+    All three are saas-only assets (multi-user workspace switcher,
+    multi-user account modal, hosted-product support widget). Canvas
+    standalone skips them entirely. -%>
 <% if (_ts_user && _ts_saas && !_ts_playground) { %>
 	<script src="/js/workspace-switcher.js" defer></script>
 	<script src="/js/support.js" defer></script>
 	<script src="/js/sf-connections-modal.js" defer></script>
 	<script src="/js/trial-banner.js" defer></script>
 <% } %>
-
+<%# Help chip script loads for every signed-in user (both saas and
+    canvas-standalone); the chip itself is rendered for all signed-in
+    users above, and the dropdown should work even when support.js
+    isn't loaded (it falls back to mailto/issues links). Skipped in
+    demo mode where the chip itself is suppressed. -%>
 <% if (_ts_user && !_ts_playground) { %>
 	<script src="/js/help-chip.js" defer></script>
 <% } %>

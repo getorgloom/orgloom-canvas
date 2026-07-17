@@ -1,0 +1,61 @@
+const CANVAS_ID_RE = /^[a-zA-Z0-9]{15,18}$/;
+
+export const SHARED_CANVAS_ENTRY = Object.freeze({
+	INVALID: 'invalid',
+	INACCESSIBLE: 'inaccessible',
+	OWNER: 'owner',
+	FREE_VIEWER: 'free-viewer',
+	PAID_RECIPIENT: 'paid-recipient',
+	UNCLASSIFIED_RECIPIENT: 'unclassified-recipient',
+});
+
+export function isFreeViewerGrant(grant) {
+	return !!grant && grant.role === 'viewer';
+}
+
+export function recipientRequiresPlan(grant) {
+	return !isFreeViewerGrant(grant);
+}
+
+export function canvasEntryStartsTrial(kind) {
+	return kind === SHARED_CANVAS_ENTRY.OWNER
+		|| kind === SHARED_CANVAS_ENTRY.PAID_RECIPIENT;
+}
+
+// Classify a deep-linked canvas without treating the URL itself as an
+// entitlement. getCanvas must read through the acting Salesforce identity;
+// getGrant must use that same org, user, and canvas tuple. This lets the SaaS
+// trial flow distinguish a free Viewer invitation from actual product use
+// while keeping Salesforce access as the first authorization boundary.
+export async function classifySharedCanvasEntry({
+	canvasId,
+	sfOrgId,
+	sfUserId,
+	getCanvas,
+	getGrant,
+}) {
+	if (!CANVAS_ID_RE.test(String(canvasId || ''))
+		|| !sfOrgId
+		|| !sfUserId
+		|| typeof getCanvas !== 'function'
+		|| typeof getGrant !== 'function') {
+		return { kind: SHARED_CANVAS_ENTRY.INVALID, item: null, grant: null };
+	}
+
+	const item = await getCanvas(canvasId);
+	if (!item) {
+		return { kind: SHARED_CANVAS_ENTRY.INACCESSIBLE, item: null, grant: null };
+	}
+	if (item.ownedByMe) {
+		return { kind: SHARED_CANVAS_ENTRY.OWNER, item, grant: null };
+	}
+
+	const grant = await getGrant({ sfOrgId, canvasId, recipientSfUserId: sfUserId });
+	if (isFreeViewerGrant(grant)) {
+		return { kind: SHARED_CANVAS_ENTRY.FREE_VIEWER, item, grant };
+	}
+	if (grant && (grant.role === 'contributor' || grant.role === 'editor')) {
+		return { kind: SHARED_CANVAS_ENTRY.PAID_RECIPIENT, item, grant };
+	}
+	return { kind: SHARED_CANVAS_ENTRY.UNCLASSIFIED_RECIPIENT, item, grant: grant || null };
+}

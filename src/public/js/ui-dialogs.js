@@ -1,7 +1,22 @@
+// Shared Org Loom dialog/toast helpers: a styled replacement for the
+// browser-native alert() / confirm() / prompt(), which render OS chrome
+// that clashes with the app and (for alert/confirm) block the main
+// thread. Exposed as globals so every page script (app.js, workspace.js,
+// account-modal.js, workspace-switcher.js, inline EJS) can use the same
+// styled surface without duplicating the modal markup.
+//
+//   olToast(message, variant): non-blocking notice. variant:
+//                                      'info' (default) | 'success' | 'error'.
+//   olConfirm({title,message,...}): Promise<boolean>. Replaces confirm().
+//   olPrompt({title,message,...}): Promise<string|null>. Replaces prompt().
+//   olAlert(message, {title}): Promise<void>. Styled acknowledge.
+//
+// Reuses the existing .modal / .button CSS (app.css) so it matches the
+// rest of the app. Loaded early (before the page scripts) via top-strip.
 (function () {
 	if (window.olConfirm) {
 return;
-}
+} // idempotent if included twice
 
 	function esc(s) {
 		return String(s == null ? '' : s)
@@ -9,6 +24,7 @@ return;
 			.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 	}
 
+	// ---- Toast (alert replacement) ------------------------------------
 	let _toastHost = null;
 	function _ensureToastHost() {
 		if (_toastHost && document.body.contains(_toastHost)) {
@@ -40,11 +56,15 @@ return _toastHost;
 			x.addEventListener('click', remove);
 			t.appendChild(span); t.appendChild(x);
 			host.appendChild(t);
-
+			// Errors linger longer (people need to read them); others auto-clear.
 			setTimeout(remove, variant === 'error' ? 8000 : 4500);
-		} catch (e) {                                              }
+		} catch (e) { /* last-resort: never throw from a notice */ }
 	}
 
+	// ---- Modal (confirm / prompt / alert) -----------------------------
+	// Builds a .modal using the same structure as the existing styled
+	// dialogs. `withInput` adds a text field (prompt). Resolves via the
+	// `done` callback with the chosen value.
 	function _modal({ title, message, confirmLabel, cancelLabel, danger, withInput, inputValue, placeholder, showCancel }, done) {
 		document.querySelectorAll('.ol-dialog-modal').forEach((el) => el.remove());
 		const modal = document.createElement('div');
@@ -116,6 +136,10 @@ input.select();
 		return new Promise((resolve) => _modal({ title: o.title || 'Heads up', message, confirmLabel: o.confirmLabel || 'OK', showCancel: false }, () => resolve()));
 	}
 
+	// Inline-form helper: drop-in for `onsubmit="return confirm('…')"`.
+	// Native confirm is synchronous; olConfirm is a Promise, so we cancel
+	// the submit, ask, and re-submit programmatically on confirm (the
+	// programmatic .submit() bypasses onsubmit, so no loop).
 	function olConfirmSubmit(ev, message, opts) {
 		if (!ev) {
 return false;
@@ -136,6 +160,10 @@ form.submit();
 	window.olAlert = olAlert;
 	window.olConfirmSubmit = olConfirmSubmit;
 
+	// Declarative form-confirm: any <form data-confirm-message="..." [data-confirm-title="..."] [data-confirm-label="..."]>
+	// shows an olConfirm dialog before submitting. Replaces inline
+	// onsubmit="return olConfirmSubmit(event, '...', {...})" handlers
+	// that violated the strict CSP script-src-attr 'none'.
 	function _wireConfirmForms(root) {
 		(root || document).querySelectorAll('form[data-confirm-message]:not([data-confirm-wired])').forEach((form) => {
 			form.dataset.confirmWired = '1';
@@ -152,6 +180,6 @@ form.submit();
 	} else {
 		_wireConfirmForms();
 	}
-
+	// Expose for code that injects forms dynamically (admin tables etc.).
 	window.olWireConfirmForms = _wireConfirmForms;
 })();

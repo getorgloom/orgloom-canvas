@@ -1,7 +1,16 @@
+// Locks validateAiPlan, the belt-and-suspenders validator that runs
+// AFTER Claude has emitted a plan via the create_plan tool. The schema
+// constrains Claude, but a crafted/poisoned response could still ask
+// us to insert a non-createable field, a literal id into a reference,
+// a value not in the picklist's allowlist, or an association pointing
+// at the wrong object type. Each of those is dropped here with a
+// warning the caller surfaces in the proposal preview.
+
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateAiPlan } from '../src/ai-plan.js';
 
+// Minimal describe fixture builder.
 function describes() {
 	return [
 		{
@@ -218,7 +227,7 @@ describe('validateAiPlan: association drops', () => {
 				{ tempId: 1, objectName: 'Account', values: { Name: 'Acme' } },
 				{ tempId: 2, objectName: 'Contact', values: { LastName: 'Doe' } },
 			],
-
+			// ReportsToId references Contact, but we point at an Account.
 			associations: [{ fromTempId: 2, toTempId: 1, fieldName: 'ReportsToId' }],
 		};
 		const r = validateAiPlan(plan, describes());

@@ -1,7 +1,14 @@
+// Unit tests for src/validation-rules.js: the transformation that
+// turns raw Salesforce Tooling-API ValidationRule rows into the
+// shape the canvas record modal consumes. Tests pin the contract:
+// only active rules, sorted by name, fields renamed + defaulted
+// consistently.
+
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { transformToolingRecords } from '../src/validation-rules.js';
 
+// Convenience builder that mirrors the SF Tooling-API row shape.
 function row({ id = '03dxxx', fullName = 'Account.Rule', name, active = true,
 	description = null, errorMessage = null, errorDisplayField = null,
 	formula = null, metadataNull = false } = {}) {
@@ -34,7 +41,8 @@ describe('transformToolingRecords: input shapes', () => {
 	});
 
 	test('drops rows whose Metadata is null', () => {
-
+		// SF returns Metadata: null for some inactive rules; we'd have
+		// no formula to evaluate, so the row is useless to the modal.
 		const out = transformToolingRecords([
 			row({ name: 'real_rule' }),
 			row({ metadataNull: true }),
@@ -68,7 +76,11 @@ describe('transformToolingRecords: active filter', () => {
 	});
 
 	test('drops rules where active is missing (treats as false)', () => {
-
+		// We hold the line at `=== true` deliberately: SF has historically
+		// shipped Metadata.active as the string "true" in older API
+		// versions. We want the strict boolean; if upstream changes,
+		// surface that as an empty result rather than silently passing
+		// through inactive rules.
 		const rec = row({ name: 'string_active' });
 		rec.Metadata.active = 'true';
 		const out = transformToolingRecords([rec]);
@@ -112,7 +124,7 @@ describe('transformToolingRecords: field mapping', () => {
 			row({ name: 'r', formula: 'TRUE' }),
 		]);
 		assert.equal(out[0].formula, 'TRUE');
-
+		// The original key shouldn't leak.
 		assert.equal('errorConditionFormula' in out[0], false);
 	});
 
@@ -129,7 +141,8 @@ describe('transformToolingRecords: field mapping', () => {
 	});
 
 	test('falls back to FullName-derived name when Metadata.name is missing', () => {
-
+		// SF's FullName convention is `Object.RuleName`. Strip the
+		// `Object.` prefix and use the rest as the friendly name.
 		const out = transformToolingRecords([
 			row({ name: undefined, fullName: 'Account.SSN_Validation' }),
 		]);
@@ -137,7 +150,8 @@ describe('transformToolingRecords: field mapping', () => {
 	});
 
 	test('handles multi-dot FullName by joining everything after the first segment', () => {
-
+		// Defensive: RuleName itself shouldn't contain a dot, but if it
+		// did somehow, we keep the rest intact rather than truncating.
 		const out = transformToolingRecords([
 			row({ name: undefined, fullName: 'Account.Sub.Rule' }),
 		]);
@@ -168,14 +182,16 @@ describe('transformToolingRecords: sorting', () => {
 			row({ name: undefined, fullName: null }),
 			row({ name: 'alpha' }),
 		]);
-
+		// Empty string sorts before any non-empty in localeCompare.
 		assert.equal(out[0].name, null);
 		assert.equal(out[1].name, 'alpha');
 		assert.equal(out[2].name, 'beta');
 	});
 
 	test('sort is stable across the active filter', () => {
-
+		// Active + inactive interleaved: the inactives are dropped
+		// before sort, so the visible order matches the rule names
+		// regardless of original position.
 		const out = transformToolingRecords([
 			row({ name: 'gamma', active: false }),
 			row({ name: 'alpha', active: true }),
@@ -231,7 +247,7 @@ describe('transformToolingRecords: realistic Tooling-API responses', () => {
 			'Annual_Revenue_Cap',
 			'Description_Required',
 		]);
-
+		// The inactive rule's formula doesn't leak.
 		assert.equal(out.every((r) => r.formula !== 'TRUE'), true);
 	});
 });

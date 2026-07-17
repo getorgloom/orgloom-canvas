@@ -1,3 +1,17 @@
+// Security / edge-case tests for POST /api/query (the SOQL-import runner).
+//
+// These mount the REAL canvas route against a mock jsforce `conn` whose
+// query() records the exact SOQL string it receives. That lets us prove
+// what the server's regex-based validation/capping actually does with
+// crafted queries, in particular whether the safety LIMIT is appended.
+//
+// Threat model note: the SOQL runs against the user's OWN org with their
+// OWN OAuth session, so Salesforce enforces CRUD/FLS/sharing. Classic
+// privilege-escalation SQLi doesn't apply. What we test here is the
+// stuff the app is solely responsible for: the 500-row cap, the
+// regex-guard intent (no metadata objects, SELECT-only), authz gating,
+// and truncation reporting.
+
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -8,12 +22,18 @@ let app;
 let server;
 let baseUrl;
 
+// The pre-mount middleware injects this mock as req.sf.conn (via the
+// requireSfConnection pre-resolved seam) when injectFakeSf is true. The
+// authz test flips it off to prove the route refuses to run SOQL with no
+// connection.
 let injectFakeSf = false;
 let activeMock = null;
-
+// Captured from canvas-routes in `before` so beforeEach can reset the shared
+// SF-read rate limiter between cases (it's a module-scope singleton).
 let resetRateLimit = null;
 let RATE_LIMIT = null;
-
+// The account id the permissive auth provider reports; a test can flip this to
+// prove the rate limiter is keyed per-account.
 let currentAccountId = 'acc_test';
 
 function makeRows(n, type = 'Account', startAt = 1) {
@@ -41,6 +61,8 @@ function makeChildRows(n, type = 'Contact') {
 	return out;
 }
 
+// A configurable mock jsforce connection. Records every SOQL string and
+// every retrieve() so tests can assert exactly what hit Salesforce.
 function makeMockConn() {
 	const captured = { queries: [], retrieves: [] };
 	let nextQueryResult = { records: [], totalSize: 0, done: true };
@@ -53,9 +75,10 @@ function makeMockConn() {
 			],
 			childRelationships: [
 				{ relationshipName: 'Contacts', childSObject: 'Contact', field: 'AccountId' },
-
+				// Polymorphic child (Task.WhatId): must be rejected as a subquery.
 				{ relationshipName: 'Tasks', childSObject: 'Task', field: 'WhatId' },
-
+				// Child relationship pointing at a denylisted (security) object:
+				// must be rejected even though the outer FROM is allowed.
 				{ relationshipName: 'SetupAuditTrails', childSObject: 'SetupAuditTrail', field: 'CreatedById' },
 			],
 		},
@@ -69,7 +92,7 @@ function makeMockConn() {
 			fields: [{ name: 'Id' }, { name: 'Subject' }, { name: 'WhatId' }, { name: 'WhoId' }],
 			childRelationships: [],
 		},
-
+		// Intentionally describable so we can prove User is NOT denylisted.
 		User: {
 			name: 'User',
 			fields: [{ name: 'Id' }, { name: 'Name' }, { name: 'Email' }, { name: 'ProfileId' }],
@@ -91,7 +114,8 @@ function makeMockConn() {
 			retrieve: async (ids) => {
 				captured.retrieves.push({ name, ids: Array.isArray(ids) ? ids.slice() : [ids] });
 				const arr = Array.isArray(ids) ? ids : [ids];
-
+				// "Full" record carries an extra field that was NOT in the SELECT
+				// projection: proof that full-fields rehydration pulls more.
 				return arr.map((id) => ({ Id: id, Name: 'Full ' + id, Industry: 'Tech', attributes: { type: name } }));
 			},
 		}),
@@ -121,6 +145,8 @@ before(async () => {
 	ext.registerDbProvider(() => dbProvider());
 	ext.registerRawClientProvider(() => rawProvider());
 
+	// Permissive account + capability so we exercise the route body, not the
+	// auth/capability gates (those have their own coverage).
 	ext.registerAuthProvider(async () => ({ id: currentAccountId, email: 'test@x.com' }));
 	ext.registerCapabilityResolver(async () => ({ allowed: true, role: 'admin', plan: 'team' }));
 
@@ -129,7 +155,10 @@ before(async () => {
 	app.use((req, _res, next) => {
  req.session = {}; next(); 
 });
-
+	// Pre-resolve req.sf with the active mock conn so requireSfConnection's
+	// already-resolved seam lets the request reach the route body without a
+	// real Salesforce connection. Skipped when injectFakeSf is false so the
+	// no-connection authz path can be tested.
 	app.use('/api/query', (req, _res, next) => {
 		if (injectFakeSf && activeMock) {
 			req.sf = {
@@ -165,12 +194,19 @@ beforeEach(() => {
 	injectFakeSf = true;
 	activeMock = makeMockConn();
 	currentAccountId = 'acc_test';
-
+	// Each test owns a fresh rate-limit window (the limiter is a shared
+	// singleton, so without this the cumulative requests across this file's
+	// ~30 tests would trip the 60/min cap in unrelated cases).
 	if (resetRateLimit) {
 		resetRateLimit();
 	}
 });
 
+// ---------------------------------------------------------------------------
+// FINDING #1 (FIXED): the safety LIMIT is now driven off a string- and
+// subquery-masked skeleton, so a LIMIT inside a WHERE string literal no longer
+// suppresses the append, and inner-subquery LIMITs are preserved.
+// ---------------------------------------------------------------------------
 describe('Finding #1: safety LIMIT append is robust to string/subquery LIMITs', () => {
 	test('control: a query with no LIMIT gets " LIMIT 500" appended', async () => {
 		activeMock.setNextQueryResult({ records: makeRows(2), totalSize: 2, done: true });
@@ -187,7 +223,8 @@ describe('Finding #1: safety LIMIT append is robust to string/subquery LIMITs', 
 		const r = await post({ soql, fullFields: false });
 		assert.equal(r.status, 200);
 		const sent = activeMock.captured.queries[0];
-
+		// The in-string LIMIT is masked out of the skeleton, so the route sees
+		// "no outer LIMIT" and appends the safety cap.
 		assert.equal(sent, soql + ' LIMIT 500', 'safety LIMIT 500 appended despite the in-string LIMIT');
 	});
 
@@ -221,6 +258,11 @@ describe('Finding #1: safety LIMIT append is robust to string/subquery LIMITs', 
 	});
 });
 
+// ---------------------------------------------------------------------------
+// FINDING #2 (FIXED): when the route imposes the cap and gets a full page back,
+// it now flags `capped` so the client can warn instead of pretending the
+// result is complete.
+// ---------------------------------------------------------------------------
 describe('Finding #2: silent truncation is now surfaced via `capped`', () => {
 	test('a capped 500-row result reports capped:true + truncated:true', async () => {
 		activeMock.setNextQueryResult({ records: makeRows(500), totalSize: 500, done: true });
@@ -251,6 +293,9 @@ describe('Finding #2: silent truncation is now surfaced via `capped`', () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// The 500-row cap holds at the boundary (post-fetch guard).
+// ---------------------------------------------------------------------------
 describe('500-row cap boundary', () => {
 	test('exactly 500 records is accepted', async () => {
 		activeMock.setNextQueryResult({ records: makeRows(500), totalSize: 500, done: true });
@@ -282,6 +327,10 @@ describe('500-row cap boundary', () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// FINDING #3 (FIXED): the denylist now covers security/identity/setup objects,
+// and is applied to subquery child objects too.
+// ---------------------------------------------------------------------------
 describe('Finding #3: denylist scope', () => {
 	test('control: ApexClass is blocked before any query runs', async () => {
 		const r = await post({ soql: 'SELECT Id, Name FROM ApexClass', fullFields: false });
@@ -325,18 +374,27 @@ describe('Finding #3: denylist scope', () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// FINDING #5: full-fields rehydration refetches every record with fields
+// beyond the SELECT projection (amplification).
+// ---------------------------------------------------------------------------
 describe('Finding #5: full-fields rehydration amplifies the fetch', () => {
 	test('default fullFields=true triggers a retrieve() beyond the projection', async () => {
 		activeMock.setNextQueryResult({ records: makeRows(3), totalSize: 3, done: true });
-		const r = await post({ soql: 'SELECT Id FROM Account' });
+		const r = await post({ soql: 'SELECT Id FROM Account' }); // fullFields defaults true
 		assert.equal(r.status, 200);
 		const body = await r.json();
 		assert.ok(activeMock.captured.retrieves.length >= 1, 'a retrieve() was issued');
-
+		// The card now carries Industry, which was never in the SELECT.
 		assert.ok('Industry' in body.records[0].values, 'rehydrated record gained a non-projected field');
 	});
 });
 
+// ---------------------------------------------------------------------------
+// FINDING #4 (FIXED): per-account sliding-window rate limit on the SF-read
+// endpoint. Requests up to the cap pass; the next is 429'd with Retry-After,
+// so a scripted loop can't drain the org's API quota.
+// ---------------------------------------------------------------------------
 describe('Finding #4: sliding-window rate limit', () => {
 	test('requests up to the limit pass, then 429 with Retry-After', async () => {
 		const max = (RATE_LIMIT && RATE_LIMIT.max) || 60;
@@ -349,7 +407,7 @@ describe('Finding #4: sliding-window rate limit', () => {
 			}
 		}
 		assert.equal(ok, max, 'every request up to the cap succeeds');
-
+		// One over the cap is rejected without reaching Salesforce.
 		const queriesBefore = activeMock.captured.queries.length;
 		const over = await post({ soql: 'SELECT Id FROM Account', fullFields: false });
 		assert.equal(over.status, 429);
@@ -360,7 +418,7 @@ describe('Finding #4: sliding-window rate limit', () => {
 	});
 
 	test('the limiter is per-account: a different account is unaffected', async () => {
-
+		// Exhaust acc_test up to the cap.
 		const max = (RATE_LIMIT && RATE_LIMIT.max) || 60;
 		for (let i = 0; i < max; i++) {
 			activeMock.setNextQueryResult({ records: makeRows(1), totalSize: 1, done: true });
@@ -368,7 +426,7 @@ describe('Finding #4: sliding-window rate limit', () => {
 		}
 		const overSame = await post({ soql: 'SELECT Id FROM Account', fullFields: false });
 		assert.equal(overSame.status, 429, 'same account is now limited');
-
+		// A different account id still gets through (separate bucket).
 		currentAccountId = 'acc_other';
 		activeMock.setNextQueryResult({ records: makeRows(1), totalSize: 1, done: true });
 		const otherAcc = await post({ soql: 'SELECT Id FROM Account', fullFields: false });
@@ -376,6 +434,10 @@ describe('Finding #4: sliding-window rate limit', () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// Parser-guard intent: SELECT-only, no semicolons/comments, must include Id,
+// polymorphic subqueries rejected.
+// ---------------------------------------------------------------------------
 describe('regex guards behave as intended', () => {
 	test('non-SELECT verb is rejected', async () => {
 		const r = await post({ soql: 'UPDATE Account SET Name = 1', fullFields: false });
@@ -409,7 +471,9 @@ describe('regex guards behave as intended', () => {
 	});
 
 	test('polymorphic subquery (Task via WhatId) is allowed and wires the edge', async () => {
-
+		// SF supports `(SELECT … FROM Tasks) FROM Account`; in a subquery the
+		// parent is unambiguous, so we load the children and wire the edge via
+		// the (polymorphic) FK field rather than rejecting.
 		const parent = makeRows(1)[0];
 		parent.Tasks = {
 			records: [{ Id: '00T000000000001AAA', Subject: 'Call', attributes: { type: 'Task' } }],
@@ -433,9 +497,13 @@ describe('regex guards behave as intended', () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// Authz: the client textarea readonly is NOT the control. With no SF
+// connection the route must refuse to run any SOQL.
+// ---------------------------------------------------------------------------
 describe('authz: no SF connection means no execution', () => {
 	test('POST with no active connection returns 409 and runs nothing', async () => {
-		injectFakeSf = false;
+		injectFakeSf = false; // beforeEach turned it on; turn it off for this case
 		const r = await post({ soql: 'SELECT Id FROM Account', fullFields: false });
 		assert.equal(r.status, 409);
 		assert.equal((await r.json()).error, 'no-active-connection');

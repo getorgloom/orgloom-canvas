@@ -1,0 +1,26 @@
+name: canvas tests
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: npm install
+      - name: Run canvas tests
+        env:
+          SF_CLIENT_ID: test
+          SF_CLIENT_SECRET: test
+          SF_REDIRECT_URI: http://localhost/cb
+        run: npm test

@@ -1,4 +1,11 @@
+// Locks the MCP bearer-token security model:
+//   * Plaintext is shown at issue time, then never again: the row
+//     stores sha256(plaintext), not the plaintext itself.
+//   * authenticate() verifies presented bearer against stored hash, and
 //     rejects (a) wrong secret, (b) revoked token, (c) expired token,
+//     (d) tokens not bearing the `ol_mcp_` prefix.
+//   * every token has an immutable workspace scope; list/revoke operations
+//     cannot cross either the account or workspace boundary.
 
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,7 +31,7 @@ describe('mcpTokens.issue', () => {
 		const issued = await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'cli' });
 		assert.ok(issued.plaintext.startsWith('ol_mcp_'));
 		assert.equal(issued.plaintext.length, 'ol_mcp_'.length + 64, '64 hex chars after prefix');
-
+		// Verify the stored column is the hash, never the plaintext.
 		const row = await ext.getDb()
 			.selectFrom('mcp_tokens')
 			.select(['token_hash', 'workspace_id'])
@@ -93,7 +100,8 @@ describe('mcpTokens.authenticate', () => {
 		const { mcpTokens } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const issued = await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'cli' });
-
+		// Strip the prefix: same chars after, should still fail
+		// (prefix gate runs BEFORE the hash lookup).
 		const stripped = issued.plaintext.slice('ol_mcp_'.length);
 		assert.equal(await mcpTokens.authenticate(stripped), null);
 		assert.equal(await mcpTokens.authenticate(''), null);
@@ -114,7 +122,7 @@ describe('mcpTokens.authenticate', () => {
 	test('expired token does not authenticate', async () => {
 		const { mcpTokens } = await import('../src/database/index.js');
 		const a = await makeAccount();
-
+		// Use a 5ms TTL so the test doesn't sleep long.
 		const issued = await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'cli', ttlMs: 5 });
 		await new Promise((r) => setTimeout(r, 15));
 		assert.equal(await mcpTokens.authenticate(issued.plaintext), null);
@@ -127,10 +135,10 @@ describe('mcpTokens.revoke', () => {
 		const alice = await makeAccount('alice@x.com');
 		const bob = await makeAccount('bob@x.com');
 		const tok = await mcpTokens.issue({ accountId: alice.id, workspaceId: WS_A, name: 'alice-cli' });
-
+		// Bob tries to revoke Alice's token.
 		const ok = await mcpTokens.revoke(tok.id, bob.id);
 		assert.equal(ok, false, 'cross-account revoke must not succeed');
-
+		// Alice's token still authenticates.
 		const row = await mcpTokens.authenticate(tok.plaintext);
 		assert.ok(row);
 	});
@@ -199,7 +207,7 @@ describe('mcpTokens.listForWorkspace', () => {
 		assert.equal(expRow.expired, true);
 		const actRow = list.find((t) => t.name === 'active');
 		assert.equal(actRow.expired, false);
-
+		// The hash is never surfaced.
 		for (const t of list) {
 			assert.equal(t.token_hash, undefined, 'list never includes the hash');
 			assert.equal(t.plaintext, undefined, 'list never includes plaintext');

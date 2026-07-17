@@ -1,3 +1,32 @@
+// Stale-ref tracking.
+//
+// When a loaded record's SF id no longer exists (deleted via recall,
+// manual SF delete, workflow purge, etc.), we surface a ⚠ on the
+// card and offer the user a Convert / Remove / Dismiss menu. Stale
+// ids come in two ways:
+//   - From a canvas-load `staleRefs` server-side probe → wholesale
+//     replace via _setStaleRefsFromLoad. Each entry has a `reason`
+//     field of 'deleted' | 'no-access' | 'unknown'. Only deletion-
+//     shaped reasons land in the stale set; 'no-access' records get
+//     the distinct "🔒 No access" treatment via _inaccessible
+//     (see records-canvas.js render path), flagging them as
+//     "deleted in SF" would mislead users into removing valid
+//     records they just can't read.
+//   - From a live "records-deleted" custom event (e.g., a recall
+//     just completed). For this path we AUTO-CONVERT matching
+//     loaded records to drafts immediately: the user just deleted
+//     these records, they know they're gone, and leaving them as
+//     stale-loaded would silently brick the re-upload path
+//     (loaded-with-no-diff produces an empty upload). The popup is
+//     reserved for the load-time path where the user reopens a
+//     canvas and discovers a record was deleted out-of-band.
+//
+// Public API (returned from mount):
+//   _isRecordStale, _setStaleRefsFromLoad, _addStaleRefIds,
+//   _showStaleRefMenu, _staleIdKey.
+//
+// Exposed as window.OrgLoom.staleRef. Load order: before app.js.
+
 (function () {
 	'use strict';
 
@@ -25,7 +54,13 @@ throw new Error('stale-ref.mount: missing deps object');
 				if (!rec || !rec.loadedFromId || rec._staleAck) {
 return false;
 }
-
+				// Two sources of staleness: the load-time probe (_staleSfIds,
+				// set from the canvas GET's staleRefs) and a Refresh that
+				// came back not-found / no-access (_deletedInSf, set per
+				// card). Both mean "this card's Id can't be read in SF" and
+				// both deserve the badge + fix popover; without this, a
+				// refresh-flagged card got the red tint but no explanation
+				// and no way to resolve it.
 				if (rec._deletedInSf) {
 					return true;
 				}
@@ -37,7 +72,15 @@ return false;
 					if (!s || !s.sfId) {
 return;
 }
-
+					// 'no-access' means the record exists in SF but the
+					// current user lacks read permission; NOT a deletion.
+					// Skipping it here lets the existing _inaccessible
+					// path render the "🔒 No access" card without the
+					// misleading "deleted in SF" badge or fix popover.
+					// 'unknown' (probe failed or returned an unexpected
+					// error code) falls through to the deletion path
+					// conservatively: better to show an actionable fix
+					// affordance than silently hide an unsavable card.
 					const reason = s.reason || 'unknown';
 					if (reason === 'no-access') {
 return;
@@ -62,7 +105,17 @@ return;
 } catch (_) {}
 				}
 			}
-
+			// Live-recall path. Walk bulkRecords and convert every
+			// loaded record whose sfId matches a just-deleted id to a
+			// draft (loadedFromId = null + drop hasExisting / hasModified
+			// so the card re-renders as a normal draft). After conversion
+			// the record uploads naturally as an insert on the next
+			// Upload click: the recall → re-upload cycle works without
+			// the user having to find the Convert action in a popup.
+			// Records we couldn't match (canvas closed, different
+			// canvas, already drafted) fall through to the stale set
+			// as before, harmless because there's nothing to render
+			// against.
 			document.addEventListener('orgloom:records-deleted', (e) => {
 				const ids = (e && e.detail && e.detail.sfIds) || [];
 				if (!Array.isArray(ids) || ids.length === 0) {
@@ -141,7 +194,10 @@ cleanup();
 						if (action === 'convert') {
 							rec.loadedFromId = null;
 							rec._staleAck = false;
-
+							// Clear the refresh-set flag too: the card is a
+							// draft now; leaving it would strand the red
+							// deleted-in-SF tint on a record that no longer
+							// references any SF row.
 							rec._deletedInSf = false;
 						} else if (action === 'remove') {
 							deleteRecord(rec.id);

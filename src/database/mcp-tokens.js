@@ -3,7 +3,7 @@ import { ext } from "../extensions.js";
 
 const TOKEN_PREFIX = "ol_mcp_";
 export const MAX_ACTIVE_TOKENS_PER_ACCOUNT_WORKSPACE = 10;
-const TOKEN_RANDOM_BYTES = 32;
+const TOKEN_RANDOM_BYTES = 32; // 256 bits → 64 hex chars
 
 function _hashToken(plaintext) {
 	return crypto.createHash("sha256").update(String(plaintext)).digest("hex");
@@ -95,7 +95,8 @@ export async function authenticate(plaintext) {
 	if (row.expires_at && row.expires_at < Date.now()) {
 		return null;
 	}
-
+	// Fail closed for legacy/corrupt rows. Migration 044 deletes every
+	// pre-scope credential, and all issuance paths require this value.
 	if (!row.workspace_id) {
 		return null;
 	}

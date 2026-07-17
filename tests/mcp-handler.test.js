@@ -1,3 +1,10 @@
+// Locks the MCP JSON-RPC protocol layer (packages/canvas/src/mcp/server.js
+// mcpHandler): envelope validation, Bearer-token auth resolution, method
+// dispatch, the single ai-edit-on-canvas capability gate in front of every
+// tool, and the audit rows each tools/call writes. The relay and token
+// store have their own tests (mcp-relay.test.js, mcp-token-hash.test.js);
+// this file covers the layer an AI client actually talks to.
+
 import { test, describe, before, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -10,6 +17,7 @@ beforeEach(async () => {
 	_resetMcpTokenRateLimitForTests();
 });
 
+// JSON-RPC error codes as declared in mcp/server.js.
 const ERR_PARSE = -32700;
 const ERR_INVALID_REQUEST = -32600;
 const ERR_METHOD_NOT_FOUND = -32601;
@@ -64,13 +72,15 @@ async function makeWorkspace(ownerAccountId, name = 'W') {
 		id, name, owner_account_id: ownerAccountId,
 		created_at: now, updated_at: now,
 	}).execute();
-
+	// setCurrentWorkspace enforces membership, so the owner needs a
+	// workspace_members row like production creates.
 	await db.insertInto('workspace_members').values({
 		workspace_id: id, account_id: ownerAccountId, role: 'admin', joined_at: now,
 	}).execute();
 	return { id };
 }
 
+// Full working setup: account + workspace + view state + live token.
 async function makeMcpFixture() {
 	const account = await makeAccount();
 	const ws = await makeWorkspace(account.id);
@@ -97,7 +107,8 @@ describe('envelope validation', () => {
 	});
 
 	test('notification (id == null) → 204, no body, no auth attempted', async () => {
-
+		// No token supplied at all: notifications are fire-and-forget and
+		// must not error out before the 204 short-circuit.
 		const res = await callMcp({ body: { jsonrpc: '2.0', method: 'ping' }, token: null });
 		assert.equal(res.statusCode, 204);
 		assert.equal(res.body, undefined);
@@ -114,7 +125,8 @@ describe('auth resolution', () => {
 	test('missing Authorization header → ERR_AUTH with HTTP 401', async () => {
 		const res = await callMcp({ body: rpc('ping'), token: null });
 		assert.equal(res.body.error.code, ERR_AUTH);
-
+		// HTTP status contract: auth failures are 401 at the HTTP layer too
+		// (qa-mcp.spec.ts S087/S088 depend on this).
 		assert.equal(res.statusCode, 401);
 	});
 
@@ -234,7 +246,7 @@ describe('tools/call', () => {
 		const res = await callMcp({ body: rpc('tools/call', { name: 'list_canvases', arguments: {} }), token });
 		assert.ok(res.body.result, 'tool call succeeded: ' + JSON.stringify(res.body.error || null));
 		assert.ok(Array.isArray(res.body.result.content), 'MCP content array shape');
-
+		// Audit row: actorKind mcp, token attributed, in the account's workspace.
 		const { audit } = await import('../src/database/index.js');
 		const events = await audit.list({ workspaceId: ws.id });
 		const call = events.find((e) => e.action === 'mcp_tool_call');
@@ -247,7 +259,9 @@ describe('tools/call', () => {
 	test('capability denial → ERR_FORBIDDEN with the resolver reason; no mcp_tool_call row', async () => {
 		const { ext } = await import('../src/extensions.js');
 		const { ws, token } = await makeMcpFixture();
-
+		// Swap the resolver for this test only; restore the exact previous
+		// one after (NOT _resetForTests, which would also drop the test DB
+		// provider).
 		const originalResolver = ext.getCapability;
 		ext.registerCapabilityResolver(async () => ({ allowed: false, reason: 'workspace-toggle-off' }));
 		try {
@@ -264,7 +278,7 @@ describe('tools/call', () => {
 
 	test('a tool handler failure writes mcp_tool_call_failed and surfaces the error', async () => {
 		const { ws, token } = await makeMcpFixture();
-
+		// read_canvas with no live browser → relay rejects → handler throws.
 		const res = await callMcp({ body: rpc('tools/call', { name: 'read_canvas', arguments: { canvasId: 'cv_nope' } }), token });
 		assert.ok(res.body.error, 'tool call failed as expected');
 		const { audit } = await import('../src/database/index.js');

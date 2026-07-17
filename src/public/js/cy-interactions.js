@@ -1,3 +1,48 @@
+// Cytoscape interaction helpers: shared wiring for both cy canvases.
+//
+// Six "attach" functions that wire common interaction patterns onto a
+// cytoscape instance, plus the SVG crow-foot/bar marker overlay used
+// by both canvases:
+//
+//   attachCyEdgeMarkers(cy, container)
+//     SVG overlay that paints crow-foot + bar markers on FK edges.
+//     Cy's built-in arrow shapes don't support compound markers, so
+//     we render them in an inset <svg> and re-sync on every render.
+//   redrawCyEdgeMarkers(cy, container)
+//     Repaints the overlay; safe to call after layout or topology
+//     changes.
+//   attachCyMarqueeSelect(cy, container, onSelectionUpdate)
+//     INTERSECTS-semantics box-select on background drag. Cy's
+//     built-in box-select uses CONTAINS semantics (whole node bbox
+//     must be inside the rect), which feels wrong for cards.
+//   attachCySpacePan(cy, container)
+//     Space + left-drag pans the canvas (Figma convention). Reads
+//     the shared _canvasSpaceHeld flag written by the FAB wiring.
+//   attachCyWheelZoom(cy, container)
+//     Plain mouse-wheel zoom (Google Maps convention). Ctrl+wheel
+//     also zooms with extra preventDefault to defeat browser pinch.
+//   attachCyMiddleClickPan(cy, container)
+//     Middle-button drag-to-pan. Suppresses the browser's middle-
+//     click auto-scroll indicator on the container.
+//
+// Each attach helper guards against double-wiring via a per-cy
+// WeakSet, so callers can re-mount without leaking listeners.
+//
+// Dependencies passed to mount():
+//   getCanvasSpaceHeld: getter for the let in app.js;
+//                                 written by the FAB wiring on Space
+//                                 keydown/keyup, read by the marquee
+//                                 (suppress on space) and space-pan.
+//   setCanvasMiddleMousePanning: setter for the let in app.js;
+//                                 the FAB visibility gate reads it
+//                                 elsewhere.
+//
+// Public API (returned from mount):
+//   attachCyEdgeMarkers, redrawCyEdgeMarkers, attachCyMarqueeSelect,
+//   attachCySpacePan, attachCyWheelZoom, attachCyMiddleClickPan.
+//
+// Exposed as window.OrgLoom.cyInteractions. Load order: before app.js.
+
 (function () {
 	'use strict';
 
@@ -17,6 +62,12 @@ throw new Error('cy-interactions.mount: missing deps object');
 			const getCanvasSpaceHeld = deps.getCanvasSpaceHeld;
 			const setCanvasMiddleMousePanning = deps.setCanvasMiddleMousePanning;
 
+			// Hardcoded marker stroke (was currentColor); currentColor
+			// inheritance from the referencing <line> via setAttribute
+			// doesn't always propagate into the marker's render
+			// context, leaving markers painted in the default black
+			// against the dark canvas (effectively invisible). Pinning
+			// the color here is reliable across browsers.
 			const _CY_MARKER_COLOR = '#9aa0a8';
 			const _CY_MARKER_COLOR_SEL = '#e09240';
 			const _CY_MARKERS_DEFS =
@@ -34,7 +85,11 @@ return svg;
 				const ns = 'http://www.w3.org/2000/svg';
 				svg = document.createElementNS(ns, 'svg');
 				svg.setAttribute('class', 'cy-edge-markers-svg');
-
+				// SVG without explicit width/height defaults to 300×150
+				// even with CSS inset:0 + position:absolute on the
+				// element. Explicit 100% ensures the marker shapes are
+				// drawn in the same coordinate system that
+				// renderedSourceEndpoint() reports.
 				svg.setAttribute('width', '100%');
 				svg.setAttribute('height', '100%');
 				const defs = document.createElementNS(ns, 'defs');
@@ -45,14 +100,21 @@ return svg;
 			}
 			function redrawCyEdgeMarkers(cy, container) {
 				const svg = _ensureCyEdgeMarkersSvg(container);
-
+				// Drop everything except the <defs>.
 				Array.from(svg.children).forEach((el) => {
 					if (el.tagName.toLowerCase() !== 'defs') {
 svg.removeChild(el);
 }
 				});
 				const ns = 'http://www.w3.org/2000/svg';
-
+				// Host edges (record → type-node) get the same crow-
+				// foot + bar treatment as fk edges; both kinds are
+				// oriented source=many, target=one by the element
+				// builders. Markers are drawn as explicitly-rotated
+				// SVG groups (not via <marker> references) because
+				// browsers vary on whether markers paint when their
+				// host line has stroke=transparent; this avoids the
+				// inconsistency entirely.
 				cy.edges('[kind = "fk"], [kind = "host"], [kind = "ring"]').forEach((edge) => {
 					const r1 = edge.renderedSourceEndpoint();
 					const r2 = edge.renderedTargetEndpoint();
@@ -66,7 +128,13 @@ return;
 }
 					const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
 					const markerColor = edge.hasClass('edge-picked') ? _CY_MARKER_COLOR_SEL : _CY_MARKER_COLOR;
-
+					// fk + host edges are oriented source=many, target=one.
+					// ring edges always source from the active sel-node;
+					// the ring node's `kind` tells us which side it is:
+					// "ring-parent" means the ring is the parent (one
+					// side), so source=many and the standard orientation
+					// applies. "ring-child" means the ring is the child
+					// (many side), so we swap the marker endpoints.
 					let crowAt = r1, barAt = r2, crowAngle = angleDeg, barAngle = angleDeg + 180;
 					if (edge.data('kind') === 'ring') {
 						const ringKind = edge.target().data('kind') || '';
@@ -76,7 +144,12 @@ return;
 							barAngle = angleDeg;
 						}
 					}
-
+					// Crow-foot at the many side. Three lines converge
+					// at (14, 0), a point along the edge toward the
+					// other end, and spread to (0, -7), (0, 0), (0, 7)
+					// at the endpoint. With +x rotated to match the
+					// edge direction, the tines fan *at* the endpoint
+					// and narrow along the line.
 					const crow = document.createElementNS(ns, 'g');
 					crow.setAttribute('transform', 'translate(' + crowAt.x + ',' + crowAt.y + ') rotate(' + crowAngle + ')');
 					const crowPath = document.createElementNS(ns, 'path');
@@ -86,7 +159,7 @@ return;
 					crowPath.setAttribute('stroke-width', '1.4');
 					crow.appendChild(crowPath);
 					svg.appendChild(crow);
-
+					// Bar at the one side, perpendicular to the edge.
 					const bar = document.createElementNS(ns, 'g');
 					bar.setAttribute('transform', 'translate(' + barAt.x + ',' + barAt.y + ') rotate(' + barAngle + ')');
 					const barLine = document.createElementNS(ns, 'line');
@@ -100,7 +173,8 @@ return;
 					svg.appendChild(bar);
 				});
 			}
-
+			// Wire the SVG overlay to refresh on every viewport change
+			// or topology update. Attached once per cy instance.
 			const _cyMarkersAttached = new WeakSet();
 			function attachCyEdgeMarkers(cy, container) {
 				if (!cy || !container || _cyMarkersAttached.has(cy)) {
@@ -113,20 +187,39 @@ return;
 				cy.on('classChange', 'edge', redraw);
 				redraw();
 			}
-
+			
+			// Custom left-drag marquee selection. Cytoscape's built-in
+			// box select uses CONTAINS semantics (the whole node
+			// bbox must be inside the rectangle); this implementation
+			// uses INTERSECTS, so any visual overlap counts as a hit.
+			// Wired via cy's tapstart / tapdrag / tapend events with
+			// `evt.target === cy` filtering for background-only
+			// initiations. The caller supplies an `onSelectionUpdate`
+			// callback that receives the matched cy nodes + an
+			// `additive` flag (modifier was held during the drag).
 			const _cyMarqueeAttached = new WeakSet();
-
+			
 			function attachCyMarqueeSelect(cy, container, onSelectionUpdate) {
 				if (!cy || !container || _cyMarqueeAttached.has(cy)) {
 return;
 }
 				_cyMarqueeAttached.add(cy);
-
+				// Auto-pan tuning. EDGE is the width of the "trigger
+				// band" along each container edge; once the cursor
+				// crosses into it, pan kicks in with velocity scaled by
+				// how deep the cursor is in the band (linear ramp,
+				// cursor right at the edge gives MAX_VEL). MAX_VEL is in
+				// CSS pixels per frame at 60fps, so ~720px/s top speed.
 				const EDGE = 32;
 				const MAX_VEL = 14;
 				let marquee = null;
 				let autoPanRaf = null;
-
+				// World start = where the user clicked, in cy-world
+				// coords. As cy pans during auto-scroll, the
+				// projected container-space "start" of the marquee
+				// shifts but the world anchor stays put; the rubber-
+				// band grows visually as new content scrolls into
+				// view, matching Figma / Miro convention.
 				const projectStart = () => {
 					if (!marquee) {
 return { x: 0, y: 0 };
@@ -151,7 +244,16 @@ return;
 					marquee.box.style.width = Math.abs(c.x - s.x) + 'px';
 					marquee.box.style.height = Math.abs(c.y - s.y) + 'px';
 				};
-
+				// Auto-pan tick. Runs on rAF while the marquee is
+				// active; reads the LAST known cursor position
+				// (marquee.current) and pans cy if it sits inside the
+				// edge band. Keeps running even when no tapdrag is
+				// firing (cursor held still at the edge) so panning
+				// continues until cursor moves back inward or mouse
+				// releases. Velocity is opposite the edge direction:
+				// to reveal content off the right edge we panBy
+				// negative-x (viewport shifts right; world appears to
+				// scroll left).
 				const autoPanTick = () => {
 					autoPanRaf = null;
 					if (!marquee) {
@@ -204,7 +306,12 @@ return;
 					if (box && box.parentNode) {
 box.parentNode.removeChild(box);
 }
-
+					// Treat zero-area drags (taps without movement) as
+					// a click on background, not a marquee: clears
+					// selection unless modifier was held. Measure
+					// movement in CONTAINER space, since auto-pan can
+					// shift world coords without the user ever moving
+					// the cursor; that shouldn't count as a drag.
 					const dx = Math.abs(c.x - s.x);
 					const dy = Math.abs(c.y - s.y);
 					if (dx < 3 && dy < 3) {
@@ -213,7 +320,11 @@ box.parentNode.removeChild(box);
 						}
 						return;
 					}
-
+					// World-space hit-test. worldStart is fixed (set
+					// at tapstart); worldCurrent is derived from the
+					// last container cursor + the CURRENT pan/zoom
+					// so it reflects any auto-pan that happened
+					// during the drag.
 					const pan = cy.pan();
 					const zoom = cy.zoom();
 					const worldCurrent = {
@@ -241,15 +352,17 @@ return;
 				cy.on('tapstart', (evt) => {
 					if (evt.target !== cy) {
 return;
-}
+} // background only
 					const oe = evt.originalEvent;
 					if (!oe) {
 return;
 }
 					if (oe.button != null && oe.button !== 0) {
 return;
-}
-
+} // left click only
+					// Space-held: skip the marquee. The Space-pan
+					// handler (attachCySpacePan) takes over the gesture
+					// and pans cy instead.
 					if (getCanvasSpaceHeld()) {
 return;
 }
@@ -279,7 +392,10 @@ return;
 					const rect = container.getBoundingClientRect();
 					marquee.current = { x: oe.clientX - rect.left, y: oe.clientY - rect.top };
 					update();
-
+					// Kick off the auto-pan loop on first real drag
+					// movement. Pure tapstart-without-drag doesn't
+					// schedule one, so a quick tap on background
+					// doesn't spin up an idle rAF.
 					scheduleAutoPan();
 				});
 				cy.on('tapend', (evt) => {
@@ -294,7 +410,12 @@ return;
 					finish();
 				});
 			}
-
+			
+			// Space + left-drag pan for cy canvases. Mirrors the
+			// middle-click pan logic but gates on `getCanvasSpaceHeld()`
+			// (the FAB wiring's Space-held flag). Standard
+			// Figma/Excalidraw "hold Space to pan" pattern. Attached
+			// once per cy instance via the WeakSet guard.
 			const _cySpacePanAttached = new WeakSet();
 			function attachCySpacePan(cy, container) {
 				if (!cy || !container || _cySpacePanAttached.has(cy)) {
@@ -306,10 +427,10 @@ return;
 				container.addEventListener('pointerdown', (e) => {
 					if (e.button !== 0) {
 return;
-}
+}       // left button only
 					if (!getCanvasSpaceHeld()) {
 return;
-}
+}    // gate on Space
 					active = true;
 					lastX = e.clientX;
 					lastY = e.clientY;
@@ -317,8 +438,8 @@ return;
  container.setPointerCapture(e.pointerId); 
 } catch (_) {}
 					e.preventDefault();
-					e.stopPropagation();
-				}, true);
+					e.stopPropagation();              // suppress marquee fallback
+				}, true);                             // capture phase: beat marquee
 				container.addEventListener('pointermove', (e) => {
 					if (!active) {
 return;
@@ -339,9 +460,32 @@ return;
 				container.addEventListener('pointerup', finish);
 				container.addEventListener('pointercancel', finish);
 			}
-
+			
+			// Middle-mouse-button drag-to-pan for cy canvases.
+			// Cytoscape's built-in panning uses left-click drag on
+			// background; users naturally reach for middle-button drag
+			// (the same gesture that pans most maps + IDE editors).
+			// Attached once per cy instance via the WeakSet guard.
 			const _cyMmbAttached = new WeakSet();
-
+			// Plain mouse-wheel zoom for any cy instance: matches the
+			// records-canvas behavior: scroll to zoom, no Ctrl required
+			// (Google Maps / Cytoscape-default convention). Ctrl+wheel
+			// also zooms but with extra-aggressive preventDefault to
+			// defeat browser pinch-zoom mid-gesture.
+			//
+			// Attached at document level (not the container) so overlay
+			// elements above the cy canvas (toolbars, FABs, etc.)
+			// don't swallow wheel events. The handler gates on
+			// "container.contains(ev.target)" + bounding-rect coords so
+			// wheel only zooms when the cursor is genuinely over the
+			// canvas, not just hovering an overlapping modal.
+			//
+			// Inlined into the records canvas (server.js:8454) and the
+			// first schema canvas (server.js:13362) for historical
+			// reasons: those callsites carry detailed comments about
+			// the trackpad / pinch / preventDefault edge cases that
+			// drove the design. New cy instances should use this helper
+			// so we don't end up with a third inline copy that drifts.
 			const _cyWheelAttached = new WeakSet();
 			function attachCyWheelZoom(cy, container) {
 				if (!cy || !container || _cyWheelAttached.has(cy)) {
@@ -357,7 +501,9 @@ return;
 							|| ev.clientY < rect.top || ev.clientY > rect.bottom) {
 return;
 }
-
+					// Ctrl+wheel: aggressive preventDefault to fully
+					// kill browser zoom for the duration of a pinch
+					// gesture, even on deltaY=0 mid-gesture ticks.
 					if (ev.ctrlKey) {
 ev.preventDefault();
 }
@@ -378,7 +524,7 @@ return;
 					cy.zoom({ level: next, renderedPosition: { x: rx, y: ry } });
 				}, { passive: false, capture: true });
 			}
-
+			
 			function attachCyMiddleClickPan(cy, container) {
 				if (!cy || !container || _cyMmbAttached.has(cy)) {
 return;
@@ -386,11 +532,15 @@ return;
 				_cyMmbAttached.add(cy);
 				let active = false;
 				let lastX = 0, lastY = 0;
-
+				// Listen at document level (not on the container) so the
+				// FAB and other overlay elements that sit above the cy
+				// canvas don't swallow middle-button events. The handler
+				// gates on "cursor is inside the cy container's bounding
+				// rect" so middle-clicks elsewhere don't accidentally pan.
 				document.addEventListener('pointerdown', (e) => {
 					if (e.button !== 1) {
 return;
-}
+} // middle button only
 					const rect = container.getBoundingClientRect();
 					if (e.clientX < rect.left || e.clientX > rect.right
 							|| e.clientY < rect.top || e.clientY > rect.bottom) {
@@ -402,7 +552,7 @@ return;
 					setCanvasMiddleMousePanning(true);
 					container.style.cursor = 'grabbing';
 					e.preventDefault();
-				}, true);
+				}, true);  // capture phase: beat the marquee handler
 				document.addEventListener('pointermove', (e) => {
 					if (!active) {
 return;
@@ -418,11 +568,16 @@ return;
 					active = false;
 					setCanvasMiddleMousePanning(false);
 					container.style.cursor = '';
-
+					// FAB stays hidden until the next mousemove; that
+					// handler decides whether to re-show based on the
+					// cursor's current position (over a card vs. background).
 				};
 				document.addEventListener('pointerup', finish);
 				document.addEventListener('pointercancel', finish);
-
+				// Suppress the browser's middle-click auto-scroll
+				// indicator (the round arrow cursor) and the default
+				// "open link in new tab" auxclick semantics on the
+				// container itself.
 				container.addEventListener('auxclick', (e) => {
  if (e.button === 1) {
 e.preventDefault();
