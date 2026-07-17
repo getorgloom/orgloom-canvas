@@ -58,6 +58,41 @@
 			: '';
 	}
 
+	function summarizeCanvasContent(canvasState) {
+		const state = canvasState || {};
+		const records = Array.isArray(state.bulkRecords)
+			? state.bulkRecords.filter((record) => record && !record.isTypeNode && !record.isPending)
+			: [];
+		const selectedObjects = Array.isArray(state.selectedObjects) ? state.selectedObjects : [];
+		const objectNames = new Set();
+		records.forEach((record) => {
+			if (record.objectName) {
+				objectNames.add(record.objectName);
+			}
+		});
+		selectedObjects.forEach((entry) => {
+			if (entry && entry.name) {
+				objectNames.add(entry.name);
+			}
+		});
+		const recordCount = records.length;
+		const schemaSelectionCount = selectedObjects.length;
+		const deletedToEmpty = recordCount === 0 && state._bulkUserDeleted === true;
+		const schemaOnly = recordCount === 0 && schemaSelectionCount > 0 && !deletedToEmpty;
+		return {
+			hasContent: recordCount > 0 || schemaOnly,
+			recordCount,
+			existingCount: records.filter((record) => !!record.loadedFromId).length,
+			draftCount: records.filter((record) => !record.loadedFromId).length,
+			pendingDeleteCount: records.filter((record) => !!record.pendingDelete).length,
+			associationCount: Array.isArray(state.bulkAssociations) ? state.bulkAssociations.length : 0,
+			objectCount: objectNames.size,
+			schemaSelectionCount,
+			schemaOnly,
+			title: state.currentCanvas && state.currentCanvas.title ? state.currentCanvas.title : null,
+		};
+	}
+
 	function makeUndoCapture(deps) {
 		const canvasState = deps.canvasState;
 		const renderAll = deps.renderAll;
@@ -138,6 +173,7 @@
 		captureImportFailure: captureImportFailure,
 		admitAssociation: admitAssociation,
 		skipSuffix: skipSuffix,
+		summarizeCanvasContent: summarizeCanvasContent,
 		makeUndoCapture: makeUndoCapture,
 	};
 })();

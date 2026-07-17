@@ -16,6 +16,7 @@
 				'openCanvasEmailLinkModal', 'pingAuditEvent', 'getCurrentTeam',
 				'openExportCsvModal',
 				'renderBulkView',
+				'summarizeCanvasContent',
 				'notePresenceLocalSave',
 				'rehydrateSessionDraftValues',
 				'_hasCap',
@@ -49,6 +50,7 @@ throw new Error('canvas-save-load.mount: missing deps object');
 			const getCurrentTeam = deps.getCurrentTeam;
 			const openExportCsvModal = deps.openExportCsvModal;
 			const renderBulkView = deps.renderBulkView;
+			const summarizeCanvasContent = deps.summarizeCanvasContent;
 			const notePresenceLocalSave = deps.notePresenceLocalSave;
 			const rehydrateSessionDraftValues = deps.rehydrateSessionDraftValues;
 			const _hasCap = deps._hasCap;
@@ -614,7 +616,7 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 								fillTag +
 							'</div>' +
 							(t.ownedByMe ? '<button type="button" class="tpl-share" data-tpl-link="' + escapeHtml(t.id) + '" data-tpl-name="' + escapeHtml(t.title) + '" title="Email a magic-link share to a teammate">Share\u2026</button>' : '') +
-							'<button type="button" class="tpl-load" data-tpl-load="' + escapeHtml(t.id) + '"' + (isActive ? ' title="Reload this canvas from Salesforce"' : '') + '>' + (isActive ? 'Reload' : 'Load') + '</button>' +
+							'<button type="button" class="tpl-load" data-tpl-load="' + escapeHtml(t.id) + '" data-tpl-title="' + escapeHtml(t.title) + '"' + (isActive ? ' title="Reload this canvas from Salesforce"' : '') + '>' + (isActive ? 'Reload' : 'Load') + '</button>' +
 							(t.ownedByMe ? '<button type="button" class="tpl-del" data-tpl-del="' + escapeHtml(t.id) + '" title="Delete">\u00D7</button>' : '') +
 						'</div>';
 					}
@@ -641,9 +643,12 @@ throw new Error(data && data.error || 'HTTP ' + r.status);
 						b.addEventListener('click', async () => {
 							cleanup();
 							let mode = 'replace';
-							const hasContent = canvasState.bulkRecords.length > 0 || canvasState.selectedObjects.length > 0;
-							if (hasContent) {
-								mode = await showReplaceOrMergeDialog();
+							const currentSummary = summarizeCanvasContent(canvasState);
+							if (currentSummary.hasContent) {
+								mode = await showReplaceOrMergeDialog({
+									currentSummary,
+									incomingLabel: b.dataset.tplTitle,
+								});
 								if (mode === 'cancel') {
 return;
 }

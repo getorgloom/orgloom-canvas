@@ -32,7 +32,7 @@ test('duplicate headers and malformed or unclosed quotes are explicit structural
 	assert.match(parse('Name,Notes\nA,bad"quote\n').errors.join(' '), /Malformed|unclosed/i);
 });
 
-test('readable but unwritable fields stay mapped for the explicit FLS confirmation gate', () => {
+test('readable but unwritable fields stay mapped for operation-aware import review', () => {
 	const mapping = csvImport.csvAutoMapHeaders(['Name', 'YearStarted'], [
 		{ name: 'Name', label: 'Account Name', createable: true },
 		{ name: 'YearStarted', label: 'Year Started', createable: false },

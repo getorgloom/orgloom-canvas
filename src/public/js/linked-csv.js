@@ -7,7 +7,49 @@
 	const _DIRECT_CSV_VALIDATED_CAP = 5000;
 	const _QU_RESTORE_KEY = 'orgloom:quick-upload:restore:v1';
 
+	function csvFieldDisposition(field, operation) {
+		if (!field) {
+			return 'write';
+		}
+		if (field.type === 'address' || field.type === 'location' || field.calculated || field.autoNumber) {
+			return 'context';
+		}
+		if (operation === 'update') {
+			return field.updateable ? 'write' : 'context';
+		}
+		if (operation === 'upsert') {
+			return field.createable || field.updateable ? 'write' : 'warn';
+		}
+		return field.createable ? 'write' : 'warn';
+	}
+
+	function csvRowOperation(file, sfId, idResolution) {
+		if (file && file.operation === 'upsert') {
+			return 'upsert';
+		}
+		if (sfId && idResolution && idResolution.liveById.has(String(sfId).slice(0, 15))) {
+			return 'update';
+		}
+		return 'create';
+	}
+
+	function csvFieldAccessSuffix(field) {
+		if (!field || field.name === 'Id') {
+			return '';
+		}
+		const canCreate = field.createable === true;
+		const canUpdate = field.updateable === true;
+		if (canCreate && canUpdate) {
+			return '';
+		}
+		if (!canCreate && !canUpdate) {
+			return ' - read only';
+		}
+		return canCreate ? ' - new records only' : ' - existing records only';
+	}
+
 	window.OrgLoom.linkedCsv = {
+		_test: { csvFieldDisposition, csvRowOperation, csvFieldAccessSuffix },
 		mount: function mount(deps) {
 			if (!deps || !deps.canvasState || !deps.showBulkToast || !deps.escapeHtml
 				|| !deps.ensureDescribe || !deps.csrfFetch || !deps.renderBulkView
@@ -642,10 +684,10 @@ return;
 									const current = file.mapping[ci] || '';
 									const opts = '<option value=""> - Skip - </option>' +
 										fieldOpts.map((f) =>
-											'<option value="' + escapeHtml(f.name) + '"' + (f.name === current ? ' selected' : '') + '>' +
-												escapeHtml(f.label || f.name) + ' (' + escapeHtml(f.name) + ')' +
-															(!f.createable ? ' - no create access' : '') +
-											'</option>'
+										'<option value="' + escapeHtml(f.name) + '"' + (f.name === current ? ' selected' : '') + '>' +
+											escapeHtml(f.label || f.name) + ' (' + escapeHtml(f.name) + ')' +
+													csvFieldAccessSuffix(f) +
+										'</option>'
 										).join('');
 									const status = current
 										? '<span class="lcsv-col-status mapped" title="Mapped">\u2713</span>'
@@ -880,47 +922,90 @@ uploadBtn.disabled = !ready;
 					}
 				}
 
-			function _detectUnwritableMappedFields(files) {
-				const issues = [];
+			function _planMappedFieldWrites(files, state, idResolution, cellKey) {
+				const groups = new Map();
+				const omittedByRow = new Map();
+				const affectedRows = new Set();
 				for (const file of files) {
 					if (!file.describe || !Array.isArray(file.describe.fields)) {
-continue;
-}
+						continue;
+					}
+					const fromFileIdx = state.files.indexOf(file);
+					const mapping = file.mapping || {};
+					const idColIdxStr = Object.keys(mapping).find((iStr) => mapping[Number(iStr)] === 'Id');
+					const idColIdx = idColIdxStr != null ? Number(idColIdxStr) : null;
 					const fieldByName = new Map();
-					file.describe.fields.forEach((f) => {
- if (f && f.name) {
-fieldByName.set(f.name, f);
-} 
-});
-					const bad = [];
-					Object.keys(file.mapping || {}).forEach((colIdx) => {
-						const fieldName = file.mapping[colIdx];
-						if (!fieldName) {
-return;
-}
-						if (fieldName === 'Id') {
-return;
-}
-						const field = fieldByName.get(fieldName);
-						if (!field) {
-return;
-}
-						if (field.type === 'address' || field.type === 'location') {
-return;
-}
-						if (!field.createable) {
-							bad.push({
-								csvHeader: (file.headers && file.headers[Number(colIdx)]) || '(blank)',
-								fieldName,
-								fieldLabel: field.label || fieldName,
-							});
+					file.describe.fields.forEach((field) => {
+						if (field && field.name) {
+							fieldByName.set(field.name, field);
 						}
 					});
-					if (bad.length > 0) {
-						issues.push({ fileName: file.name, objectName: file.objectName, fields: bad });
-					}
+					file.rows.forEach((row, rowIdx) => {
+						const rawId = idColIdx != null ? row[idColIdx] : null;
+						const sfId = rawId != null && String(rawId).trim() !== '' ? String(rawId).trim() : null;
+						const operation = csvRowOperation(file, sfId, idResolution);
+						const rowKey = cellKey(fromFileIdx, rowIdx);
+						Object.keys(mapping).forEach((colIdxStr) => {
+							const colIdx = Number(colIdxStr);
+							const fieldName = mapping[colIdx];
+							if (!fieldName || fieldName === 'Id') {
+								return;
+							}
+							const isLinkedFk = (state.links || []).some((link) =>
+								link.fromFileIdx === fromFileIdx && link.fromColumnIdx === colIdx);
+							if (isLinkedFk) {
+								return;
+							}
+							const field = fieldByName.get(fieldName);
+							const disposition = csvFieldDisposition(field, operation);
+							if (disposition === 'write') {
+								return;
+							}
+							if (!omittedByRow.has(rowKey)) {
+								omittedByRow.set(rowKey, new Set());
+							}
+							omittedByRow.get(rowKey).add(fieldName);
+							const value = row[colIdx];
+							if (disposition !== 'warn' || value == null || String(value).trim() === '') {
+								return;
+							}
+							const groupKey = fromFileIdx + '::' + file.objectName;
+							if (!groups.has(groupKey)) {
+								groups.set(groupKey, {
+									fileName: file.name,
+									objectName: file.objectName,
+									fields: new Map(),
+								});
+							}
+							const reason = operation === 'upsert' ? 'No create or edit access' : 'No create access';
+							const issueKey = fieldName + '::' + colIdx + '::' + reason;
+							const fieldIssues = groups.get(groupKey).fields;
+							if (!fieldIssues.has(issueKey)) {
+								fieldIssues.set(issueKey, {
+									csvHeader: (file.headers && file.headers[colIdx]) || '(blank)',
+									fieldName,
+									fieldLabel: field && field.label ? field.label : fieldName,
+									reason,
+									rows: new Set(),
+								});
+							}
+							fieldIssues.get(issueKey).rows.add(rowKey);
+							affectedRows.add(rowKey);
+						});
+					});
 				}
-				return issues;
+				const issues = Array.from(groups.values()).map((group) => ({
+					fileName: group.fileName,
+					objectName: group.objectName,
+					fields: Array.from(group.fields.values()).map((field) => ({
+						csvHeader: field.csvHeader,
+						fieldName: field.fieldName,
+						fieldLabel: field.fieldLabel,
+						reason: field.reason,
+						affectedRows: field.rows.size,
+					})),
+				}));
+				return { issues, omittedByRow, affectedRowCount: affectedRows.size };
 			}
 
 			function _detectAmbiguousJoinKeys(state) {
@@ -1103,6 +1188,77 @@ b.focus();
 				});
 			}
 
+			function showFieldWriteReview(plan) {
+				return new Promise((resolve) => {
+					document.querySelectorAll('.lcsv-field-review-modal').forEach((el) => el.remove());
+					const fieldCount = plan.issues.reduce((count, issue) => count + issue.fields.length, 0);
+					const groups = plan.issues.map((issue) => {
+						const fields = issue.fields.map((field) =>
+							'<div class="lcsv-field-review-row">' +
+								'<div class="lcsv-field-review-name">' +
+									'<strong>' + escapeHtml(field.fieldLabel) + '</strong>' +
+									'<code>' + escapeHtml(field.fieldName) + '</code>' +
+									'<span>CSV column: ' + escapeHtml(field.csvHeader) + '</span>' +
+								'</div>' +
+								'<div class="lcsv-field-review-status">' +
+									'<span class="tag warn">' + escapeHtml(field.reason) + '</span>' +
+									'<span>' + field.affectedRows + ' row' + (field.affectedRows === 1 ? '' : 's') + '</span>' +
+								'</div>' +
+							'</div>'
+						).join('');
+						return '<section class="lcsv-field-review-group">' +
+							'<div class="lcsv-field-review-group-head">' +
+								'<strong>' + escapeHtml(issue.fileName || 'CSV file') + '</strong>' +
+								'<span>' + escapeHtml(issue.objectName) + '</span>' +
+							'</div>' + fields +
+						'</section>';
+					}).join('');
+					const modal = document.createElement('div');
+					modal.className = 'modal lcsv-field-review-modal';
+					modal.innerHTML =
+						'<div class="modal-overlay" data-lcsv-field-review-cancel></div>' +
+						'<div class="modal-body" role="dialog" aria-modal="true" aria-labelledby="lcsv-field-review-title">' +
+							'<div class="modal-header">' +
+								'<h3 id="lcsv-field-review-title">Review fields that will be left out</h3>' +
+								'<button class="modal-close" aria-label="Close" data-lcsv-field-review-cancel>&times;</button>' +
+							'</div>' +
+							'<div class="modal-content">' +
+								'<p>Salesforce will not accept some CSV values for these rows. You can continue with the remaining values or go back and change the mapping.</p>' +
+								'<div class="lcsv-field-review-summary">' +
+									'<strong>' + fieldCount + ' field' + (fieldCount === 1 ? '' : 's') + '</strong>' +
+									'<span>across ' + plan.affectedRowCount + ' row' + (plan.affectedRowCount === 1 ? '' : 's') + '</span>' +
+								'</div>' +
+								'<div class="lcsv-field-review-list">' + groups + '</div>' +
+								'<p class="lcsv-field-review-note"><strong>Existing Salesforce values are not cleared.</strong> Continuing leaves only the listed CSV values out.</p>' +
+							'</div>' +
+							'<div class="modal-footer">' +
+								'<button class="button secondary" data-lcsv-field-review-cancel>Back to mapping</button>' +
+								'<button class="button" data-lcsv-field-review-confirm>Continue without these values</button>' +
+							'</div>' +
+						'</div>';
+					document.body.appendChild(modal);
+					let settled = false;
+					const finish = (value) => {
+						if (settled) {
+							return;
+						}
+						settled = true;
+						document.removeEventListener('keydown', onKey);
+						modal.remove();
+						resolve(value);
+					};
+					const onKey = (event) => {
+						if (event.key === 'Escape') {
+							finish(false);
+						}
+					};
+					document.addEventListener('keydown', onKey);
+					modal.querySelectorAll('[data-lcsv-field-review-cancel]').forEach((el) => el.addEventListener('click', () => finish(false)));
+					modal.querySelector('[data-lcsv-field-review-confirm]').addEventListener('click', () => finish(true));
+					setTimeout(() => modal.querySelector('button[data-lcsv-field-review-cancel]').focus(), 0);
+				});
+			}
+
 			async function linkedCsvConfirm(opts) {
 					opts = opts || {};
 					const skipCanvas = !!opts.uploadDirectly;
@@ -1160,36 +1316,6 @@ return;
 }
 						ambiguousJoins.forEach((issue) => state._skippedAmbiguousJoinKeys.add(issue.linkIdx + '::' + issue.value));
 					}
-					const unwritable = _detectUnwritableMappedFields(validFiles);
-					const strippedFieldsSummary = [];
-					for (const issue of unwritable) {
-						for (const f of issue.fields) {
-							strippedFieldsSummary.push(issue.objectName + '.' + f.fieldName);
-						}
-					}
-					if (unwritable.length > 0) {
-						const lines = ['Your Salesforce user doesn’t have write access to some fields in your CSV mapping:', ''];
-						for (const issue of unwritable) {
-							lines.push(issue.fileName + ' (' + issue.objectName + '):');
-							for (const f of issue.fields) {
-								lines.push('  • ' + f.csvHeader + ' → ' + f.fieldLabel + ' (' + f.fieldName + ')');
-							}
-							lines.push('');
-						}
-						lines.push('If you continue, these columns will be silently dropped - the records will be created with those fields empty.');
-						lines.push('');
-						lines.push('To upload these values, either ask your SF admin to grant your profile write access on the fields above, or remove those columns from the CSV.');
-						const ok = await showConfirmDialog({
-							title: 'Some fields can’t be written',
-							message: lines.join('\n'),
-							confirmLabel: 'Upload anyway',
-							cancelLabel: 'Cancel',
-							danger: true,
-						});
-						if (!ok) {
-return;
-}
-					}
 					if (skipCanvas) {
 						const linkedCount = (state.links || []).length;
 						const totalRows = validFiles.reduce((n, f) => n + f.rows.length, 0);
@@ -1198,6 +1324,17 @@ return;
 							showBulkToast('Multi-file or linked uploads are capped at ' + _DIRECT_CSV_VALIDATED_CAP.toLocaleString() + ' rows. Split this batch or remove the FK linking.', 'error');
 							return;
 						}
+					}
+					const cellKey = (fi, ri) => fi + '|' + ri;
+					const _idResolution = await csvResolveExistingIds(validFiles, state, cellKey);
+					if (_idResolution.canceled) {
+						return;
+					}
+					const fieldPlan = _planMappedFieldWrites(validFiles, state, _idResolution, cellKey);
+					const strippedFieldsSummary = Array.from(new Set(fieldPlan.issues.flatMap((issue) =>
+						issue.fields.map((field) => issue.objectName + '.' + field.fieldName))));
+					if (fieldPlan.issues.length > 0 && !(await showFieldWriteReview(fieldPlan))) {
+						return;
 					}
 					const shouldReplace = !!opts.replaceCanvas;
 					const canvas = getGraph().querySelector('#bulk-canvas');
@@ -1208,11 +1345,6 @@ return;
 					const stepY = 180;
 					const perRow = Math.max(1, Math.floor((W - startX) / stepX));
 					const _preImportSelectedObjects = canvasState.selectedObjects.slice();
-					const cellKey = (fi, ri) => fi + '|' + ri;
-					const _idResolution = await csvResolveExistingIds(validFiles, state, cellKey);
-					if (_idResolution.canceled) {
-return;
-}
 					const existingCanvasById = new Map();
 					const mergeQueue = [];
 					let mergeSkippedNoModal = 0;
@@ -1297,9 +1429,13 @@ return;
 						const idColIdx = idColIdxStr != null ? Number(idColIdxStr) : null;
 						file.rows.forEach((row, rowIdx) => {
 							const values = {};
+							const omittedFields = fieldPlan.omittedByRow.get(cellKey(fromFileIdx, rowIdx));
 							mappedIdxs.forEach((iStr) => {
 								const i = Number(iStr);
 								const field = file.mapping[i];
+								if (omittedFields && omittedFields.has(field)) {
+									return;
+								}
 								const isLinkedFk = (state.links || []).some((l) =>
 									l.fromFileIdx === fromFileIdx && l.fromColumnIdx === i);
 								if (isLinkedFk) {

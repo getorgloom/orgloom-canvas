@@ -1811,6 +1811,16 @@ button.confirm-danger:hover { background: color-mix(in srgb, var(--danger, #d358
 .csv-preview-table th, .csv-preview-table td { padding: 0.35em 0.7em; border-right: 1px solid var(--border-soft); white-space: nowrap; }
 .csv-preview-table th { background: var(--bg-hover); text-align: left; font-weight: 500; border-bottom: 1px solid var(--border); color: var(--ink); font-family: var(--font-mono); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
 .csv-preview-table tr:nth-child(even) td { background: var(--row); }
+.rom-modal .modal-body { max-width: 520px; }
+.rom-compact-summary { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 1em; padding: 0.75em 0.85em; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-inset); }
+.rom-compact-summary > strong { min-width: 0; overflow: hidden; color: var(--ink); font-size: 0.9rem; text-overflow: ellipsis; white-space: nowrap; }
+.rom-compact-meta { display: flex; flex: none; align-items: center; color: var(--ink-soft); font-size: 0.78rem; white-space: nowrap; }
+.rom-compact-meta span + span::before { margin: 0 0.45em; color: var(--ink-faint); content: "·"; }
+.rom-cross-org { margin-top: 0.75em; padding: 0.55em 0.65em; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); color: var(--ink-soft); font-size: 0.8rem; }
+.rom-canvas-only-note { margin: 0.85em 0 0; color: var(--ink-soft); font-size: 0.82rem; }
+@media (max-width: 520px) {
+	.rom-compact-summary { align-items: flex-start; flex-direction: column; gap: 0.35em; }
+}
 .lcsv-step { margin-bottom: 1.1em; }
 .lcsv-step strong { display: block; margin-bottom: 0.4em; }
 .lcsv-dropzone { border: 1.5px dashed var(--border); border-radius: 6px; padding: 1.2em; text-align: center; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.3em; transition: border-color 120ms, background 120ms; color: var(--ink-soft); }
@@ -1872,6 +1882,29 @@ button.confirm-danger:hover { background: color-mix(in srgb, var(--danger, #d358
 .lcsv-link-stats { font-size: 0.82rem; color: var(--ink-soft); margin-top: 0.25em; }
 .lcsv-link-samples { font-size: 0.78rem; color: var(--ink-faint); margin-top: 0.2em; }
 .lcsv-link-samples code { font-family: var(--font-mono); margin-right: 0.4em; padding: 0.05em 0.3em; background: var(--bg-elev); border-radius: 2px; }
+.lcsv-field-review-modal .modal-body { max-width: 720px; }
+.lcsv-field-review-modal .modal-content > p:first-child { margin-top: 0; color: var(--ink-soft); }
+.lcsv-field-review-summary { display: flex; align-items: baseline; gap: 0.45em; margin: 0.9em 0; color: var(--ink-soft); }
+.lcsv-field-review-summary strong { color: var(--ink); font-size: 1rem; }
+.lcsv-field-review-list { display: flex; flex-direction: column; gap: 0.75em; max-height: min(420px, 48vh); overflow-y: auto; padding-right: 0.2em; }
+.lcsv-field-review-group { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-inset); }
+.lcsv-field-review-group-head { display: flex; align-items: center; justify-content: space-between; gap: 1em; padding: 0.55em 0.75em; border-bottom: 1px solid var(--border); background: var(--bg-hover); }
+.lcsv-field-review-group-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 0.84rem; }
+.lcsv-field-review-group-head span { flex: none; color: var(--ink-soft); font-size: 0.8rem; }
+.lcsv-field-review-row { display: flex; align-items: center; justify-content: space-between; gap: 1.25em; padding: 0.7em 0.75em; }
+.lcsv-field-review-row + .lcsv-field-review-row { border-top: 1px solid var(--border-soft); }
+.lcsv-field-review-name { display: grid; grid-template-columns: auto auto; align-items: baseline; justify-content: start; gap: 0.2em 0.5em; min-width: 0; }
+.lcsv-field-review-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcsv-field-review-name code { color: var(--ink-soft); font-size: 0.78rem; }
+.lcsv-field-review-name span { grid-column: 1 / -1; color: var(--ink-faint); font-size: 0.78rem; }
+.lcsv-field-review-status { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25em; flex: none; color: var(--ink-faint); font-size: 0.76rem; }
+.lcsv-field-review-status .tag.warn { padding: 0.2em 0.45em; border: 1px solid color-mix(in srgb, var(--warn) 50%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--ink); white-space: nowrap; }
+.lcsv-field-review-note { margin: 0.9em 0 0; padding: 0.65em 0.75em; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); color: var(--ink-soft); font-size: 0.84rem; }
+.lcsv-field-review-note strong { color: var(--ink); }
+@media (max-width: 600px) {
+	.lcsv-field-review-row { align-items: flex-start; flex-direction: column; gap: 0.55em; }
+	.lcsv-field-review-status { align-items: flex-start; }
+}
 .tag.warn { color: var(--warn); }
 .bulk-toolbar .connect-btn { background: transparent; color: var(--ink-soft); border: 1px solid var(--border); border-radius: 4px; padding: 0.38em 0.85em; font-size: 0.82rem; cursor: pointer; font-family: var(--font-sans); }
 .bulk-toolbar .connect-btn.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }

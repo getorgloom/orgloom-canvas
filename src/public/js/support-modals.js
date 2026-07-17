@@ -92,55 +92,74 @@ return;
 			function showReplaceOrMergeDialog(info) {
 				return new Promise((resolve) => {
 					const overlay = document.createElement('div');
-					overlay.className = 'modal';
-					const summaryLines = (info && Array.isArray(info.summaryLines)) ? info.summaryLines : [];
-					const summaryHtml = summaryLines.length
-						? '<div class="rom-file-summary" style="margin:0 0 0.8em; padding:0.6em 0.8em; border:1px solid var(--line, #444); border-radius:6px; font-size:0.86rem; line-height:1.5; color: var(--ink-soft);">' +
-							summaryLines.map((l) => '<div>' + escapeHtml(l) + '</div>').join('') +
-						'</div>'
+					overlay.className = 'modal rom-modal';
+					const imported = info && info.importSummary ? info.importSummary : null;
+					const dialogTitle = imported ? 'Import canvas' : 'Open saved canvas';
+					const incomingLabel = imported && imported.fileName
+						? imported.fileName
+						: (info && info.incomingLabel ? info.incomingLabel : 'Selected saved canvas');
+					const summaryParts = [];
+					if (imported) {
+						if (imported.kind === 'schema') {
+							const count = Number(imported.schemaObjectCount || 0);
+							summaryParts.push(count.toLocaleString() + ' schema object' + (count === 1 ? '' : 's'));
+						} else {
+							const records = Number(imported.recordCount || 0);
+							const relationships = Number(imported.associationCount || 0);
+							summaryParts.push(records.toLocaleString() + ' record' + (records === 1 ? '' : 's'));
+							summaryParts.push(relationships.toLocaleString() + ' relationship' + (relationships === 1 ? '' : 's'));
+						}
+					}
+					const summaryHtml =
+						'<div class="rom-compact-summary">' +
+							'<strong>' + escapeHtml(incomingLabel) + '</strong>' +
+							(summaryParts.length > 0
+								? '<div class="rom-compact-meta">' + summaryParts.map((part) => '<span>' + escapeHtml(part) + '</span>').join('') + '</div>'
+								: '') +
+						'</div>';
+					const crossOrgHtml = imported && imported.crossOrg
+						? '<div class="rom-cross-org">This canvas came from a different Salesforce org. Record references may not match.</div>'
 						: '';
 					overlay.innerHTML =
 						'<div class="modal-overlay" data-rom="cancel"></div>' +
-						'<div class="modal-body" style="max-width:480px">' +
+						'<div class="modal-body" role="dialog" aria-modal="true" aria-labelledby="rom-title">' +
 							'<div class="modal-header">' +
-								'<h3>Replace or merge?</h3>' +
-								'<button class="modal-close" data-rom="cancel">&times;</button>' +
+								'<h3 id="rom-title">' + dialogTitle + '</h3>' +
+								'<button class="modal-close" aria-label="Close" data-rom="cancel">&times;</button>' +
 							'</div>' +
 							'<div class="modal-content">' +
-								summaryHtml +
-								'<p>You already have records on the canvas. Loading this file can either start fresh or add to what’s here.</p>' +
-								'<ul style="margin:0.5em 0 0 1.2em; color: var(--ink-soft); font-size: 0.88rem; line-height: 1.5;">' +
-									'<li><strong>Replace canvas</strong>: drop everything currently on the canvas, then load the file.</li>' +
-									'<li><strong>Merge</strong>: keep existing records and add the file’s records alongside.</li>' +
-								'</ul>' +
+								summaryHtml + crossOrgHtml +
+								'<p class="rom-canvas-only-note">Only the canvas changes. Nothing is sent to Salesforce.</p>' +
 							'</div>' +
 							'<div class="modal-footer">' +
 								'<button class="button secondary" data-rom="cancel">Cancel</button>' +
-								'<button class="button secondary" data-rom="merge">Merge</button>' +
-								'<button class="button" data-rom="replace">Replace canvas</button>' +
+								'<button class="button secondary" data-rom="replace">Replace canvas</button>' +
+								'<button class="button" data-rom="merge">Add to canvas</button>' +
 							'</div>' +
 						'</div>';
 					document.body.appendChild(overlay);
-					const cleanup = () => {
- if (overlay.parentNode) {
-overlay.remove();
-} 
-};
+					let settled = false;
+					const finish = (mode) => {
+						if (settled) {
+							return;
+						}
+						settled = true;
+						document.removeEventListener('keydown', onEsc, true);
+						overlay.remove();
+						resolve(mode);
+					};
 					overlay.querySelectorAll('[data-rom]').forEach((el) => {
 						el.addEventListener('click', () => {
-							const mode = el.dataset.rom;
-							cleanup();
-							resolve(mode);
+							finish(el.dataset.rom);
 						});
 					});
 					const onEsc = (e) => {
 						if (e.key === 'Escape') {
-							document.removeEventListener('keydown', onEsc, true);
-							cleanup();
-							resolve('cancel');
+							finish('cancel');
 						}
 					};
 					document.addEventListener('keydown', onEsc, true);
+					setTimeout(() => overlay.querySelector('[data-rom="merge"]').focus(), 0);
 				});
 			}
 

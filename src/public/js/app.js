@@ -3504,80 +3504,28 @@ function csrfFetch(url, options) {
 	}
 
 	function _importFileSummary(parsed, isSavedCanvas) {
-		const lines = [];
 		const meta = parsed._meta || {};
+		let recordCount = 0;
+		let schemaObjectCount = 0;
+		let kind = "canvas";
 		if (isSavedCanvas) {
-			const loaded = Array.isArray(parsed.loadedRecords)
-				? parsed.loadedRecords.length
-				: 0;
-			const drafts = Array.isArray(parsed.drafts) ? parsed.drafts.length : 0;
-			const assoc = Array.isArray(parsed.associations)
-				? parsed.associations.length
-				: 0;
-			lines.push(
-				"Saved canvas: " +
-					loaded +
-					" existing record" +
-					(loaded === 1 ? "" : "s") +
-					", " +
-					drafts +
-					" draft" +
-					(drafts === 1 ? "" : "s") +
-					", " +
-					assoc +
-					" association" +
-					(assoc === 1 ? "" : "s") +
-					".",
-			);
+			recordCount =
+				(Array.isArray(parsed.loadedRecords) ? parsed.loadedRecords.length : 0) +
+				(Array.isArray(parsed.drafts) ? parsed.drafts.length : 0);
 		} else if (meta.schemaOnly) {
-			const objs = ((parsed.schema && parsed.schema.objects) || []).length;
-			lines.push(
-				"Schema only: " + objs + " object" + (objs === 1 ? "" : "s") + ", no records.",
-			);
+			kind = "schema";
+			schemaObjectCount = ((parsed.schema && parsed.schema.objects) || []).length;
 		} else {
-			const recs = Array.isArray(parsed.records) ? parsed.records : [];
-			const byObj = new Map();
-			recs.forEach((r) => {
-				if (r && typeof r.objectName === "string" && r.objectName) {
-					byObj.set(r.objectName, (byObj.get(r.objectName) || 0) + 1);
-				}
-			});
-			const parts = Array.from(byObj.entries())
-				.sort((a, b) => b[1] - a[1])
-				.slice(0, 4)
-				.map((e) => e[1] + " " + e[0]);
-			if (byObj.size > 4) {
-				parts.push("+" + (byObj.size - 4) + " more");
-			}
-			const assoc = Array.isArray(parsed.associations)
-				? parsed.associations.length
-				: 0;
-			lines.push(
-				recs.length +
-					" record" +
-					(recs.length === 1 ? "" : "s") +
-					(parts.length ? " (" + parts.join(", ") + ")" : "") +
-					", " +
-					assoc +
-					" association" +
-					(assoc === 1 ? "" : "s") +
-					".",
-			);
-		}
-		const who = meta.exportedByName || meta.savedByName || null;
-		const when = meta.exportedAt ? String(meta.exportedAt).slice(0, 10) : null;
-		if (who || when) {
-			lines.push(
-				"Exported" + (who ? " by " + who : "") + (when ? " on " + when : "") + ".",
-			);
+			recordCount = Array.isArray(parsed.records) ? parsed.records.length : 0;
 		}
 		const fileOrg = meta.exportedFrom || meta.savedFrom || null;
-		if (fileOrg && window.SF_ORG_ID && fileOrg !== window.SF_ORG_ID) {
-			lines.push(
-				"⚠ Exported from a different org - Salesforce id references may not match here.",
-			);
-		}
-		return lines;
+		return {
+			kind,
+			recordCount,
+			associationCount: Array.isArray(parsed.associations) ? parsed.associations.length : 0,
+			schemaObjectCount,
+			crossOrg: !!(fileOrg && window.SF_ORG_ID && fileOrg !== window.SF_ORG_ID),
+		};
 	}
 
 	const _importShared = window.OrgLoom.importShared;
@@ -3621,12 +3569,14 @@ function csrfFetch(url, options) {
 					validateTemplate(parsed);
 				}
 				let _mode = "replace";
-				const _hasContent =
-					canvasState.bulkRecords.length > 0 ||
-					canvasState.selectedObjects.length > 0;
-				if (_hasContent) {
+				const currentSummary = _importShared.summarizeCanvasContent(canvasState);
+				if (currentSummary.hasContent) {
 					_mode = await showReplaceOrMergeDialog({
-						summaryLines: _importFileSummary(parsed, isSavedCanvas),
+						currentSummary,
+						importSummary: Object.assign(
+							{ fileName: file.name },
+							_importFileSummary(parsed, isSavedCanvas),
+						),
 					});
 					if (_mode === "cancel") {
 						return;
@@ -6292,6 +6242,9 @@ function csrfFetch(url, options) {
 		},
 		renderBulkView: function () {
 			return renderBulkView();
+		},
+		summarizeCanvasContent: function () {
+			return _importShared.summarizeCanvasContent(canvasState);
 		},
 		notePresenceLocalSave: function () {
 			return _presence.noteLocalSave();
