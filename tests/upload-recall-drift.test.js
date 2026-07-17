@@ -1,33 +1,15 @@
-// Unit tests for classifyBatchDrift. The function takes an upload-
-// batches row + the original uploader's SF user id + the upload time,
-// queries SF (via a jsforce conn) for current LastModifiedById /
-// LastModifiedDate / IsDeleted on every inserted record, and buckets
-// each into clean / drifted / alreadyDeleted.
-//
-// We mock the SF connection so this stays a pure unit test: no
-// live SF round-trip. The mock returns canned record states based
-// on a per-id table the test sets up.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyBatchDrift, detectCascadeConflicts } from '../src/upload-recall.js';
 
-// Fake jsforce conn. classifyBatchDrift calls `_queryAll(conn, soql)`
-// which is a thin wrapper over `conn.request({ method, url })` against
-// the /services/data/vXX.X/queryAll/?q=<soql> REST endpoint (jsforce
-// doesn't expose queryAll() as a typed method across every build). The
-// mock recreates that contract: parse the SOQL out of the URL's `q`
-// param and return canned record states from the per-id map.
 function makeFakeConn(stateById) {
 	return {
-		// Pinned API version. Matches the default in upload-recall.js's
-		// _queryAll fallback so the URL shape stays predictable.
 		version: '60.0',
 		request: async ({ method, url }) => {
 			if (method !== 'GET') {
 return { records: [] };
 }
-			// URL shape: /services/data/v60.0/queryAll/?q=<encoded SOQL>
 			const qIdx = url.indexOf('?q=');
 			if (qIdx < 0) {
 return { records: [] };
@@ -64,10 +46,6 @@ describe('classifyBatchDrift', () => {
 			uploaderSfUserId: UPLOADER_SF_ID,
 			uploadTimeMs: UPLOAD_TIME,
 		});
-		// Five buckets: clean / drifted / alreadyDeleted are the
-		// originals; unverified + updates were added when classifyBatchDrift
-		// grew to surface the recall-preflight UX cases the route handler
-		// now expects.
 		assert.deepEqual(result, {
 			clean: [], drifted: [], alreadyDeleted: [],
 			unverified: [], updates: [],
@@ -154,9 +132,6 @@ describe('classifyBatchDrift', () => {
 	});
 
 	test('record missing from SF entirely → alreadyDeleted', async () => {
-		// Hard-deleted records won't return from queryAll. Same bucket
-		// as soft-deleted because the user's intent ("remove from org")
-		// is already satisfied either way.
 		const inserted = [{ tempId: 't1', sfId: '001missing', objectName: 'Account' }];
 		const conn = makeFakeConn({}); // empty; record doesn't exist
 		const r = await classifyBatchDrift({
@@ -185,7 +160,6 @@ describe('classifyBatchDrift', () => {
 				LastModifiedDate: new Date(UPLOAD_TIME + 60 * 1000).toISOString(),
 				IsDeleted: false,
 			},
-			// 001gone omitted entirely: already deleted.
 			'003contact': {
 				id: '003contact', LastModifiedById: UPLOADER_SF_ID,
 				LastModifiedDate: new Date(UPLOAD_TIME + 20 * 1000).toISOString(),
@@ -205,9 +179,6 @@ describe('classifyBatchDrift', () => {
 	});
 
 	test('15-char vs 18-char SF id comparison is case-tolerant', async () => {
-		// SF returns 18-char Ids in API responses; the stored uploader id
-		// might be 15-char depending on where it came from. classifyBatchDrift
-		// compares on the 15-char prefix, so they should still match.
 		const uploader15 = '005AAA00000Uploa';
 		const uploader18 = uploader15 + 'XYZ';
 		const inserted = [{ tempId: 't1', sfId: '001abc', objectName: 'Account' }];
@@ -227,8 +198,6 @@ describe('classifyBatchDrift', () => {
 	});
 
 	test('custom gracePeriodMs is honored', async () => {
-		// Same record modified 10 minutes after upload by uploader.
-		// With default 1h grace → clean. With 5min grace → drifted.
 		const inserted = [{ tempId: 't1', sfId: '001abc', objectName: 'Account' }];
 		const conn = makeFakeConn({
 			'001abc': {
@@ -254,8 +223,6 @@ describe('classifyBatchDrift', () => {
 	});
 
 	test('records without sfId are silently skipped', async () => {
-		// Defensive: malformed inserted-id rows shouldn't blow up the
-		// classifier. They contribute to no bucket.
 		const inserted = [
 			{ tempId: 't1', sfId: null, objectName: 'Account' },
 			{ tempId: 't2', objectName: 'Account' }, // missing sfId
@@ -277,11 +244,6 @@ describe('classifyBatchDrift', () => {
 	});
 });
 
-// ----- detectCascadeConflicts -----
-//
-// The conflict detector needs `conn.sobject(name).describe()` to look
-// up which fields are master-detail (cascadeDelete=true). Build a
-// fake conn that returns canned describes per object name.
 
 function makeFakeConnWithDescribe(describesByObject) {
 	return {
@@ -312,9 +274,6 @@ describe('detectCascadeConflicts', () => {
 	});
 
 	test('lookup field (cascadeDelete=false): no conflict even with parent clean + child drifted', async () => {
-		// Contact.AccountId is a lookup, not master-detail. Deleting the
-		// Account leaves the Contact in place with a nulled AccountId.
-		// No cascade, no conflict.
 		const conn = makeFakeConnWithDescribe({
 			Contact: [{ name: 'AccountId', cascadeDelete: false }],
 		});
@@ -338,8 +297,6 @@ describe('detectCascadeConflicts', () => {
 	});
 
 	test('master-detail field (cascadeDelete=true) + parent clean + child drifted → conflict', async () => {
-		// Junction-style relationship: Order_Line__c.Order__c is master-
-		// detail. Deleting the Order cascade-deletes its line items.
 		const conn = makeFakeConnWithDescribe({
 			Order_Line__c: [{ name: 'Order__c', cascadeDelete: true }],
 		});
@@ -368,8 +325,6 @@ describe('detectCascadeConflicts', () => {
 	});
 
 	test('master-detail field but parent in drifted (not clean) → no conflict (skip is meaningful)', async () => {
-		// If the parent is also drifted (skipped), the child won't be
-		// cascade-deleted because the parent itself stays put.
 		const conn = makeFakeConnWithDescribe({
 			Order_Line__c: [{ name: 'Order__c', cascadeDelete: true }],
 		});
@@ -391,8 +346,6 @@ describe('detectCascadeConflicts', () => {
 	});
 
 	test('master-detail field + child clean (will be recalled) → no conflict (no skip to invalidate)', async () => {
-		// If both parent and child are clean, both get recalled. No
-		// asymmetry, no conflict.
 		const conn = makeFakeConnWithDescribe({
 			Order_Line__c: [{ name: 'Order__c', cascadeDelete: true }],
 		});
@@ -441,9 +394,6 @@ describe('detectCascadeConflicts', () => {
 	});
 
 	test('describe failure on a child object → no conflict reported (conservative)', async () => {
-		// If we can't describe the child object, we can't tell whether
-		// the relationship is master-detail. Better to omit a possibly-
-		// false warning than to surface one that misleads the user.
 		const conn = {
 			sobject: (name) => ({
 				describe: async () => {
@@ -472,8 +422,6 @@ throw new Error('No describe access');
 	});
 
 	test('only master-detail fields with cascadeDelete=true count', async () => {
-		// A child with both a master-detail and a lookup: only the
-		// master-detail association produces a conflict.
 		const conn = makeFakeConnWithDescribe({
 			Order_Line__c: [
 				{ name: 'Order__c', cascadeDelete: true },        // master-detail
@@ -493,13 +441,11 @@ throw new Error('No describe access');
 			conn,
 			batch: makeBatchWithAssoc(inserted, associations),
 			classification: {
-				// Both Order and User are clean (recalled); the line is drifted.
 				clean: [{ sfId: '801ORDER' }, { sfId: '005APPROVER' }],
 				drifted: [{ sfId: 'a01LINE' }],
 				alreadyDeleted: [],
 			},
 		});
-		// Expected: only one conflict, via Order__c (master-detail).
 		assert.equal(conflicts.length, 1);
 		assert.equal(conflicts[0].fieldName, 'Order__c');
 	});

@@ -1,41 +1,3 @@
-// SOQL Import modal: lets the user write a SELECT (with optional
-// child subqueries) and pull records onto the canvas.
-//
-// Two-step UX: preview surfaces counts + the first few rows so users
-// can catch typos / over-fetches before committing. Hits /api/query
-// which validates + caps the query server-side.
-//
-// Full-fields mode (default ON): refetches each matching record with
-// all FLS-allowed fields before adding to the canvas. Off → only the
-// SELECT-projection fields are loaded (compact mode).
-//
-// Dependencies passed to mount():
-//   canvasState: shared canvas state. Reads selectedObjects
-//                        and bulkRecords for the dedupe index; mutates
-//                        bulkRecords + bulkAssociations + bulkIdSeq
-//                        on commit.
-//   showBulkToast: toast notification.
-//   escapeHtml: HTML escape utility.
-//   csrfFetch: fetch wrapper (POSTs to /api/query).
-//   addToSelection: async; registers an object on the canvas if
-//                        not already present (the canvas needs the
-//                        schema entry before record cards can render).
-//   renderBulkView: re-renders the bulk canvas after commit.
-//   getGraph: () => Element; canvas root, queried for the
-//                        '#bulk-canvas' element to compute layout
-//                        positions for new records.
-//   clearBulkUserDeleted: callback that sets the
-//                          _bulkUserDeleted closure flag in app.js
-//                          back to false. soqlImportCommitToCanvas
-//                          calls this on commit so subsequent renders
-//                          treat the canvas as "intentionally
-//                          populated" again rather than the empty
-//                          intentional-empty state.
-//
-// Public API:
-//   openModal(): show the SOQL import modal.
-//
-// Exposed as window.OrgLoom.soqlImport. Load order: before app.js.
 
 (function () {
 	'use strict';
@@ -56,8 +18,6 @@
 			const showBulkToast = deps.showBulkToast;
 			const escapeHtml = deps.escapeHtml;
 			const csrfFetch = deps.csrfFetch;
-			// Canvas record-cap gate (single source of truth). Optional dep
-			// so older mounts don't throw; defaults to "always allowed".
 			const canvasCapCheck = typeof deps.canvasCapCheck === 'function'
 				? deps.canvasCapCheck
 				: function () {
@@ -70,27 +30,12 @@
 			const relayoutNewRecords = deps.relayoutNewRecords;
 			const setSkipNextCyAutoPan = deps.setSkipNextCyAutoPan;
 			const clearEmptyStarterCard = deps.clearEmptyStarterCard;
-			// Optional (present in the normal app.js mount): undo snapshot +
-			// action-toast for the modal's post-commit Undo. The programmatic
-			// runAndCommitSoql path deliberately does NOT snapshot; its
-			// caller (Browse) owns the snapshot/rollback there.
 			const captureUndoSnapshot = typeof deps.captureUndoSnapshot === 'function'
 				? deps.captureUndoSnapshot : null;
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction : null;
-			// Shared import helpers (telemetry, association admission).
 			const _shared = window.OrgLoom.importShared;
 
-			// Render the descriptive message from a non-ok /api/query
-			// response. The backend returns { error: '<code>', message:
-			// '<descriptive>' }; code is something like 'query-failed'
-			// or 'aggregate-not-supported', while message carries the
-			// actual reason (Salesforce's MALFORMED_QUERY text, the
-			// specific aggregate that's banned, etc.). Showing just
-			// the code is a dead-end for the visitor; this helper
-			// renders message first and uses code only as a fallback
-			// or eyebrow tag when both are present and they add value
-			// together.
 			function formatQueryError(body, status) {
 				const code = body && body.error ? String(body.error) : '';
 				const msg = body && body.message ? String(body.message) : '';
@@ -108,16 +53,6 @@ return escapeHtml(code);
 
 
 
-				// SOQL import modal: lets the user write a SELECT (with optional
-				// child subqueries) and pull records onto the canvas. Two-step:
-				// preview surfaces counts + the first few rows so users can
-				// catch typos / over-fetches before committing. Hits /api/query
-				// which validates + caps the query server-side.
-				//
-				// In playground mode (window.ORGLOOM_MOCK), the textarea is
-				// locked to a single preset query so visitors can experience
-				// the SOQL-import flow without an SF connection and without
-				// the ability to execute arbitrary code through the mock.
 				const PLAYGROUND_PRESET_SOQL =
 					"SELECT Id, Name, Industry, Phone, Type,\n" +
 					"       (SELECT Id, FirstName, LastName, Email, Title FROM Contacts)\n" +
@@ -128,14 +63,6 @@ return escapeHtml(code);
 					opts = opts || {};
 					document.querySelectorAll('.soql-import-modal').forEach((el) => el.remove());
 					const isPlayground = !!window.ORGLOOM_MOCK;
-					// presetSoql: caller-supplied SOQL string used to pre-fill
-					// the textarea. Used by the Browse panel's Load-to-canvas
-					// flow: it compiles its filter UI to a SOQL query and
-					// hands it here so the user can review/edit before
-					// committing. In playground mode the textarea is still
-					// readonly, but the preset takes precedence over the
-					// canned playground query so the browse-derived load
-					// still reflects the user's intent.
 					const presetSoql = typeof opts.presetSoql === 'string' && opts.presetSoql.trim()
 						? opts.presetSoql.trim()
 						: null;
@@ -158,13 +85,6 @@ return escapeHtml(code);
 							'<div class="modal-content">' +
 								headerCopy +
 								'<textarea id="soql-query" rows="8"' + textareaAttrs + '>' + escapeHtml(textareaValue) + '</textarea>' +
-								// Full-fields mode: default ON. Refetches each
-								// matching record with all FLS-allowed fields
-								// before adding to the canvas, so the cards
-								// show the full record state instead of just
-								// the SELECT projection. Compact mode preserves
-								// the historical lean behavior for users who
-								// deliberately wrote a focused query.
 								'<label class="soql-full-fields-toggle" style="display:flex;align-items:center;gap:0.5em;margin-top:0.6em;font-size:0.88rem;color:var(--ink-soft)' + (isPlayground ? ';opacity:0.7;cursor:not-allowed' : '') + '">' +
 									'<input type="checkbox" id="soql-full-fields" checked' + (isPlayground ? ' disabled aria-disabled="true"' : '') + '>' +
 									'<span><strong>Load all fields</strong> &middot; refetch each record with every field you can read in Salesforce, not just the ones in your SELECT. Uncheck for a compact view of only the fields you queried.</span>' +
@@ -198,11 +118,6 @@ close();
 					let lastResult = null;
 					setTimeout(() => textarea.focus(), 0);
 
-					// Cache the last query string used to populate lastResult so
-					// commit() can know whether the user has changed the query
-					// since the last preview (in which case we re-run rather
-					// than commit a stale snapshot). The mode flag is part of
-					// the cache key; flipping the checkbox should re-run.
 					let lastResultSoql = null;
 					let lastResultFullFields = null;
 
@@ -226,19 +141,12 @@ close();
 						const breakdown = Object.entries(byObject)
 							.map(([n, c]) => escapeHtml(n) + ': ' + c)
 							.join(' \u00b7 ');
-						// When the server imposed the 500-row cap it can't know the
-						// true match count (a LIMIT'd query reports totalSize ==
-						// returned), so `capped` is the honest signal: don't claim
-						// "matches N" with a number we know is just the cap.
 						const truncationNote = body.capped
 							? '<div class="banner">Hit the ' + (body.cap || 500) + '-record import cap; showing the first ' + body.returned + '. There may be more; add a WHERE clause or a smaller LIMIT to narrow.</div>'
 							: body.truncated
 							? '<div class="banner">Query matches ' + body.totalSize + ' records; showing the first ' + body.returned + '. Add a WHERE clause or LIMIT to narrow.</div>'
 							: '';
-						// SF deep-link base: empty in playground/mock, where we render plain text.
 						const sfBase = (window.SF_INSTANCE_URL || '').replace(/[/]+$/, '');
-						// Pick the most human identifier from a record's loaded values: Name
-						// first, then common name-like fields, then the first non-Id value.
 						const ID_PRIORITY = ['Name', 'CaseNumber', 'Subject', 'Title', 'Label', 'DeveloperName', 'Username', 'Email', 'FullName', 'LastName'];
 						function pickIdentifier(values) {
 							if (!values) {
@@ -262,11 +170,6 @@ close();
 							return null;
 						}
 						const MAX_PREVIEW_ROWS = 200;
-						// Display ordering: group by object (A→Z), then by each row's
-						// identifier (A→Z, natural + case-insensitive). Sort a COPY so
-						// body.records keeps its original order; the commit-to-canvas
-						// dedup + association wiring is unaffected; this is purely how the
-						// preview reads.
 						const decorated = body.records.map((rec) => {
 							const id = rec.loadedFromId || (rec.values && rec.values.Id) || '';
 							const ident = pickIdentifier(rec.values);
@@ -343,9 +246,6 @@ close();
 						}
 					}
 
-					// Add to canvas works directly: if we have a fresh preview
-					// (same SOQL string, non-empty result), reuse it; otherwise
-					// run the query and commit on success.
 					async function commit() {
 						const soql = (textarea.value || '').trim();
 						if (!soql) {
@@ -356,9 +256,6 @@ close();
 						previewBtn.disabled = true;
 						const originalLabel = commitBtn.textContent;
 						commitBtn.textContent = 'Adding\u2026';
-						// Assigned right before the canvas mutates; the catch
-						// below rolls back through it if the commit failed
-						// part-way (e.g. a schema describe error mid-batch).
 						let _undo = null;
 						try {
 							let result = lastResult;
@@ -367,7 +264,6 @@ close();
 								|| lastResultSoql !== soql
 								|| lastResultFullFields !== currentFullFields;
 							if (cacheStale) {
-								// No fresh preview, or query has changed; re-run.
 								previewPane.innerHTML = '<p class="tag center">Running query\u2026</p>';
 								const { ok, status, body, fullFields } = await runQuery(soql);
 								if (!ok) {
@@ -409,8 +305,6 @@ close();
 							}
 							close();
 						} catch (err) {
-							// Roll a part-committed batch back to the pre-commit
-							// snapshot; no half-load survives an error.
 							if (_undo) {
 								_undo();
 							}
@@ -426,12 +320,6 @@ close();
 					previewBtn.addEventListener('click', runPreview);
 					commitBtn.addEventListener('click', commit);
 					if (fullFieldsCb) {
-						// Flipping the toggle invalidates any cached preview:
-						// the next commit() (or preview-rerun) needs to refetch
-						// to honor the new mode. We don't auto-rerun the
-						// preview on flip; that would burn a SF API call on
-						// every accidental click. The user gets the new mode
-						// on next explicit Run preview / Add to canvas.
 						fullFieldsCb.addEventListener('change', () => {
 							lastResult = null;
 							lastResultSoql = null;
@@ -439,8 +327,6 @@ close();
 						});
 					}
 					textarea.addEventListener('keydown', (e) => {
-						// Ctrl/Cmd+Enter triggers preview; modifier-free Enter
-						// inserts a newline (default textarea behavior).
 						if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
 							e.preventDefault();
 							runPreview();
@@ -448,13 +334,6 @@ close();
 					});
 				}
 
-				// Wire a successful /api/query response into canvasState.bulkRecords +
-				// canvasState.bulkAssociations. Ensures each unique object type has a
-				// canvasState.selectedObjects entry first (records canvas needs the schema
-				// metadata to render cards). Dedupes by `objectName + loadedFromId`
-				// against existing canvas records; re-importing the same SOQL
-				// won't pile on duplicate cards. Returns a summary so the caller
-				// can toast counts.
 				async function soqlImportCommitToCanvas(result, opts) {
 					const records = Array.isArray(result.records) ? result.records : [];
 					const associations = Array.isArray(result.associations) ? result.associations : [];
@@ -462,9 +341,6 @@ close();
 return { added: 0, skipped: 0 };
 }
 
-					// Existing-on-canvas index: maps `objectName::sfId` to the
-					// existing bulkRec.id. Used to dedupe new records AND to
-					// route associations targeting an already-loaded parent.
 					const existingByKey = new Map();
 					canvasState.bulkRecords.forEach((br) => {
 						if (br.isTypeNode || !br.loadedFromId) {
@@ -473,7 +349,6 @@ return;
 						existingByKey.set(br.objectName + '::' + br.loadedFromId, br.id);
 					});
 
-					// Decide up-front which incoming records are duplicates.
 					const dupTempIds = new Set();
 					const newRecords = [];
 					records.forEach((rec) => {
@@ -485,23 +360,6 @@ newRecords.push(rec);
 }
 					});
 
-					// Canvas record-cap enforcement: measured against the
-					// NEW (post-dedup) records, since already-on-canvas dups
-					// don't consume new slots. Refuse the WHOLE batch if it
-					// would exceed the cap (no silent partial-fill). This is
-					// the choke point for Browse + SOQL import, so neither can
-					// push the canvas past the limit regardless of entry UI.
-					// /api/query row-caps its result (SOQL_ROW_CAP) by appending
-					// LIMIT, so `records` can be a truncated slice of a larger
-					// match set AND the server's reported totalSize is the capped
-					// count; it can't see the real total. Checking only the
-					// returned (capped) length let a "Load all 600" against a 500
-					// cap silently load 500 and report success. Callers that know
-					// the true match size (Browse, from /api/browse) pass it as
-					// opts.knownTotal; we cap-check against that. When the true
-					// total exceeds the returned rows we can't tell new-vs-dup for
-					// the unseen rows, so we refuse the whole batch rather than
-					// partial-fill.
 					const knownTotal = opts && typeof opts.knownTotal === 'number' ? opts.knownTotal : 0;
 					const reportedTotal = typeof result.totalSize === 'number' ? result.totalSize : records.length;
 					const totalMatch = Math.max(knownTotal, reportedTotal, records.length);
@@ -511,10 +369,6 @@ newRecords.push(rec);
 						return { added: 0, skipped: dupTempIds.size, blocked: true, capReason: _cap.reason };
 					}
 
-					// Resolve / create a canvasState.selectedObjects entry per unique
-					// object type that's actually new. (Skipping objects whose
-					// records are all duplicates avoids gratuitous schema
-					// graph entries.)
 					const orderedObjectNames = [];
 					const seenObjects = new Set();
 					if (result.objectName && newRecords.some((r) => r.objectName === result.objectName)) {
@@ -542,13 +396,7 @@ newRecords.push(rec);
 						selByName[objName] = sel;
 					}
 
-					// Drop the lone empty starter card BEFORE measuring layout
-					// so the import's startY falls back to the canvas-top
-					// path (length === 0) instead of stacking the imported
-					// records below the placeholder.
 					clearEmptyStarterCard();
-					// Layout: stack new records into a grid below existing
-					// canvas content so they're visible without overlapping.
 					const canvasEl = getGraph().querySelector("#bulk-canvas");
 					const startX = (canvasEl ? canvasEl.clientWidth / 2 : 600) - 220;
 					const existingMaxY = canvasState.bulkRecords.reduce((m, r) => Math.max(m, r.y || 0), 0);
@@ -557,9 +405,6 @@ newRecords.push(rec);
 					const rowStep = 180;
 					const cols = 4;
 
-					// Map server tempId → client bulkRec id. Pre-populate with
-					// existing-canvas matches so associations whose targets
-					// were skipped still wire to the correct card.
 					const clientIdByTempId = {};
 					records.forEach((rec) => {
 						const key = rec.objectName + '::' + rec.loadedFromId;
@@ -568,21 +413,7 @@ newRecords.push(rec);
 clientIdByTempId[rec.tempId] = existingId;
 }
 					});
-					// Compact-load marker. When the user imported via SOQL
-					// with fullFields=false, the response only contains the
-					// SELECT-listed fields. Stash the loaded field names on
-					// the bulk record so the edit modal can hide everything
-					// else (otherwise the user sees a wall of empty inputs
-					// for fields they didn't ask for) and so preflight knows
-					// not to flag required-and-missing on fields whose
-					// values still live unchanged in Salesforce. Full-fields
-					// mode (the default) doesn't set this; the modal
-					// renders the full Lightning layout as it always has.
 					const isCompact = result && result.fullFields === false;
-					// Track new bulkRecord ids so the post-render tree
-					// layout pass below knows which subset of the canvas
-					// to re-arrange. Records added earlier in other
-					// sessions keep their hand-positioned coordinates.
 					const newBulkIds = new Set();
 					newRecords.forEach((rec, idx) => {
 						const sel = selByName[rec.objectName];
@@ -592,10 +423,6 @@ clientIdByTempId[rec.tempId] = existingId;
 							id: canvasState.bulkIdSeq++,
 							objectName: rec.objectName,
 							label: sel ? sel.label : rec.objectName,
-							// Grid coords are a safety fallback in case
-							// the tree layout below bails (e.g. cy not
-							// ready). When tree layout runs it overrides
-							// these positions.
 							x: startX + col * colStep,
 							y: startY + row * rowStep,
 							values: Object.assign({}, rec.values || {}),
@@ -611,21 +438,9 @@ clientIdByTempId[rec.tempId] = existingId;
 						newBulkIds.add(newRec.id);
 					});
 
-					// Build a set of existing association triples so we don't
-					// re-add a link that's already on the canvas (common when
-					// the user re-imports a parent + its kids).
 					const existingAssocKey = new Set(
 						canvasState.bulkAssociations.map((a) => a.fromId + '->' + a.toId + '::' + a.fieldName),
 					);
-					// A lookup is single-value: at most one association per
-					// (holder, fieldName). Seed from the canvas so a DEDUPED
-					// record whose subquery edge targets a different parent
-					// card can't double-wire a lookup that card already has:
-					// e.g. a contact hand-wired to a draft account, then
-					// re-imported under its real parent. Admission rules are
-					// shared with the CSV + JSON importers (import-shared.js).
-					// The exact-duplicate check above runs FIRST so re-imports
-					// of an existing edge count as dedup, not as a skip.
 					const _admitAssociation = window.OrgLoom.importShared.admitAssociation;
 					const _usedFk = new Set();
 					canvasState.bulkAssociations.forEach((a) => {
@@ -652,24 +467,12 @@ continue;
 						assocsAdded++;
 					}
 					clearBulkUserDeleted();
-					// Suppress renderBulkCanvasCy's own auto-pan-to-new
-					// animation for this render; without this, the
-					// canvas fires an animate(center: newNodes, 500ms)
-					// that races with tree-layout's fit() below.
-					// linked-csv does the same dance for the same
-					// reason.
 					if (newBulkIds.size > 0) {
 setSkipNextCyAutoPan(true);
 }
 					if (typeof renderBulkView === 'function') {
 renderBulkView();
 }
-					// Tree-aware layout of just-added records. renderBulkView
-					// commits the new cy nodes synchronously, so by here cy
-					// has them indexed and the layout helper can find them
-					// via the recId data field. Uses breadthfirst per
-					// connected component for >=5 nodes with FK edges, cose
-					// otherwise (same algorithm CSV import uses).
 					if (newBulkIds.size > 0) {
 relayoutNewRecords(newBulkIds);
 }
@@ -677,12 +480,6 @@ relayoutNewRecords(newBulkIds);
 				}
 
 
-			// Programmatic SOQL run + commit. Used by the Browse panel's
-			// Load-to-canvas flow so users don't have to traverse the
-			// SOQL importer modal for the simple "load these records"
-			// case. Same fetch path the importer's commit() uses, but
-			// without any UI side effects; the caller toasts the
-			// summary itself.
 			async function runAndCommitSoql(soql, opts) {
 				opts = opts || {};
 				const fullFields = opts.fullFields !== false;

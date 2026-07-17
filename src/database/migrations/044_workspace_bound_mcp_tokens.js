@@ -1,12 +1,3 @@
-// MCP bearer credentials used to inherit account_view_state.current_workspace_id
-// at request time. That made a browser workspace switch silently retarget an
-// already-configured AI client. Bind every new credential to one immutable
-// workspace instead.
-//
-// Existing credentials have no trustworthy workspace scope. Delete them rather
-// than guessing from mutable view state; users must generate replacements after
-// this migration. workspace_id intentionally has no database FK because the
-// canvas-only distribution does not install the SaaS workspaces table.
 
 export async function up(db) {
 	await db.schema

@@ -1,29 +1,3 @@
-// Bulk operations + add-records menus, canvas FAB, and help popover.
-//
-// Five interconnected pieces that wire the canvas toolbar / FAB
-// affordances:
-//
-//   _wireCanvasFloatingAdd()
-//     Mounts the floating "+ Add record" affordance on the records
-//     canvas, plus the Space/Z keyboard-held flags that gate pan
-//     vs marquee, plus the right-click background → "Add record
-//     here" context menu.
-//   _showCanvasContextMenu(clientX, clientY, worldPos)
-//     Right-click background menu: dispatches to spawn helpers.
-//   showAddRecordsMenu(triggerEl)
-//     "+ Import records" toolbar dropdown listing CSV / SOQL / AI /
-//     Fixture-file actions.
-//   showBulkOperationsMenu(triggerEl)
-//     "Bulk operations" toolbar dropdown: bulk-edit modal,
-//     bulk-script modal, autofill all/required, clear-all-fields.
-//   showBulkHelpPopover(triggerEl)
-//     The "?" toolbar popover with keyboard shortcuts + flow tips.
-//
-// Dependencies passed to mount(); see the required list in code.
-// Several deps are wrapped lazily because they live on modules
-// that mount after this one.
-//
-// Exposed as window.OrgLoom.bulkOpsMenu. Load order: before app.js.
 
 (function () {
 	'use strict';
@@ -91,9 +65,6 @@ return;
 				getGraph().dataset.canvasWired = '1';
 				const cyContainer = getGraph().querySelector('#bulk-canvas-cy');
 				const legacyContainer = getGraph().querySelector('#bulk-canvas');
-				// Active container is whichever isn't display:none. Both
-				// dimensions checked because CSS uses display:none for
-				// the inactive one.
 				const activeContainer = () => {
 					if (cyContainer && cyContainer.offsetParent !== null) {
 return cyContainer;
@@ -103,10 +74,6 @@ return legacyContainer;
 }
 					return cyContainer || legacyContainer;
 				};
-				// Convert a screen point to canvas world coords using
-				// the active container's pan/zoom (cy mode) or scroll
-				// offset (legacy mode). Returns null if the point is
-				// outside the canvas.
 				const worldFromClient = (clientX, clientY) => {
 					const container = activeContainer();
 					if (!container) {
@@ -126,10 +93,6 @@ return null;
 					}
 					return { x: container.scrollLeft + px, y: container.scrollTop + py };
 				};
-				// Reject right-clicks on cards / chips / modals: the
-				// browser's default context menu (or a future
-				// per-card menu) makes more sense there. The canvas
-				// menu is for background only.
 				const overInteractive = (target) =>
 					!!(target && target.closest && target.closest(
 						'.record-card, .record-card-pending, .record-related-chip, ' +
@@ -137,10 +100,6 @@ return null;
 						'.bulk-toast, .modal',
 					));
 			
-				// Right-click context menu wiring. Listen at document
-				// level + filter on cursor-inside-canvas so the menu
-				// works whether the click hit the cy canvas or an
-				// html-label card region.
 				document.addEventListener('contextmenu', (ev) => {
 					const worldPos = worldFromClient(ev.clientX, ev.clientY);
 					if (!worldPos) {
@@ -149,10 +108,6 @@ return;
 					if (overInteractive(ev.target)) {
 return;
 }
-					// Cytoscape hit-test: cursor on a node? Same
-					// reasoning as the FAB's old over-node check
-					// (html-labels can leave gaps that the DOM-only
-					// `overInteractive` check misses).
 					if (getCyInstance()) {
 						const cont = activeContainer();
 						if (cont) {
@@ -172,18 +127,12 @@ return;
 					_showCanvasContextMenu(ev.clientX, ev.clientY, worldPos);
 				});
 			
-				// Space-to-pan: while Space is held, flip the canvas
-				// cursor to grab/grabbing so cy's background-drag pan
-				// is reachable. Filter out keystrokes that target
-				// inputs so typing a literal space in a field doesn't
-				// switch modes.
 				document.addEventListener('keydown', (ev) => {
 					const isInputTarget = ev.target
 						&& (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) || ev.target.isContentEditable);
 					if (isInputTarget) {
 return;
 }
-					// Space: pan-cursor mode.
 					if (ev.key === ' ' || ev.code === 'Space') {
 						if (getCanvasSpaceHeld()) {
 return;
@@ -193,7 +142,6 @@ return;
 						ev.preventDefault();  // suppress page-down scroll
 						return;
 					}
-					// Z: modifier for arrow-key nudge.
 					if (ev.key === 'z' || ev.key === 'Z') {
 						if (ev.ctrlKey || ev.metaKey) {
 return;
@@ -217,8 +165,6 @@ return;
 						return;
 					}
 				});
-				// While Space is held + mouse pressed, swap grab → grabbing
-				// for visual feedback during the actual drag.
 				document.addEventListener('mousedown', () => {
 					if (getCanvasSpaceHeld()) {
 getGraph().classList.add('canvas-pan-mode-active');
@@ -229,19 +175,10 @@ getGraph().classList.add('canvas-pan-mode-active');
 				});
 			}
 			
-			// Right-click context menu for the canvas. Replaces the
-			// old FAB-cursor affordance: users now get an explicit
-			// "Add record here" action via right-click instead of a
-			// cursor-replacing button. The menu appears at the click
-			// point, anchored to viewport coords; its "Add record
-			// here" item drops a pending placeholder at the right-
-			// click's world coords (same path the FAB used).
 			function _showCanvasContextMenu(clientX, clientY, worldPos) {
 				document.querySelectorAll('.canvas-context-menu').forEach((el) => el.remove());
 				const menu = document.createElement('div');
 				menu.className = 'canvas-context-menu';
-				// Tentatively place at the click point; flip if it'd
-				// run off the viewport edge.
 				const width = 220;
 				const estHeight = 48;  // single-item menu, small
 				const left = Math.min(clientX, window.innerWidth - width - 8);
@@ -288,10 +225,6 @@ return;
 				});
 			}
 			
-			// "Add records" menu: collapses Import CSV, AI Generate, and
-			// the Templates load/save into a single popover so the toolbar
-			// stays uncluttered. Clone buttons are excluded; those are
-			// per-object quick-access and stay on the toolbar.
 			function showAddRecordsMenu(triggerEl) {
 				document.querySelectorAll('.fill-menu-popup').forEach(el => el.remove());
 				const pop = document.createElement('div');
@@ -301,9 +234,6 @@ return;
 				const left = Math.min(rect.left, viewportW - 280);
 				pop.style.left = Math.max(8, left) + 'px';
 				pop.style.top = (rect.bottom + 6) + 'px';
-				// Headers describe the SOURCE the item pulls from. AI
-				// generation has been promoted to its own toolbar button
-				// (data-bulk-ai-gen) so it's not buried in this popover.
 				pop.innerHTML =
 					'<div class="fm-header">From Salesforce</div>' +
 					'<button type="button" data-add-menu="browse" title="Filter records by field values, see live counts, then load matches onto the canvas, no SOQL knowledge required">Browse records</button>' +
@@ -323,11 +253,6 @@ pop.remove();
 					b.addEventListener('click', () => {
 						const action = b.dataset.addMenu;
 						cleanup();
-						// `csv` routes to the linked-CSV modal: it handles
-						// the single-file case (plus Id→update and canvas
-						// dedup). The old standalone single-CSV modal was
-						// removed; csv-import.js now only provides the shared
-						// parse utilities.
 						if (action === 'csv') {
 openLinkedCsvModal();
 } else if (action === 'soql') {
@@ -355,12 +280,6 @@ cleanup();
 				}, 0);
 			}
 			
-			// "Bulk operations" menu: collapses what used to be three
-			// separate toolbar buttons (split-style "Seed draft fields",
-			// "Bulk edit", "Run script"). Items adapt to the canvas
-			// state: fill-* options only render when there are drafts
-			// to seed (loaded-existing records aren't touched), Run
-			// script only when the team flag is on.
 			function showBulkOperationsMenu(triggerEl) {
 				document.querySelectorAll('.fill-menu-popup').forEach((el) => el.remove());
 				const pop = document.createElement('div');
@@ -370,15 +289,6 @@ cleanup();
 				const left = Math.min(rect.left, viewportW - 280);
 				pop.style.left = Math.max(8, left) + 'px';
 				pop.style.top = (rect.bottom + 6) + 'px';
-				// Selection-aware scoping. When the user has any real
-				// records selected, the auto-fill / clear actions narrow
-				// to "selected drafts only" so the user can target a
-				// subset (e.g., "fill required on these 5 records"
-				// without wiping the others). With no selection, the
-				// actions operate on every draft as before. Both the
-				// menu labels AND the dispatched action are scoped at
-				// the same time so the user-visible promise matches
-				// what gets executed.
 				const selectedDraftIds = canvasState.bulkRecords
 					.filter((r) => !r.loadedFromId && !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id))
 					.map((r) => r.id);
@@ -390,45 +300,7 @@ cleanup();
 						? ' (selection has no draft records)'
 						: ' (no draft records yet)')
 					: ' on ' + scopedDraftCount + (scopeToSelected ? ' selected' : '') + ' draft record' + (scopedDraftCount === 1 ? '' : 's');
-				// Suffix the menu labels with " (selected)" when scoped so
-				// the user can read the intent from the menu itself, not
-				// just the tooltip.
 				const fillLabelSuffix = scopeToSelected ? ' (selected)' : '';
-				// Script DSL gate. The `run-script` capability resolves
-				// plan + per-user grant in one call (see
-				// src/capabilities.js + src/policy.js); _hasCap is the
-				// front-door for every gate site.
-				//   1. Plan tier (Pro+) checked server-side via
-				//      hasCapability.
-				//   2. Per-user grant (member_capabilities). run-script is
-				//      governed per-member: admins grant it to individual
-				//      users; there is no workspace-wide toggle, since
-				//      arbitrary code against SF data is a per-user
-				//      permission, not a workspace default.
-				// Both must be true to surface the menu item. When
-				// either is missing the option is omitted entirely
-				// rather than disabled: the upgrade path runs
-				// through pricing/team-settings, not the run-script
-				// modal itself.
-				// Single capability check covers plan + per-user grant.
-				// The resolver in src/policy.js handles both axes; client
-				// just reads the resolved boolean. When the cap resolves
-				// false, the remediation depends on WHY; the boolean
-				// alone doesn't tell us. We infer from the workspace plan:
-				//   - Plan = free → denial is plan-insufficient → "Pro"
-				//     tag, click routes to /workspace/upgrade (the user
-				//     just expressed intent for a Pro feature, high-intent
-				//     moment to surface the upgrade).
-				//   - Plan = pro / team → denial must be a missing per-user
-				//     grant (run-script's only other deny reason on these
-				//     plans). Show "Off" tag instead of "Pro" (the Pro tag is
-				//     misleading; they already have Pro/Team). Admin clicks
-				//     route to workspace member permissions to grant it;
-				//     non-admins get a toast telling them to ask their admin
-				//     (no upgrade prompt, because they're not the bottleneck).
-				// Both denial paths keep the item VISIBLE rather than
-				// hidden so users discover the feature exists; hiding
-				// was the old behavior and meant nobody learned about it.
 				const canRunScripts = _hasCap('run-script');
 				let scriptItem;
 				if (canRunScripts) {
@@ -439,8 +311,6 @@ cleanup();
 						'<span class="tag" style="font-size:0.7rem;background:var(--accent-soft);color:var(--accent)">Pro</span>' +
 					'</button>';
 				} else {
-					// Pro/Team but the member hasn't been granted run-script
-					// (per-user permission; there's no workspace toggle).
 					const offTitle = isTeamAdmin()
 						? 'Run script isn\'t granted to your account. Click to open workspace member permissions and grant it.'
 						: 'Run script isn\'t enabled for your account. Ask a workspace admin to grant you access.';
@@ -449,14 +319,6 @@ cleanup();
 						'<span class="tag" style="font-size:0.7rem">Off</span>' +
 					'</button>';
 				}
-				// Diff selected: enabled only when exactly 2 real records
-				// (non-type-node, non-pending) are selected. Diff is a
-				// no-op semantically with 0, 1, or 3+ selected, so the
-				// item stays disabled but the count constraint goes in
-				// the label itself ("select 2 records", "select 1 more
-				// record", etc.). A hover-only tooltip on a disabled
-				// item is too easy to miss; users don't know to hover
-				// what looks unclickable.
 				const _selectedReal = canvasState.bulkRecords.filter((r) =>
 					!r.isTypeNode && !r.isPending && canvasState.bulkSelectedIds.has(r.id)
 				);
@@ -475,9 +337,6 @@ cleanup();
 				const diffItem = diffEnabled
 					? '<button type="button" data-bulk-op="diff" title="' + diffTitle + '">' + diffLabel + '</button>'
 					: '<button type="button" data-bulk-op="diff" title="' + diffTitle + '" disabled aria-disabled="true">' + diffLabel + '</button>';
-				// Search disabled when no records are on the canvas:
-				// nothing to search across. Hint kept compact since
-				// the menu line is already long.
 				const _searchableCount = canvasState.bulkRecords.filter(
 					(r) => r && !r.isTypeNode && !r.isPending
 				).length;
@@ -488,14 +347,6 @@ cleanup();
 				const searchItem = searchEnabled
 					? '<button type="button" data-bulk-op="search" title="' + searchTitle + '">Search canvas <span class="fm-tag">Cmd/Ctrl+F</span></button>'
 					: '<button type="button" data-bulk-op="search" title="' + searchTitle + '" disabled aria-disabled="true">Search canvas</button>';
-				// Find duplicates needs at least two real (non-pending)
-				// records OF THE SAME OBJECT TYPE to have anything to
-				// group: comparing an Account against a Contact has
-				// nothing meaningful to dedup. Walk the records and
-				// count by objectName; enable only when some object
-				// has ≥ 2. A naive total ≥ 2 gate would surface the
-				// modal in cases where it can't do useful work (e.g.,
-				// one Account + one Contact).
 				let dupesEnabled = false;
 				const _dupesCountsByObject = new Map();
 				for (const r of canvasState.bulkRecords) {
@@ -517,14 +368,6 @@ continue;
 				const dupesItem = dupesEnabled
 					? '<button type="button" data-bulk-op="find-dupes" title="' + dupesTitle + '">Find duplicates</button>'
 					: '<button type="button" data-bulk-op="find-dupes" title="' + dupesTitle + '" disabled aria-disabled="true">Find duplicates</button>';
-				// Per-user gating: auto-fill needs auto-fill-records,
-				// bulk-edit needs bulk-edit-records. When a user lacks
-				// the grant, the item drops out entirely: pattern
-				// matches the run-script item below, which is also
-				// per-user gated. _hasCap is the
-				// deps-injected resolver from app.js: note that
-				// window.OrgLoom.canvasCap is the factory, not a
-				// mounted instance, so it has no _hasCap method.
 				const _canAutoFill = _hasCap('auto-fill-records');
 				const _canBulkEdit = _hasCap('bulk-edit-records');
 				const _autoFillItem = _canAutoFill
@@ -533,12 +376,6 @@ continue;
 				const _bulkEditItem = _canBulkEdit
 					? '<button type="button" data-bulk-op="bulk-edit" title="Find &amp; replace or set a value across many records at once">Bulk edit</button>'
 					: '';
-				// Refresh: pulls current SF values for loaded records on
-				// canvas. Scope label switches on whether there are
-				// selected records vs all-loaded; the count is computed
-				// at render time so the user sees the same number that
-				// the action will operate on. browse-records cap is the
-				// gate: refresh is a SF read.
 				const _canBrowseForRefresh = _hasCap('browse-records');
 				let _refreshItem = '';
 				if (_canBrowseForRefresh) {
@@ -550,12 +387,6 @@ continue;
 						: _allLoaded;
 					const _refreshCount = _selectedLoaded.length;
 					const _hasSelection = canvasState.bulkSelectedIds && canvasState.bulkSelectedIds.size > 0;
-					// Honest empty-state wording: with a selection active the
-					// count is selection-scoped, so say "in selection"; the
-					// canvas may well have loaded records outside it. (Was
-					// "No loaded records on canvas" in both cases, which read
-					// as a bug whenever drafts were selected on a canvas full
-					// of loaded records.)
 					const _refreshSubtitle = _refreshCount === 0
 						? (_hasSelection ? 'No loaded records in selection' : 'No loaded records on canvas')
 						: (_hasSelection
@@ -568,10 +399,6 @@ continue;
 						? '<button type="button" data-bulk-op="refresh-sf" disabled aria-disabled="true" title="' + _refreshEmptyTitle + '">Refresh from Salesforce <span class="tag">' + _refreshSubtitle + '</span></button>'
 						: '<button type="button" data-bulk-op="refresh-sf" title="Pull current Salesforce values for loaded records. Dirty cards prompt for confirmation before being clobbered.">Refresh from Salesforce <span class="tag">' + _refreshSubtitle + '</span></button>';
 				}
-				// Cross-org migration. Moved out of the Save menu (it's a
-				// data operation, not a save). Records-gated; beginMigration
-				// saves the canvas first, then routes to the destination-org
-				// picker.
 				const _migrateHasRecords = canvasState.bulkRecords.some((r) => !r.isTypeNode);
 				const _migrateItem = _migrateHasRecords
 					? '<button type="button" data-bulk-op="migrate-org" title="Recreate these records in a different Salesforce org. Your canvas is saved first so the switch is safe.">Migrate to another org…</button>'
@@ -601,12 +428,6 @@ pop.remove();
 					b.addEventListener('click', () => {
 						const op = b.dataset.bulkOp;
 						cleanup();
-						// Re-resolve scope at click time: selection may
-						// have changed between menu open and click. The
-						// menu render's snapshot drives the label; the
-						// dispatch reads live state so the executed action
-						// matches what the user sees on canvas at the
-						// moment of click.
 						const liveSelectedIds = canvasState.bulkRecords
 							.filter((r) => !r.loadedFromId && !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id))
 							.map((r) => r.id);
@@ -626,13 +447,6 @@ openBulkRefreshFlow();
 } else if (op === 'migrate-org') {
 beginMigration();
 } else if (op === 'diff') {
-							// Re-resolve at click time so a selection-change
-							// between menu open and click can't surface a
-							// stale record reference (the user could've
-							// clicked away to deselect, then back into the
-							// menu; the menu render's _selectedReal is a
-							// snapshot, but the click should always operate
-							// on the current selection).
 							const pair = canvasState.bulkRecords.filter((r) =>
 								!r.isTypeNode && !r.isPending && canvasState.bulkSelectedIds.has(r.id)
 							);
@@ -640,18 +454,8 @@ beginMigration();
 openRecordDiffModal(pair[0], pair[1]);
 }
 						} else if (op === 'script-upgrade') {
-							// Locked Run-script entry for Free
-							// workspaces. Routes to /workspace/upgrade:
-							// the user just expressed intent for a Pro
-							// feature, so this is a high-intent moment.
 							window.location.href = '/workspace/upgrade';
 						} else if (op === 'script-not-granted') {
-							// Pro/Team workspaces where the member hasn't been
-							// granted run-script (per-user permission; no
-							// workspace-wide toggle). Admins go to the team
-							// panel (where member permissions live) to grant
-							// it; members get a toast telling them to ask an
-							// admin (no upgrade prompt because the plan is fine).
 							if (isTeamAdmin()) {
 								window.location.href = '/workspace#team';
 							} else if (typeof window.olToast === 'function') {
@@ -676,8 +480,6 @@ cleanup();
 				}, 0);
 			}
 			
-			// Popover that appears when the user clicks the `?` icon in the
-			// bulk toolbar. Same positioning pattern as showFillScopeMenu.
 			function showBulkHelpPopover(triggerEl) {
 				document.querySelectorAll('.bulk-help-popup').forEach(el => el.remove());
 				const pop = document.createElement('div');
@@ -686,17 +488,8 @@ cleanup();
 				const viewportW = window.innerWidth;
 				const viewportH = window.innerHeight;
 				const width = 320;
-				// Horizontal: prefer right-edge alignment with the trigger,
-				// clamp into the viewport. Tracks the original behavior.
 				const left = Math.min(rect.right - width, viewportW - width - 8);
 				pop.style.left = Math.max(8, left) + 'px';
-				// Vertical: open BELOW the trigger by default. When the
-				// trigger sits in the lower half of the viewport (e.g.,
-				// the bottom-left canvas-shortcut-hint pill), the popover
-				// would render off-screen: flip to ABOVE the trigger
-				// instead. Estimated popover height of 280px (7 list items
-				// + header + footer + padding) is generous enough to
-				// trigger the flip whenever it would overflow.
 				const estimatedHeight = 280;
 				const wouldOverflowBelow = rect.bottom + 6 + estimatedHeight > viewportH - 8;
 				if (wouldOverflowBelow) {
@@ -740,32 +533,16 @@ cleanup();
 				}, 0);
 			}
 			
-			// Exposed so the top-strip Help chip (help-chip.js) can
-			// surface the canvas shortcuts overlay from outside the
-			// canvas iframe-equivalent (it's all one document but the
-			// chip lives in the top-strip, not the records-toolbar).
-			// Anchors on the Help chip element when called; falls
-			// back to a centered fixed position if no anchor is
-			// given (e.g. invoked by a keyboard shortcut later).
 			window.Orgloom = window.Orgloom || {};
 			window.Orgloom.canvasHelp = {
 				openShortcuts: (anchorEl) => {
 					if (anchorEl) {
 return showBulkHelpPopover(anchorEl);
 }
-					// Default anchor: the bottom-left "Press ? for
-					// shortcuts" pill. Groups the popover visually with
-					// the affordance that opened it (whether ? key or
-					// click). showBulkHelpPopover's flip-when-overflows
-					// rule will open it above the pill since the pill
-					// sits in the lower half of the viewport.
 					const hint = document.getElementById('canvas-shortcut-hint');
 					if (hint) {
 return showBulkHelpPopover(hint);
 }
-					// Fall back to a centered synthetic anchor when the
-					// pill isn't in the DOM (e.g., a future page that
-					// reuses this opener outside the canvas).
 					const synthetic = {
 						getBoundingClientRect: () => {
 							const w = 320;
@@ -777,52 +554,8 @@ return showBulkHelpPopover(hint);
 				},
 			};
 			
-			// MCP relay hooks. mcp-relay-client.js reads these to
-			// register the current canvas with the server-side relay
-			// and to respond to read_canvas requests dispatched from
-			// AI clients. The relay never persists payload data: it
-			// just routes the request to this browser and returns
-			// whatever snapshot() produces. See mcp/relay.js and
-			// mcp-relay-client.js for the protocol.
-			//
-			// Draft-id support: when the user is on a brand-new
-			// canvas they haven't saved yet (canvasState.currentCanvas is null
-			// OR canvasState.currentCanvas.id starts with "draft-"), we mint a
-			// stable draft id so the AI can still see the canvas.
-			// The id persists for the lifetime of this page-load
-			// session; once the user saves, canvasState.currentCanvas.id becomes
-			// the SF id and the draft id is dropped. The 2s poll in
-			// mcp-relay-client handles the transition automatically.
 
-			// "Fill or clear records" modal. Consolidates what used to
-			// be three separate Tools-menu items (Fill required / Fill
-			// all / Clear all) into one entry that opens a focused
-			// picker:
-			//   - Scope toggle: All drafts vs. Selected drafts (with
-			//     live counts so the user can see what's about to be
-			//     touched).
-			//   - Mode picker: three cards (required / all / clear),
-			//     with Clear visually muted to indicate destructive.
-			//   - Preview line: a live count of empty fields that
-			//     would be filled (or non-empty fields that would be
-			//     cleared) given the current mode + scope. Bypassed
-			//     with a "—" when the describes aren't loaded yet
-			//     (the count is best-effort, not load-bearing).
-			//   - Run / Cancel.
-			// Dispatches to the same bulkAutoFill / bulkClearAllFields
-			// helpers the menu items used to call directly.
 			function _openAutoFillModal() {
-				// Snapshot record sets for the three scopes at open
-				// time. The modal stays open across selection changes
-				// (the user can't change selection while the modal is
-				// up, so the snapshot is fine). Three scopes:
-				//   - allDrafts:    all draft records (no loadedFromId)
-				//   - allExisting:  all loaded-existing records
-				//   - allSelected:  whatever's selected (drafts +
-				//                   existing mixed). The handlers
-				//                   distinguish: drafts always operate;
-				//                   loaded records only operate when
-				//                   includeLoaded is set.
 				const _realFilter = (r) => !r.isTypeNode && !r.isPending;
 				const allRealRecords = canvasState.bulkRecords.filter(_realFilter);
 				const allDrafts = allRealRecords.filter((r) => !r.loadedFromId);
@@ -831,9 +564,6 @@ return showBulkHelpPopover(hint);
 					canvasState.bulkSelectedIds.has(r.id),
 				);
 
-				// Remove any stale instance (defensive; the menu
-				// cleanup already runs but a previous modal could
-				// have leaked if its overlay click was swallowed).
 				document.querySelectorAll('.auto-fill-modal').forEach((el) => el.remove());
 
 				const overlay = document.createElement('div');
@@ -841,16 +571,11 @@ return showBulkHelpPopover(hint);
 				const scopeDraftCount = allDrafts.length;
 				const scopeExistingCount = allExisting.length;
 				const scopeSelCount = allSelected.length;
-				// Initial scope: honor an explicit selection if there
-				// is one. Otherwise default to All drafts (the safest,
-				// most common starting point: drafts are the records
-				// you most often want to bulk-modify).
 				const initialScope = scopeSelCount > 0
 					? 'selected'
 					: 'drafts';
 				const initialMode = 'required';
 
-				// Helper: resolve the current scope's record set.
 				function recordsForScope(scope) {
 					if (scope === 'drafts') {
 return allDrafts;
@@ -863,21 +588,11 @@ return allSelected;
 }
 					return [];
 				}
-				// Helper: should the handler include loaded records for
-				// this scope? "Drafts" = no. "Existing" = yes. "Selected"
-				// = yes (the selection may mix; passing includeLoaded
-				// lets the handler operate on whichever are selected).
 				function includeLoadedForScope(scope) {
 					return scope !== 'drafts';
 				}
 
 				function countFillTargets(records, mode) {
-					// "required": count empty required fields per record.
-					// "all": count empty writable fields per record.
-					// "clear": count non-empty values per record.
-					// Best-effort: silently returns null when a describe
-					// is missing for any object in scope, so the UI can
-					// show "—" rather than a misleading partial count.
 					let total = 0;
 					for (const rec of records) {
 						const desc = canvasState.describeCache && canvasState.describeCache[rec.objectName];
@@ -897,9 +612,6 @@ total++;
 					return summarizeAutoFillTargets(records, mode, 'both');
 				}
 
-				// Noun used in the preview line. "Records" is generic
-				// enough to cover any scope; we don't switch to "drafts"
-				// vs "existing records" because Selected can mix both.
 				function recordNoun(n) {
 					return n === 1 ? 'record' : 'records';
 				}
@@ -914,13 +626,6 @@ total++;
 					}
 					const count = countFillTargets(records, mode);
 					const noun = recordNoun(records.length);
-					// SF-impact callout for any mode that touches loaded
-					// records. Fill on a loaded record only sets EMPTY
-					// fields (we don't overwrite existing SF values),
-					// so the impact is "next upload pushes the new
-					// values." Clear on a loaded record nulls every
-					// field, which on upload writes NULL back to SF;
-					// surface that loudly.
 					const includesLoaded = scope !== 'drafts'
 						&& records.some((r) => r.loadedFromId);
 					const sfHint = includesLoaded
@@ -1053,9 +758,6 @@ total++;
 							b.classList.toggle('af-action-card--selected', active);
 							b.setAttribute('aria-pressed', active ? 'true' : 'false');
 						});
-						// Mode-aware Run button styling: clear gets a
-						// danger tint so accidental Enter doesn't blow
-						// values away without a visual cue.
 						const runBtn = overlay.querySelector('[data-af-run]');
 						if (runBtn) {
 runBtn.classList.toggle('danger', _mode === 'clear');
@@ -1070,20 +772,9 @@ runBtn.classList.toggle('danger', _mode === 'clear');
 return;
 }
 					const includeLoaded = includeLoadedForScope(_scope);
-					// Always pass tempIds: the modal owns the scope
-					// resolution, so even "All drafts" hands the
-					// handler the explicit id list rather than relying
-					// on the handler's default of "operate on every
-					// draft on the canvas." Avoids drift if the user
-					// adds/removes records on the canvas between
-					// opening the modal and clicking Run (vanishingly
-					// rare but cheap to defend against).
 					const scopeOpts = {
 						tempIds: records.map((r) => r.id),
 						includeLoaded: includeLoaded,
-						// tempIds alone must not read as "the user chose
-						// Selected"; copy in the handlers ("N selected
-						// records", skip notes) keys on this explicit flag.
 						selectionScope: _scope === 'selected',
 					};
 					cleanup();

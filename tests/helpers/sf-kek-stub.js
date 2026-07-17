@@ -1,19 +1,3 @@
-// Test stub for the SF-Apex KEK provider + ContentVersion binary download.
-//
-// makeSfApexKekProvider(conn) POSTs to
-//   <instanceUrl>/services/apexrest/orgloom/orgloom/kek/{wrap,unwrap,ensure}
-// via the global fetch, and the upload-batches / canvas stores fetch large
-// VersionData blobs from a relative SF URL the same way. Neither was stubbed
-// in the original tests, so any test that drove a store through the real KEK
-// provider errored out, which is how the recall-ledger encryption bugs
-// shipped unnoticed. This helper stubs global.fetch so:
-//   * /kek/wrap   → identity wrap   ({ wrapped: 'w:' + dekB64 })
-//   * /kek/unwrap → identity unwrap ({ dek: dekB64 })
-//   * /kek/ensure → { ok: true }
-//   * a registered VersionData URL → the exact binary bytes (arrayBuffer)
-// The identity wrap is a faithful stand-in: the provider treats `wrapped` as
-// opaque, so round-tripping it proves the store's key handling without a real
-// Salesforce org.
 
 function jsonRes(obj) {
 	return { ok: true, status: 200, async json() {
@@ -52,7 +36,6 @@ export function installSfFetchStub() {
 	};
 
 	return {
-		// Register the bytes that a VersionData download URL should return.
 		registerVersionUrl(absoluteUrl, buf) {
  versionBlobs.set(absoluteUrl, buf); 
 },
@@ -62,9 +45,6 @@ export function installSfFetchStub() {
 	};
 }
 
-// A queue-based SF connection mock that carries instanceUrl + accessToken so
-// makeSfApexKekProvider(conn) accepts it. Mirrors mockConn in the existing
-// upload-batches tests, plus the two fields the KEK provider requires.
 export function makeKekConn(initial = {}) {
 	const INSTANCE_URL = 'https://test.my.salesforce.com';
 	const calls = { queries: [], sobjectCreates: [], sobjectRetrieves: [], sobjectDestroys: [] };
@@ -77,9 +57,6 @@ export function makeKekConn(initial = {}) {
 		accessToken: 'TEST_TOKEN',
 		version: '60.0',
 		calls,
-		// Exposed so multi-step tests can stage further responses after a
-		// first call (e.g. finalize() needs reads staged with bytes captured
-		// from the preceding createPending()).
 		_queues: { queries: queryQueue, creates: createQueue, retrieves: retrieveQueue, destroys: destroyQueue },
 		async query(soql) {
 			calls.queries.push(soql);

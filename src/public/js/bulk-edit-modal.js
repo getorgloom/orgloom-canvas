@@ -1,29 +1,3 @@
-// Bulk-edit modal: find & replace + set value across many records.
-//
-// Mass-edits values across records on the canvas without touching SF
-// until the user clicks Save and upload. Two modes:
-//   F&R:  string substitution within a chosen field (case opt,
-//         match-whole-field opt).
-//   Set:  assign a single value to the chosen field.
-//
-// Scope: all records of an object type, or only currently selected
-// (canvasState.bulkSelectedIds). Live preview count updates as inputs
-// change. Apply mutates canvasState.bulkRecords in place and calls
-// renderBulkView.
-//
-// Dependencies passed to mount():
-//   canvasState: shared canvas state.
-//   ensureDescribe: async function(name) → describe. Needed for
-//                     picklist values, type info, and string-field
-//                     detection.
-//   escapeHtml: HTML escape utility.
-//   renderBulkView: re-render the bulk canvas after Apply.
-//   showBulkToast: toast notification.
-//
-// Public API:
-//   openModal(): show the bulk-edit modal.
-//
-// Exposed as window.OrgLoom.bulkEditModal. Load order: before app.js.
 
 (function () {
 	'use strict';
@@ -41,9 +15,6 @@
 			const escapeHtml = deps.escapeHtml;
 			const renderBulkView = deps.renderBulkView;
 			const showBulkToast = deps.showBulkToast;
-			// Optional: action-toast for the post-apply Undo. Apply replaces
-			// rec.values with a fresh object per record (never mutates the
-			// old one), so a per-record VALUES snapshot is a faithful undo.
 			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
 				? deps.showBulkToastWithAction : null;
 
@@ -60,9 +31,6 @@
 				}
 			}
 
-			// Capture pre-operation values, then arm Undo with the exact
-			// post-operation revision/reference/content. A later edit invalidates
-			// the whole snapshot so an old Undo cannot erase newer work.
 			function _captureValuesUndo(records) {
 				const priorByRecord = new Map(records.map((r) => [r, r.values]));
 				return function arm(touchedRecords) {
@@ -90,15 +58,6 @@
 				};
 			}
 
-				// ----- Bulk edit modal: find & replace + set value -----
-				// Mass-edits values across many records on the canvas without
-				// touching SF until the user clicks Save and upload. Two modes:
-				//   F&R:  string substitution within a chosen field (case opt,
-				//         match-whole-field opt)
-				//   Set:  assign a single value to the chosen field
-				// Scope: all records of an object type, or only currently
-				// selected (canvasState.bulkSelectedIds). Live preview count updates as
-				// inputs change.
 				const bulkEditModal = document.createElement('div');
 				bulkEditModal.className = 'modal hidden';
 				bulkEditModal.innerHTML =
@@ -122,8 +81,6 @@ closeBulkEditModal();
 } 
 });
 
-				// Module-level state for the open modal so live preview + apply
-				// can read consistent values without re-parsing every input.
 				let _beState = null; // { action, objectName, scope, fieldName, find, replace, caseSensitive, wholeField, value }
 
 				function openBulkEditModal() {
@@ -131,8 +88,6 @@ closeBulkEditModal();
 						showBulkToast('Add some records first.', 'error');
 						return;
 					}
-					// Default object: the active object if it has records, else
-					// the first object that has records.
 					const objCounts = new Map();
 					canvasState.bulkRecords.forEach(r => objCounts.set(r.objectName, (objCounts.get(r.objectName) || 0) + 1));
 					const activeObj = (canvasState.selectedObjects[canvasState.activeIndex] && objCounts.has(canvasState.selectedObjects[canvasState.activeIndex].name))
@@ -149,8 +104,6 @@ closeBulkEditModal();
 						wholeField: false,
 						value: '',
 					};
-					// Make sure describes for affected objects are warm so we
-					// can render field dropdowns without a flash.
 					ensureDescribe(activeObj).then(() => {
 						renderBulkEditModal();
 					}).catch(() => renderBulkEditModal());
@@ -161,15 +114,6 @@ closeBulkEditModal();
 					_beState = null;
 				}
 
-				// String-like = Find & replace makes sense (string content can
-				// be partially substituted). Booleans / dates / numbers only
-				// support Set value because there's no "substring" of a Date.
-				// `reference` and `id` are included even though they're
-				// opaque SF Ids: the whole-field mode is the right tool
-				// for retargeting many child records from one parent to
-				// another (AccountId = '001ABC...' → '001XYZ...'), and
-				// substring matching still works for the 15-→18-char
-				// extension case.
 				function _isStringLikeField(f) {
 					if (!f) {
 return false;
@@ -177,10 +121,6 @@ return false;
 					return ['string', 'textarea', 'email', 'phone', 'url', 'encryptedstring', 'picklist', 'multipicklist', 'combobox', 'reference', 'id'].indexOf(f.type) !== -1;
 				}
 
-				// Render the right input element for a field type. The wrapper
-				// is a single block; everything inside binds back to
-				// _beState.value via the change/input listener attached after
-				// renderBulkEditModal injects this HTML.
 				function _renderSetValueInput(field, current) {
 					const cur = current == null ? '' : String(current);
 					if (!field) {
@@ -239,8 +179,6 @@ return false;
 					}
 				}
 
-				// Read the value out of whatever input _renderSetValueInput
-				// produced. Multipicklist needs to join selected options.
 				function _readSetValueFromInput(field, container) {
 					if (!field) {
 return '';
@@ -270,14 +208,10 @@ _beState.fieldName = fields[0].name;
 }
 					const currentField = fields.find(f => f.name === _beState.fieldName) || null;
 					const stringLike = _isStringLikeField(currentField);
-					// If user lands on a non-string field while in F&R mode,
-					// flip to Set value automatically; F&R is meaningless on
-					// booleans / dates / numbers.
 					if (_beState.action === 'replace' && !stringLike && currentField) {
 						_beState.action = 'set';
 					}
 
-					// Object dropdown: only types that have records on canvas.
 					const objCounts = new Map();
 					canvasState.bulkRecords.forEach(r => objCounts.set(r.objectName, (objCounts.get(r.objectName) || 0) + 1));
 					const objOptions = Array.from(objCounts.keys()).map(name => {
@@ -326,7 +260,6 @@ _beState.fieldName = fields[0].name;
 						actionPanel +
 						'<div class="be-preview" id="be-preview"></div>';
 
-					// Wire inputs back into _beState.
 					const objSel = content.querySelector('#be-object');
 					objSel.addEventListener('change', () => {
 						_beState.objectName = objSel.value;
@@ -380,9 +313,6 @@ wholeEl.addEventListener('change', () => {
  _beState.wholeField = wholeEl.checked; updateBulkEditPreview(); 
 });
 }
-					// be-value comes in many flavors (input/select/textarea
-					// depending on field type). Bind both `input` and `change`
-					// so we catch typing and option-picking.
 					const valEl = content.querySelector('#be-value');
 					if (valEl) {
 						const sync = () => {
@@ -399,11 +329,6 @@ wholeEl.addEventListener('change', () => {
 					if (!_beState) {
 return [];
 }
-					// Type-nodes (schema placeholders) and pending records are
-					// transient render states with no real values; exclude them
-					// from the count AND the mutation, same as auto-fill. Without
-					// this a type-node whose objectName matches would be counted
-					// in the preview and have its (placeholder) values rewritten.
 					const recs = canvasState.bulkRecords.filter(r =>
 						r.objectName === _beState.objectName && !r.isTypeNode && !r.isPending);
 					if (_beState.scope === 'selected') {
@@ -412,10 +337,6 @@ return recs.filter(r => canvasState.bulkSelectedIds.has(r.id));
 					return recs;
 				}
 
-				// Count of loaded-existing records in the current affected set:
-				// editing these stages an UPDATE that the next upload pushes to
-				// Salesforce. Surfaced in the preview so the SF consequence is
-				// disclosed before Apply.
 				function bulkEditLoadedInScope() {
 					return bulkEditAffectedRecords().filter(r => r.loadedFromId).length;
 				}
@@ -427,7 +348,6 @@ return 0;
 					if (_beState.action === 'set') {
 return bulkEditAffectedRecords().length;
 }
-					// F&R: count records whose chosen field actually contains the find string
 					const affected = bulkEditAffectedRecords();
 					const f = _beState.find || '';
 					if (f === '') {
@@ -468,10 +388,6 @@ apply.disabled = true;
 }
 						return;
 					}
-					// SF-impact disclosure: editing loaded-existing records stages
-					// an UPDATE that the next upload pushes to Salesforce. Append
-					// a hint whenever the scope actually contains loaded records
-					// (drafts-only edits stay on the canvas). Mirrors auto-fill.
 					const _loaded = bulkEditLoadedInScope();
 					const sfHint = _loaded > 0
 						? ' Includes ' + _loaded + ' Salesforce-loaded record' + (_loaded === 1 ? '' : 's') +
@@ -495,10 +411,6 @@ apply.disabled = n === 0;
 					}
 				}
 
-				// Coerce a string from the input into the right shape for the
-				// field type. Empty string becomes null so the field clears
-				// on upload (rather than sending "" which SF rejects for
-				// non-text types).
 				function _coerceForField(field, raw) {
 					if (raw === '' || raw == null) {
 return null;
@@ -529,8 +441,6 @@ return;
 						? describe.fields.find(f => f.name === _beState.fieldName)
 						: null;
 					const affected = bulkEditAffectedRecords();
-					// Values snapshot for the post-apply Undo toast: captured
-					// before any record is touched.
 					const _undo = _captureValuesUndo(affected);
 					let updatedCount = 0;
 					const touchedRecords = [];
@@ -554,11 +464,6 @@ return;
 							} else if (_beState.caseSensitive) {
 								nv = sv.split(find).join(_beState.replace);
 							} else {
-								// case-insensitive replace via regex with escaped find.
-								// Use the FUNCTION form so the replacement text is
-								// literal: the string form would interpret $&, $1,
-								// $$ etc. in the user's replacement as regex tokens
-								// (typing "$&" would re-insert the matched text).
 								const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 								const rep = _beState.replace;
 								nv = sv.replace(new RegExp(escaped, 'gi'), () => rep);

@@ -1,7 +1,3 @@
-// Tests for the CSV export escaper: RFC-4180 quoting AND the CSV
-// formula-injection guard. canvas-export-csv.js is a browser IIFE that
-// attaches to window.OrgLoom.canvasExportCsv; run it in a VM sandbox and
-// exercise the pure helpers it exposes on the mount's `_test` surface.
 
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,8 +8,6 @@ let T; // the _test helper surface
 
 before(() => {
 	const src = readFileSync(new URL('../src/public/js/canvas-export-csv.js', import.meta.url), 'utf8');
-	// Minimal DOM shim: mount() builds a modal element and wires close
-	// handlers; we only need createElement + a body + document listeners.
 	const el = () => ({
 		className: '', innerHTML: '', style: {},
 		classList: { add() {}, remove() {}, contains() {
@@ -46,9 +40,7 @@ describe('csvEscape: formula-injection guard', () => {
 	});
 
 	test('guards leading tab / CR that would shift the first visible char', () => {
-		// Tab is guarded but not an RFC-quote trigger → apostrophe, no quotes.
 		assert.equal(T.csvEscape('\t=cmd'), "'\t=cmd");
-		// CR is both guarded AND an RFC-quote trigger → apostrophe + quotes.
 		assert.equal(T.csvEscape('\r=cmd'), '"\'\r=cmd"');
 	});
 
@@ -71,7 +63,6 @@ describe('csvEscape: RFC 4180 quoting', () => {
 	});
 
 	test('formula guard AND quoting compose (value with = and a comma)', () => {
-		// leading = → apostrophe; comma → wrapped in quotes.
 		assert.equal(T.csvEscape('=a,b'), '"\'=a,b"');
 	});
 });
@@ -93,8 +84,6 @@ describe('buildCsv', () => {
 
 describe('orderFields', () => {
 	test('priority fields first (in list order), rest alphabetical', () => {
-		// Spread the sandbox-realm array into a native one so deepEqual's
-		// prototype check doesn't trip on the cross-realm Array.prototype.
 		const ordered = [...T.orderFields(['Zeta', 'Name', 'Alpha', 'Id', 'Email'])];
 		assert.deepEqual(ordered, ['Id', 'Name', 'Email', 'Alpha', 'Zeta']);
 	});

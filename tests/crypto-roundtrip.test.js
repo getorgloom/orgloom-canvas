@@ -1,21 +1,7 @@
-// Locks the AES-256-GCM at-rest encryption used for SF refresh tokens.
-// Properties this test asserts:
-//   * encrypt then decrypt returns the original plaintext.
-//   * Encrypting the same plaintext twice produces different ciphertext
-//     (the random IV is doing its job: no deterministic-encryption
-//     leak that would let an attacker correlate identical tokens across
-//     rows).
-//   * Bit-flipping the ciphertext, tampering with the auth tag, or
-//     swapping the IV all cause decrypt() to throw (GCM authentication
-//     is enforced, not merely the layout).
-//   * Format errors (missing key, wrong shape) throw with clear errors.
 
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 
-// Crypto module reads ENCRYPTION_KEY at import time. Stamp it before
-// importing: 32 bytes hex = 64 chars. Test fixture only; not a real
-// secret. gitleaks:allow
 process.env.ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 
 let encrypt, decrypt, isEncryptionAvailable;
@@ -65,7 +51,6 @@ describe('crypto round-trip', () => {
 	test('flipping a bit in the ciphertext body throws', () => {
 		const ct = encrypt('payload');
 		const [iv, body, tag] = ct.split(':');
-		// Flip a byte in the body.
 		const tampered = body.slice(0, 2) === '00' ? 'ff' + body.slice(2) : '00' + body.slice(2);
 		assert.throws(() => decrypt(iv + ':' + tampered + ':' + tag));
 	});

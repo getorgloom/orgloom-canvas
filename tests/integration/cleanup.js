@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-// Manual cleanup: same as the after-hook in validation-live.test.js
-// but callable as a one-shot if a previous crashed run left rules
-// in the org. Reads the same env vars (RUN_SF_LIVE,
-// SF_TEST_ORG_ALIAS) so you can't accidentally point it at the
-// wrong place.
 
 import { connectViaSfCli, cleanupTestRules } from './sf-helpers.js';
 

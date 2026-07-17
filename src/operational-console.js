@@ -46,24 +46,16 @@ export function sanitizeConsoleArgs(args) {
 			if (typeof arg === 'number' || typeof arg === 'boolean' || arg == null) {
 				return arg;
 			}
-			// Object values frequently contain Stripe metadata, IDs, request URLs,
-			// or upstream error bodies. Key names are enough to diagnose the event
-			// shape without copying customer/provider values into retained logs.
 			if (typeof arg === 'object') {
 				return { redacted: true, keys: Object.keys(arg).sort().slice(0, 12) };
 			}
 			return '[redacted]';
 		} catch (_) {
-			// Logging must never become an availability failure because an unusual
-			// Error/Proxy value throws while being inspected.
 			return '[redacted]';
 		}
 	});
 }
 
-// Install only in the hosted production process. Local/test logs keep their
-// detail; retained provider logs get coarse event/type/status signals while
-// scrubbed GlitchTip supplies stack/release information for investigation.
 export function installOperationalConsoleGuard(consoleLike = console) {
 	const originals = new Map();
 	for (const level of LEVELS) {

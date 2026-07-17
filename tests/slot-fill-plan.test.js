@@ -1,13 +1,3 @@
-// Unit tests for planSlotFills (slot-helpers.js): the pure auth +
-// plan-builder used by the new custom-object slot-fill route. Covers
-// the same auth/allowlist axes as the mergeSlotFills tests, plus the
-// plan-shape assertions specific to this helper:
-//   * Drafts skipped (no_record_to_update): recipients can't fill
-//     records that don't exist in SF yet under the new architecture.
-//   * Multiple slots on the same loadedFromId coalesce into one
-//     update row.
-//   * recordPlan is grouped by SObject, ready for batched
-//     conn.sobject(name).update(...).
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -85,7 +75,6 @@ describe('planSlotFills: assignment authorization', () => {
 		assert.equal(out.recordPlan.Account.length, 2);
 		const ids = out.recordPlan.Account.map((u) => u.Id).sort();
 		assert.deepEqual(ids, ['001A', '001B']);
-		// 001C must NOT be in the plan.
 		assert.equal(out.recordPlan.Account.find((u) => u.Id === '001C'), undefined);
 	});
 });
@@ -103,17 +92,11 @@ describe('planSlotFills: draft handling', () => {
 	});
 
 	test('skip-reason precedence: assignment is checked before loadedFromId presence', () => {
-		// If a slot is both unassigned-to-you AND has no loadedFromId,
-		// we report the assignment failure first. This matches the
-		// recipient's mental model: "you weren't supposed to be filling
-		// this anyway" is more informative than "this draft can't be
-		// filled."
 		const out = planSlotFills({
 			records: [slotRec({
 				slotId: 1,
 				kind: 'whole-record',
 				assigneeSfUserId: '005other',
-				// no loadedFromId
 			})],
 			fills: [{ slotId: 1, values: { Name: 'a' } }],
 			recipientSfUserId: '005me',
@@ -124,9 +107,6 @@ describe('planSlotFills: draft handling', () => {
 
 describe('planSlotFills: record coalescing', () => {
 	test('two slots on the same loadedFromId merge into one update row', () => {
-		// Field-level slot A covers Industry. Field-level slot B covers
-		// Phone. Both target the same Account record. Recipient submits
-		// both → one DML row with both fields.
 		const out = planSlotFills({
 			records: [
 				slotRec({
@@ -216,11 +196,6 @@ describe('planSlotFills: field allowlist enforcement', () => {
 	});
 
 	test('field-level slot with empty allowlist drops all incoming keys but still counts as applied', () => {
-		// Counts as applied because the recipient was authorized for
-		// the slot; the empty allowlist is the owner's choice. Result
-		// is a no-op DML row (Id only). The route can decide to
-		// skip-empty-updates downstream; the helper just reports what
-		// was authorized.
 		const out = planSlotFills({
 			records: [slotRec({
 				slotId: 1, kind: 'fields', fields: [],
@@ -334,9 +309,6 @@ describe('planSlotFills: applied bookkeeping', () => {
 	});
 
 	test('fieldCount reflects attempted keys (pre-allowlist), not landed keys', () => {
-		// Same contract as mergeSlotFills: the audit log relies on
-		// knowing how many keys the recipient *tried* to send vs how
-		// many actually made it past the allowlist.
 		const out = planSlotFills({
 			records: [slotRec({
 				slotId: 1, kind: 'fields', fields: ['Industry'],
@@ -346,7 +318,6 @@ describe('planSlotFills: applied bookkeeping', () => {
 			recipientSfUserId: '005me',
 		});
 		assert.equal(out.applied[0].fieldCount, 3);
-		// But only Industry actually lands.
 		assert.deepEqual(Object.keys(out.recordPlan.Account[0]).sort(), ['Id', 'Industry']);
 	});
 });

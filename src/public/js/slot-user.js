@@ -1,23 +1,3 @@
-// Slot + user helper bundle.
-//
-// Ten small predicates / formatters that the records canvas, the
-// insert modal, and the share flow all rely on for slot-aware
-// rendering. Each one is a few lines; bundling them keeps the dep
-// surface of the bigger modules manageable (every prior extraction
-// passed these as individual deps).
-//
-//   _isEmptySlot, _slotAssignmentState, _slotAssigneeBadgeHtml,
-//   _slotAssignmentCardClass, _slotProgress, _aggregateSlotProgress,
-//   _slotProgressClass, _resolveUserName, _formatRelativeTime,
-//   _slotPreflightWarn
-//
-// Public API (returned from mount):
-//   The 10 helpers above PLUS `_slotInaccessibleObjects`: a Set
-//   shared with app.js's _runSlotPreflight, which clears it and
-//   re-populates it per canvas load. The renderer consults it via
-//   _slotPreflightWarn.
-//
-// Exposed as window.OrgLoom.slotUser. Load order: before app.js.
 
 (function () {
 	'use strict';
@@ -52,17 +32,6 @@ return false;
 				return true;
 			}
 			
-			// Slot assignment state from the current viewer's perspective.
-			// Returns one of:
-			//   - null: not a slot record
-			//   - 'mine': slot is assigned to me: fillable, highlighted
-			//   - 'generic': slot has no assignee: anyone with access fills
-			//   - 'other': slot is assigned to someone else: locked for me
-			// Uses window.SF_USER_ID (populated server-side from the SF
-			// session) as "me." Works for both share-grant recipients and
-			// canvas owners; owners who assigned a slot to a teammate
-			// see 'other' on those cards too, which is the right read
-			// (the slot isn't theirs to fill).
 			function _slotAssignmentState(rec) {
 				if (!rec || !rec.slot || rec.slot.slotId == null) {
 return null;
@@ -74,11 +43,6 @@ return 'generic';
 				return (window.SF_USER_ID && assignee === window.SF_USER_ID) ? 'mine' : 'other';
 			}
 			
-			// Tiny inline badge for the slot card chrome. Skips when
-			// the slot has no assignee (already implied by absence).
-			// 'mine' renders as a green "for you" pill; 'other' as a
-			// muted "for <Name>" pill with the assignee's display
-			// name. Used by both legacy and cy renderers.
 			function _slotAssigneeBadgeHtml(rec) {
 				const state = _slotAssignmentState(rec);
 				if (state !== 'mine' && state !== 'other') {
@@ -91,24 +55,11 @@ return '';
 				return '<span class="slot-assignee-badge slot-assignee-badge--other" title="Assigned to ' + escapeHtml(name) + ': only they can fill this slot.">for ' + escapeHtml(name) + '</span>';
 			}
 			
-			// Class fragment for the card itself based on assignment
-			// state. Returns ' record-card--slot-locked' for 'other',
-			// empty otherwise. Drives muted/locked CSS treatment.
 			function _slotAssignmentCardClass(rec) {
 				const state = _slotAssignmentState(rec);
 				return state === 'other' ? ' record-card--slot-locked' : '';
 			}
 			
-			// Compute slot-fill progress for a single record. Two slot
-			// shapes share this helper:
-			//   - Field-level slot (kind='fields'): filled = count of
-			//     slot.fields whose rec.values[name] is non-empty;
-			//     total = slot.fields.length.
-			//   - Whole-record slot (loaded or draft): binary, total=1;
-			//     filled=1 once the recipient has loaded a record or
-			//     typed anything into the draft.
-			// Returns null when the record has no slot: caller can
-			// short-circuit on that.
 			function _slotProgress(rec) {
 				if (!rec || !rec.slot || rec.slot.slotId == null) {
 return null;
@@ -127,9 +78,6 @@ filled++;
 					}
 					return { filled, total };
 				}
-				// Whole-record slot: filled when there's a loadedFromId
-				// (recipient picked a record) OR any non-empty value
-				// (recipient created a draft and typed something).
 				const loaded = !!rec.loadedFromId;
 				const hasValue = (() => {
 					const v = rec.values || {};
@@ -143,9 +91,6 @@ return true;
 				return { filled: (loaded || hasValue) ? 1 : 0, total: 1 };
 			}
 			
-			// Sum slot progress across every slot record on the canvas.
-			// Used by the toolbar pill. Returns { filled, total, recordCount }
-			// where recordCount is the number of slot records contributing.
 			function _aggregateSlotProgress() {
 				let filled = 0, total = 0, recordCount = 0;
 				for (const r of canvasState.bulkRecords) {
@@ -163,9 +108,6 @@ continue;
 				return { filled, total, recordCount };
 			}
 			
-			// Color band for slot progress. 0/N → gray; partial → accent;
-			// full (only when total > 0) → success. Centralized so the
-			// card badge, modal banner, and toolbar pill agree.
 			function _slotProgressClass(progress) {
 				if (!progress || progress.total === 0) {
 return 'slot-progress-empty';
@@ -179,13 +121,6 @@ return 'slot-progress-empty';
 				return 'slot-progress-partial';
 			}
 			
-			// Slot last-modified indicator. Field-level slot records
-			// surface "Last modified <relative-time> by <name>" on the
-			// modal banner so owner and recipient can see whether the
-			// slot's been filled. Time comes from the SF
-			// LastModifiedDate already in rec.values; user name comes
-			// from a lazy User-record fetch keyed by LastModifiedById.
-			// Per-id cache so re-renders don't re-fetch.
 			const _userNameCache = new Map();
 			async function _resolveUserName(userId) {
 				if (!userId) {
@@ -241,9 +176,6 @@ return day + ' day' + (day === 1 ? '' : 's') + ' ago';
 				return new Date(iso).toLocaleDateString();
 			}
 			
-			// Per-canvas-load preflight: flags slot SObjects the loader
-			// can't describe. Populated by _runSlotPreflight on canvas
-			// open; consulted by renderers to add a ⚠ on affected slots.
 			const _slotInaccessibleObjects = new Set();
 			function _slotPreflightWarn(rec) {
 				if (!_isEmptySlot(rec)) {

@@ -1,29 +1,3 @@
-// Association (edge) lifecycle for the bulk canvas.
-//
-// Pulled out of app.js for size: every operation that creates,
-// resolves, or deletes a relationship between two records on the
-// canvas lives here:
-//
-//   • inferRefFromGraphData / inferAllReferences: given two object
-//     names, return the SF reference fields that could express a
-//     relationship between them (FK both ways). Reads describeCache
-//     + the schema-graph data on selectedObjects.
-//   • inferAssociationsForRecord: when a new record lands on the
-//     canvas (browse, soql, AI), scan its FK values to materialize
-//     edges to any matching loaded records already there.
-//   • createAssociation: push an edge row + write the FK value on
-//     the holder record (so the upload-time payload is correct).
-//   • finalizeAssociation: the user-facing flow at end-of-drag,
-//     resolve candidate references, dedup, single-or-picker, then
-//     create.
-//   • deleteAssociation: remove an edge row, optionally clearing the
-//     FK value off the holder record. Pushes an undo entry so the
-//     reversal is one Ctrl+Z away.
-//   • deleteDerivedFkEdge: same idea but for "derived" edges that
-//     come from a populated FK value without a backing association
-//     row.
-//
-// Mount returns the public surface; callers re-bind by name in app.js.
 
 (function () {
 	'use strict';
@@ -92,10 +66,6 @@
 			function inferAllReferences(fromName, toName) {
 				const seen = new Set();
 				const out = [];
-				// Older cached graph entries may omit both flags; preserve that
-				// compatibility, but when Salesforce supplies FLS metadata a
-				// relationship is a candidate only if it can be written on create
-				// or update. Read-only references cannot survive upload.
 				const fkWritable = (field) =>
 					(field.createable === undefined && field.updateable === undefined) ||
 					!!field.createable ||
@@ -198,12 +168,6 @@
 							return;
 						}
 
-						// A reference field lives on the "holder" record (srcRec
-						// when fwd, targetRec when rev) and is single-value, so a
-						// holder can use each lookup field at most once. Exclude
-						// any candidate whose holder already has an association on
-						// that field, whether to THIS target (already connected)
-						// or a DIFFERENT one (a lookup can't point at two records).
 						const remaining = all.filter((o) => {
 							const holderId = o.direction === 'fwd' ? srcRec.id : targetRec.id;
 							const occupied = canvasState.bulkAssociations.some((a) =>

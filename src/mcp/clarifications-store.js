@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 
 const DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24h
-// run a sweep every 30 minutes to drop expired-and-answered entries
 const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
 
 const _clarifications = new Map();

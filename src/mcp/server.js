@@ -1,4 +1,3 @@
-// MCP server. Exposes Orgloom's canvas surface to AI clients (Claude
 import * as mcpTokensDb from "orgloom-canvas/database/mcp-tokens";
 import * as accountsDb from "orgloom-canvas/database/accounts";
 import {
@@ -14,7 +13,6 @@ const SERVER_INFO = Object.freeze({
 	version: "1.0.0",
 });
 
-// JSON-RPC error codes ------------------------------------------------
 const ERR_PARSE = -32700;
 const ERR_INVALID_REQUEST = -32600;
 const ERR_METHOD_NOT_FOUND = -32601;
@@ -40,12 +38,7 @@ return false;
 	_tokenRequestWindows.set(tokenId, recent);
 	return true;
 }
-// ERR_NO_CONNECTION (-32003) retired: the submit-only MCP server never
-// calls Salesforce, so "no active SF connection" can't happen here.
-// Reserved (not reused) to avoid breaking any client that still
-// recognizes the code from older protocol versions.
 
-// ---- tool catalog ---------------------------------------------------
 
 const TOOLS = [
 	{
@@ -539,10 +532,8 @@ const TOOLS = [
 	},
 ];
 
-// ---- tool dispatch --------------------------------------------------
 const RELAY_REQUEST_TIMEOUT_MS = 5000;
 
-// canvas ids can either represent contentdocument or draft (unsaved) canvas
 const _SF_CANVAS_ID = /^[a-zA-Z0-9]{15,18}$/;
 const _DRAFT_CANVAS_ID =
 	/^draft-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -649,7 +640,6 @@ async function _toolProposeRecordChanges(ctx, args) {
 		);
 	}
 
-	// fetch live canvas state via the relay so we can validate change
 	let liveRead;
 	try {
 		liveRead = await relay.dispatchRequest({
@@ -711,7 +701,6 @@ async function _toolProposeRecordChanges(ctx, args) {
 		if (!c || typeof c !== "object") {
 			continue;
 		}
-		// skip every kind that isn't a new-draft.
 		if (c.kind === "new-association" || c.kind === "delete-association") {
 			continue;
 		}
@@ -1338,7 +1327,6 @@ async function _toolWithdrawProposal(ctx, args) {
 			},
 		});
 	} catch (e) {
-		/* audit best-effort */
 	}
 	return _textResult(
 		JSON.stringify({
@@ -1521,7 +1509,6 @@ async function _toolGetCanvasSummary(ctx, args) {
 			(p) => p.workspaceId === ctx.workspaceId,
 		).length;
 	} catch (_e) {
-		/* best-effort */
 	}
 	return _textResult(
 		JSON.stringify({
@@ -1579,7 +1566,6 @@ async function _toolGetMyCapabilities(ctx) {
 			.where("workspace_id", "=", ctx.workspaceId)
 			.executeTakeFirst();
 	} catch (_e) {
-		/* leave empty */
 	}
 	settings = settings || {
 		ai_on_canvas_data_enabled: 0,
@@ -1616,13 +1602,8 @@ async function _toolGetMyCapabilities(ctx) {
 			},
 		};
 	} catch (_e) {
-		/* leave empty */
 	}
 
-	// Every change kind is allowed at MCP proposal time. The actual
-	// SF write gates at /api/upload (upload-records capability) - and
-	// SF's own org-side duplicate rules are enforced natively by SF
-	// when the upload fires, so Orgloom doesn't second-guess them.
 	const allowed = _ALL_CHANGE_KINDS.slice();
 
 	const notes = [];
@@ -1733,7 +1714,6 @@ async function _toolRequestClarification(ctx, args) {
 			},
 		});
 	} catch (_e) {
-		/* best-effort */
 	}
 	return _textResult(
 		JSON.stringify({
@@ -1766,7 +1746,6 @@ async function _toolReadClarification(ctx, args) {
 			"Clarification " + clarificationId + " not found.",
 		);
 	}
-	// Workspace + token-ownership fence - mirrors read_proposal_outcome.
 	if (row.workspaceId !== ctx.workspaceId) {
 		throw _appError(
 			ERR_NOT_FOUND,
@@ -1818,7 +1797,6 @@ const TOOL_HANDLERS = {
 	read_clarification: _toolReadClarification,
 };
 
-// ---- protocol ------------------------------------------------------
 async function _handleInitialize() {
 	return {
 		protocolVersion: PROTOCOL_VERSION,
@@ -1844,7 +1822,6 @@ async function _handleToolsCall(ctx, params) {
 		throw _appError(ERR_METHOD_NOT_FOUND, "Unknown tool: " + name);
 	}
 
-	// capability check
 	const cap = await ext.getCapability(ctx.account, "ai-edit-on-canvas", {
 		workspaceId: ctx.workspaceId,
 		actorKind: "mcp",
@@ -1864,10 +1841,6 @@ async function _handleToolsCall(ctx, params) {
 	try {
 		result = await handler(ctx, args);
 	} catch (err) {
-		// Await the audit so the row is durable before we return the error
-		// to the client - a crash between here and the next tick would
-		// otherwise lose the record of a tool call that DID run. Still
-		// swallow audit failures: they must not mask the real error.
 		await ext.auditWrite({
 			workspaceId: ctx.workspaceId,
 			actorAccountId: ctx.account.id,
@@ -1895,7 +1868,6 @@ async function _handleToolsCall(ctx, params) {
 	return result;
 }
 
-// ---- express handler -----------------------------------------------
 export async function mcpHandler(req, res) {
 	const body = req.body;
 	if (!body || typeof body !== "object") {
@@ -1949,10 +1921,6 @@ export async function mcpHandler(req, res) {
 		const code = (err && err.jsonRpcCode) || ERR_INTERNAL;
 		const message = (err && err.message) || "Internal error";
 		const data = err && err.data;
-		// Auth failures also get HTTP 401 (not just the JSON-RPC error) so
-		// HTTP-level clients and the QA contract (qa-mcp.spec.ts S087/S088)
-		// can distinguish "bad credentials" without parsing the body. The
-		// JSON-RPC error envelope is unchanged.
 		if (code === ERR_AUTH) {
 			res.status(401);
 		} else if (code === ERR_RATE_LIMIT) {
@@ -1995,10 +1963,8 @@ async function _resolveContext(req) {
 	return { account, workspaceId, mcpToken: tokenRow };
 }
 
-// ---- helpers --------------------------------------------------------
 
 function _textResult(text) {
-	// MCP tool result shape: { content: [{ type: 'text', text }] }
 	return { content: [{ type: "text", text }] };
 }
 

@@ -22,11 +22,6 @@ export function canvasEntryStartsTrial(kind) {
 		|| kind === SHARED_CANVAS_ENTRY.PAID_RECIPIENT;
 }
 
-// Classify a deep-linked canvas without treating the URL itself as an
-// entitlement. getCanvas must read through the acting Salesforce identity;
-// getGrant must use that same org, user, and canvas tuple. This lets the SaaS
-// trial flow distinguish a free Viewer invitation from actual product use
-// while keeping Salesforce access as the first authorization boundary.
 export async function classifySharedCanvasEntry({
 	canvasId,
 	sfOrgId,

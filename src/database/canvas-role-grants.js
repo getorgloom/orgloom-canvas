@@ -1,4 +1,3 @@
-// role assignments for direct-share canvases.
 import { ext } from "../extensions.js";
 
 const VALID_ROLES = new Set(["viewer", "contributor", "editor"]);

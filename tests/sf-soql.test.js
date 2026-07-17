@@ -1,8 +1,3 @@
-// Unit tests for packages/canvas/src/sf-soql.js: escapeSoqlLiteral. Pure string
-// helper, exhaustively tested because every server.js endpoint that
-// interpolates user input into a SOQL query depends on this contract:
-// a single-quoted SOQL literal is safe iff backslashes and single
-// quotes inside it have been doubled / escaped.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -71,7 +66,6 @@ describe('escapeSoqlLiteral: single quote', () => {
 
 describe('escapeSoqlLiteral: backslash', () => {
 	test('escapes a backslash', () => {
-		// Input is a single backslash; output is two backslashes.
 		assert.equal(escapeSoqlLiteral('a\\b'), 'a\\\\b');
 	});
 
@@ -80,19 +74,12 @@ describe('escapeSoqlLiteral: backslash', () => {
 	});
 
 	test('escapes a trailing backslash (would otherwise escape the closing quote)', () => {
-		// This is the important defensive case: a trailing `\` inside a
-		// SOQL literal would escape the closing `'` and break out of
-		// the literal. Pinning that the escape doubles the backslash so
-		// the closing quote stays a closing quote.
 		assert.equal(escapeSoqlLiteral('foo\\'), 'foo\\\\');
 	});
 });
 
 describe('escapeSoqlLiteral: combined', () => {
 	test('escapes backslash before quote (order matters: \\ first, then \')', () => {
-		// If the function escaped quotes first and backslashes second,
-		// the inserted `\\'` would be re-escaped to `\\\\\\'`. This
-		// test pins that backslashes are processed first.
 		assert.equal(escapeSoqlLiteral("a\\'b"), "a\\\\\\'b");
 	});
 
@@ -104,10 +91,6 @@ describe('escapeSoqlLiteral: combined', () => {
 	});
 
 	test('idempotent on already-escaped input doubles the escapes (NOT a no-op)', () => {
-		// Important: this function is NOT idempotent. If a caller
-		// double-escapes by accident, they end up with mangled SOQL.
-		// Pin the behavior so the contract is unambiguous: callers
-		// must escape exactly once, at the boundary.
 		const once = escapeSoqlLiteral("O'Brien");
 		const twice = escapeSoqlLiteral(once);
 		assert.notEqual(once, twice);
@@ -144,12 +127,6 @@ describe('escapeSoqlLiteral: null / undefined / non-string inputs', () => {
 
 describe('escapeSoqlLiteral: wildcards passed through (NOT escaped)', () => {
 	test('% is preserved (used as LIKE wildcard by callers)', () => {
-		// Current callers want users typing `%` into search boxes to
-		// keep its wildcard semantics inside `LIKE`. This pins that
-		// behavior so a future "lock down LIKE wildcards" change is
-		// deliberate (and probably done via a separate
-		// escapeSoqlLikeLiteral helper rather than by overloading
-		// this one).
 		assert.equal(escapeSoqlLiteral('100%'), '100%');
 	});
 
@@ -164,32 +141,17 @@ describe('escapeSoqlLiteral: wildcards passed through (NOT escaped)', () => {
 
 describe('escapeSoqlLiteral: defends against the classic injection attempts', () => {
 	test('OR injection: quote-break + clause-append', () => {
-		// Without escaping: WHERE Name = 'x' OR Id != null --'
-		// With escaping the inner quote becomes \', so the literal
-		// stays closed and the rest is just data inside the string.
 		const malicious = "x' OR Id != null --";
 		const out = escapeSoqlLiteral(malicious);
 		assert.equal(out, "x\\' OR Id != null --");
-		// Sanity: the result has no UNESCAPED single quotes (every '
-		// is preceded by a backslash). Match a quote that is NOT
-		// preceded by a backslash.
 		assert.equal(out.match(/(?<!\\)'/g), null);
 	});
 
 	test('UNION injection attempt with terminating backslash + quote', () => {
-		// Trailing `\` before the closing `'` is the classic SOQL
-		// quote-break; without escaping the backslash, the closing
-		// quote becomes part of the literal. Confirm we'd close the
-		// literal cleanly.
 		const malicious = "a\\";
 		const out = escapeSoqlLiteral(malicious);
-		// Output ends with TWO backslashes, so when wrapped in `'…'`
-		// the final `'` is paired with its opening counterpart, not
-		// escaped by the user-supplied trailing slash.
 		assert.equal(out, 'a\\\\');
 		const literal = "'" + out + "'";
-		// One opening quote, one closing quote, no unescaped quote in
-		// between.
 		assert.equal((literal.match(/'/g) || []).length, 2);
 	});
 });

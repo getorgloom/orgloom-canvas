@@ -1,11 +1,3 @@
-// canvas_keys: per-canvas data-encryption-key (DEK) storage.
-//
-// Each row holds a wrapped DEK that callers pass back through a
-// KekProvider to recover the raw bytes. Every wrap goes through the
-// sf-apex provider: the wrapped envelope is self-describing and lives
-// in wrapped_key; iv / auth_tag / master_key_version are nullable
-// holdovers from a prior keyring-based encryption model and are stamped
-// as null / 0 here.
 
 import { ext } from "../extensions.js";
 import {
@@ -93,34 +85,17 @@ export async function getOrMint({ sfOrgId, canvasId, kekProvider, sessionId }) {
 	const fresh = generateDataKey();
 	const wrapped = await kekProvider.wrapDataKey(fresh);
 	const db = ext.getDb();
-	// INSERT ... ON CONFLICT DO NOTHING: if a concurrent getOrMint (e.g.
-	// owner + editor-recipient, two tabs, or a legacy plaintext canvas
-	// re-saved from two requests) already inserted a DIFFERENT key between
-	// our get() and here, our insert silently no-ops.
 	await _insertOrReplaceWrappedKey(db, { sfOrgId, canvasId, wrapped });
-	// Re-read the row that ACTUALLY persisted and return that key, not
-	// necessarily `fresh`. Returning `fresh` when a concurrent mint won
-	// the insert would make the caller encrypt the canvas body under a key
-	// that get() will never unwrap (the stored wrapped key is the other
-	// one), so the next load fails the GCM auth tag → the canvas body is
-	// permanently undecryptable. Comparing the stored envelope to the exact
-	// string we tried to insert tells us who won without a redundant unwrap
-	// on the uncontended path (the Apex KEK call is a network round-trip).
 	const row = await _readRow(db, sfOrgId, canvasId);
 	if (row && row.wrapped_key === wrapped.wrappedKey) {
-		// Our insert won: `fresh` is the stored key.
 		putCachedDek(sessionId, 'canvas', canvasId, fresh);
 		return fresh;
 	}
 	if (row) {
-		// A concurrent mint won. Adopt the STORED key so our ciphertext is
-		// encrypted under the key that will actually be unwrapped later.
 		const stored = await kekProvider.unwrapDataKey(_rowToWrapped(row));
 		putCachedDek(sessionId, 'canvas', canvasId, stored);
 		return stored;
 	}
-	// No row after an insert should be impossible; fall back to `fresh`
-	// rather than throw, matching the pre-fix return contract.
 	putCachedDek(sessionId, 'canvas', canvasId, fresh);
 	return fresh;
 }

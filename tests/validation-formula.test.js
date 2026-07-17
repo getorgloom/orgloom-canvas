@@ -1,15 +1,3 @@
-// Unit tests for src/validation-formula.js: the client-side SF
-// validation-rule formula engine.
-//
-// Three layers: tokenizer, parser, evaluator. Plus an `evaluateRule`
-// helper that wraps the whole thing. Each gets its own describe block.
-// The big section at the bottom (real-world rule patterns) exists
-// because the engine's contract is "if SF fires the rule, we should
-// too" and the way to verify that is by running canonical rules
-// against the values that should + shouldn't make them fire.
-//
-// Engine purity is the testability win: every export is a pure
-// function, no DOM, no fetch. Tests run as plain `node --test`.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,7 +12,6 @@ import {
 	UNRESOLVED_FIELD,
 } from '../src/validation-formula.js';
 
-// ----- tokenize -----------------------------------------------------
 
 describe('tokenize', () => {
 	test('skips whitespace', () => {
@@ -71,7 +58,6 @@ describe('tokenize', () => {
 	});
 });
 
-// ----- parseFormula -------------------------------------------------
 
 describe('parseFormula', () => {
 	test('literal number', () => {
@@ -93,7 +79,6 @@ describe('parseFormula', () => {
 	});
 
 	test('arithmetic respects precedence', () => {
-		// 2 + 3 * 4 should parse as 2 + (3 * 4), not (2 + 3) * 4.
 		const tree = parseFormula('2 + 3 * 4');
 		assert.equal(tree.k, 'binop');
 		assert.equal(tree.op, '+');
@@ -135,7 +120,6 @@ describe('parseFormula', () => {
 	});
 });
 
-// ----- num / looseEq ------------------------------------------------
 
 describe('num', () => {
 	test('passes numbers through', () => {
@@ -183,7 +167,6 @@ describe('looseEq', () => {
 	});
 });
 
-// ----- evalNode (low level) -----------------------------------------
 
 function ev(formula, vals = {}, opts = {}) {
 	return evalNode(parseFormula(formula), vals, opts);
@@ -334,7 +317,6 @@ describe('evalNode: unsupported function throws', () => {
 	});
 });
 
-// ----- resolveFieldValue (cross-object refs) -----------------------
 
 describe('resolveFieldValue: cross-object via savedRecords', () => {
 	const fields = [
@@ -368,7 +350,6 @@ describe('resolveFieldValue: cross-object via savedRecords', () => {
 	});
 
 	test('a direct field on the current record wins over chasing the dot', () => {
-		// If the values map has the literal key "Account.Name", use it.
 		assert.equal(
 			resolveFieldValue('Account.Name', { 'Account.Name': 'Direct value' }, opts),
 			'Direct value',
@@ -388,8 +369,6 @@ describe('resolveFieldValue: cross-object via bulk associations', () => {
 		],
 		bulkAssociations: [{ fromId: 'rec-1', fieldName: 'AccountId', toId: 'rec-acct' }],
 		describeCache: { Account: { fields: [{ name: 'Name' }] } },
-		// No savedRecords on purpose: the bulk-association path should
-		// fire first and return the bulk record's value.
 		savedRecords: {},
 	};
 
@@ -406,47 +385,34 @@ describe('resolveFieldValue: cross-object via bulk associations', () => {
 	});
 });
 
-// ----- Real-world SF validation rules -------------------------------
-//
-// Each rule below mirrors a pattern customers actually ship. The
-// rule's `formula` field is identical to what SF's Tooling API
-// returns from `Metadata.errorConditionFormula`. The engine
-// evaluates the formula against record values; truthy => fires (FAIL),
-// falsy => passes.
 
 describe('real-world rule patterns', () => {
 	const rules = {
-		// SSN must be exactly 9 digits.
 		ssnLength: {
 			name: 'ssn_must_be_9',
 			formula: 'LEN(SSN__c) <> 9',
 			errorMessage: 'SSN must be exactly 9 digits.',
 		},
-		// Important accounts require a Description.
 		descRequiredForImportant: {
 			name: 'desc_required',
 			formula: 'AND(ISBLANK(Description), Type = "Important")',
 			errorMessage: 'Important accounts must have a Description.',
 		},
-		// Amount cannot exceed $1M.
 		amountCap: {
 			name: 'amount_cap',
 			formula: 'Amount > 1000000',
 			errorMessage: 'Amount cannot exceed $1,000,000.',
 		},
-		// Either email or phone must be set.
 		oneContactMethod: {
 			name: 'contact_method',
 			formula: 'AND(ISBLANK(Email), ISBLANK(Phone))',
 			errorMessage: 'Provide either email or phone.',
 		},
-		// Closed-Won opportunities need a close date.
 		closeDateOnWon: {
 			name: 'close_date_on_won',
 			formula: 'AND(ISPICKVAL(StageName, "Closed Won"), ISBLANK(CloseDate))',
 			errorMessage: 'Closed Won deals must have a close date.',
 		},
-		// Cross-object: contact at Important account needs a title.
 		titleAtImportantAccount: {
 			name: 'title_at_important',
 			formula: 'AND(Account.Type = "Important", ISBLANK(Title))',
@@ -460,7 +426,6 @@ describe('real-world rule patterns', () => {
 	});
 
 	test('SSN-length rule fires when SSN is missing entirely', () => {
-		// LEN(null) = 0, 0 <> 9 → true → rule fires.
 		assert.equal(evaluateRule(rules.ssnLength, {}), 'fail');
 	});
 
@@ -506,20 +471,13 @@ describe('real-world rule patterns', () => {
 			savedRecords: { Account: { Type: 'Important' } },
 			describeCache: { Account: { fields: [{ name: 'Type' }] } },
 		};
-		// Important parent + no Title → fires.
 		assert.equal(evaluateRule(rules.titleAtImportantAccount, { Title: null }, opts), 'fail');
-		// Important parent + Title set → passes.
 		assert.equal(evaluateRule(rules.titleAtImportantAccount, { Title: 'VP' }, opts), 'pass');
-		// Non-important parent → passes regardless of Title.
 		const opts2 = Object.assign({}, opts, { savedRecords: { Account: { Type: 'Casual' } } });
 		assert.equal(evaluateRule(rules.titleAtImportantAccount, { Title: null }, opts2), 'pass');
 	});
 
 	test('cross-object rule returns unknown when related data is not loaded', () => {
-		// No describe / savedRecords for Account: Account.Type resolves
-		// to null. `null = "Important"` → false → AND fires false → rule
-		// passes. This is the desired UX: don't surface a false-positive
-		// "fail" just because the related record isn't drafted yet.
 		const opts = {
 			currentFields: [
 				{ name: 'Title' },
@@ -532,7 +490,6 @@ describe('real-world rule patterns', () => {
 	});
 });
 
-// ----- evaluateRule helper ------------------------------------------
 
 describe('evaluateRule', () => {
 	test('returns "unknown" for a rule with no formula', () => {

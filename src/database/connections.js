@@ -1,4 +1,3 @@
-// Salesforce identity + display cache.
 import crypto from "node:crypto";
 import { ext } from "../extensions.js";
 
@@ -14,10 +13,6 @@ export async function findById(id) {
 		.executeTakeFirst();
 }
 
-// Find-or-create-by-(account, sf_user_id). Used by the OAuth callback
-// to land freshly-authed connections in the table without spamming
-// duplicates when the same SF user re-OAuths. Returns the connection
-// row + a `created` flag.
 export async function upsertFromOauth({
 	accountId,
 	sfUserId,

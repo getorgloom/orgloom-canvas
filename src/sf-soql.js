@@ -1,21 +1,3 @@
-// SOQL escape helpers. Centralizes the replace pattern that's been
-// inlined across server.js so every endpoint that interpolates user
-// input into a single-quoted SOQL literal does it the same way.
-//
-// Why a function instead of prepared statements: jsforce's connection
-// API takes a SOQL string. There is no parameterized query path to fall
-// back on, so untrusted input must be escaped before it lands in the
-// query.
-//
-// Escape contract (single-quoted literals only, `'…'`):
-//   * `\` → `\\`
-//   * `'` → `\'`
-// Wildcards (`%`, `_`) are intentionally NOT escaped. They are
-// treated as literals inside `=` comparisons but as wildcards inside
-// `LIKE`: current callers want LIKE wildcards to keep working when
-// typed by the user, so leaving them alone is the right default. If a
-// future caller needs LIKE-safe escaping, add a separate
-// `escapeSoqlLikeLiteral` helper rather than overloading this one.
 
 export function escapeSoqlLiteral(value) {
 	if (value == null) {
@@ -24,10 +6,6 @@ return '';
 	return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-// Validate a field before app-generated SOQL places it in a WHERE clause.
-// SELECT-list fields have different rules and intentionally do not use this
-// helper. Raw SOQL Import is also intentionally excluded because the user is
-// authoring that query and Salesforce is its parser/validator.
 export function validateSoqlFilterField(describe, fieldName, options = {}) {
 	const name = String(fieldName == null ? '' : fieldName).trim();
 	if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
@@ -116,9 +94,6 @@ function canonicalDecimal(value, integerOnly) {
 	return (match[1] && !isZero ? '-' : '') + whole + (fraction ? '.' + fraction : '');
 }
 
-// Format a value for a SOQL comparison using the destination field's
-// describe type. String-like values remain escaped and quoted; numeric
-// fields must be emitted as validated, unquoted decimal literals.
 export function formatSoqlFieldLiteral(value, fieldType) {
 	const type = String(fieldType || '').toLowerCase();
 	if (SOQL_NUMERIC_FIELD_TYPES.has(type)) {
@@ -127,9 +102,6 @@ export function formatSoqlFieldLiteral(value, fieldType) {
 	return "'" + escapeSoqlLiteral(value) + "'";
 }
 
-// Canonical comparison key used to join requested values back to records
-// returned by Salesforce. This makes 100, 100.0, and 0100 equivalent for a
-// numeric field without weakening string matching.
 export function normalizeSoqlFieldValue(value, fieldType) {
 	const type = String(fieldType || '').toLowerCase();
 	if (SOQL_NUMERIC_FIELD_TYPES.has(type)) {

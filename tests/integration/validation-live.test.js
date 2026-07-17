@@ -1,19 +1,3 @@
-// Live integration tests for the validation-rule engine.
-//
-// Deliberately not run by `npm test`: guarded behind RUN_SF_LIVE=1
-// (see ./README.md). Talks to a real Salesforce org via the `sf`
-// CLI's existing auth.
-//
-// Contract being verified: for every rule the engine claims to
-// support, evaluateRule's prediction matches what SF actually does
-// when you POST the record. The unit suite covers the parser /
-// evaluator in isolation; this suite covers "we agree with SF",
-// which is the only check that matters in production.
-//
-// Each describe block deploys ONE rule, exercises BOTH directions
-// (predicted-fail values + predicted-pass values), and cleans up. A
-// suite-level after hook sweeps any leftover OrgLoomTest_* rules in
-// case a test crashed mid-flight.
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,12 +18,9 @@ const RUN_LIVE = process.env.RUN_SF_LIVE === '1';
 const ORG_ALIAS = process.env.SF_TEST_ORG_ALIAS;
 const OBJECT_NAME = 'Account';
 
-// Skip-by-default. The harness prints why so a future-you doesn't
-// wonder if they're running.
 if (!RUN_LIVE || !ORG_ALIAS) {
 	describe('validation engine: live SF integration', () => {
 		test('skipped: set RUN_SF_LIVE=1 and SF_TEST_ORG_ALIAS=<alias> to enable', () => {
-			// See packages/canvas/tests/integration/README.md.
 			assert.ok(true);
 		});
 	});
@@ -50,16 +31,10 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 
 	before(async () => {
 		conn = connectViaSfCli(ORG_ALIAS);
-		// Pre-sweep: if a prior crashed run left rules around, kill them
-		// before we start so their error messages don't pollute our
-		// assertions about THIS run's sentinels.
 		await cleanupTestRules(conn, OBJECT_NAME);
 	});
 
 	after(async () => {
-		// Defense in depth. Each test already cleans up its own state,
-		// but a thrown assertion bypasses the test body's try/finally.
-		// Clean up by tracked IDs first, then a final sweep by prefix.
 		for (const id of trackedRecordIds) {
 			await deleteRecord(conn, OBJECT_NAME, id).catch(() => {});
 		}
@@ -69,9 +44,6 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 		await cleanupTestRules(conn, OBJECT_NAME).catch(() => {});
 	});
 
-	// runRulePattern: the four-step ritual described in README.md.
-	// Wrapped in try/finally so the cleanup runs even if an assertion
-	// throws; the tracked-id lists are the suite-level safety net.
 	async function runRulePattern({
 		ruleName,
 		formula,
@@ -82,10 +54,6 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 		const errorMessage = sentinelErrorMessage(ruleName);
 		const rule = { id: null, name: ruleName, formula, errorMessage, active: true };
 
-		// Engine prediction MUST be a definite pass/fail for the test to
-		// be meaningful. 'unknown' means the engine doesn't support
-		// something in the formula; surface a clear failure rather
-		// than rubber-stamping the SF roundtrip.
 		const predFail = evaluateRule(rule, failingValues, opts);
 		assert.equal(predFail, 'fail',
 			`Engine predicted ${predFail} for failing values; expected 'fail'`);
@@ -100,15 +68,10 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 		rule.id = ruleId;
 
 		try {
-			// Wait for SF to start enforcing: newly-created rules can lag
-			// a beat. waitForRuleActive polls until the sentinel error
-			// surfaces.
 			await waitForRuleActive(conn, OBJECT_NAME, failingValues, errorMessage);
 
-			// Fail path: SF rejects with our sentinel.
 			const failResult = await tryInsert(conn, OBJECT_NAME, failingValues);
 			if (failResult.ok) {
-				// Track the unexpected row so cleanup still gets it.
 				trackedRecordIds.push(failResult.id);
 				assert.fail(
 					`SF accepted a record the engine predicted would fail. ` +
@@ -120,7 +83,6 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 				`SF rejected but not with our sentinel error. ` +
 				`Rule: ${ruleName}. Errors: ${JSON.stringify(failResult.errors)}`);
 
-			// Pass path: SF accepts.
 			const passResult = await tryInsert(conn, OBJECT_NAME, passingValues);
 			assert.equal(passResult.ok, true,
 				`SF rejected a record the engine predicted would pass. ` +
@@ -132,7 +94,6 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 		}
 	}
 
-	// ----- Test patterns -------------------------------------------------
 
 	describe('validation engine: live SF integration', () => {
 		test('LEN comparison: Description over 50 chars fires the rule', async () => {

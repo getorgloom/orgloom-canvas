@@ -1,32 +1,3 @@
-// Org Loom Canvas: standalone server entry point.
-//
-// This is the entry the public orgloom-canvas repo uses. It runs the
-// canvas in single-user / self-host mode: no signup, no workspaces,
-// no billing, no multi-user auth, no audit retention enforcement. One
-// implicit local account; one SF connection at a time (per session).
-//
-// For the hosted SaaS deployment (multi-user, billing, etc.) the entry
-// is apps/saas/src/server.js in the monorepo; this file isn't used
-// there.
-//
-// What this server mounts:
-//   - DB init (canvas-side migrations only)
-//   - Express + sessions (SQLite-backed)
-//   - Static assets (canvas /css, /js, /img, /vendor)
-//   - EJS views (canvas views/)
-//   - First-boot setup wizard at /setup (SF Connected App config)
-//   - / + /connect: landing + SF picker
-//   - /auth/login, /auth/callback, /auth/sf-signout, /auth/logout
-// SF OAuth lifecycle routes
-//   - /mcp/v1: MCP server endpoint
-//   - mountCanvasRoutes(app): all /api/* canvas routes
-//
-// What this server intentionally does NOT mount:
-//   - /sign-in, /signup, /workspace, /pricing, /onboarding/* (saas-only)
-//   - Stripe webhook + billing routes
-//   - Admin pages
-//   - Magic-link / Google / Microsoft IdP sign-in
-//   - Saas-side crons (Stripe reconciler, audit retention sweep)
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,20 +23,6 @@ import { mcpHandler } from './mcp/server.js';
 const { Connection } = jsforce;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Canvas-standalone bootstrap: the open-core split moved the Kysely
-// init layer to apps/saas/src/database/init.js, so canvas no longer
-// ships an initDb() of its own. Self-hosters who run this server
-// directly must register a DB provider (and run migrations) BEFORE
-// importing this module, typically in a small wrapper script:
-//
-//   import { ext } from 'orgloom-canvas/extensions';
-//   // ...build Kysely instance + run migrations against canvas/migrations/...
-//   ext.registerDbProvider(() => myDb);
-//   ext.registerRawClientProvider(() => ({ dialect, client }));
-//   await import('orgloom-canvas/server');
-//
-// The probe below fails fast with a clear error if no provider has been
-// registered, rather than letting the first DB-touching request 500.
 try {
 	ext.getDb();
 } catch (err) {
@@ -74,13 +31,6 @@ try {
 }
 console.log('[db] ready:', ext.getRawClient().dialect);
 
-// ---- canvas-standalone implicit local user --------------------------------
-//
-// Canvas-standalone has no signup flow. One implicit account exists,
-// hardcoded to id='local'. The /auth/callback handler creates it on
-// first SF connect; SF connections + audit rows reference it as their
-// account_id. The accounts table itself exists (created by canvas
-// migration 001_init) but is essentially single-row in this mode.
 const LOCAL_ACCOUNT_ID = 'local';
 
 async function ensureLocalAccount() {
@@ -101,10 +51,6 @@ async function ensureLocalAccount() {
 	return { id: LOCAL_ACCOUNT_ID, email: 'self-host@local', display_name: 'Self-host user' };
 }
 
-// Canvas-standalone authProvider: returns the implicit local account if
-// the session has been bootstrapped via /auth/callback. Otherwise null
-// (so /api/me + canvas-routes treat the request as unauthenticated and
-// the landing-page CTA still renders).
 ext.registerAuthProvider(async (req) => {
 	if (!req || !req.session || !req.session.accountId) {
 return null;
@@ -115,7 +61,6 @@ return null;
 	return { id: LOCAL_ACCOUNT_ID, email: 'self-host@local', display_name: 'Self-host user' };
 });
 
-// ---- session store --------------------------------------------------------
 
 const _rawDb = ext.getRawClient();
 let _sessionStore = null;
@@ -133,13 +78,8 @@ if (_rawDb.dialect === 'sqlite') {
 const app = express();
 app.set('trust proxy', 1);
 
-// Suppress X-Powered-By + apply security headers. See apps/saas/src/server.js
-// for the rationale on each directive.
 app.disable('x-powered-by');
 
-// Per-request CSP nonce; see apps/saas/src/server.js for the full
-// explanation. Must run before helmet so res.locals.cspNonce is set
-// when helmet's directive function fires.
 app.use((req, res, next) => {
 	res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
 	next();
@@ -150,26 +90,9 @@ app.use(helmet({
 		useDefaults: true,
 		directives: {
 			'default-src': ["'self'"],
-			// Safari applies upgrade-insecure-requests to localhost more
-			// aggressively than Chromium. Disable the directive only for local
-			// HTTP development so styles and scripts are not rewritten to an
-			// HTTPS origin the development server does not provide.
 			'upgrade-insecure-requests': process.env.NODE_ENV === 'production' ? [] : null,
-			// posthog.com host allowed so the PostHog loader (which
-			// appends an external <script>) can run. See
-			// apps/saas/src/server.js for the long-form rationale.
-			// browser.sentry-cdn.com hosts the @sentry/browser SDK bundle
-			// (v7+ stopped shipping a pre-built bundle in the npm package
-			// , since Sentry's recommended path without a bundler is the CDN).
-			// Specific subdomain, not wildcarded, so a compromise of a
-			// sibling Sentry CDN host can't backdoor our pages.
 			'script-src': ["'self'", 'https://*.posthog.com', 'https://browser.sentry-cdn.com', (req, res) => `'nonce-${res.locals.cspNonce}'`],
-			// See apps/saas/src/server.js for the style-src split rationale.
 			'style-src': ["'self'"],
-			// Cytoscape's renderer injects one inline <style> block at
-			// canvas init. See apps/saas/src/server.js for the full
-			// rationale; the hash needs to match across both files so
-			// canvas-standalone and saas deployments behave identically.
 			'style-src-elem': [
 				"'self'",
 				"'sha256-pgvDUBa4IjFA2yuSJ2cqcyxmNYJMborsd0ORcRv9vw8='", // cytoscape v3.x renderer init
@@ -177,28 +100,11 @@ app.use(helmet({
 			'style-src-attr': ["'unsafe-inline'"],
 			'img-src': ["'self'", 'data:', 'https://*.posthog.com'],
 			'font-src': ["'self'", 'data:'],
-			// Sentry SDK POSTs event payloads to its ingest endpoint. Host
-			// comes from SENTRY_INGEST_HOST env (typically the host part
-			// of the DSN, e.g. `<project>.ingest.sentry.io` or a self-
-			// hosted GlitchTip). Mirrors the saas-server CSP shape so
-			// browser-side error reporting works identically in either
-			// deployment mode when the env var is set.
-			// browser.sentry-cdn.com is also in connect-src because the
-			// minified bundle includes a `//# sourceMappingURL=...map`
-			// trailer; DevTools loads that map via a script-initiated
-			// fetch, which CSP routes through connect-src (not script-
-			// src). Production users without DevTools open never trigger
-			// this, but devs see a CSP violation in the console without
-			// the entry.
 			'connect-src': ["'self'", 'https://*.posthog.com', 'https://browser.sentry-cdn.com', ...(process.env.SENTRY_INGEST_HOST ? ['https://' + process.env.SENTRY_INGEST_HOST] : [])],
 			'frame-src': ["'self'", 'https://www.youtube.com', 'https://www.youtube-nocookie.com'],
 			'frame-ancestors': ["'self'"],
 			'object-src': ["'none'"],
 			'base-uri': ["'self'"],
-			// See apps/saas/src/server.js for the long-form rationale.
-			// Canvas-standalone only does SF OAuth, not Google/MS/Stripe,
-			// but listing them here means the canvas module's CSP
-			// works unchanged in both deployment modes.
 			'form-action': [
 				"'self'",
 				'https://login.salesforce.com',
@@ -217,10 +123,6 @@ app.use(helmet({
 	...(process.env.NODE_ENV === 'production' ? {} : { strictTransportSecurity: false }),
 }));
 
-// CORP override for public-embedding paths. See apps/saas/src/server.js
-// for the full rationale; the headers must match across both deployments
-// so the brand logo + /.well-known endpoints behave the same way for
-// SaaS users and self-hosters.
 app.use(['/img/brand', '/.well-known'], (req, res, next) => {
 	res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 	next();
@@ -242,9 +144,6 @@ app.use(session({
 	},
 }));
 
-// Rotate the session id while preserving the payload. Called at
-// privilege-elevation boundaries (e.g., SF OAuth callback) to defend
-// against session fixation. Mirrors the helper in apps/saas/src/server.js.
 function _regenerateSession(req) {
 	return new Promise((resolve, reject) => {
 		const carryover = {};
@@ -271,9 +170,6 @@ return reject(saveErr);
 	});
 }
 
-// ---- CSRF protection (double-submit cookie) -------------------------------
-// See apps/saas/src/server.js for the long-form rationale. Same setup
-// here so the standalone canvas binary has equivalent defense.
 app.use(cookieParser(config.sessionSecret));
 
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
@@ -305,7 +201,6 @@ const _CSRF_EXEMPT_PREFIXES = [
 ];
 app.use((req, res, next) => {
 	if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
-		// Force session persistence (see apps/saas/src/server.js for why).
 		if (req.session && !req.session._csrfInit) {
 req.session._csrfInit = 1;
 }
@@ -331,8 +226,6 @@ app.use((err, req, res, next) => {
 	next(err);
 });
 
-// jsonForScript: safe JSON serialization for inline <script> blocks.
-// See apps/saas/src/server.js for the long-form rationale.
 app.locals.jsonForScript = (value) => {
 	return JSON.stringify(value)
 		.replace(/</g, '\\u003c')
@@ -340,8 +233,6 @@ app.locals.jsonForScript = (value) => {
 		.replace(/\u2029/g, '\\u2029');
 };
 
-// Auto-inject <meta name="csrf-token"> into HTML responses. See the
-// matching block in apps/saas/src/server.js for the rationale.
 app.use((req, res, next) => {
 	const _send = res.send.bind(res);
 	res.send = function patchedSend(body) {
@@ -354,10 +245,6 @@ app.use((req, res, next) => {
 				}
 			}
 		} catch (err) {
-			// CSRF tag injection failed: every HTML response in this
-			// process will be missing its meta tag, breaking every form.
-			// Worth reporting; the original body still ships so the
-			// response itself isn't broken (just CSRF-tokenless).
 			try {
 				ext.captureException(err, {
 					where: 'server/csrfMetaInjection',
@@ -370,7 +257,6 @@ app.use((req, res, next) => {
 	next();
 });
 
-// ---- views + static -------------------------------------------------------
 
 app.set('view engine', 'ejs');
 app.set('views', [path.join(__dirname, 'views')]);
@@ -380,30 +266,19 @@ app.use('/img', express.static(path.join(__dirname, 'public/img')));
 app.use('/vendor', express.static(fileURLToPath(new URL('../../../node_modules', import.meta.url))));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Saas extensions never registered in this entry; flush is a no-op but
-// keeps the contract consistent.
 ext.flush(app);
 
-// First-boot setup wizard. Runs BEFORE any other route handlers so an
-// unconfigured instance redirects every request to /setup.
 mountSetupWizard(app);
 
-// Stamp request path + saasEnabled (always false here) onto res.locals
-// so views can hide saas chrome and active-mark nav links.
 app.use((req, res, next) => {
 	res.locals.currentPath = req.path;
 	res.locals.saasEnabled = false;
-	// PostHog config. Canvas-standalone is typically self-hosted by
-	// a single user; analytics is opt-in and off by default. Same
-	// env vars as saas mode so a config copy-paste works.
 	res.locals.posthogKey = process.env.POSTHOG_KEY || '';
 	res.locals.posthogHost = process.env.POSTHOG_HOST || 'https://app.posthog.com';
 	next();
 });
 
-// ---- pages ----------------------------------------------------------------
 
-// /: canvas or "connect Salesforce" CTA depending on session state.
 app.get('/', async (req, res, next) => {
 	try {
 		const account = await ext.getCurrentAccount(req);
@@ -415,7 +290,6 @@ app.get('/', async (req, res, next) => {
 				betaGateEnabled: false,
 			});
 		}
-		// Active connection? Resolve via session.currentConnectionId.
 		let connection = null;
 		if (req.session.currentConnectionId) {
 			connection = await connectionsDb.findById(req.session.currentConnectionId);
@@ -459,8 +333,6 @@ connection = null;
 }
 });
 
-// /connect: SF org picker. In canvas-standalone, anon visitors bounce
-// back to / (which renders the SF-connect CTA).
 app.get('/connect', async (req, res, next) => {
 	try {
 		const account = await ext.getCurrentAccount(req);
@@ -488,11 +360,7 @@ return res.redirect('/');
 }
 });
 
-// ---- Salesforce OAuth -----------------------------------------------------
 
-// Whitelist of SF host patterns accepted as ?env=custom domain values.
-// Stops the OAuth-start endpoint from being used as an open redirector.
-// Hostname chars only; see apps/saas/src/server.js for the rationale.
 const _SF_HOST_PATTERN = /^https:\/\/[a-z0-9.-]+(?:\.salesforce\.com|\.lightning\.force\.com)(\/.*)?$/i;
 function _normalizeCustomSfDomain(value) {
 	const raw = typeof value === 'string' ? value.trim() : '';
@@ -564,20 +432,12 @@ authParams.prompt = 'login';
 	res.redirect(oauth2.getAuthorizationUrl(authParams));
 });
 
-// Canvas-standalone /auth/callback: simpler than saas. No signup-intent
-// branching, no cross-account collision check (single user), no
-// pendingCanvasShare path. Always ensure the local account exists, bind
-// the SF connection to it, stamp the session.
 app.get('/auth/callback', async (req, res, next) => {
 	try {
 		const code = req.query.code;
 		if (!code) {
 return res.status(400).send('Missing OAuth code.');
 }
-		// OAuth CSRF defense; see apps/saas/src/server.js for full
-		// rationale. The state param MUST be present and equal to the
-		// session ID we set on /auth/login. Fail-closed: a missing state
-		// is rejected, not skipped.
 		const state = typeof req.query.state === 'string' ? req.query.state : null;
 		if (!state || !req.session?.id || state !== req.session.id) {
 			console.warn('[sf-oauth] state missing/mismatch on /auth/callback (possible CSRF)');
@@ -627,25 +487,11 @@ return res.status(400).send('Missing OAuth code.');
 			organizationId: userInfo.organizationId || identity.organization_id || null,
 		};
 		req.session.sfAuth = _sfAuth;
-		// Multi-token switching: keep this connection's access token in the
-		// session's per-connection map so a later switch back to it is an
-		// instant in-session flip (no re-OAuth). Same posture as the single
-		// active token: short-lived access tokens in the server session,
-		// N instead of 1; refresh tokens still never persisted.
 		req.session.sfAuthByConnection = req.session.sfAuthByConnection || {};
 		req.session.sfAuthByConnection[connection.id] = _sfAuth;
 
-		// Session-fixation defense: rotate the session id whenever the
-		// session crosses the unauthenticated -> authenticated boundary.
-		// See _regenerateSession in apps/saas/src/server.js for the
-		// long-form rationale. Inline here because canvas-standalone
-		// runs without the saas module.
 		await _regenerateSession(req);
 
-		// If the Connected App granted offline_access, keep the issued
-		// refresh token in process memory ONLY (never persisted) so the
-		// access token can be silently renewed for long sessions. Keyed by
-		// the post-regeneration session id.
 		if (conn.refreshToken) {
 			putRefreshToken(req.session.id, connection.id, conn.refreshToken);
 		}
@@ -657,8 +503,6 @@ return res.status(400).send('Missing OAuth code.');
 			actorConnectionId: connection.id,
 			action: 'sf_org_connected',
 			targetSfOrgId: userInfo.organizationId || identity.organization_id || null,
-			// sfUserId identifies the connected SF identity; the email would
-			// be redundant PII (and the saas sf_org_connected already omits it).
 			payload: { sfUserId: userInfo.id },
 		}).catch(() => {});
 
@@ -668,11 +512,6 @@ return res.status(400).send('Missing OAuth code.');
 }
 });
 
-// (Silent SF token renewal was retired; see public/js/sf-fetch.js
-// header. The hidden-iframe prompt=none renewal can't complete because
-// the page CSP doesn't frame the Salesforce origin and SF sets
-// X-Frame-Options on its OAuth pages, so an expired access token now
-// surfaces the interactive reauth UI directly.)
 
 app.post('/auth/sf-signout', (req, res) => {
 	if (req.session) {
@@ -687,39 +526,23 @@ app.post('/auth/sf-signout', (req, res) => {
 	res.redirect('/');
 });
 
-// Canvas-standalone /auth/logout: clear the session entirely (rare
-// path; the implicit local user usually stays signed in).
 app.post('/auth/logout', (req, res) => {
 	dropSessionRefreshTokens(req.session && req.session.id);
 	req.session.destroy(() => res.redirect('/'));
 });
 
-// /docs hub + /docs/walkthroughs/* live entirely in the saas (private)
-// tree; see apps/saas/src/views/docs.ejs +
-// apps/saas/src/views/docs/walkthroughs/ + the route registrations in
-// apps/saas/src/server.js. Canvas-standalone deployments ship no
-// /docs surface; the catch-all 404 fires.
 
-// ---- MCP server endpoint --------------------------------------------------
 
 app.post('/mcp/v1', mcpHandler);
 
-// ---- canvas API routes ----------------------------------------------------
 
 mountCanvasRoutes(app);
 
-// ---- 404 + error handlers -------------------------------------------------
 
-// Plain-text 404 catch-all. See apps/saas/src/server.js for the
-// rationale (clean handoff to helmet's CSP, no Express-default
-// CSP collision that ZAP flags).
 app.use((req, res) => {
 	res.status(404).type('text/plain').send('Not Found');
 });
 
-// Global INVALID_SESSION_ID handler: when a jsforce call rejects with
-// the SF "session expired" code, return a clean 401 so sf-fetch.js can
-// surface the interactive reauth UI instead of bubbling a confusing 500.
 app.use((err, req, res, next) => {
 	if (err && (err.errorCode === 'INVALID_SESSION_ID' || err.name === 'INVALID_SESSION_ID')) {
 		if (req.path && req.path.startsWith('/api/')) {
@@ -732,8 +555,6 @@ app.use((err, req, res, next) => {
 	}
 	console.error('[server] unhandled error:', err);
 	if (req.path && req.path.startsWith('/api/')) {
-		// See apps/saas/src/server.js for the prod-vs-dev rationale;
-		// generic body in prod, detail in dev.
 		const body = { error: 'internal' };
 		if (!config.isProduction && err && err.message) {
 body.message = err.message;
@@ -743,7 +564,6 @@ body.message = err.message;
 	res.status(500).send('Internal error');
 });
 
-// ---- start ----------------------------------------------------------------
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

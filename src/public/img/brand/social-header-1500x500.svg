@@ -1,15 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1500" height="500" viewBox="0 0 1500 500">
-  <!-- Wordmark + tagline social header. Companion to icon-512.svg (which
-       sits on the X profile picture spot). Designed for X's 1500x500
-       header crop. Lockup biased above the profile-picture overlay zone
-       in the bottom-left, with the tagline centered so it stays clear
-       of that zone horizontally as well. -->
 
-  <!-- background -->
   <rect width="1500" height="500" fill="#181b20"/>
 
-  <!-- subtle horizontal "thread" lines for loom-texture flavor.
-       Faint enough to read as background, not pattern. -->
   <g stroke="#2a2e36" stroke-width="1" opacity="0.45">
     <line x1="0" y1="100" x2="1500" y2="100"/>
     <line x1="0" y1="150" x2="1500" y2="150"/>
@@ -20,12 +12,9 @@
     <line x1="0" y1="400" x2="1500" y2="400"/>
   </g>
 
-  <!-- wordmark centered horizontally, biased upward -->
   <text x="750" y="230" font-family="Segoe UI Black, Arial Black, sans-serif" font-weight="900" font-size="140" fill="#ede8dd" text-anchor="middle" letter-spacing="-2">ORG LOOM</text>
 
-  <!-- accent rule under wordmark -->
   <rect x="660" y="260" width="180" height="5" fill="#e09240"/>
 
-  <!-- tagline -->
   <text x="750" y="330" font-family="Segoe UI, Arial, sans-serif" font-weight="400" font-size="40" fill="#cfccc3" text-anchor="middle">A canvas for Salesforce data.</text>
 </svg>

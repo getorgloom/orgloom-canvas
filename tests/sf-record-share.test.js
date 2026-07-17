@@ -1,11 +1,3 @@
-// Unit tests for src/sf-record-share.js. Covers the pure pieces:
-//   * shareSchemaFor: standard vs custom vs namespaced custom mapping
-//     (table name + parent-field + access-level-field per object)
-//   * shareTableFor: back-compat alias returning just the table name
-//   * recordsToShareFromManifest: manifest scan + de-dupe
-// The async grantRecordAccess function is integration-tested separately
-// (needs a SF connection mock); the pure pieces are the auth-relevant
-// ones because they decide WHICH share table gets DML.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,12 +11,6 @@ import {
 
 describe('shareSchemaFor: standard objects use <Object>Id / <Object>AccessLevel', () => {
 	test('Account → AccountShare with multi-axis access fields (AccountShare special-case)', () => {
-		// AccountShare uniquely requires OpportunityAccessLevel +
-		// CaseAccessLevel even when the caller only cares about Account
-		// access. SF errors with "missing required field" if omitted.
-		// We default them to 'None' so the grant doesn't accidentally
-		// cascade access to child Opportunities/Cases the user didn't
-		// intend to share.
 		assert.deepEqual(shareSchemaFor('Account'), {
 			shareTable: 'AccountShare',
 			parentField: 'AccountId',
@@ -222,12 +208,6 @@ describe('recordsToShareFromManifest', () => {
 
 describe('grantRecordAccess: connection interaction (mocked)', () => {
 	function makeMockConn(behavior) {
-		// behavior: { (shareTable, recordId) → 'success' | 'duplicate' | 'fail:msg' }
-		// Custom-object shares use ParentId; standard-object shares use
-		// <Object>Id (AccountShare → AccountId, ContactShare → ContactId,
-		// etc). The mock pulls whichever id field is present so behavior
-		// keys can stay shaped as 'AccountShare:001A' regardless of the
-		// underlying field name.
 		const calls = [];
 		return {
 			calls,
@@ -273,12 +253,8 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 		], '005me');
 		assert.equal(out.granted.length, 2);
 		assert.equal(out.failed.length, 0);
-		// Routed to the right share tables.
 		assert.equal(conn.calls[0].shareTable, 'AccountShare');
 		assert.equal(conn.calls[1].shareTable, 'ContactShare');
-		// AccountShare uses AccountId + AccountAccessLevel, NOT ParentId/
-		// AccessLevel (those are custom-object only). Same per-object
-		// pattern for ContactShare (ContactId + ContactAccessLevel).
 		assert.equal(conn.calls[0].row.AccountId, '001A');
 		assert.equal(conn.calls[0].row.AccountAccessLevel, 'Edit');
 		assert.equal(conn.calls[0].row.UserOrGroupId, '005me');
@@ -292,9 +268,6 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 	});
 
 	test('AccountShare row carries the multi-axis required AccessLevel extras', async () => {
-		// Pinning the AccountShare quirk: SF rejects the insert without
-		// OpportunityAccessLevel + CaseAccessLevel. We default them to
-		// 'None' so the grant scopes to Account access only.
 		const conn = makeMockConn({});
 		await grantRecordAccess(conn, [
 			{ objectName: 'Account', recordId: '001A' },
@@ -306,9 +279,6 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 	});
 
 	test('non-AccountShare rows do NOT include the AccountShare extras', async () => {
-		// Defensive: ContactShare/LeadShare/etc. shouldn't have
-		// OpportunityAccessLevel/CaseAccessLevel; they'd 400 with
-		// "no such column."
 		const conn = makeMockConn({});
 		await grantRecordAccess(conn, [
 			{ objectName: 'Contact', recordId: '003B' },
@@ -322,8 +292,6 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 	});
 
 	test('custom-object shares still use ParentId + AccessLevel', () => {
-		// Pin the custom-object path so a future regression doesn't
-		// accidentally start sending <Custom>Id to <Custom>__Share.
 		return (async () => {
 			const conn = makeMockConn({});
 			await grantRecordAccess(conn, [
@@ -392,10 +360,6 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 	});
 
 	test('"below organization levels" is normalized to granted with coveredByOWD', async () => {
-		// SF rejects manual shares whose AccessLevels are below the
-		// org's defaults, meaning the recipient ALREADY has access via
-		// OWD. The manual share is redundant; we treat it as success
-		// with a flag so the audit log can distinguish.
 		const conn = makeMockConn({
 			'AccountShare:001A':
 				'fail:(Account, Opportunity, Case Levels, Con Levels (Edit, None, None, Edit) ' +
@@ -433,7 +397,6 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 		], '005me');
 		assert.equal(out.granted.length, 1);
 		assert.equal(out.failed.length, 2);
-		// The valid one was the only DML call.
 		assert.equal(conn.calls.length, 1);
 	});
 
@@ -473,7 +436,6 @@ describe('_classifyShareError: error-string buckets', () => {
 			_classifyShareError('Levels (Edit, None, None) are below organization levels (Edit, Edit, ReadEditTransfer)'),
 			'covered-by-owd',
 		);
-		// Singular form too; SF wording varies.
 		assert.equal(
 			_classifyShareError('AccessLevel below organization level'),
 			'covered-by-owd',

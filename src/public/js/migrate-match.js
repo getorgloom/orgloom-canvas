@@ -1,40 +1,9 @@
-// Guided cross-org migration. After arriving in the destination org, this
-// modal owns the migration plan: decide the destination action for each record, resolve
-// destination schema differences, and review the create/update plan before
-// returning to the canvas. Matching converts selected canvas records from
-// INSERT to UPDATE by pointing loadedFromId at the destination id, so a
-// reviewed re-run is idempotent instead of duplicating records.
-//
-// Records start as Create new. Choosing Update existing searches with that
-// record's best available identity field. An advanced per-record control can
-// search with a different field without forcing every record of that object
-// through one strategy.
-//
-// Values matching more than one destination record require an explicit
-// per-record decision. The user can choose the intended destination row or
-// explicitly keep the canvas row as a new insert; unresolved choices block
-// upload so ambiguity cannot silently create a duplicate.
-//
-// mount deps:
-//   canvasState: bulkRecords + describeCache
-//   csrfFetch: XHR wrapper
-//   escapeHtml: XSS-safe interpolation
-//   showBulkToast: result toasts
-//   ensureDescribe: warm a describe on demand
-//   renderBulkView: repaint cards after applying matches
-//   onApplied: re-annotate hook (refreshMigrationAnnotations)
-//
-// Exposed as window.OrgLoom.migrateMatch.mount -> { open }. app.js
-// republishes { open } on window.Orgloom.migrateMatch (runtime surface)
-// so the upload modal can launch it. Load order: before app.js.
 
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
 
-	// Field types that make sense as a cross-org match key. References are
-	// excluded: lookup ids don't carry across orgs, so they can't match.
 	const KEYABLE_TYPES = new Set([
 		'string', 'email', 'phone', 'url', 'textarea',
 		'int', 'double', 'currency', 'percent',
@@ -54,8 +23,6 @@
 		return map;
 	}
 
-	// Rank candidate key fields: external id / idLookup first, then unique,
-	// then the name field, then everything else, alphabetical within a tier.
 	function _keyCandidates(describe) {
 		const fields = ((describe && describe.fields) || []).filter(
 			(f) => f && f.name && f.filterable === true && KEYABLE_TYPES.has(f.type),
@@ -98,8 +65,6 @@
 		}) || null;
 	}
 
-	// Case-insensitive field lookup because imported/saved canvas values can
-	// preserve a field-name casing that differs from the current describe.
 	function _lookup(values, fieldName) {
 		if (!values || !fieldName) {
 			return undefined;
@@ -159,10 +124,6 @@
 			.map((entry) => String(entry.value));
 	}
 
-	// Classify whether an unavailable source field can be copied safely into a
-	// destination field. "choice" is deliberately limited to a single picklist:
-	// it lets the user translate an unavailable value without silently coercing
-	// structured, relationship, multi-select, or typed data.
 	function _fieldMapDisposition(raw, field) {
 		if (!field || !field.name || raw === null || raw === undefined || typeof raw === 'object') {
 			return 'incompatible';
@@ -233,8 +194,6 @@
 		if (Array.isArray(exact)) {
 			return exact;
 		}
-		// Backward-compatible/fail-safe fallback for a server whose returned
-		// string casing differs from the canvas value.
 		const wanted = String(value).toLowerCase();
 		const key = Object.keys(candidatesByValue).find((k) => k.toLowerCase() === wanted);
 		return key && Array.isArray(candidatesByValue[key])
@@ -242,10 +201,6 @@
 			: [];
 	}
 
-	// Mutates one object's canvas records from a match response. A single
-	// destination candidate is automatic only when exactly one source record
-	// uses that key. Source-side duplicate keys also need review so two canvas
-	// rows can never silently target the same Salesforce row.
 	function _applyMatchResponse(recs, keyField, data) {
 		const candidatesByValue = (data && data.candidatesByValue) || {};
 		const byValue = new Map();
@@ -484,9 +439,6 @@
 				let currentStep = 'matches';
 				let describesReady = false;
 
-				// Warm describes, then initialize each fresh record as Create new.
-				// Choosing Update existing later searches per record, so records may
-				// use different identity fields even when they share an object type.
 				const names = Array.from(objects.keys());
 				Promise.all(
 					names.map((n) =>
@@ -752,9 +704,6 @@
 					if (resolved.targetField) {
 						const currentTargetKey = _valueKey(rec, resolved.targetField);
 						const currentTargetValue = currentTargetKey ? rec.values[currentTargetKey] : undefined;
-						// Only reverse the value written by this decision. This avoids
-						// overwriting a later edit if record state changed while the guide
-						// was open.
 						if (currentTargetKey && currentTargetValue === resolved.mappedValue) {
 							if (resolved.targetHadValue) {
 								rec.values[resolved.targetKey] = _clone(resolved.targetPreviousValue);
@@ -1125,8 +1074,6 @@
 						'<div class="mm-final-note"><strong>Source remains unchanged</strong><span>This plan only affects the connected destination org.</span></div>';
 				}
 
-				// Step 2 groups differences by record, so it still needs a concise
-				// heading even though step 1 no longer renders a separate record label.
 				function _differenceRecordLabel(rec) {
 					const describe = canvasState.describeCache[rec.objectName];
 					const objectLabel = describe && describe.label || rec.objectName;
@@ -1443,7 +1390,6 @@
 					primaryBtn.textContent = 'Apply migration plan';
 				}
 
-				// Recompute the persistent plan summary from live record state.
 				function _recomputeSummary() {
 					const counts = _statusCounts();
 					const differences = _differenceCounts();

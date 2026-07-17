@@ -1,7 +1,5 @@
-// proposed canvas changes.
 import crypto from "node:crypto";
 
-// sweep every 30 minutes to drop pending proposals
 const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -118,7 +116,6 @@ export async function markRejected({ id }) {
 	return true;
 }
 
-// distinct from markdelete for audit log
 export async function markWithdrawn({ id }) {
 	if (!id) {
 		throw new Error("id required");

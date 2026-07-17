@@ -1,19 +1,3 @@
-// Regression coverage for the recall-ledger fixes:
-//   * Layer 4: VersionData delivered as a download URL must decode. SF
-//     returns ContentVersion.VersionData as a relative URL past a small
-//     inline threshold; the store must binary-fetch it (NOT UTF-8-decode it,
-//     which corrupts the encrypted envelope and fails AES-GCM auth). The
-//     original tests only ever fed inline base64, so this path was untested
-//     and shipped broken.
-//   * Two-phase ledger: createPending() records intent BEFORE the SF commit
-//     (status 'pending', no SF ids); finalize() flips it to 'uploaded' with
-//     the real ids.
-//   * Idempotency index: create()/createPending() encode the attemptId into
-//     PathOnClient so findByAttemptId() is one cheap SOQL, and it's scoped to
-//     the owner.
-//
-// These drive the store through the REAL makeSfApexKekProvider, stubbing only
-// the network (KEK wrap/unwrap + VersionData download); see sf-kek-stub.js.
 
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,8 +14,6 @@ const USER_ID = '005TESTUploader';
 before(initTestDb);
 beforeEach(clearTestDb);
 
-// Decrypt a base64 VersionData blob using the per-batch key the store just
-// persisted (via the identity-wrap KEK stub).
 async function decodeWithKey(conn, versionDataB64, batchId) {
 	const buf = Buffer.from(versionDataB64, 'base64');
 	const kekProvider = makeSfApexKekProvider(conn);
@@ -44,7 +26,6 @@ describe('upload-batches store, layer 4: VersionData-as-URL', () => {
 	test('a batch whose VersionData comes back as a URL decodes correctly', async () => {
 		const stub = installSfFetchStub();
 		try {
-			// 1. Write a batch; capture the OLE2 envelope bytes it posted.
 			const wConn = makeKekConn({ creates: [{ success: true, id: '068A' }], retrieves: [{ ContentDocumentId: '069A' }] });
 			const wStore = await uploadBatchesStoreFromSfConnection(wConn, USER_ID, ORG_ID);
 			await wStore.create({
@@ -54,8 +35,6 @@ describe('upload-batches store, layer 4: VersionData-as-URL', () => {
 			});
 			const envBuf = Buffer.from(wConn.calls.sobjectCreates[0].payload.VersionData, 'base64');
 
-			// 2. Read it back, but SF hands VersionData over as a relative URL
-			//    (the large-file path); the store must binary-fetch it.
 			const vdUrl = '/services/data/v60.0/sobjects/ContentVersion/068A/VersionData';
 			const rConn = makeKekConn({
 				queries: [{ records: [{
@@ -80,12 +59,10 @@ describe('upload-batches store: two-phase write', () => {
 	test('createPending records intent (pending, no ids); finalize flips to uploaded with ids', async () => {
 		const stub = installSfFetchStub();
 		try {
-			// SF ids are 15–18 alphanumerics (get() guards on that).
 			const DOC_ID = '069O400000RjEorIAF';
 			const conn = makeKekConn({ creates: [{ success: true, id: '068O400000S8kK5IAJ' }], retrieves: [{ ContentDocumentId: DOC_ID }] });
 			const store = await uploadBatchesStoreFromSfConnection(conn, USER_ID, ORG_ID);
 
-			// Phase 1: pending intent.
 			await store.createPending({
 				source: 'canvas-graph',
 				attemptId: 'att-xyz',
@@ -98,8 +75,6 @@ describe('upload-batches store: two-phase write', () => {
 			assert.equal(pending.insertedIds.length, 0);
 			assert.deepEqual(pending.intendedRecords, [{ tempId: 1, objectName: 'Account' }]);
 
-			// Phase 2: finalize. get() needs the ContentDocument + the
-			// (pending) ContentVersion staged; _rewriteBatch posts a new version.
 			conn._queues.queries.push(
 				{ records: [{ Id: DOC_ID, Title: 't', OwnerId: USER_ID, CreatedDate: '2026-06-01T00:00:00Z' }] },
 				{ records: [{ Id: '068O400000S8kK5IAJ', VersionData: pendingVd, PathOnClient: 'batch-x__att-att-xyz' + BATCH_EXT }] },

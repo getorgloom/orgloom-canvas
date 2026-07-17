@@ -1,22 +1,8 @@
-// Salesforce upload helpers. Pure-ish functions used by /api/upload
-// and its variants: no DB, no auth, no Express. The route handler
-// owns the policy gates (cap, writable-org, slot filter), audit
-// logging, and usage accounting; this module owns the SF-side
-// mechanics.
 
 import { isWritableForOperation } from './sf-field-structure.js';
 
-// Placeholder value emitted by the client's pre-fill for reference
-// fields. Strip at upload time so Salesforce doesn't reject the insert
-// - real values come from associations when present, otherwise the
-// field is left blank for SF defaults.
 export const FAKE_REF_ID = '001000000000001';
 
-// Server-side mirror of the client-side BYTE_CAP (5 MB) in app.js.
-// The express body parser caps at 10 MB, but we want to reject upload
-// payloads above the documented 5 MB limit regardless of how the
-// client constructed the request - direct API callers, malformed
-// clients, or future tooling shouldn't be able to bypass the cap.
 export const UPLOAD_PAYLOAD_BYTE_CAP = 5 * 1024 * 1024;
 
 export function rejectIfOverPayloadCap(req, res) {
@@ -33,9 +19,6 @@ export function rejectIfOverPayloadCap(req, res) {
 	return false;
 }
 
-// Retry wrapper for SF API calls that can hit rate limits.
-// Exponential backoff: 500ms, 1s, 2s, 4s. Throws on non-rate-limit
-// errors or after maxAttempts.
 export async function withSfRetry(fn, { maxAttempts = 4, baseDelay = 500 } = {}) {
 	let lastErr;
 	for (let i = 0; i < maxAttempts; i++) {
@@ -56,16 +39,12 @@ throw err;
 	throw lastErr;
 }
 
-// Caches conn.sobject(name).describe() per upload request so a 50-record
-// batch hitting 3 object types only describes 3 times.
 export function makeDescribeCache(conn) {
 	const cache = new Map();
 	return async function getDescribe(objectName) {
 		if (!cache.has(objectName)) {
 			const pending = withSfRetry(() => conn.sobject(objectName).describe())
 				.catch((err) => {
-					// A transient failure must not poison this request's cache; a
-					// later caller may retry and succeed.
 					cache.delete(objectName);
 					throw err;
 				});
@@ -75,14 +54,6 @@ export function makeDescribeCache(conn) {
 	};
 }
 
-// Strip fields SF will reject from an upload payload: those flagged
-// !updateable (for updates) or !createable (for inserts), plus
-// compound types (`address`, `location`) which are never writable as
-// a unit. Without this, "load existing → tweak one field → upload"
-// fails with INVALID_FIELD_FOR_INSERT_UPDATE because the load step
-// pulls every queryable field including system-managed ones (Name on
-// Contact, MailingAddress, IsEmailBounced, PhotoUrl, etc.) into
-// rec.values.
 export function stripUnwritableFields(values, describe, isUpdate) {
 	if (!values || !describe || !Array.isArray(describe.fields)) {
 return Object.assign({}, values || {});
@@ -92,10 +63,6 @@ return Object.assign({}, values || {});
 		if (!f || !f.name) {
 return;
 }
-		// An external-ID upsert can resolve to either insert or update per
-		// row. Keep fields writable in either outcome and let Salesforce
-		// enforce the permission for the operation it actually performs.
-		// Fields writable in neither outcome remain excluded.
 		const operation = isUpdate === 'upsert' ? 'upsert' : (isUpdate ? 'update' : 'create');
 		const writableForOperation = isWritableForOperation(f, operation);
 		if (writableForOperation) {
@@ -104,8 +71,6 @@ writable.add(f.name);
 	});
 	const out = {};
 	Object.keys(values).forEach((k) => {
-		// Id stays for updates - SF needs it to identify the row even
-		// though Id reports updateable=false in describe.
 		if (k === 'Id' || writable.has(k)) {
 out[k] = values[k];
 }
@@ -113,9 +78,6 @@ out[k] = values[k];
 	return out;
 }
 
-// Format an SF API error / sub-error array into a single human-readable
-// string. Handles three shapes: flat error, `err.data` array, and
-// `err.errors` array (SF returns these in different paths).
 export function formatUploadError(err) {
 	if (!err) {
 return 'Unknown error';
@@ -138,14 +100,6 @@ return '';
 	return fmtOne(err) || 'Unknown error';
 }
 
-// Extract the machine-readable SF error code (e.g. DUPLICATES_DETECTED,
-// REQUIRED_FIELD_MISSING, FIELD_CUSTOM_VALIDATION_EXCEPTION) from the
-// same three error shapes formatUploadError handles. The REST upload
-// path folds the code into the human string via formatUploadError, but
-// the CLIENT needs the bare code to branch behavior - e.g. offer the
-// duplicate-rule override only on DUPLICATES_DETECTED. Returns the first
-// code found, or null. Kept separate from formatUploadError so the
-// human string and the branch key don't drift.
 export function extractUploadErrorCode(err) {
 	if (!err) {
 		return null;
@@ -170,12 +124,6 @@ export function extractUploadErrorCode(err) {
 	return codeOf(err);
 }
 
-// Topological sort of records by their parent dependencies. Returns
-// `{ order, cycleIds }`: order is a list of tempIds in
-// child-before-parent ordering (dependent records first), cycleIds is
-// the set of nodes participating in any reference cycle (those should
-// be flagged as upload failures rather than partial-committed with
-// dangling FKs).
 export function topoSortRecords(records, associations) {
 	const recordsById = new Map();
 	records.forEach((r) => {
@@ -225,32 +173,15 @@ cycleIds.add(stackArr[i]);
 	return { order, cycleIds, deps };
 }
 
-// Read-only system fields that the loaded-record fetch returns but
-// Salesforce rejects in PATCH/POST bodies. Id in particular trips a
-// "Cannot specify Id in update" error on per-record graph PATCH;
-// audit fields are not writable on standard objects. The graph
-// upload strips these up-front so the same loaded values can flow
-// through untouched everywhere else.
 export const SYSTEM_RO_FIELDS = new Set([
 	'Id', 'IsDeleted', 'CreatedDate', 'CreatedById',
 	'LastModifiedDate', 'LastModifiedById', 'SystemModstamp',
 	'LastActivityDate', 'LastViewedDate', 'LastReferencedDate',
 ]);
 
-// Composite Graph caps. Per-graph (= per-connected-component) and
-// total. Going over either is a 400 from SF; we surface a clearer
-// error and route the user to REST/Bulk instead.
 export const GRAPH_PER_GRAPH_CAP = 75;
 export const GRAPH_TOTAL_NODES_CAP = 500;
 
-// Find connected components in the submission subgraph. Each component
-// becomes its own atomic graph in the request - failure in one rolls
-// back only that component, not its siblings. Lifts the cap from
-// "75 total nodes" to "75 per component / 500 total."
-//
-// Returns an array of components. Each component is an array of
-// tempIds in the order given by `submittedOrder` (so topo order is
-// preserved within each component).
 export function groupConnectedComponents(submittedIds, submittedOrder, associations) {
 	const adj = new Map();
 	submittedIds.forEach((id) => adj.set(id, new Set()));
@@ -295,20 +226,10 @@ continue;
 	return components;
 }
 
-// refId for graph composite sub-requests. Stable per tempId so the
-// response handler can map back. Strict character set so the SF
-// validation pattern doesn't reject it.
 export function graphRefIdFor(tempId) {
 	return 'r' + String(tempId).replace(/[^a-zA-Z0-9]/g, '_');
 }
 
-// Build a single Composite Graph sub-request for one record. Returns
-// the SF-formatted { method, url, referenceId, body } shape.
-//
-// `submittedIds` is the set of tempIds that ARE in the submission
-// (so cross-component FK substitution uses the @{ref.id} syntax for
-// in-component parents and the literal loadedFromId for out-of-
-// component / loaded-only parents).
 export function buildGraphSubRequest({
 	rec,
 	tempId,
@@ -358,18 +279,6 @@ return;
 		if (!parent) {
 return;
 }
-		// Reference resolution order - loadedFromId wins when present,
-		// even if the parent is also in the submission. Rationale:
-		// Composite Graph's @{ref.id} substitution only works for POST
-		// sub-requests because they return a body with an `id` field.
-		// PATCH sub-requests (updates) return 204 No Content; the
-		// reference can't resolve and SF errors with "No value for
-		// r2.id found in r2." Since loadedFromId IS the parent's real
-		// SF id (we got it from the canvas-side record we're updating),
-		// using it directly is both correct and avoids the PATCH-
-		// reference dead end. Only fall through to the @{ref.id}
-		// syntax when the parent is a genuine INSERT with no
-		// pre-existing id we could substitute.
 		if (parent.loadedFromId) {
 			values[a.fieldName] = parent.loadedFromId;
 		} else if (submittedIds.has(a.toId)) {
@@ -392,16 +301,6 @@ return;
 	};
 }
 
-// Apply value-level normalization needed for the SF REST API:
-//   - Strip FAKE_REF_ID placeholders from reference fields.
-//   - Upgrade datetime-local strings ("YYYY-MM-DDTHH:MM") to full
-//     ISO 8601 - the REST JSON parser rejects the bare form.
-//   - State/Country picklists: when both Code and text fields are
-//     present, drop the text field; SF auto-populates it from the
-//     code, and a mismatch is rejected.
-//   - Substitute real SF IDs for every reference field this record
-//     owns (looked up via the realIdByTempId map populated as parents
-//     are uploaded).
 export function normalizeValuesForUpload(rec, tempId, associations, realIdByTempId) {
 	const values = Object.assign({}, rec.values || {});
 	Object.keys(values).forEach((k) => {
@@ -426,10 +325,6 @@ return;
 			delete values[textField];
 		}
 	});
-	// A reference (lookup) field is single-value, so a record holds at most
-	// one association per fieldName. The canvas UI blocks duplicates
-	// interactively; if a crafted / hand-edited payload carries them anyway,
-	// take the first that resolves rather than last-wins (non-deterministic).
 	const _fkSetByAssoc = new Set();
 	(associations || []).forEach((a) => {
 		if (a.fromId !== tempId) {

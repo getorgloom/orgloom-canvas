@@ -1,31 +1,3 @@
-// Toast + dialog helpers: the "ambient UI feedback" toolbox.
-//
-// Four functions that virtually every other module reaches for to
-// surface async results, errors, and confirm prompts:
-//
-//   showBulkToast(message, variant)
-//     Single-line toast pinned above the bulk canvas. Auto-dismisses
-//     after ~3s; 'error' / 'info' / 'success' variants drive the
-//     accent color. Called from ~95 places across the codebase.
-//   showBulkToastWithAction(message, actionLabel, onAction, variant)
-//     Same toast, with a clickable action button (e.g., "Undo").
-//   showConfirmDialog({title, message, confirmLabel, cancelLabel, danger})
-//     Modal yes/no dialog. Resolves to true/false.
-//   confirmHydrateChoice({placeholderLabel, currentValues, incoming, fieldLabelLookup})
-//     Specialised modal that shows a side-by-side diff and asks the
-//     user whether to overwrite, merge, or cancel. Returns one of
-//     'overwrite' / 'merge' / 'cancel'.
-//
-// Dependencies passed to mount():
-//   escapeHtml: HTML-escape helper.
-//   getGraph: returns the .graph-overlay DOM element (lazy because
-//                graph is built later in the IIFE).
-//
-// Public API (returned from mount):
-//   showBulkToast, showBulkToastWithAction, showConfirmDialog,
-//   confirmHydrateChoice.
-//
-// Exposed as window.OrgLoom.uiFeedback. Load order: before app.js.
 
 (function () {
 	'use strict';
@@ -40,12 +12,6 @@
 			const escapeHtml = deps.escapeHtml;
 			const getGraph = deps.getGraph;
 
-			// Toasts anchor to #graph-bulk (parent of both the DOM card view
-			// #bulk-canvas and the cytoscape view #bulk-canvas-cy). #bulk-canvas
-			// is display:none in cy-mode (graph view), so appending toasts there
-			// hid them on that view, e.g. after an import that lands in the
-			// graph. #graph-bulk is visible in both modes; fall back to
-			// #bulk-canvas if it's ever absent.
 			function _toastHost() {
 				const g = getGraph();
 				return g.querySelector('#graph-bulk') || g.querySelector('#bulk-canvas');
@@ -75,9 +41,6 @@ toast.remove();
 				setTimeout(dismiss, 4000);
 			}
 			
-			// Toast variant with a single inline action button (e.g. Undo).
-			// Stays visible longer (10s) since it's actionable. The action
-			// callback fires once when clicked, then the toast dismisses.
 			function showBulkToastWithAction(message, actionLabel, onAction, variant) {
 				const canvas = _toastHost();
 				if (!canvas) {
@@ -85,8 +48,6 @@ return;
 }
 				canvas.querySelectorAll('.bulk-toast').forEach(t => t.remove());
 				const toast = document.createElement('div');
-				// has-action reserves a right-hand lane for the absolutely-
-				// positioned \u00D7 so the inline action button can't slide under it.
 				toast.className = 'bulk-toast has-action' + (variant ? ' ' + variant : '');
 				toast.innerHTML =
 					'<span class="bulk-toast-msg">' + escapeHtml(message) + '</span>' +
@@ -113,9 +74,6 @@ toast.remove();
 				setTimeout(dismiss, 10000);
 			}
 			
-			// Reusable styled confirm dialog matching the app's modal
-			// pattern (overlay + body + header/content/footer). Resolves
-			// to true on confirm, false on cancel/overlay/Esc.
 			function showConfirmDialog({ title, message, confirmLabel, cancelLabel, danger }) {
 				return new Promise((resolve) => {
 					document.querySelectorAll('.app-confirm-modal').forEach((el) => el.remove());
@@ -164,11 +122,6 @@ finish(true);
 				});
 			}
 			
-			// Confirm modal for the "you have entered values on this canvas
-			// placeholder; loading the related SF record will overwrite
-			// them" path. Returns a Promise<'replace' | 'skip'>. Shows a
-			// compact preview of which fields would change so the user
-			// isn't blind-clicking.
 			function confirmHydrateChoice({ placeholderLabel, currentValues, incoming, fieldLabelLookup }) {
 				return new Promise((resolve) => {
 					document.querySelectorAll('.hydrate-confirm-modal').forEach(el => el.remove());

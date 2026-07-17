@@ -1,4 +1,3 @@
-// accounts represent humans/identity
 import crypto from "node:crypto";
 import { ext } from "../extensions.js";
 
@@ -9,11 +8,6 @@ export function normalizeEmail(email) {
 	return String(email).trim().toLowerCase();
 }
 
-// Promo codes are attribution / cohort tags entered at signup. Trim,
-// uppercase (we want RAMPUP26 and rampup26 to land in the same bucket
-// for analytics), cap length so a malicious paste can't blow up the
-// row. Returns null for blank input so we don't store empty strings
-// that complicate "WHERE promo_code IS NOT NULL" queries.
 export function normalizePromoCode(code) {
 	if (code == null) {
 		return null;
@@ -22,9 +16,6 @@ export function normalizePromoCode(code) {
 	return cleaned.length > 0 ? cleaned : null;
 }
 
-// collisions:
-//   gmail.com / googlemail.com
-//   any other domain: for the local-part, drop "+suffix"
 export function normalizeEmailForCollisionCheck(email) {
 	const lower = normalizeEmail(email);
 	if (!lower) {
@@ -36,7 +27,6 @@ export function normalizeEmailForCollisionCheck(email) {
 	}
 	let local = lower.slice(0, atIdx);
 	const domain = lower.slice(atIdx + 1);
-	// drop +suffix on every provider.
 	const plusIdx = local.indexOf("+");
 	if (plusIdx >= 0) {
 		local = local.slice(0, plusIdx);
@@ -50,7 +40,6 @@ export function normalizeEmailForCollisionCheck(email) {
 	return local + "@" + canonicalDomain;
 }
 
-// detect whether a new signup would collide with any existing account.
 export async function findByCanonicalEmail(email) {
 	const canonical = normalizeEmailForCollisionCheck(email);
 	if (!canonical) {
@@ -66,8 +55,6 @@ export async function findByCanonicalEmail(email) {
 	if (direct) {
 		return direct;
 	}
-	// fallback: scan and normalize. Soft-deleted accounts excluded
-	// so a deleted alias can be re-claimed by a new signup.
 	const all = await db
 		.selectFrom("accounts")
 		.selectAll()
@@ -105,13 +92,6 @@ export async function findByEmail(email) {
 		.executeTakeFirst();
 }
 
-// find-or-create by email. Returns { account, created } so the caller
-// knows whether to fire onboarding flows or just continue.
-//
-// promoCode is attribution-only: captured on first signup so we can
-// segment cohorts later. Returning users keep their original code;
-// re-entering a promo on a later signup attempt does NOT overwrite,
-// since the first-touch attribution is what we want.
 export async function upsertByEmail({ email, displayName, promoCode }) {
 	const normalized = normalizeEmail(email);
 	if (!normalized) {
@@ -138,8 +118,6 @@ export async function upsertByEmail({ email, displayName, promoCode }) {
 		}
 		return { account: existing, created: false };
 	}
-	// no exact match. Before creating, check for alias collision against
-	// existing accounts (plus-addressing).
 	const aliasMatch = await findByCanonicalEmail(normalized);
 	if (aliasMatch) {
 		return { account: null, created: false, collision: aliasMatch };
@@ -207,7 +185,6 @@ export async function softDelete(id) {
 	return findById(id);
 }
 
-// GDPR Article 17 "right to erasure".
 export async function pseudonymize(id, pseudoEmail) {
 	if (!id) {
 		throw new Error("id is required");
@@ -244,7 +221,6 @@ export async function restore(id) {
 	return findById(id);
 }
 
-// admin-panel
 export async function listForAdminView({
 	limit = 100,
 	offset = 0,

@@ -1,7 +1,3 @@
-// Dialect-neutral schema checks for idempotent migrations. Querying Kysely's
-// introspector avoids SQLite-only PRAGMA statements and, unlike catching a
-// failed ALTER TABLE, does not leave a PostgreSQL migration transaction in an
-// aborted state.
 
 export async function migrationTable(db, tableName) {
 	const tables = await db.introspection.getTables();

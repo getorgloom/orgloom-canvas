@@ -1,18 +1,3 @@
-// Unit tests for the post-upload re-query helpers in canvas-routes.js.
-//
-// The two helpers under test:
-//
-//   _fetchCanonicalValuesForUpload({ conn, results, recordsById })
-//     SOQL-fetches the canonical post-trigger field values for every
-//     successful upload result. Returns a Map: tempId →
-//     { sfId, objectName, values }.
-//
-//   _buildBatchEntryFromResult(r, rec, canonical)
-//     Builds the recall-ledger entry. When canonical.values has a
-//     field, uses the canonical (post-trigger) value for
-//     uploadedValues; drift detection at recall time then compares
-//     SF current against "what SF actually stored" instead of "what
-//     we wrote," eliminating the trigger-transform false positive.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,13 +24,11 @@ describe('_buildBatchEntryFromResult (canonical-values preference)', () => {
 			values: { Industry: 'Tech', Phone: '555-1234' },
 			loadedValues: { Industry: 'Old', Phone: '555-0000' },
 		};
-		// Trigger normalized "Tech" → "Technology".
 		const canonical = { values: { Industry: 'Technology', Phone: '555-1234' } };
 		const entry = _buildBatchEntryFromResult(r, rec, canonical);
 		assert.equal(entry.uploadedValues.Industry, 'Technology',
 			'trigger-transformed value must land in uploadedValues, not what we wrote');
 		assert.equal(entry.uploadedValues.Phone, '555-1234');
-		// priorValues unaffected: that's the pre-upload baseline.
 		assert.equal(entry.priorValues.Industry, 'Old');
 	});
 
@@ -55,7 +38,6 @@ describe('_buildBatchEntryFromResult (canonical-values preference)', () => {
 			values: { Industry: 'Tech', Phone: '555-1234' },
 			loadedValues: { Industry: 'Old', Phone: '555-0000' },
 		};
-		// Canonical only carries Industry; Phone wasn't in the SOQL response.
 		const canonical = { values: { Industry: 'Technology' } };
 		const entry = _buildBatchEntryFromResult(r, rec, canonical);
 		assert.equal(entry.uploadedValues.Industry, 'Technology');
@@ -69,10 +51,8 @@ describe('_buildBatchEntryFromResult (canonical-values preference)', () => {
 			values: { Industry: 'Tech' },
 			loadedValues: { Industry: 'Old' },
 		};
-		// SOQL re-query asked for extra fields that the user didn't write.
 		const canonical = { values: { Industry: 'Technology', AuditField: 'set-by-workflow' } };
 		const entry = _buildBatchEntryFromResult(r, rec, canonical);
-		// Only fields the user changed make it into uploadedValues.
 		assert.deepEqual(Object.keys(entry.uploadedValues), ['Industry']);
 	});
 
@@ -90,9 +70,6 @@ describe('_buildBatchEntryFromResult (canonical-values preference)', () => {
 	});
 
 	test('UPDATE with all values matching loadedValues → no entry (nothing changed)', () => {
-		// Defensive: even though the upload runs, if every value matches
-		// the baseline, no diff fields are recorded. priorValues +
-		// uploadedValues both end up empty so the entry omits them.
 		const r = { tempId: 1, id: '001abc', objectName: 'Account', mode: 'update', success: true };
 		const rec = {
 			values: { Industry: 'Tech' },
@@ -105,9 +82,6 @@ describe('_buildBatchEntryFromResult (canonical-values preference)', () => {
 	});
 });
 
-// _fetchCanonicalValuesForUpload calls conn.query(soql), parses the
-// records, and indexes by tempId. The fake conn just captures every
-// SOQL it sees so we can assert on shape.
 function makeQueryConn(stateById) {
 	const calls = { queries: [] };
 	return {
@@ -198,10 +172,8 @@ describe('_fetchCanonicalValuesForUpload', () => {
 			[1, { values: { Industry: 'a' } }],
 			[2, { values: { Industry: 'b' } }],
 			[3, { values: { Industry: 'c' } }],
-			// 4 deliberately missing
 		]);
 		await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		// Only tempId 1 should be in the SOQL.
 		const soql = conn.calls.queries[0] || '';
 		assert.match(soql, /'001a'/);
 		assert.doesNotMatch(soql, /'001b'/, 'failed result must not be queried');
@@ -243,17 +215,10 @@ describe('_fetchCanonicalValuesForUpload', () => {
 			[1, { values: { Industry: 'a' }, loadedValues: { Industry: 'x' } }],
 		]);
 		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		// Helper swallows the per-object failure. tempId 1 just isn't in
-		// the returned map; the caller falls back to using what the
-		// client sent (legacy behavior).
 		assert.equal(out.size, 0);
 	});
 
 	test('field names from both rec.values AND rec.loadedValues are included in the SELECT', async () => {
-		// We need to ask SF for fields that might have been trigger-touched
-		// including fields we DIDN'T write but that were in the baseline
-		// (a trigger might have updated them). Union of both maps catches
-		// that case.
 		const conn = makeQueryConn({
 			'001a': { Id: '001a' },
 		});
@@ -286,18 +251,12 @@ describe('_fetchCanonicalValuesForUpload', () => {
 	});
 });
 
-// _orderDeletesChildrenFirst: server-side children-first ordering for
-// the pending-deletes lane. The client sends canvas order, which is not
-// delete-safe: deleting a parent before its to-be-deleted child either
-// fails (restrict lookup) or cascade-kills the child so its own DELETE
-// reports a false failure.
 import { _orderDeletesChildrenFirst } from '../src/canvas-routes.js';
 
 describe('_orderDeletesChildrenFirst', () => {
 	const del = (tempId) => ({ tempId, sfId: 'id' + tempId, objectName: 'X' });
 
 	test('child deletes before parent regardless of received order', () => {
-		// Association: fromId (child) references toId (parent).
 		const deletes = [del(1), del(2)]; // 1 = parent first (canvas order)
 		const assoc = [{ fromId: 2, toId: 1, fieldName: 'ParentId' }];
 		const ordered = _orderDeletesChildrenFirst(deletes, assoc);
@@ -316,7 +275,6 @@ describe('_orderDeletesChildrenFirst', () => {
 
 	test('unlinked deletes keep relative order; associations to non-deleted records are ignored', () => {
 		const deletes = [del(1), del(2), del(3)];
-		// tempId 99 is not in the deletes set; its edge must not disturb order.
 		const assoc = [{ fromId: 99, toId: 1 }];
 		const ordered = _orderDeletesChildrenFirst(deletes, assoc);
 		assert.deepEqual(ordered.map((d) => d.tempId), [1, 2, 3], 'no reorder without in-set edges');

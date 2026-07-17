@@ -1,6 +1,3 @@
-// Legacy chain compatibility. New Activity History rows are unchained, but
-// already-migrated development databases can contain explicitly chained rows
-// that must remain readable/redactable until their retention window expires.
 
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -38,11 +35,6 @@ async function writeN(workspaceId, actorAccountId, n) {
 			action: 'test_event_' + i,
 			payload: { i },
 		}));
-		// Ensure created_at strictly differs row-to-row. The chain SELECT
-		// orders by created_at DESC, id DESC; when two rows share a
-		// millisecond timestamp, the verifier's ASC walk may visit them
-		// in the opposite order from the chain's prev-hash lookup, which
-		// produces a spurious break. setTimeout(2) > the 1ms granularity.
 		await new Promise((r) => setTimeout(r, 2));
 	}
 	return ids;
@@ -91,8 +83,6 @@ describe('verifyChain: tamper detection', () => {
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
 		const ids = await writeN(ws.id, a.id, 5);
-		// Mutate row #2 directly via raw kysely, simulating an attacker
-		// editing the database file. payload_json is part of the hash.
 		await ext.getDb()
 			.updateTable('audit_log')
 			.set({ payload_json: JSON.stringify({ i: 99, tampered: true }) })
@@ -111,7 +101,6 @@ describe('verifyChain: tamper detection', () => {
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
 		const ids = await writeN(ws.id, a.id, 4);
-		// Flip the chain_hash on row #1 only; payload untouched.
 		await ext.getDb()
 			.updateTable('audit_log')
 			.set({ chain_hash: '00'.repeat(32) })
@@ -128,16 +117,11 @@ describe('verifyChain: tamper detection', () => {
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
 		const ids = await writeN(ws.id, a.id, 5);
-		// Delete row #2: the subsequent row #3's stored chain_hash was
-		// computed off row #2's hash, but verifyChain will now compare
-		// row #3 against a recomputed-hash that chains off row #1.
 		await ext.getDb().deleteFrom('audit_log').where('id', '=', ids[2]).execute();
 		const { audit } = await import('../src/database/index.js');
 		const result = await audit.verifyChain({ workspaceId: ws.id });
 		assert.equal(result.ok, false);
 		assert.equal(result.totalRows, 4);
-		// brokenIndex is the position in the new ordering where the break shows up;
-		// that's the row that USED to be index 3, now at index 2.
 		assert.equal(result.brokenIndex, 2);
 	});
 
@@ -158,10 +142,6 @@ describe('verifyChain: tamper detection', () => {
 	});
 
 	test('mutating row N also surfaces a break: break propagates downstream', async () => {
-		// Mutating row #1 should be detected at row #1; downstream rows
-		// will ALSO fail because their stored chain_hash chained off the
-		// pre-mutation value. verifyChain bails at the FIRST break, so
-		// it reports brokenIndex=1.
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);

@@ -1,25 +1,9 @@
-// Tests for the migrate-mode annotation engine. Pure logic: no DOM,
-// no SF. Exercises each issue kind + the status rollup + record-type
-// resolution by DeveloperName.
-//
-// The describe fixtures here mirror the REAL Org Loom client describe
-// shape (the output of sf-describe.js#loadDescribeForObject), NOT the
-// raw jsforce shape:
-//   • fields[] are already filtered to createable, carry a single
-//     `required` boolean (nillable + defaultedOnCreate folded in), and
-//     picklistValues[] contain only active values as { value, label }.
-//   • recordTypes[] = { id, developerName, name, label } and are already
-//     filtered to available record types server-side.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-// migrate-annotate.js is a browser IIFE that attaches to
-// window.Orgloom.migrateAnnotate. This package is type:module, so a
-// plain require() returns {}; instead run the script in a VM sandbox
-// with a fake window and read the global off it.
 const _src = readFileSync(
 	new URL('../src/public/js/migrate-annotate.js', import.meta.url),
 	'utf8',
@@ -41,7 +25,6 @@ vm.createContext(_sandbox);
 vm.runInContext(_src, _sandbox);
 const annotate = _sandbox.window.Orgloom.migrateAnnotate;
 
-// Org Loom describe builder (loadDescribeForObject shape).
 function describe_(fields, recordTypes) {
 	return { fields: fields || [], recordTypes: recordTypes || [] };
 }
@@ -53,11 +36,9 @@ function field(name, opts) {
 		type: opts.type || 'string',
 		createable: opts.createable !== false,
 		required: !!opts.required,
-		// active-only values, as the server projects them
 		picklistValues: opts.picklistValues || [],
 	};
 }
-// picklist value entry, server shape
 function pv(value) {
 	return { value: value, label: value };
 }
@@ -89,7 +70,6 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('required-on-create field unfilled -> blocked', () => {
-		// Phone is on the target too, so the only issue is the unfilled Name.
 		const d = describe_([field('Name', { required: true }), field('Phone')]);
 		const rec = { objectName: 'Account', values: { Phone: '555' } };
 		const res = annotate.computeMigrationStatus(rec, d);
@@ -122,13 +102,10 @@ describe('computeMigrationStatus', () => {
 			field('AccountId', { required: true, type: 'reference' }),
 		]);
 		const rec = { objectName: 'Contact', values: { Name: 'Bob' } };
-		// AccountId is required + a reference, so it must NOT produce a block.
 		assert.equal(annotate.computeMigrationStatus(rec, d).status, 'ready');
 	});
 
 	test('non-required field (defaulted/optional) is not flagged', () => {
-		// The server folds defaultedOnCreate into required:false, so an
-		// unset optional field never blocks.
 		const d = describe_([field('Status', { required: false })]);
 		const rec = { objectName: 'Case', values: {} };
 		assert.equal(annotate.computeMigrationStatus(rec, d).status, 'ready');
@@ -142,8 +119,6 @@ describe('computeMigrationStatus', () => {
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.equal(res.status, 'warning');
 		assert.equal(res.issues[0].kind, 'picklist-mismatch');
-		// invalidValues is created inside the VM realm; normalize to the
-		// test realm's Array so deepEqual's prototype check passes.
 		assert.deepEqual(Array.from(res.issues[0].invalidValues), ['Frozen']);
 	});
 
@@ -157,8 +132,6 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('value dropped from target picklist (e.g. inactive) is invalid', () => {
-		// Inactive values are filtered out server-side, so the target simply
-		// doesn't list them; a record still carrying one flags as a mismatch.
 		const d = describe_([
 			field('Stage', { type: 'picklist', picklistValues: [pv('Open')] }),
 		]);
@@ -198,8 +171,6 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('record type absent from target (e.g. unavailable) -> blocked', () => {
-		// Unavailable record types are filtered out server-side, so they
-		// never appear in recordTypes; resolution fails -> blocked.
 		const d = describe_([field('Name', { required: true })], []);
 		const rec = {
 			objectName: 'Account',
@@ -252,8 +223,6 @@ describe('computeMigrationStatus', () => {
 			values: { Phone: '555' }, // Name unfilled, but...
 			loadedFromId: '001TARGET', // matched to an existing target record
 		};
-		// Phone isn't on the describe so it's a missing-field warning, but the
-		// required Name must NOT block (the target already has it).
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.equal(res.status, 'warning');
 		assert.ok(!res.issues.some((i) => i.kind === 'required-unfilled'));

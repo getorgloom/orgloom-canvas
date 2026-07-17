@@ -1,31 +1,9 @@
-// Canvas → CSV export.
-//
-// Dumps records on the canvas to CSV as one file per object type:
-// each file is a clean single-object table (its own field set, no
-// cross-object column union, no discriminator column) so it maps
-// straight back through CSV import. Walks canvasState.bulkRecords in
-// memory; no SF round-trip. Output is RFC 4180-quoted (comma /
-// newline / quote in a value triggers double-quote wrapping, internal
-// quotes are escaped by doubling) and prefixed with a UTF-8 BOM so
-// Excel opens accented characters cleanly instead of mangling them to
-// mojibake.
-//
-// Public API (returned from mount):
-//   openModal()
-//
-// Exposed as window.OrgLoom.canvasExportCsv. Load order: before app.js.
 
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
 
-	// Fields we never emit in the CSV. Skipping `_`-prefix preserves
-	// the internal-state convention used everywhere else (Diff, Search,
-	// orphan detection). System fields are dropped because they're
-	// either auto-generated on commit (Id, audit timestamps) or
-	// never user-meaningful (IsDeleted); surfacing them in a CSV
-	// users will hand-edit + re-import is a footgun.
 	const SYSTEM_FIELDS = new Set([
 		'CreatedDate', 'CreatedById',
 		'LastModifiedDate', 'LastModifiedById',
@@ -34,11 +12,6 @@
 		'IsDeleted',
 	]);
 
-	// Preferred ordering for the leading columns when present. Id
-	// first because it's the universal SF identifier; then identity-
-	// shaped fields (Name, then FirstName/LastName, then Email) so
-	// the leftmost columns are immediately recognizable when the file
-	// opens. Everything else falls through to alpha order below.
 	const FIELD_PRIORITY = [
 		'Id',
 		'Name', 'FirstName', 'LastName',
@@ -67,19 +40,6 @@ throw new Error('canvas-export-csv.mount: missing deps object');
 					.slice(0, 80) || 'canvas';
 			}
 
-			// RFC 4180 escape + CSV formula-injection guard. Non-string
-			// values go through String(); null/undefined become empty so
-			// leading/trailing fields don't collapse columns.
-			//
-			// Formula guard: Excel / Google Sheets EXECUTE a cell whose
-			// text begins with = + - @ (or a leading tab/CR that shifts the
-			// first visible character), so a Salesforce text field carrying
-			// `=HYPERLINK(...)` or `=cmd|'/c calc'!A1` would run on open.
-			// RFC quoting alone does NOT stop this: the spreadsheet still
-			// parses the leading `=`. Prefixing a single apostrophe forces
-			// the cell to literal text (Excel/Sheets hide the apostrophe).
-			// Trade-off: a re-import of such a rare formula-shaped value
-			// carries the leading `'`; safety wins over that edge case.
 			function csvEscape(v) {
 				if (v == null) {
 return '';
@@ -94,10 +54,6 @@ return '';
 				return s;
 			}
 
-			// Order field names: priority list first (in the listed
-			// order), then everything else alphabetically. Stable
-			// regardless of the order keys appear on the source
-			// records.
 			function orderFields(names) {
 				const set = new Set(names);
 				const head = FIELD_PRIORITY.filter((f) => set.has(f));
@@ -108,8 +64,6 @@ return '';
 				return head.concat(tail);
 			}
 
-			// Real records only: type nodes (object placeholders) and
-			// pending records (mid-spawn) are canvas chrome, not data.
 			function selectScopedRecords(scope) {
 				const all = (canvasState.bulkRecords || []).filter(
 					(r) => r && !r.isTypeNode && !r.isPending
@@ -121,8 +75,6 @@ return '';
 				return all;
 			}
 
-			// Collect every value-key seen across the given records,
-			// excluding `_`-prefix and the system-field set.
 			function collectFieldUnion(records) {
 				const set = new Set();
 				records.forEach((r) => {
@@ -140,10 +92,6 @@ return;
 				return Array.from(set);
 			}
 
-			// Build the CSV text. `leadingColumns` is an optional list of
-			// header-name → per-record extractor pairs prepended to each
-			// row before the field columns. Currently unused; per-object
-			// export emits just the object's own fields.
 			function buildCsv(records, fields, leadingColumns) {
 				const lead = Array.isArray(leadingColumns) ? leadingColumns : [];
 				const headerCells = lead.map((c) => csvEscape(c.header)).concat(
@@ -156,9 +104,6 @@ return;
 					const fieldCells = fields.map((f) => csvEscape(values[f]));
 					lines.push(leadCells.concat(fieldCells).join(','));
 				});
-				// CRLF line endings + UTF-8 BOM so Excel on Windows
-				// opens accented characters cleanly. The blob itself
-				// is text/csv; downstream parsers strip the BOM.
 				return '﻿' + lines.join('\r\n');
 			}
 
@@ -175,7 +120,6 @@ return;
 }, 0);
 			}
 
-			// ----- modal -----
 
 			const modal = document.createElement('div');
 			modal.className = 'modal canvas-export-csv-modal hidden';
@@ -292,10 +236,6 @@ return;
 				if (filenameEl) {
 					filenameEl.addEventListener('input', () => {
 						_state.filename = filenameEl.value;
-						// Only the meta-preview line under the input
-						// needs to refresh; full re-render would steal
-						// caret focus on every keystroke. Cheaper to
-						// patch the preview node directly.
 						const preview = body.querySelector('.cec-section .cec-meta code');
 						if (preview) {
 							preview.textContent = objectNames.length > 1
@@ -320,12 +260,6 @@ return;
 					return;
 				}
 				const stem = sanitizeFilename(_state.filename || 'canvas');
-				// One file per object type. Each file holds a single object's
-				// own field set: no cross-object column union, no _Object /
-				// _RecordId discriminator, so every file is a clean,
-				// single-type table that maps straight back through CSV
-				// import. A single-object canvas yields just <stem>.csv;
-				// multiple objects yield <stem>-<ObjectName>.csv each.
 				const byObject = new Map();
 				records.forEach((r) => {
 					const key = r.objectName || 'Unknown';
@@ -336,9 +270,6 @@ byObject.set(key, []);
 				});
 				const entries = Array.from(byObject.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 				const single = entries.length === 1;
-				// Browsers throttle rapid programmatic downloads: 120ms
-				// spacing keeps Chrome / Edge / Firefox all happy through
-				// ~10 files without prompting "allow multiple downloads."
 				let i = 0;
 				const fireNext = () => {
 					if (i >= entries.length) {
@@ -358,9 +289,6 @@ byObject.set(key, []);
 
 			return {
 				openModal: openModal,
-				// Test-only surface: the pure CSV helpers, so escaping /
-				// formula-injection / field-ordering can be unit-tested
-				// without standing up the modal DOM. Not used by app code.
 				_test: {
 					csvEscape: csvEscape,
 					buildCsv: buildCsv,

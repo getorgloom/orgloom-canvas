@@ -1,35 +1,3 @@
-// Direct-share modal for saved canvases.
-//
-// Owns the "Share canvas" modal and its supporting pieces:
-//
-//   attachSfUserPicker(hostEl, {onPick, placeholder})
-//     Generic SF user search popover. Used as the recipient field in
-//     the share modal and as the "slot assignee" picker on bulk cards
-//     (one external caller still in app.js).
-//   openCanvasEmailLinkModal(canvasId, canvasTitle)
-//     Renders the progressive share modal: recipient picker + role
-//     select, followed by a concise access review and Share button that triggers
-//     /api/canvas/:id/direct-share. Post-success view surfaces the
-//     /?openCanvas=<id> URL so the sender can forward the link via
-//     Slack / IM / whatever channel they prefer.
-//   openCanvasShareManagementModal(canvasId, canvasTitle)
-//     Lists current recipients and allows the owner to revoke access.
-//
-// Dependencies passed to mount():
-//   canvasState: shared canvas state.
-//   csrfFetch: fetch wrapper.
-//   escapeHtml: for the modal body.
-//   showBulkToast: error / success toast.
-//   showConfirmDialog: confirm prompts inside the modal.
-//   _hasCap: plan-cap check used to gate sharing.
-//   _invalidateShareCountForCanvas: refreshes the toolbar's separate
-//                                    Access shortcut after share changes.
-//
-// Public API (returned from mount):
-//   openCanvasEmailLinkModal, openCanvasShareManagementModal,
-//   attachSfUserPicker.
-//
-// Exposed as window.OrgLoom.canvasShare. Load order: before app.js.
 
 (function () {
 	'use strict';
@@ -61,15 +29,6 @@ throw new Error('canvas-share.mount: missing deps object');
 
 			function attachSfUserPicker(hostEl, { onPick, placeholder = 'Search by name, email, or username…' } = {}) {
 				hostEl.classList.add('sf-user-picker');
-				// type="search" + a non-credential name + the
-				// password-manager opt-out attributes below tell
-				// Bitwarden / 1Password / LastPass that this is a
-				// search field, not a username/email login field, so
-				// they leave the autofill UI off it. `autocomplete`
-				// uses the named "off-like" value `search` (Chrome
-				// ignores plain `off` on visible text inputs) plus
-				// `webauthn` as a no-op signal to discourage passkey
-				// prompts.
 				hostEl.innerHTML =
 					'<input type="search" name="sf-user-search" class="sf-user-picker-input" ' +
 						'placeholder="' + escapeHtml(placeholder) + '" ' +
@@ -167,9 +126,6 @@ onPick(null);
 					_debounce = setTimeout(() => runSearch(q), 220);
 				});
 				input.addEventListener('focus', (event) => {
-					// The share modal focuses this field for keyboard users. Do not
-					// immediately cover the role choices with an empty-query result
-					// menu; open that menu only when the user actually focuses it.
 					if (event.isTrusted && !_picked && results.innerHTML === '') {
 runSearch('');
 }
@@ -180,7 +136,6 @@ results.hidden = true;
 }
 				});
 			
-				// Public API: get current selection, force clear externally.
 				return {
 					getPicked() {
  return _picked; 
@@ -194,13 +149,6 @@ input.focus();
 				};
 			}
 			
-			// Direct-share modal. Sender picks a SF user from their
-			// connected org via the typeahead picker, server resolves
-			// the user's Email, grants access to the saved canvas, stores
-			// the Org Loom role, and sends a notification. Sharing never
-			// creates access grants for Salesforce business records; the
-			// recipient continues to see and update those records only as
-			// allowed by their existing Salesforce permissions.
 			function openCanvasEmailLinkModal(canvasId, canvasTitle) {
 				document.querySelectorAll('.canvas-share-modal').forEach((el) => el.remove());
 				const modal = document.createElement('div');
@@ -242,9 +190,6 @@ input.focus();
 									'<span class="tag" id="cs-link-msg" aria-live="polite"></span>' +
 								'</div>' +
 							'</section>' +
-							// Share-result slot: after a successful share,
-							// surfaces the canvas URL with a Copy button so
-							// the sender can forward it via Slack/IM/email.
 							'<div id="cs-share-result" style="display:none;margin-top:0.9em;padding:0.7em 0.85em;border:1px solid var(--border);border-radius:4px;background:var(--bg-elev)"></div>' +
 							'</div>' +
 						'<div class="modal-footer">' +
@@ -256,10 +201,6 @@ input.focus();
 				const cleanup = () => {
 					modal.remove();
 					document.removeEventListener('keydown', onKey);
-					// After the modal closes, the active-share count
-					// for this canvas may have changed (send / revoke).
-					// Invalidate the cached count so the toolbar badge
-					// re-fetches and reflects reality.
 					_invalidateShareCountForCanvas(canvasId);
 				};
 				const onKey = (e) => {
@@ -313,15 +254,6 @@ cleanup();
 					shareResultEl.innerHTML = '';
 					updateShareReview();
 				}));
-				// Playground lock-down. The visitor can see the recipient and
-				// role controls but can't
-				// actually share. Demo banner above the role picker
-				// frames the limitation up front; teammate input is
-				// disabled; Share button is force-disabled and the
-				// onPick callback is replaced with a no-op so it can't
-				// be re-enabled. Mock handlers in mock-sf.js feed the
-				// list+picker fetches so nothing surfaces as a
-				// 'mock-not-implemented' error.
 				if (window.ORGLOOM_MOCK) {
 					const demoBanner = document.createElement('div');
 					demoBanner.className = 'banner warn';
@@ -346,11 +278,6 @@ intro.parentNode.insertBefore(demoBanner, intro);
 			
 				const msgEl = modal.querySelector('#cs-link-msg');
 				async function sendLink() {
-					// Playground hard stop. The button is disabled in
-					// mock mode and the picker is locked, so this
-					// shouldn't fire, but as defense-in-depth: no fetch
-					// can reach /api/canvas/:id/direct-share from the
-					// demo, regardless of how the click was triggered.
 					if (window.ORGLOOM_MOCK) {
 return;
 }
@@ -392,9 +319,6 @@ return;
 							}
 							throw new Error((data && (data.message || data.error)) || 'HTTP ' + r.status);
 						}
-						// Direct-share success: set the inline status
-						// message, then populate the share-result slot
-						// with the canvas URL for manual delivery.
 						const r2 = data.recipient || {};
 						const who = r2.name || r2.email || picked.email || picked.name || 'the recipient';
 						let nextStep;
@@ -413,11 +337,6 @@ return;
 						msgEl.style.color = 'var(--success)';
 						shareComplete = true;
 						sendBtnEl.textContent = 'Shared';
-						// Surface the canvas URL with a Copy button so
-						// the sender can forward via Slack/IM/wherever
-						// in addition to the auto-email. The URL is
-						// recipient-locked at the SF-side share level:
-						// only the picked user can use it.
 						if (shareResultEl) {
 							const canvasUrl = window.location.origin + '/?openCanvas=' + encodeURIComponent(canvasId);
 							shareResultEl.style.display = '';
@@ -464,16 +383,6 @@ return;
 				sendBtnEl.addEventListener('click', sendLink);
 
 			
-				// Free-tier read-only treatment. share-canvas is Pro+.
-				// If the active workspace lacks the capability, render
-				// the modal in a visibly locked state with an upfront
-				// upgrade CTA, so the user learns the constraint
-				// BEFORE filling out the form and hitting a 402 on
-				// Send. Access management remains available in its separate
-				// owner-only modal so existing grants can still be revoked. Server-
-				// side POST /api/canvas/:id/direct-share is the source
-				// of truth: this UI lock is defense-in-depth + UX
-				// clarity, not a security boundary.
 				if (!_hasCap('share-canvas')) {
 					const contentEl = modal.querySelector('.modal-content');
 					const upgradeBanner = document.createElement('div');
@@ -487,7 +396,6 @@ return;
 						' &middot; ' +
 						'<a href="/pricing" target="_blank" rel="noopener">Compare plans</a>';
 					contentEl.insertBefore(upgradeBanner, contentEl.firstChild);
-					// Lock the editable invite surface.
 					const lockTargets = [
 						modal.querySelector('.cs-role-picker'),
 						modal.querySelector('#cs-link-picker'),
@@ -499,17 +407,11 @@ return;
  c.disabled = true; 
 });
 					});
-					// Replace the Send button with an Upgrade CTA in
-					// the same slot. Remove the original (with its
-					// sendLink listener) so the click can't fire
-					// through and hit the 402 path anyway.
 					const upgradeBtn = document.createElement('a');
 					upgradeBtn.className = 'button';
 					upgradeBtn.href = '/workspace/upgrade';
 					upgradeBtn.textContent = 'Upgrade to Pro to share';
 					sendBtnEl.replaceWith(upgradeBtn);
-					// Suppress the live-region "Pick a teammate first."
-					// message: it makes no sense in locked mode.
 					const msgEl = modal.querySelector('#cs-link-msg');
 					if (msgEl) {
 msgEl.textContent = '';

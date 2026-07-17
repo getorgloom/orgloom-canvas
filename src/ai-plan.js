@@ -1,33 +1,11 @@
-// AI plan generation helpers: pure functions (describe-summary,
-// system prompt, tool schema, plan validation). No side effects, no
-// imports from auth / DB / Anthropic SDK. The route handler in
-// routes-v2.js owns the SF describe call, the Anthropic SDK call,
-// usage accounting, and audit logging; this module just produces
-// the inputs and validates the output.
 
 import { isCreateInputField, isRequiredOnCreate } from './sf-field-structure.js';
-//
-// Caps are enforced server-side AND encoded in the tool schema so
-// Claude can't exceed them; the validator runs as belt-and-suspenders
-// for crafted requests.
 
 export const AI_MAX_RECORDS = 100;
 export const AI_MAX_OBJECTS = 10;
 export const AI_MAX_PROMPT_CHARS = 2000;
-// Per-field picklist values included in the summary cap, which keeps the
-// cached describe block from blowing up for objects like Account that
-// have many Industry values.
 const AI_MAX_PICKLIST_VALUES_IN_SUMMARY = 80;
 
-// Compact, LLM-readable summary of only the describe metadata needed
-// to generate plausible records. Customer data is never included.
-//
-// fkFieldsByObject (optional): map of objectName → array of reference
-// field names the client wants exposed. When set, reference fields not
-// listed for an object are dropped from that object's section
-// (non-reference fields are always included). Lets the scope-picker
-// trim the prompt to just the relationships the user cares about,
-// sharpening output and reducing token cost.
 export function buildAiDescribeSummary(describes, fkFieldsByObject) {
 	return describes.map(({ name, describe }) => {
 		const allowFkSet = fkFieldsByObject && Array.isArray(fkFieldsByObject[name])
@@ -122,10 +100,6 @@ export const AI_PLAN_TOOL = {
 	},
 };
 
-// Strips invalid records / fields / associations from the LLM's plan.
-// Invalid content is discarded and surfaced as a warning rather than
-// failing the whole call, so users get a partial plan they can inspect
-// and a clear list of what the model got wrong.
 export function validateAiPlan(plan, describes) {
 	const warnings = [];
 	const describeByName = new Map(describes.map(({ name, describe }) => [name, describe]));

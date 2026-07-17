@@ -1,38 +1,3 @@
-// Bulk script modal: run a JS snippet against records on the canvas.
-//
-// Tier-1 sandbox: native JS with Apex-flavored helpers exposed as
-// top-level names. No Salesforce calls: mutations are applied to
-// in-memory records and re-rendered. A pre-run snapshot of each
-// record is restored if the script throws, so a partially-applied
-// edit can't outlive a failure.
-//
-// SECURITY: Sandboxed scripting DSL. User input is tokenized and
-// parsed into an AST, then walked by _bsInterpret against an explicit
-// environment object. No `eval`, no `new Function`, no dynamic code
-// construction anywhere on this path. Identifiers resolve only
-// against the env we hand the interpreter, so browser globals (window,
-// document, fetch, localStorage, XMLHttpRequest, etc.) are not
-// reachable from a script. Member access denies prototype-chain
-// escape vectors (constructor, __proto__, prototype, the legacy
-// __defineGetter__ family). A hard step counter (_BS_MAX_STEPS)
-// aborts runaway loops. Errors roll back all record mutations via a
-// pre-run snapshot. Threat model: scripts run in the same user's own
-// session; equivalent capability to devtools, but with the above
-// hardening so the script-runner code path itself is not an injection
-// sink under static analysis.
-//
-// Dependencies passed to mount():
-//   canvasState: shared canvas state (post-refactor). Reads
-//                   canvasState.bulkRecords (the records list).
-//                   Mutates record `values` maps in-place during a
-//                   script run; snapshots roll back on error.
-//   showBulkToast: toast notification helper.
-//   renderBulkView: re-renders the bulk canvas after script success.
-//
-// Public API (returned from mount):
-//   openModal(): show the script-runner modal.
-//
-// Exposed as window.OrgLoom.bulkScript. Load order: before app.js.
 
 (function () {
 	'use strict';
@@ -46,8 +11,6 @@
 			}
 			const canvasState = deps.canvasState;
 			const showBulkToast = deps.showBulkToast;
-			// Optional action-toast helper: when present, a successful run's
-			// toast carries an Undo that restores the pre-run snapshots.
 			const showBulkToastWithAction = deps.showBulkToastWithAction || null;
 			const renderBulkView = deps.renderBulkView;
 			const showConfirmDialog = deps.showConfirmDialog;
@@ -149,10 +112,6 @@ closeBulkScriptModal();
 				'}\n';
 			let _bsLastSource = _bsExample;
 
-			// The records a script operates on: real cards only. Type-nodes
-			// and pending placeholders are transient scaffolding, not data:
-			// same exclusion Bulk edit and Auto-fill use, so the modal's
-			// count, the confirm gate, and the run all agree on scope.
 			function _bsScriptableRecords() {
 				return canvasState.bulkRecords.filter((r) => r && !r.isTypeNode && !r.isPending);
 			}
@@ -264,8 +223,6 @@ advance();
 						while (i < src.length && (isDigit(src[i]) || src[i] === '.')) {
 s += advance();
 }
-						// "1.2.3" would Number() to NaN and flow silently into
-						// field values; reject it at tokenize time instead.
 						if (s.split('.').length > 2 || Number.isNaN(Number(s))) {
 							throw new Error('Malformed number "' + s + '" at line ' + startLine);
 						}
@@ -559,21 +516,7 @@ eat();
 
 			function _bsInterpret(ast, env) {
 				let steps = 0;
-				// Record identity is read-only from a script. A script may
-				// edit r.values.* freely, but reassigning which record a card
-				// is (r.id) or which Salesforce row it maps to
-				// (r.loadedFromId) would corrupt canvas bookkeeping:
-				// duplicate ids break delete/association lookups, and a
-				// repointed loadedFromId silently aims an upload at a
-				// different SF record. Only the actual record objects handed
-				// to the script are guarded; their `values` maps (and any
-				// nested objects) stay fully writable.
 				const _identityGuarded = new Set(Array.isArray(env.records) ? env.records : []);
-				// `values` is guarded against REASSIGNMENT (not field edits):
-				// `r.values = anything` either aliases two records to one map
-				// (edits couple forever) or replaces the map with a non-object
-				// (the card silently loses every field). Individual field
-				// writes (the documented pattern) are unaffected.
 				const _IDENTITY_PROPS = new Set(['id', 'loadedFromId', 'values']);
 				function tick() {
 					if (++steps > _BS_MAX_STEPS) {
@@ -797,21 +740,12 @@ execStmt(ast.body[k], root);
 				const out = bulkScriptModal.querySelector('#bs-output');
 				_bsLastSource = source;
 
-				// Snapshot the entire record (deep clone) so nested mutations
-				// (e.g. r.values.BillingAddress.City) and non-values fields
-				// (r.label, r.objectName) all revert on script error. The
-				// rollback path strips any keys the script added then
-				// Object.assigns the snapshot back onto the same object, so
-				// outer references in canvasState.bulkRecords stay valid.
 				const recordSnapshots = new Map();
 				canvasState.bulkRecords.forEach((r) => {
 					let snap;
 					try {
 						snap = structuredClone(r);
 					} catch (_) {
-						// Defensive fallback: records should be plain data,
-						// but if structuredClone chokes on something we at
-						// least preserve values rollback semantics.
 						snap = { values: r.values ? Object.assign({}, r.values) : {} };
 					}
 					recordSnapshots.set(r.id, snap);
@@ -868,11 +802,6 @@ return a;
 					abs: Math.abs,
 				};
 
-				// Roll every record back to its pre-run snapshot. Used on any
-				// failure: a thrown script error OR a post-run serialization
-				// failure (e.g. a script that wove a circular reference into
-				// r.values). structuredClone snapshots are circular-free, so
-				// this always restores a clean state.
 				const rollbackAll = () => {
 					canvasState.bulkRecords.forEach((r) => {
 						const snap = recordSnapshots.get(r.id);
@@ -902,11 +831,6 @@ lines.push('--- log ---', logs.join('\n'), '');
 				try {
 					_bsInterpret(ast, env);
 					elapsed = (((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0).toFixed(1);
-					// Change detection doubles as the circular-reference guard:
-					// JSON.stringify throws on a circular r.values, and because
-					// it runs inside this try the run is rolled back cleanly
-					// instead of leaving a canvas that can never be serialized
-					// (save/upload) or re-scripted again.
 					canvasState.bulkRecords.forEach((r) => {
 						const snap = recordSnapshots.get(r.id);
 						if (!snap) {
@@ -938,13 +862,6 @@ lines.push('--- log ---', logs.join('\n'), '');
 				if (changed > 0) {
 					const _doneMsg = 'Script updated ' + changed + ' record' + (changed === 1 ? '' : 's') + '.';
 					if (showBulkToastWithAction) {
-						// Family guarantee: every Tools ▾ mutation is one click
-						// from reverted. The pre-run snapshots double as the
-						// undo state: restoring them reverts exactly what the
-						// script touched (values, labels, added keys) without
-						// disturbing records created or edited afterwards…
-						// which can't exist yet, since the toast fires
-						// synchronously with the run.
 						showBulkToastWithAction(_doneMsg, 'Undo', () => {
 							rollbackAll();
 							renderBulkView();
@@ -956,13 +873,6 @@ lines.push('--- log ---', logs.join('\n'), '');
 				}
 			}
 
-			// Confirm-before-run when the script will touch records mapped
-			// to live Salesforce rows. The sandbox prevents *escape*, but
-			// nothing protects the user from a bad-logic script (a snippet
-			// they pasted from elsewhere, or wrote in a hurry) writing
-			// wrong values to records that will hit SF on next Upload.
-			// Drafts have no consequence beyond the canvas, so this gate
-			// only fires when loadedFromId is set somewhere in scope.
 			async function runBulkScriptWithGate(source) {
 				const loadedCount = _bsScriptableRecords()
 					.filter((r) => r.loadedFromId)
@@ -984,7 +894,6 @@ return;
 				runBulkScript(source);
 			}
 
-			// Wire the Run button + Ctrl/Cmd+Enter shortcut.
 			bulkScriptModal.querySelector('#bs-run').onclick = () => {
 				const ta = bulkScriptModal.querySelector('#bs-source');
 				runBulkScriptWithGate(ta.value);

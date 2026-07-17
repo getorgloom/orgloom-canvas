@@ -18,11 +18,6 @@ function expiresAt(sessionValue) {
 	return new Date(Date.now() + lifetime).toISOString();
 }
 
-/**
- * Create an express-session Store backed by the application's existing
- * better-sqlite3 connection. The table shape intentionally matches the
- * previous adapter so upgrades keep active local sessions readable.
- */
 export function createSqliteSessionStore(Store) {
 	return class SqliteSessionStore extends Store {
 		constructor({ client, cleanupIntervalMs = DEFAULT_CLEANUP_INTERVAL_MS } = {}) {

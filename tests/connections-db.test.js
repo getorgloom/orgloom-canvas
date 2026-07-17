@@ -1,9 +1,3 @@
-// Unit tests for src/database/connections.js. Connections are pure SF
-// credential rows owned by an account, with no policy state. Validates
-// upsert (re-OAuth updates the existing row), the cross-account guard,
-// disable, and account-isolation. There is no refresh-token storage:
-// the no-token-storage model dropped it in migration 005, so nothing
-// here asserts on encrypted tokens.
 
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';

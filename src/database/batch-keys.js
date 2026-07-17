@@ -1,6 +1,3 @@
-// batch_keys: per-upload-batch data-encryption-key (DEK) storage.
-// Mirrors canvas-keys; see that module for the schema notes on the
-// nullable iv / auth_tag / master_key_version columns.
 
 import { ext } from "../extensions.js";
 import {

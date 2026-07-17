@@ -1,4 +1,3 @@
-// AI clarifications banner.
 (function () {
 	"use strict";
 
@@ -79,15 +78,11 @@
 					"</div>";
 				_banner.hidden = false;
 
-				// Wire interactions every render, since DOM is fresh each time.
 				const textInput = _banner.querySelector(".clar-text-input");
 				const sendBtn = _banner.querySelector(".clar-send-btn");
 				const dismissBtn = _banner.querySelector(".clar-dismiss");
 
 				dismissBtn.addEventListener("click", () => {
-					// Just hide; next poll will surface it again if still
-					// pending. Lets the user temporarily get the banner
-					// out of the way without answering.
 					_banner.hidden = true;
 				});
 
@@ -192,7 +187,6 @@
 						_currentClarificationId = null;
 						return;
 					}
-					// pick the OLDEST pending question first
 					const next = list[list.length - 1];
 					if (
 						_currentClarificationId === next.id &&
@@ -202,7 +196,6 @@
 					}
 					_renderBanner(next);
 				} catch (_e) {
-					// Network blip: keep current banner; next poll retries.
 				}
 			}
 

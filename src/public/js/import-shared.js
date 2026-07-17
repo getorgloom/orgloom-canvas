@@ -1,27 +1,9 @@
-// Shared import-guard helpers used by every "get data onto the canvas"
-// flow (JSON file import, CSV import, future importers). These lived as
-// per-flow copies inside templates.js and app.js, which is exactly how
-// guard fixes drifted between the flows (fieldless-edge and skip-count
-// bugs landed in one loader and missed the other). One module, one set
-// of rules.
-//
-// Everything here is dependency-free (pure functions + window.posthog),
-// EXCEPT makeUndoCapture, which is a factory: app.js calls it once with
-// {canvasState, renderAll, showBulkToast} and shares the resulting
-// capture function with the import flows.
-//
-// Exposed as window.OrgLoom.importShared. Load order: before app.js
-// (mount-time consumers read it when app.js wires the modules).
 
 (function () {
 	'use strict';
 
 	window.OrgLoom = window.OrgLoom || {};
 
-	// Filename + size gate, run BEFORE any read/parse. The size cap exists
-	// because FileReader (+ JSON.parse / parseCsv) pulls the whole file
-	// into memory; a mispicked multi-hundred-MB file would freeze the
-	// tab. opts: { extRe, extLabel, maxBytes, flowLabel }.
 	function gateImportFile(file, opts) {
 		const extRe = opts.extRe;
 		if (!extRe.test(String(file.name || ''))) {
@@ -36,10 +18,6 @@
 		return null;
 	}
 
-	// Import-failure telemetry. Reasons only (type / size / invalid /
-	// unreadable / notcsv / norows / cap) plus our own validation message
-	// but never file contents. Files that fail to import are silent churn;
-	// this makes them visible in the funnel.
 	function captureImportFailure(flow, reason, message) {
 		try {
 			if (window.posthog && window.posthog.capture) {
@@ -52,11 +30,6 @@
 		} catch (_e) {}
 	}
 
-	// Admit an association onto the canvas: both endpoints resolved, a
-	// real lookup field named, and the single-value (holder, fieldName)
-	// slot not already taken. Consumes the slot on admit. Callers seed
-	// `usedFk` with the canvas's existing associations when imported
-	// edges may attach to existing cards.
 	function admitAssociation(usedFk, fromId, toId, fieldName) {
 		if (fromId == null || toId == null) {
 			return false;
@@ -72,7 +45,6 @@
 		return true;
 	}
 
-	// Honest-summary suffix shared by import toasts.
 	function skipSuffix(skippedRecords, skippedAssoc) {
 		const dropped = [];
 		if (skippedRecords > 0) {
@@ -86,11 +58,6 @@
 			: '';
 	}
 
-	// Factory for the pre-import undo snapshot. Returns capture(), which
-	// snapshots the canvas and returns a restore() closure suitable for a
-	// toast's Undo action. Arrays are copied, entries kept by reference;
-	// the import flows replace/append arrays but never mutate surviving
-	// entries, so restoring the arrays restores the canvas.
 	function makeUndoCapture(deps) {
 		const canvasState = deps.canvasState;
 		const renderAll = deps.renderAll;
@@ -140,8 +107,6 @@
 				canvasState.selectedObjects = snap.selectedObjects;
 				canvasState.selectedIdSeq = snap.selectedIdSeq;
 				canvasState.activeIndex = snap.activeIndex;
-				// hiddenObjects is cleared in place by the loaders (other
-				// modules hold the Set by reference); restore in place too.
 				canvasState.hiddenObjects.clear();
 				snap.hiddenObjects.forEach(function (v) {
 					canvasState.hiddenObjects.add(v);

@@ -1,24 +1,3 @@
-// Card ⋮ menu + popup pickers for the bulk canvas.
-//
-// Five popup surfaces pulled out of app.js for size:
-//
-//   • showFieldPicker: small popup at end-of-drag when multiple FK
-//     reference fields could express the proposed association; user
-//     picks which one to use.
-//   • showCardMoreMenu: the card's ⋮ menu. Renders contextual items
-//     (Edit, Refresh from Salesforce, Convert to slot, Mark for delete,
-//     etc.) and dispatches the chosen action.
-//   • showFieldSlotPicker: modal for picking which fields a recipient
-//     can edit on a field-level slot.
-//   • showSlotMetaPicker: modal for setting slot label/description/
-//     assignee.
-//   • _openSlotRecordPicker: popover for filling a whole-record slot
-//     by searching or pasting an SF id.
-//
-// Mount pattern matches the rest of the modules under window.OrgLoom.
-// Most of the action handlers reference functions declared later in
-// app.js; they're lambda-wrapped so the bindings resolve at call
-// time rather than at mount time (TDZ-safe).
 
 (function () {
 	'use strict';
@@ -38,7 +17,6 @@
 				'isRecordModified',
 				'_canAuthorSlots',
 				'_hasCap',
-				// Lambda-wrapped late-bindings:
 				'openInsertModal',
 				'convertRecordToSlot',
 				'convertRecordToFieldSlot',
@@ -285,7 +263,6 @@
 					const spaceBelow = vpH - (r.bottom + 6) - margin;
 					const spaceAbove = r.top - 6 - margin;
 					if (menuH <= spaceBelow) {
-						// Default below-placement already fits.
 					} else if (menuH <= spaceAbove) {
 						pop.style.top = r.top - 6 - menuH + 'px';
 					} else {

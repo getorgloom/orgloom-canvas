@@ -38,6 +38,6 @@ test('first-run guidance continues after adding records and retires after upload
 	assert.match(uploadSource, /if \(synced\.length > 0\) \{\s*markCanvasGuideUploadComplete\(\);/);
 	assert.match(
 		saveLoadSource,
-		/canvasState\.currentCanvas = \{ id: data\.id,[^\n]+\};\s*\/\/ Refresh first-run guidance[\s\S]*?renderBulkView\(\);/,
+		/canvasState\.currentCanvas = \{ id: data\.id,[^\n]+\};[\s\S]*?renderBulkView\(\);/,
 	);
 });

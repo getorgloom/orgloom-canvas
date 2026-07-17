@@ -1,14 +1,7 @@
-// Org Loom's managed permission-set assignment is a product prerequisite,
-// even when a broad Salesforce profile (for example System Administrator)
-// happens to grant equivalent object/class access. Checking the named,
-// namespace-pinned assignment keeps onboarding deterministic and prevents an
-// unrelated subscriber permission set with the same API name from passing.
 
 export const ORGLOOM_PERMISSION_SET_NAMES = Object.freeze([
 	'Orgloom_User',
 	'Orgloom_Admin',
-	// Accepted for customers upgrading from package versions that used the
-	// older Canvas-specific names.
 	'Orgloom_Canvas_User',
 	'Orgloom_Canvas_Admin',
 ]);

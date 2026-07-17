@@ -7,11 +7,6 @@
 	<link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-	<%# Unified top-strip: same partial as /, /workspace, /pricing.
-	    Brings nav (Quick Upload / Docs) + Settings chip + account
-	    dropdown + sign-out to this page. Previously /connect rendered
-	    only the brand, leaving signed-in users no in-page way to
-	    navigate to the workspace settings or sign out. -%>
 	<%- include('partials/top-strip') %>
 	<main class="app-main connect-main">
 		<section class="connect-card">
@@ -32,13 +27,6 @@
 				You can add more orgs later from the account menu.
 			</p>
 
-			<%# Workspace context. Connections are account-scoped under
-			    the post-rewrite model; the same Salesforce credential
-			    works wherever the user goes. The active workspace
-			    governs which actions the credential can be used for
-			    (production-org approval, audit retention, etc.).
-			    Surfaced here so the user knows whose policy will apply
-			    when they start working. -%>
 			<% if (activeWorkspace && activeWorkspace.kind !== 'personal') { %>
 				<div class="connect-workspace-context">
 					<div class="connect-workspace-name">
@@ -46,10 +34,6 @@
 						<span class="tag"><%= activeWorkspace.role || 'member' %></span>
 					</div>
 					<%
-						// Two independent allowlists: prod and non-prod. Banner
-						// only fires when at least one is on, and names exactly
-						// which org types are gated so the user knows whether
-						// their sandbox connection also needs approval.
 						var _prodGated = workspaceSettings && workspaceSettings.prod_org_allowlist_enabled === 1;
 						var _nonprodGated = workspaceSettings && workspaceSettings.nonprod_org_allowlist_enabled === 1;
 						var _gatedOrgPhrase = _prodGated && _nonprodGated
@@ -71,19 +55,6 @@
 				</div>
 			<% } %>
 
-			<%# Existing connections on this account. Connections are
-			    account-scoped, so all the user's prior orgs show up
-			    here regardless of which workspace they're in. We render
-			    them as primary clickable "Reconnect" buttons because
-			    that's what the user almost always wants after signing
-			    back in; the env picker below is for adding a new org.
-			    Each link goes to /auth/login?loginUrl=<instance_url>,
-			    re-targeting OAuth at the original SF login server
-			    (handles My Domain orgs as well as login/test). The
-			    cross-account collision check in /auth/callback makes
-			    this safe even if a different SF user is cached in the
-			    browser; re-auth flow gets rejected explicitly rather
-			    than silently switching accounts. -%>
 			<% if (existingConnections && existingConnections.length > 0) { %>
 				<div class="connect-reconnect-section">
 					<div class="connect-reconnect-head">
@@ -124,12 +95,6 @@
 				</a>
 			</div>
 
-			<%# Custom My Domain entry point. Collapsed by default so it
-			    doesn't compete with the primary Production/Sandbox
-			    options. Form submits to /auth/login?env=custom&domain=...
-			    which accepts Salesforce My Domain and Lightning application
-			    hosts, then converts them to a canonical OAuth login origin
-			    before redirecting into OAuth. -%>
 			<details class="connect-custom" id="connect-custom-section">
 				<summary class="connect-custom-summary">
 					<span>Use a custom My Domain URL</span>
@@ -138,9 +103,6 @@
 				<div class="connect-custom-body">
 					<form class="connect-custom-form" method="get" action="/auth/login">
 						<input type="hidden" name="env" value="custom">
-						<%# Set to '1' by the Force sign-in: Custom link
-						    below; otherwise empty so /auth/login picks
-						    the normal flow. -%>
 						<input type="hidden" name="force" value="" id="connect-custom-force">
 						<input
 							class="connect-custom-input"
@@ -157,16 +119,6 @@
 				</div>
 			</details>
 
-			<%# Escape hatch for the "wrong SF user cached in this browser"
-			    case. Salesforce reuses an existing browser session by
-			    default (no login prompt): fine when the cached user is
-			    the one you want to connect, but a confusing failure mode
-			    when it isn't. These links add prompt=login to the OAuth
-			    start URL via ?force=1, which forces SF to show the
-			    login screen even with a live session. Placed just above
-			    Sign-out so the SF-related escape hatch sits with the
-			    other SF options, with the account-level sign-out as
-			    the visual last item. -%>
 			<p class="connect-force-login-line">
 				Different Salesforce user cached in this browser?
 				Force sign-in with
@@ -178,12 +130,6 @@
 			</p>
 
 			<script nonce="<%= cspNonce %>">
-				// "Force sign-in: Custom" link: opens the custom-domain
-				// accordion, stamps force=1 on its hidden input, and
-				// focuses the URL field. Lets the user do the
-				// equivalent of the prod/sandbox force links above
-				// without having to find the accordion and tick
-				// anything manually.
 				(function () {
 					var link = document.querySelector('[data-force-custom]');
 					var form = document.querySelector('.connect-custom-form');
@@ -209,9 +155,6 @@
 			</script>
 
 			<div class="connect-foot">
-				<%# /auth/logout tears down both account and SF state and
-				    redirects to /sign-in. A plain form post is enough now:
-				    no client-side JS gymnastics. -%>
 				<form action="/auth/logout" method="post" class="connect-signout">
 					<input type="hidden" name="_csrf" value="<%= csrfToken %>">
 					<button type="submit" class="button secondary connect-signout-btn">Sign out instead</button>

@@ -1,14 +1,3 @@
-// Locks the in-memory MCP relay routing model. The relay holds no canvas
-// data (only routing tables), so the contract these tests cover is the
-// connection/canvas/request lifecycle:
-//   * register/unregister symmetry; close cleans up everything.
-//   * Multiple browsers on the same canvas: list shows it once with
-//     liveBrowsers=N.
-//   * dispatchRequest → recordResponse round-trip resolves; timeouts
-//     reject; mid-flight unregister rejects with 'relay-connection-dropped'.
-//   * recordResponse from a different connection is ignored (anti-spoof).
-//   * purgeWorkspace drops registrations + rejects in-flight requests
-//     for that workspace.
 
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,8 +13,6 @@ import {
 	workspaceLiveSummary,
 } from '../src/mcp/relay.js';
 
-// Mock SSE response: captures writes for assertion; close handler
-// invoked by tests when they want to simulate browser disconnect.
 function mockSseRes() {
 	const writes = [];
 	const closeHandlers = [];
@@ -50,7 +37,6 @@ errorHandlers.push(handler);
  errorHandlers.forEach((h) => h(new Error('socket failed'))); 
 },
 		lastDataEvent() {
-			// Find the most recent `data: <json>\n\n` payload.
 			for (let i = writes.length - 1; i >= 0; i--) {
 				const m = writes[i].match(/^data: (.+)\n\n$/);
 				if (m) {
@@ -62,14 +48,7 @@ return JSON.parse(m[1]);
 	};
 }
 
-// Each test starts with a clean relay state. The relay's module-level
-// Maps persist across tests; purge any leftovers via a synthetic
-// connection that purges its workspace.
 beforeEach(() => {
-	// Drop any leftover state by closing every connection we can reach.
-	// Tests close their own connections explicitly; this is belt-and-
-	// suspenders so a leaked connection from a failing test doesn't
-	// bleed into the next one.
 });
 
 describe('register / unregister symmetry', () => {
@@ -86,10 +65,8 @@ describe('register / unregister symmetry', () => {
 		const id = registerConnection({ accountId: 'a1', workspaceId: 'ws1', sseRes: sse });
 		assert.equal(typeof id, 'string');
 		assert.ok(id.length > 0);
-		// The 'ready' event carries the assigned connectionId.
 		const ready = sse.lastDataEvent();
 		assert.deepEqual(ready, { connectionId: id });
-		// Cleanup.
 		sse.fireClose();
 	});
 
@@ -158,7 +135,6 @@ describe('dispatchRequest → recordResponse round-trip', () => {
 			method: 'read',
 			params: { rows: 10 },
 		});
-		// The SSE 'request' event carries the requestId.
 		const evt = sse.lastDataEvent();
 		assert.equal(evt.method, 'read');
 		assert.deepEqual(evt.params, { rows: 10 });
@@ -212,7 +188,6 @@ describe('dispatchRequest → recordResponse round-trip', () => {
 		const id = registerConnection({ accountId: 'a1', workspaceId: 'wsDrop', sseRes: sse });
 		registerCanvas({ connectionId: id, canvasId: 'c1' });
 		const p = dispatchRequest({ workspaceId: 'wsDrop', canvasId: 'c1', method: 'read' });
-		// Browser closes before responding.
 		sse.fireClose();
 		await assert.rejects(p, /relay-connection-dropped/);
 	});
@@ -222,7 +197,6 @@ describe('dispatchRequest → recordResponse round-trip', () => {
 		const sseB = mockSseRes();
 		const idA = registerConnection({ accountId: 'a1', workspaceId: 'wsAnti', sseRes: sseA });
 		const idB = registerConnection({ accountId: 'a1', workspaceId: 'wsAnti', sseRes: sseB });
-		// Only A registers the canvas.
 		registerCanvas({ connectionId: idA, canvasId: 'c1' });
 		const p = dispatchRequest({
 			workspaceId: 'wsAnti',
@@ -231,14 +205,12 @@ describe('dispatchRequest → recordResponse round-trip', () => {
 			timeoutMs: 50,
 		});
 		const evt = sseA.lastDataEvent();
-		// B tries to answer for A's request.
 		const ok = recordResponse({
 			connectionId: idB,
 			requestId: evt.requestId,
 			result: { evil: true },
 		});
 		assert.equal(ok, false, 'spoof must be rejected');
-		// A's request remains pending until timeout fires.
 		await assert.rejects(p, /relay-request-timeout/);
 		sseA.fireClose();
 		sseB.fireClose();
@@ -281,7 +253,6 @@ describe('workspaceLiveSummary', () => {
 			ownerSfUserId: '005abc',
 			liveBrowsers: 1,
 		}]);
-		// Verify no extra keys leak.
 		const keys = Object.keys(summary.canvases[0]).sort();
 		assert.deepEqual(keys, ['canvasId', 'liveBrowsers', 'ownerSfUserId', 'title']);
 		sse.fireClose();

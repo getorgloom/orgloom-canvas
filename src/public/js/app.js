@@ -61,11 +61,6 @@ function csrfFetch(url, options) {
 		_pendingNavOriginPos: null,
 		_autoSpawnedPending: false,
 		diffSuppressions: {},
-		// Cross-org migrate mode. Set active when a durable migration is
-		// resumed after landing on the destination org (see _migrationResume
-		// + refreshMigrationAnnotations). annotationsById maps bulk-record id
-		// -> { status, issues[], resolvedRecordTypeId }; summary is the
-		// readiness rollup ({ ready, warning, blocked, pending, total }).
 		migrateMode: {
 			active: false,
 			sourceSfOrgId: null,
@@ -75,9 +70,6 @@ function csrfFetch(url, options) {
 		},
 	};
 
-	// First-run canvas guidance is a browser preference, scoped to the
-	// authenticated account. Keep runtime fallbacks so dismiss/complete still
-	// behaves for the current page when storage is unavailable.
 	const _canvasGuideScope =
 		typeof window.ORGLOOM_ACCOUNT_ID_HASH === "string" &&
 		window.ORGLOOM_ACCOUNT_ID_HASH
@@ -115,11 +107,6 @@ function csrfFetch(url, options) {
 		} catch (_) { /* private mode: runtime flag still hides it */ }
 	}
 
-	// Autosave + org-switch/cross-org handoff use tab-scoped sessionStorage.
-	// Lives in canvas-autosave.js
-	// - see that file's header for the design. Mount returns the public
-	// surface as the same underscore-prefixed names the rest of this
-	// file already uses.
 	const _autosave = window.OrgLoom.canvasAutosave.mount({
 		canvasState: canvasState,
 	});
@@ -138,14 +125,6 @@ function csrfFetch(url, options) {
 		},
 	});
 	const showBulkToast = _uif.showBulkToast;
-	// Unify the two undo tracks. Any action toast whose label reads as "Undo"
-	// also registers its callback on the Ctrl+Z undo stack, so bulk/import
-	// operations (import, hydrate, autofill, bulk-script) are revertible by BOTH
-	// the toast button AND Cmd/Ctrl+Z. A once-guard shares a single restore
-	// between the two tracks: whichever the user triggers first runs it; the
-	// other becomes a no-op that returns false, so the keydown handler skips the
-	// spent entry instead of wasting a keystroke. Non-undo actions (e.g.
-	// "Discard migration") stay toast-only.
 	const _rawToastWithAction = _uif.showBulkToastWithAction;
 	const showBulkToastWithAction = (message, actionLabel, action, variant) => {
 		if (typeof action === "function" && /undo/i.test(String(actionLabel || ""))) {
@@ -174,7 +153,6 @@ function csrfFetch(url, options) {
 		showBulkToast: showBulkToast,
 		pushUndo: pushUndo,
 		canvasState: canvasState,
-		// canvasCapCheck is declared later in this IIFE (TDZ) - wrap lazily.
 		canvasCapCheck: function () {
 			return canvasCapCheck.apply(null, arguments);
 		},
@@ -217,7 +195,6 @@ function csrfFetch(url, options) {
 	const _csvi = window.OrgLoom.csvImport.mount({
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
-		// canvasCapCheck is declared later in this IIFE (TDZ) - wrap lazily.
 		canvasCapCheck: function () {
 			return canvasCapCheck.apply(null, arguments);
 		},
@@ -413,7 +390,6 @@ function csrfFetch(url, options) {
 									bodyErr = body && body.error;
 								}
 							} catch (_) {
-								/* non-JSON body */
 							}
 							const e = new Error(
 								"HTTP " +
@@ -488,7 +464,6 @@ function csrfFetch(url, options) {
 
 	const _cc = window.OrgLoom.canvasCap.mount({
 		canvasState: canvasState,
-		// Both refs are bound later in this IIFE - wrap lazily.
 		isRecordModified: function () {
 			return isRecordModified.apply(null, arguments);
 		},
@@ -998,7 +973,6 @@ function csrfFetch(url, options) {
 				localStorage.removeItem(readOnlyKey());
 			}
 		} catch (e) {
-			/* ignore */
 		}
 	}
 
@@ -1011,7 +985,6 @@ function csrfFetch(url, options) {
 			_meInfo = me;
 			const orgType = me.orgType || "unknown";
 
-			// Hydrate workspace settings + members lazily.
 			if (me.workspace && me.workspace.id) {
 				try {
 					const r = await csrfFetch(
@@ -1036,7 +1009,6 @@ function csrfFetch(url, options) {
 						});
 					}
 				} catch (_) {
-					/* keep defaults */
 				}
 			}
 
@@ -1069,7 +1041,6 @@ function csrfFetch(url, options) {
 			}
 		})
 		.catch(() => {
-			/* /api/me failure is fine - banner stays hidden */
 		});
 
 	function renderOrgBanner() {
@@ -1184,11 +1155,6 @@ function csrfFetch(url, options) {
 		return _origFetch
 			.apply(this, args)
 			.then((res) => {
-				// Session-expiry / no-connection UX (401 sf-session-expired,
-				// 409 no-active-connection) is owned entirely by sf-fetch.js, which
-				// surfaces the interactive reauth modal and lets the user choose
-				// (sign in / switch org / keep working offline). This wrapper only
-				// drives the top progress bar - no competing redirect or toast.
 				return res;
 			})
 			.finally(() => {
@@ -1299,15 +1265,6 @@ function csrfFetch(url, options) {
 				: "bec-step bec-step--active";
 			var _qDis = _sfOff ? ' disabled aria-disabled="true"' : "";
 			return (
-				// Two-layer structure on purpose: the outer
-				// .bulk-empty-placeholder is the absolutely-positioned
-				// full-height left strip (pointer-events: none so canvas
-				// pan/marquee work through it); the inner .bulk-empty-card
-				// is position: relative for its dismiss button and flips
-				// pointer-events back on. Flattening them into one div
-				// breaks the strip anchoring - the card's position:
-				// relative overrides the wrapper's absolute and the panel
-				// collapses into a bottom-corner card.
 				'<div class="bulk-empty-placeholder" id="bulk-empty-placeholder" style="display:none">' +
 				'<div class="bulk-empty-card' +
 				(_sfOff ? " bulk-empty-card--with-step0" : "") +
@@ -1559,7 +1516,6 @@ function csrfFetch(url, options) {
 			const my = e.clientY - rect.top + canvas.scrollTop;
 			const contentX = mx / canvasState.graphZoom;
 			const contentY = my / canvasState.graphZoom;
-			// Normalize wheel direction: up = zoom in, down = zoom out.
 			const step = e.deltaY > 0 ? 0.9 : 1.1;
 			const next = Math.max(
 				GRAPH_ZOOM_MIN,
@@ -1571,7 +1527,6 @@ function csrfFetch(url, options) {
 			canvasState.graphZoom = next;
 			canvasState._userZoomOverride = true;
 			applyGraphZoom();
-			// Re-scroll so the same content point sits under the cursor.
 			canvas.scrollLeft =
 				contentX * canvasState.graphZoom - (e.clientX - rect.left);
 			canvas.scrollTop =
@@ -1629,7 +1584,6 @@ function csrfFetch(url, options) {
 			}
 		});
 		window.addEventListener("blur", endPan);
-		// Block the middle-click auto-scroll widget on canvases.
 		graph.addEventListener("auxclick", (e) => {
 			if (e.button !== 1) {
 				return;
@@ -1865,7 +1819,6 @@ function csrfFetch(url, options) {
 			}
 		}
 		if (canvasState.graphView === "bulk") {
-			// Don't hijack when typing in inputs.
 			if (
 				e.target &&
 				/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)
@@ -1931,7 +1884,6 @@ function csrfFetch(url, options) {
 				return;
 			}
 			if (cmd && (e.key === "a" || e.key === "A")) {
-				// Select all records on the canvas
 				canvasState.bulkSelectedIds = new Set(
 					canvasState.bulkRecords
 						.filter((r) => !r.isTypeNode)
@@ -2005,7 +1957,6 @@ function csrfFetch(url, options) {
 		};
 		canvasState.selectedObjects.push(entry);
 		canvasState.activeIndex = canvasState.selectedObjects.length - 1;
-		// Re-arm the auto-port - see addToSelection above.
 		canvasState._bulkUserDeleted = false;
 		if (entry.name) {
 			ensureDescribe(entry.name).catch(() => {});
@@ -2022,7 +1973,6 @@ function csrfFetch(url, options) {
 				renderAll();
 			})
 			.catch((err) => {
-				// Rollback on failure - remove the stub entry and re-render.
 				console.warn("graph fetch failed for", objectName, err);
 				const i = canvasState.selectedObjects.findIndex(
 					(s) => s.id === entry.id,
@@ -2268,7 +2218,6 @@ function csrfFetch(url, options) {
 			try {
 				_currentPanAnim.cancel();
 			} catch (e) {
-				/* ignore */
 			}
 			_currentPanAnim = null;
 		}
@@ -2367,8 +2316,6 @@ function csrfFetch(url, options) {
 	}
 
 	const DESCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
-	// v3 adds the Salesforce `filterable` field flag. Bump the session cache
-	// namespace so pre-v3 describes cannot offer invalid match/filter fields.
 	const DESCRIBE_STORAGE_PREFIX = "orgloom-describe-v3";
 	const DESCRIBE_STORAGE_ORG = window.SF_ORG_ID || "unknown";
 	function _describeStorageKey(name) {
@@ -2410,8 +2357,6 @@ function csrfFetch(url, options) {
 		}
 		const force = !!(options && options.force);
 		if (force && canvasState.describeRequests[name]) {
-			// Do not race an older in-flight response against the forced
-			// refresh. Let it settle, then evict its result and fetch once.
 			return canvasState.describeRequests[name]
 				.catch(() => null)
 				.then(() => ensureDescribe(name, { force: true }));
@@ -2456,12 +2401,6 @@ function csrfFetch(url, options) {
 		return request;
 	}
 
-	// ── Cross-org migrate mode ───────────────────────────────────────────
-	// When a session-scoped migration is resumed on the destination org, mark the
-	// canvas as migrate mode and (re)compute per-record readiness against
-	// the TARGET org's describes. RecordTypeIds were resolved to portable
-	// DeveloperNames at stash time; the annotation engine resolves them
-	// forward to the target's RecordTypeIds here.
 	function enterMigrateMode(opts) {
 		opts = opts || {};
 		canvasState.migrateMode.active = true;
@@ -2487,9 +2426,6 @@ function csrfFetch(url, options) {
 		}
 	}
 
-	// Persistent migrate-mode bar. Detailed matching and destination-field
-	// decisions are reviewed in the guided migration modal; the canvas keeps one
-	// lightweight mode signal and a way back into that guide.
 	function _renderMigrateBar() {
 		const bar = graph.querySelector("#migrate-mode-bar");
 		if (!bar) {
@@ -2537,11 +2473,6 @@ function csrfFetch(url, options) {
 		}
 	}
 
-	// Recompute annotations from ALREADY-CACHED target describes only - no
-	// network, no re-render. Cheap enough to run on every bulk render so the
-	// guide and upload gate stay fresh after the user edits a record. Objects whose
-	// describe isn't cached yet annotate to 'pending' until
-	// refreshMigrationAnnotations warms them.
 	function recomputeMigrationAnnotationsSync() {
 		const engine = window.Orgloom && window.Orgloom.migrateAnnotate;
 		if (!engine || !canvasState.migrateMode.active) {
@@ -2571,10 +2502,6 @@ function csrfFetch(url, options) {
 		canvasState.migrateMode.summary = engine.summarize(anns);
 	}
 
-	// Fetch the target describe for every object on the canvas (warming the
-	// cache), recompute annotations, and re-render. Returns a promise
-	// resolving to the readiness summary. Call on resume + whenever a new
-	// object type lands on the canvas in migrate mode.
 	function refreshMigrationAnnotations() {
 		const engine = window.Orgloom && window.Orgloom.migrateAnnotate;
 		if (!engine) {
@@ -2592,8 +2519,6 @@ function csrfFetch(url, options) {
 			names.map((n) => ensureDescribe(n).catch(() => null)),
 		).then(() => {
 			recomputeMigrationAnnotationsSync();
-			// Re-render so the migration bar and upload readiness reflect the
-			// fresh annotation.
 			if (typeof renderBulkView === "function") {
 				renderBulkView();
 			}
@@ -2616,7 +2541,6 @@ function csrfFetch(url, options) {
 		return _smartDefaults[objectName + "." + fieldName] || null;
 	}
 
-	// Parsed validation rules per object, cached for bulk pre-fill.
 	const rulesCache = {};
 	function ensureRules(name) {
 		if (rulesCache[name]) {
@@ -2647,10 +2571,6 @@ function csrfFetch(url, options) {
 			});
 	}
 
-	// Association (edge) lifecycle. Lives in canvas-associations.js.
-	// Lambda-wrap _sfIdValue / _sfIdMatch / showFieldPicker / pushUndo
-	// since they're declared further down the file (TDZ-safe at mount
-	// time; resolved when an actual call fires from later UI events).
 	const _assoc = window.OrgLoom.canvasAssociations.mount({
 		canvasState: canvasState,
 		renderBulkView: function () {
@@ -2719,7 +2639,6 @@ function csrfFetch(url, options) {
 			recBySelId[s.id] = rec;
 		});
 		const tree = buildSelectionTree();
-		// Safety net for any selection entry the tree didn't place.
 		canvasState.selectedObjects.forEach((s) => {
 			if (recBySelId[s.id]) {
 				return;
@@ -2808,9 +2727,6 @@ function csrfFetch(url, options) {
 
 	function renderBulkView() {
 		_autosaveSchedule();
-		// Keep migrate-mode readiness fresh from cached describes before the
-		// cards paint, so a just-edited record's badge reflects the fix. No
-		// network, no recursion (sync recompute doesn't re-render).
 		recomputeMigrationAnnotationsSync();
 		_renderMigrateBar();
 		const container = graph.querySelector("#graph-bulk");
@@ -2967,13 +2883,6 @@ function csrfFetch(url, options) {
 			});
 		}
 
-		// renderBulkView intentionally does NOT re-render the schema. The
-		// schema explorer is navigation-driven and independent of the edit
-		// canvas - bulk mutations (add / delete / move records) must never
-		// repaint or re-layout it. The schema repaints on its own triggers:
-		// schema navigation (which calls renderCanvas directly) and renderAll
-		// (which renders both panels). This was the last edit-canvas → schema
-		// sync remnant.
 		renderObjectFilterPanel();
 		renderStepper();
 		renderBulkCountChip();
@@ -3497,26 +3406,17 @@ function csrfFetch(url, options) {
 		},
 	};
 
-	// Cross-org migrate-mode surface for sibling modules (guided resolution,
-	// readiness summary, upload gate). Reads live off canvasState.migrateMode
-	// so callers always see the latest annotation.
 	window.Orgloom.canvasMigrate = {
 		isActive: () => !!canvasState.migrateMode.active,
 		usesGuidedResolution: () => true,
 		annotationFor: (recId) =>
 			canvasState.migrateMode.annotationsById[recId] || null,
 		summary: () => canvasState.migrateMode.summary,
-		// Sync recompute from cached describes - updates annotations now
-		// (e.g. so a modal that just set a remap override sees the result
-		// before it re-renders). No network, no re-render.
 		recompute: () => recomputeMigrationAnnotationsSync(),
 		refresh: () => refreshMigrationAnnotations(),
 		exit: () => exitMigrateMode(),
 	};
 
-	// Guided cross-org migration modal. Mounted here so it has the canvas
-	// dependencies; republished on the lowercase runtime surface so the
-	// migration bar and upload preflight can launch it.
 	if (window.OrgLoom && window.OrgLoom.migrateMatch && window.OrgLoom.migrateMatch.mount) {
 		const _mm = window.OrgLoom.migrateMatch.mount({
 			canvasState: canvasState,
@@ -3526,10 +3426,6 @@ function csrfFetch(url, options) {
 			ensureDescribe: ensureDescribe,
 			renderBulkView: renderBulkView,
 			onApplied: () => {
-				// Matching changes loadedFromId immediately. Persist at the same
-				// mutation boundary rather than waiting for the 500 ms autosave
-				// debounce; an immediate connection switch must not restore the
-				// pre-match snapshot and turn intended UPDATEs back into INSERTs.
 				_migrationSyncIfActive();
 				return refreshMigrationAnnotations();
 			},
@@ -3550,7 +3446,6 @@ function csrfFetch(url, options) {
 				);
 			}
 		} catch (e) {
-			/* don't break the canvas if event dispatch fails */
 		}
 	}
 	window.Orgloom.canvasState._announceChange = _announceCanvasChange;
@@ -3596,7 +3491,6 @@ function csrfFetch(url, options) {
 			fromSelectionId: s.id,
 		});
 		renderBulkView();
-		// Ctrl+Z: remove the just-added card and any edges referencing it.
 		pushUndo("Add record", () => {
 			const i = canvasState.bulkRecords.findIndex((r) => r && r.id === _newId);
 			if (i !== -1) {
@@ -3609,10 +3503,6 @@ function csrfFetch(url, options) {
 		});
 	}
 
-	// Human summary of a parsed canvas file for the Replace/Merge dialog -
-	// what's in the file, who exported it, and whether it came from another
-	// org. Shown BEFORE the canvas mutates so a wrong-file mistake is caught
-	// at the prompt, not diagnosed from a toast afterwards.
 	function _importFileSummary(parsed, isSavedCanvas) {
 		const lines = [];
 		const meta = parsed._meta || {};
@@ -3690,9 +3580,6 @@ function csrfFetch(url, options) {
 		return lines;
 	}
 
-	// Shared import helpers (import-shared.js): gate, telemetry, undo.
-	// Thin JSON-flow wrappers so call sites stay tidy; the CSV importer
-	// consumes the same module so the rules can't drift between flows.
 	const _importShared = window.OrgLoom.importShared;
 	const _JSON_IMPORT_GATE = {
 		extRe: /\.json$/i,
@@ -3706,8 +3593,6 @@ function csrfFetch(url, options) {
 	function _gateCanvasImportFile(file) {
 		return _importShared.gateImportFile(file, _JSON_IMPORT_GATE);
 	}
-	// Pre-import undo snapshot, shared with the CSV importer. Lazy
-	// wrappers dodge TDZ on consts declared later in this IIFE.
 	const _captureCanvasUndoSnapshot = _importShared.makeUndoCapture({
 		canvasState: canvasState,
 		renderAll: function () {
@@ -3726,28 +3611,15 @@ function csrfFetch(url, options) {
 		reader.onload = async () => {
 			try {
 				const parsed = JSON.parse(String(reader.result || ""));
-				// Route by payload shape: each loader only understands its own.
-				// Saved-canvas payloads (buildCanvasPayload) carry loadedRecords
-				// /drafts; exported templates (buildTemplate, what "Export canvas
-				// (JSON)" produces) carry a flat `records` array.
 				const isSavedCanvas =
 					parsed &&
 					(Array.isArray(parsed.loadedRecords) ||
 						Array.isArray(parsed.drafts));
-				// Validate BEFORE the Replace/Merge prompt so an invalid file
-				// is rejected outright: the user is never asked to pick a
-				// mode for a file that can't load, and a junk saved-canvas
-				// shape (e.g. {"drafts": []} with no _meta) can't wipe the
-				// canvas. Both validators throw into the catch below.
 				if (isSavedCanvas) {
 					validateCanvasPayload(parsed);
 				} else {
 					validateTemplate(parsed);
 				}
-				// Replace vs merge when the canvas already has content - parity
-				// with opening a saved canvas and with CSV's Replace / Add to
-				// canvas. An empty canvas just replaces (nothing to preserve).
-				// The dialog carries a what's-in-this-file preview.
 				let _mode = "replace";
 				const _hasContent =
 					canvasState.bulkRecords.length > 0 ||
@@ -3760,11 +3632,7 @@ function csrfFetch(url, options) {
 						return;
 					}
 				}
-				// Pre-import undo snapshot (shared helper - see
-				// import-shared.js makeUndoCapture for the semantics).
 				const _undoImport = _captureCanvasUndoSnapshot();
-				// Thread the source filename so the canvas_load_file audit
-				// records what was imported (don't mutate the caller's opts).
 				const _opts = Object.assign(
 					{
 						importFileName: file.name,
@@ -3773,10 +3641,6 @@ function csrfFetch(url, options) {
 					},
 					opts || {},
 				);
-				// A schema-only export self-describes via _meta.schemaOnly;
-				// honor it so the file lands on the schema view with the
-				// "Imported schema: N objects" summary instead of a
-				// confusing "Imported 0 of 0 records." on an empty canvas.
 				if (
 					!isSavedCanvas &&
 					parsed._meta &&
@@ -3802,9 +3666,6 @@ function csrfFetch(url, options) {
 				);
 			}
 		};
-		// A file the OS can't read (locked, permissions, removed drive)
-		// never fires onload - without this handler the modal has already
-		// closed and the failure is completely silent.
 		reader.onerror = () => {
 			_captureImportFailure("unreadable");
 			showBulkToast(
@@ -3817,10 +3678,6 @@ function csrfFetch(url, options) {
 		reader.readAsText(file);
 	}
 
-	// Import saved canvas (JSON): a drop-or-click modal that mirrors the CSV
-	// importer. Built fresh per open and removed on close. Handles both the
-	// export-template and saved-canvas payload shapes via
-	// _processImportedCanvasFile.
 	function triggerTemplateFileInput(opts) {
 		opts = opts || {};
 		const overlay = document.createElement("div");
@@ -3863,10 +3720,6 @@ function csrfFetch(url, options) {
 			if (!file) {
 				return;
 			}
-			// Type + size gate (shared with the canvas-wide drop target).
-			// Drag-drop bypasses the input's accept filter, so validate here.
-			// Keep the modal open on rejection so the user can pick another
-			// file.
 			const gateError = _gateCanvasImportFile(file);
 			if (gateError) {
 				showBulkToast(gateError, "error");
@@ -3912,13 +3765,6 @@ function csrfFetch(url, options) {
 		}, 0);
 	}
 
-	// Canvas-wide drop target: dropping a .orgloom.json anywhere on the
-	// canvas starts the same import flow as the modal (shared type/size
-	// gate; the Replace/Merge prompt still guards a non-empty canvas).
-	// Only OS file drags are intercepted - in-page card/edge drags don't
-	// carry the "Files" type, so they pass through untouched. The import
-	// modals mount their own overlays outside #graph-bulk, so their
-	// dropzones don't double-fire this handler.
 	(function _mountCanvasFileDrop() {
 		const host = document.getElementById("graph-bulk");
 		if (!host) {
@@ -3967,15 +3813,6 @@ function csrfFetch(url, options) {
 	var hasPendingChange = _vc.hasPendingChange;
 	var computeRecordDiff = _vc.computeRecordDiff;
 
-	// Unsaved-work guard for tab-close / navigation. Fires when leaving
-	// would lose work that isn't persisted to Salesforce:
-	//   - loaded records edited locally (never in the canvas file - they
-	//     need an Upload), the original condition; PLUS
-	//   - hand-authored drafts or pending-deletes on a canvas that was
-	//     NEVER saved. Autosave is sessionStorage, cleared on tab close, so
-	//     those are gone with no warning. Gated on "no saved canvas" so a
-	//     successful Save (after which the drafts ARE in the SF file)
-	//     doesn't re-trigger a false prompt.
 	function _hasUnsavedCanvasWork() {
 		if (_modifiedLoadedCount() > 0) {
 			return true;
@@ -4000,12 +3837,6 @@ function csrfFetch(url, options) {
 		return false;
 	}
 
-	// A confirmed cross-org migration deliberately leaves the canvas for a
-	// Salesforce OAuth round-trip after migrationStash() has captured the
-	// full working state in this tab's sessionStorage. Suppress the browser's
-	// native warning for that ONE explicit handoff only. The helper verifies
-	// a migration snapshot exists, so ordinary org switching cannot bypass
-	// the data-loss guard. A short reset also covers a prevented/blocked link.
 	let _migrationOAuthHandoffAllowed = false;
 	function _allowMigrationOAuthHandoff() {
 		try {
@@ -4070,9 +3901,6 @@ function csrfFetch(url, options) {
 			ev.preventDefault();
 			const href = link.getAttribute("href") || "/workspace";
 			const modCount = _modifiedLoadedCount();
-			// Message adapts to which kind of unsaved work triggered the
-			// guard: edited loaded records (upload-pending) vs. drafts on a
-			// never-saved canvas (lost on close).
 			const message =
 				modCount > 0
 					? modCount +
@@ -4120,7 +3948,6 @@ function csrfFetch(url, options) {
 			return hit ? hit.label : n;
 		};
 		const tasks = [];
-		// Children: other records with FK pointing at this record.
 		(thisObj.data.children || []).forEach((c) => {
 			if (!c.field || !selectedNames.has(c.object)) {
 				return;
@@ -4131,7 +3958,6 @@ function csrfFetch(url, options) {
 				fieldOnOther: c.field,
 			});
 		});
-		// Parents: types this record references via its own FK fields.
 		(thisObj.data.parents || []).forEach((p) => {
 			if (!p.field || !selectedNames.has(p.object)) {
 				return;
@@ -4328,7 +4154,6 @@ function csrfFetch(url, options) {
 								try {
 									await ensureDescribe(t.otherType);
 								} catch (eDescribe) {
-									/* fall back to api names */
 								}
 								decision = await confirmHydrateChoice({
 									placeholderLabel:
@@ -4351,7 +4176,6 @@ function csrfFetch(url, options) {
 								didCreateOrLink = false;
 							}
 						} else {
-							// 3. Nothing to merge with → create a new card.
 							targetRec = {
 								id: canvasState.bulkIdSeq++,
 								objectName: t.otherType,
@@ -4452,8 +4276,6 @@ function csrfFetch(url, options) {
 		}
 	}
 
-	// ----- Marquee selection -----
-	// Marquee selection + clipboard. Lives in canvas-marquee.js.
 	const _marquee = window.OrgLoom.canvasMarquee.mount({
 		canvasState: canvasState,
 		getGraph: function () {
@@ -4468,9 +4290,6 @@ function csrfFetch(url, options) {
 		_canvasCapBlockReason: _canvasCapBlockReason,
 		showBulkToast: showBulkToast,
 		pushUndo: pushUndo,
-		// showPromptModal is declared further down the file via the
-		// show-modal mount; wrap so the binding is resolved at call
-		// time, not at this mount-time read.
 		showPromptModal: function (opts) {
 			return showPromptModal(opts);
 		},
@@ -4490,11 +4309,6 @@ function csrfFetch(url, options) {
 			undoStack.shift();
 		}
 	}
-	// Discard the top N undo entries WITHOUT running them. Used by batch
-	// operations (e.g. Find duplicates) that register per-record undos via
-	// deleteRecord/markPendingDelete but then offer their OWN single-shot
-	// batch Undo - leaving the per-record entries on the stack would let a
-	// later Cmd+Z re-restore already-restored records (duplicate cards).
 	function trimUndoStack(n) {
 		for (let i = 0; i < n && undoStack.length > 0; i++) {
 			undoStack.pop();
@@ -4640,19 +4454,6 @@ function csrfFetch(url, options) {
 		return true;
 	}
 
-	// Refresh a single loaded record from Salesforce. Dirty cards (with
-	// local edits the user hasn't uploaded yet) prompt for confirmation
-	// before clobbering. After a successful refresh the loadedValues
-	// baseline is updated to the fresh SF state so isRecordModified()
-	// correctly reports the card as clean, and a 1.5s pulse animates
-	// the card so the user sees what just changed.
-	//
-	// Failure modes (server returns ok:false per record):
-	//   not-found / no-access - toast + mark the card with _deletedInSf
-	//                            so the badge persists until the user
-	//                            removes the card or marks-for-delete.
-	//   invalid-object - toast, no card change.
-	//   retrieve-failed - toast, no card change.
 	async function refreshRecordFromSf(rec) {
 		if (!rec || !rec.loadedFromId || !rec.objectName || rec.isPending || rec.pendingDelete) {
 			return;
@@ -4714,13 +4515,6 @@ function csrfFetch(url, options) {
 			renderBulkView();
 			return;
 		}
-		// Replace values + reset the dirty-edit baseline so the card
-		// stops registering as modified. Also clear any stale "deleted
-		// in SF" flag if it had been set by a prior refresh attempt
-		// (record reappeared), and the no-access placeholder state - a
-		// successful retrieve proves we can read the record again
-		// (undeleted, or access restored), so the card must render as a
-		// normal loaded record, not the "No access" shell.
 		rec.values = Object.assign({}, result.values);
 		rec.loadedValues = Object.assign({}, result.values);
 		rec._deletedInSf = false;
@@ -4729,8 +4523,6 @@ function csrfFetch(url, options) {
 		rec._refreshPulse = true;
 		renderBulkView();
 		showBulkToast("Refreshed " + (rec.objectName || "record") + ".");
-		// Clear the pulse marker after the animation duration so a
-		// subsequent re-render doesn't re-trigger it.
 		setTimeout(() => {
 			if (rec._refreshPulse) {
 				rec._refreshPulse = false;
@@ -4738,9 +4530,6 @@ function csrfFetch(url, options) {
 		}, 1600);
 	}
 
-	// Shared bulk retrieval primitive. Callers choose the candidate set and
-	// own any confirmation or summary copy; this function only retrieves the
-	// current Salesforce state, updates matching cards, and reports counts.
 	async function refreshLoadedCanvasRecords(candidates, options) {
 		const opts = options || {};
 		const records = Array.isArray(candidates) ? candidates : [];
@@ -4806,11 +4595,6 @@ function csrfFetch(url, options) {
 		return { okCount, failCount };
 	}
 
-	// Recall may revert existing records and may fire Salesforce automation
-	// that changes other records already visible on the canvas. Reconcile all
-	// still-loaded records, regardless of selection. Never silently overwrite a
-	// local edit made after upload; those cards remain dirty and can be refreshed
-	// manually with the normal confirmation flow.
 	async function refreshCanvasAfterRecall() {
 		const loaded = canvasState.bulkRecords.filter(
 			(r) => r && !r.isTypeNode && !r.isPending && !r.pendingDelete && r.loadedFromId,
@@ -4843,12 +4627,6 @@ function csrfFetch(url, options) {
 		return Object.assign({}, result, { skippedDirtyCount: dirty.length });
 	}
 
-	// Bulk refresh: scope = selected loaded records if any are
-	// selected; otherwise all loaded records on the canvas. Excludes
-	// drafts (no SF id) and pending-delete (about to disappear).
-	// Dirty-record count drives a single up-front confirm; refresh
-	// then chunks into batches of 200 (matches server cap) and fires
-	// sequentially to avoid SF rate-limit storms.
 	async function openBulkRefreshFlow() {
 		const selectedIds = canvasState.bulkSelectedIds;
 		const allCandidates = canvasState.bulkRecords.filter(
@@ -4923,9 +4701,6 @@ function csrfFetch(url, options) {
 			return;
 		}
 		e.preventDefault();
-		// Pop until an undo actually runs. A toast-undo already triggered via
-		// its button leaves a spent, no-op entry (its once-guard returns false);
-		// skip those so one keystroke performs one real undo.
 		while (undoStack.length > 0) {
 			const op = undoStack.pop();
 			let ran = true;
@@ -5096,7 +4871,6 @@ function csrfFetch(url, options) {
 		if (canvasState.bulkMarquee.moved) {
 			finalizeMarqueeSelection();
 		} else {
-			// No drag - treat as a click on empty canvas: clear selection.
 			if (
 				canvasState.bulkSelectedIds.size > 0 ||
 				canvasState.bulkSelectedEdgeId != null
@@ -5110,10 +4884,6 @@ function csrfFetch(url, options) {
 		canvasState.bulkMarquee = null;
 	});
 
-	// toName; 'rev' = field on toName points to fromName.
-	// Card ⋮ menu + popup pickers. Lives in canvas-card-menu.js.
-	// Late-bound deps are lambda-wrapped to dodge TDZ on values that
-	// are declared further down the file (convertRecordToSlot, etc.).
 	const _cm = window.OrgLoom.canvasCardMenu.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -5739,7 +5509,6 @@ function csrfFetch(url, options) {
 					try {
 						await t();
 					} catch (e) {
-						/* swallow per-task; logged inside */
 					}
 				}
 			});
@@ -5808,9 +5577,6 @@ function csrfFetch(url, options) {
 				}))
 				: [],
 
-			// Schema-explorer navigation state - lets tests assert the
-			// schema view is navigation-driven (never re-scoped by edit-
-			// canvas changes) without reaching into module internals.
 			getSchemaViewObject: () => canvasState._schemaViewObject || null,
 
 			setRecordValue: (id, field, value) => {
@@ -6011,7 +5777,6 @@ function csrfFetch(url, options) {
 		if (!focusedSel) {
 			return null;
 		}
-		// Records-canvas component containing the focused record.
 		const componentRecIds = new Set();
 		const recQueue = [rec.id];
 		while (recQueue.length) {
@@ -6084,19 +5849,15 @@ function csrfFetch(url, options) {
 		return { active, componentSelIds };
 	}
 
-	// Cytoscape-backed schema canvas
 	const _bs = window.OrgLoom.bulkScript.mount({
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
-		// Optional: post-run Undo on the success toast (family guarantee -
-		// every Tools ▾ mutation is one click from reverted).
 		showBulkToastWithAction: showBulkToastWithAction,
 		renderBulkView: renderBulkView,
 		showConfirmDialog: showConfirmDialog,
 	});
 	const openBulkScriptModal = _bs.openModal;
 
-	// Upload confirmation modal
 	const _rc = window.OrgLoom.relatedCounts.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -6568,7 +6329,6 @@ function csrfFetch(url, options) {
 	const openCanvasShareManagementModal = _csh.openCanvasShareManagementModal;
 	const attachSfUserPicker = _csh.attachSfUserPicker;
 
-	// ===== Upload modal =====
 	const _um = window.OrgLoom.uploadModal.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -6730,7 +6490,6 @@ function csrfFetch(url, options) {
 	const showUploadHistoryModal = _uh.openModal;
 	const _uh_testConfirmAndRecall = _uh._testConfirmAndRecall;
 
-	// ===== Linked CSV module =====
 	const _treeLayout = window.OrgLoom.treeLayout.mount({
 		canvasState: canvasState,
 		getCyInstance: function () {
@@ -6774,9 +6533,6 @@ function csrfFetch(url, options) {
 		},
 		relayoutNewRecords: relayoutNewRecords,
 		clearEmptyStarterCard: clearEmptyStarterCard,
-		// Lets a canvas-mode import route an Id that already has a card into
-		// the Diff modal (merge the CSV's values onto the existing card)
-		// instead of creating a duplicate. Defined earlier in this IIFE.
 		openRecordDiffModal: openRecordDiffModal,
 	});
 	const openLinkedCsvModal = _lcsv.openModal;
@@ -6784,7 +6540,6 @@ function csrfFetch(url, options) {
 	const _isLinkedCsvQuickUploadMode = _lcsv.isQuickUploadMode;
 	const _restoreInterruptedQuickUpload = _lcsv.restoreInterruptedQuickUpload;
 
-	// ===== SOQL import module =====
 	const _soql = window.OrgLoom.soqlImport.mount({
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
@@ -6810,7 +6565,6 @@ function csrfFetch(url, options) {
 	const openSoqlImportModal = _soql.openModal;
 	const runAndCommitSoql = _soql.runAndCommitSoql;
 
-	// ===== Record browse panel =====
 	const _rb = window.OrgLoom.recordBrowse.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -6827,7 +6581,6 @@ function csrfFetch(url, options) {
 	});
 	const openBrowseModal = _rb.openBrowseModal;
 
-	// ===== Templates / canvas-serialization module =====
 	const _tpl = window.OrgLoom.templates.mount({
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
@@ -6856,7 +6609,6 @@ function csrfFetch(url, options) {
 	const applyTemplate = _tpl.applyTemplate;
 	const applyCanvasPayload = _tpl.applyCanvasPayload;
 
-	// ===== Session-drafts module =====
 	const _sd = window.OrgLoom.sessionDrafts.mount({
 		canvasState: canvasState,
 	});
@@ -6993,7 +6745,6 @@ function csrfFetch(url, options) {
 	});
 	const pushPresenceFocus = _presence.pushFocus;
 
-	// ===== AI proposals module =====
 	const _aip = window.OrgLoom.aiProposals.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -7012,7 +6763,6 @@ function csrfFetch(url, options) {
 	const _refreshProposals = _aip.refreshProposals;
 	const _watchProposalsForCurrentCanvas = _aip.watchProposalsForCurrentCanvas;
 
-	// ===== AI clarifications module =====
 	if (window.OrgLoom.aiClarifications) {
 		window.OrgLoom.aiClarifications.mount({
 			canvasState: canvasState,
@@ -7022,7 +6772,6 @@ function csrfFetch(url, options) {
 		});
 	}
 
-	// ===== Bulk-edit modal module =====
 	const _bem = window.OrgLoom.bulkEditModal.mount({
 		canvasState: canvasState,
 		ensureDescribe: ensureDescribe,
@@ -7116,18 +6865,10 @@ function csrfFetch(url, options) {
 			configurable: true,
 		});
 	} catch (e) {
-		/* ignore */
 	}
 
-	// Migration resume takes priority over the ephemeral org-switch and
-	// autosave restores: a durable migration that has just arrived at its
-	// target org (or is recovering after a browser close mid-migration)
-	// IS the canvas the user expects to see. Returns false on an ordinary
-	// load so we fall through to the normal restore chain.
 	const _migrationResumed = _migrationResume ? _migrationResume() : false;
 	if (_migrationResumed) {
-		// Enter migrate mode + annotate every record against the target
-		// org's describes (fetched fresh now that we're on the target).
 		const _migrationGuideReady = enterMigrateMode({
 			sourceSfOrgId: _migrationResumed.sourceSfOrgId || null,
 			targetSfOrgId:
@@ -7143,10 +6884,6 @@ function csrfFetch(url, options) {
 				}, 0);
 			});
 		}
-		// Offer an explicit exit so the migration isn't re-restored on
-		// every reload once the user is done (Phase 1 will also clear it
-		// automatically on a successful upload to the target). Discard
-		// stops tracking the migration; whatever's on the canvas stays.
 		const _msg = _migrationResumed.justArrived
 			? "Migration canvas restored - review, then upload to the destination org."
 			: "Resumed your in-progress migration.";
@@ -7195,7 +6932,6 @@ function csrfFetch(url, options) {
 	renderStepper();
 	renderAll();
 
-	// quick Upload trigger
 	document.addEventListener("click", (e) => {
 		const trigger =
 			e.target &&
@@ -7216,7 +6952,6 @@ function csrfFetch(url, options) {
 		setTimeout(() => openLinkedCsvModal({ quickUpload: true }), 0);
 	}
 
-	// history trigger
 	document.addEventListener("click", (e) => {
 		const trigger =
 			e.target &&
@@ -7229,7 +6964,6 @@ function csrfFetch(url, options) {
 		showUploadHistoryModal();
 	});
 
-	// canvases trigger
 	document.addEventListener("click", (e) => {
 		const trigger =
 			e.target &&

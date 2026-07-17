@@ -1,6 +1,3 @@
-// Legacy chain migration compatibility plus the v1 default-unlinked behavior.
-// New Activity History writes are unchained; explicit chained:true rows model
-// rows already present in migrated development databases.
 
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -51,8 +48,6 @@ describe('unchained Activity History rows', () => {
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
-		// Interleave chained + unchained so a naive walk would chain through
-		// the data row and break when it's deleted.
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', chained: true });
 		const dataId = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'upload', chained: false });
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', chained: true });
@@ -84,7 +79,6 @@ describe('purgeExpired: chain-safe retention', () => {
 		const ws = await makeWorkspace(a.id);
 		const past = Date.now() - 1000;
 		const future = Date.now() + 1_000_000;
-		// Two old (expired) chained rows, then two fresh ones.
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: past, chained: true });
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', expiresAt: past, chained: true });
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_grant', expiresAt: future, chained: true });
@@ -104,9 +98,6 @@ describe('purgeExpired: chain-safe retention', () => {
 		const ws = await makeWorkspace(a.id);
 		const past = Date.now() - 1000;
 		const future = Date.now() + 1_000_000;
-		// Oldest row is retained (future expiry); a NEWER row is expired.
-		// Prefix-only purge must keep the newer expired row rather than
-		// delete it mid-chain (the plan-downgrade / non-monotonic case).
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: future, chained: true });
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', expiresAt: past, chained: true });
 		const dropped = await audit.purgeExpired();
@@ -123,7 +114,6 @@ describe('purgeExpired: chain-safe retention', () => {
 		const past = Date.now() - 1000;
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_created', expiresAt: past, chained: true });
 		await audit.purgeExpired(); // purges the only row, sets anchor
-		// New write must seed from the anchor, not '', and verify stays ok.
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', chained: true });
 		const result = await audit.verifyChain({ workspaceId: ws.id });
 		assert.equal(result.ok, true);
@@ -173,7 +163,6 @@ describe('GDPR payload redaction', () => {
 		});
 		await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'workspace_renamed', chained: true });
 		await audit.redactPayloadByEmail('bob@example.com');
-		// Delete a NON-redacted neighbor: the chain must still break.
 		await ext.getDb().deleteFrom('audit_log').where('id', '=', id0).execute();
 		const result = await audit.verifyChain({ workspaceId: ws.id });
 		assert.equal(result.ok, false, 'deleting a row is still caught even next to a redacted one');
@@ -188,7 +177,6 @@ describe('GDPR payload redaction', () => {
 		const id1 = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_grant', payload: { capability: 'x' }, chained: true });
 		const id2 = await audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_revoke', payload: { capability: 'y' }, chained: true });
 		await audit.redactPayloadByEmail('dave@example.com'); // redacts row 0
-		// Swap created_at of the two later rows to simulate a reorder.
 		const r1 = await rawRow(id1);
 		const r2 = await rawRow(id2);
 		await ext.getDb().updateTable('audit_log').set({ created_at: r2.created_at }).where('id', '=', id1).execute();
@@ -216,9 +204,6 @@ describe('concurrent chained writes', () => {
 		const { audit } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
-		// Fire concurrently with NO sleeps; many will share a millisecond.
-		// The per-workspace lock + monotonic created_at must still yield a
-		// single verifiable chain.
 		await Promise.all(
 			Array.from({ length: 20 }, (_, i) =>
 				audit.record({ workspaceId: ws.id, actorAccountId: a.id, action: 'permission_grant', payload: { i }, chained: true }),

@@ -95,8 +95,6 @@ export async function authenticate(plaintext) {
 	if (row.expires_at && row.expires_at < Date.now()) {
 		return null;
 	}
-	// Fail closed for legacy/corrupt rows. Migration 044 deletes every
-	// pre-scope credential, and all issuance paths require this value.
 	if (!row.workspace_id) {
 		return null;
 	}

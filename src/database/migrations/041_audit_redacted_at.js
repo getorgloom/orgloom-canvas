@@ -1,23 +1,3 @@
-// Audit redaction support: GDPR erasure that keeps the tamper chain
-// verifiable.
-//
-// Two columns are added:
-//   * content_hash: an immutable per-row hash of the row's canonical
-//     content, H(canonical(row)). The chain now links over content_hash
-//     rather than over the raw content: chain_hash = H(prev_chain_hash +
-//     content_hash). This split lets a REDACTED row (content erased) still
-//     have its chain LINKAGE verified (the retained content_hash keeps
-//     chain_hash reproducible) while only its CONTENT integrity (does the
-//     stored content still hash to content_hash) becomes uncheckable,
-//     which is inherent to having erased it.
-//   * redacted_at: marks a row whose PII was erased in place. verifyChain
-//     skips the content recompute for these rows but still checks the
-//     chain linkage, so an insert/delete/reorder around a redacted row is
-//     STILL detected (the structural guarantee survives erasure).
-//
-// Existing rows are rechained under the new content_hash formula. This is
-// a one-time, in-migration recompute (not a tamper) so the chain stays
-// internally consistent afterward.
 import crypto from "node:crypto";
 
 function _canonical(row) {
@@ -62,8 +42,6 @@ export async function up(db) {
 		.addColumn("redacted_at", "integer")
 		.execute();
 
-	// Backfill content_hash and rechain chain_hash over it. Walk in the
-	// same (workspace, created_at, id) order verifyChain uses.
 	const rows = await db
 		.selectFrom("audit_log")
 		.selectAll()

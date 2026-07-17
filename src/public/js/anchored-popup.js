@@ -1,4 +1,3 @@
-// anchored popover helper.
 (function () {
 	"use strict";
 

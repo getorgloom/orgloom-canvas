@@ -1,47 +1,3 @@
-// Related-count + by-ref cache subsystem.
-//
-// Backs every "Load related" / type-node opening in the records canvas
-// with two memoized maps:
-//   _relatedCountCache: (objectName|field|recordId) -> count
-//   _byRefCache: (objectName|field|hostId)   -> records[]
-//
-// Both maps share key shape so callers can flip cheaply between
-// counts and records.  In-flight Promise maps dedupe concurrent
-// requests; prefetch + a fast user click no longer fire two
-// identical network round-trips for the same probe.
-//
-// Also owns prefetchTypeNodeOneLevel: speculative L1/L2/L3 fan-out
-// fired when a type-node first renders, so opening it feels instant.
-//
-// Dependencies passed to mount():
-//   canvasState: shared canvas state. prefetchTypeNodeOneLevel
-//                     reads bulkRecords + selectedObjects and writes
-//                     _prefetchedTypeNodeKeys.
-//   csrfFetch: fetch wrapper.
-//   fetchGraphData: async; resolves describe-style graph data for
-//                     an object. Used by prefetch to discover the
-//                     child fields of the target type-node.
-//
-// Public API (returned from mount):
-//   _RELATED_SOFT_THRESHOLD, _RELATED_HARD_THRESHOLD,
-//   _RELATED_BULK_LOAD_CAP, PREFETCH_COUNT_CAP: load-cap constants
-//   AUDIT_FK_FIELDS: Set of audit FK
-//                                                  field names; shared
-//                                                  with code outside
-//                                                  this module that
-//                                                  filters audit refs.
-//   _relatedCountCache, _byRefCache: the Maps; exposed
-//                                                  so callers can read
-//                                                  cached values and
-//                                                  invalidate entries
-//                                                  on record removal.
-//   _countCacheKey: key builder.
-//   fetchRelatedCount(objectName, field, id): single count probe.
-//   fetchRelatedCountsBatch(probes): batched fan-out.
-//   fetchByRefCached(objectName, field, hostId): list-by-ref query.
-//   prefetchTypeNodeOneLevel(tn): speculative warm-up.
-//
-// Exposed as window.OrgLoom.relatedCounts. Load order: before app.js.
 
 (function () {
 	'use strict';
@@ -58,42 +14,11 @@
 			const fetchGraphData = deps.fetchGraphData;
 
 			const AUDIT_FK_FIELDS = new Set(['CreatedById', 'LastModifiedById', 'OwnerId']);
-			// Caches that let edit-mode navigation feel instant. The first
-			// hop (Open a type-node) used to wait for its by-ref query;
-			// the second hop (descendant type-nodes appearing) used to wait
-			// for N count probes per new record. We now prefetch BOTH at
-			// type-node render time so by the time the user clicks Open
-			// the records and the next-level type-nodes are already in
-			// memory. Prefetching is capped (PREFETCH_COUNT_CAP) so we
-			// don't fan out hundreds of queries from a User-class node.
-			// When the cached related-count for a child-direction
-			// type-node exceeds these, openTypeNode interposes a confirm
-			// dialog before bulk-loading. SOFT_THRESHOLD is the line
-			// above which we ask the user to opt in (load N, search,
-			// or cancel); HARD_THRESHOLD is the line above which we
-			// remove the bulk-load option entirely (search only); at
-			// this scale the rendered cards will overload cy regardless
-			// of whether the user actually wants them all.
-			// Soft threshold: above this count we intercept "Load related"
-			// with a confirm modal instead of silently pulling records
-			// down. 50 is the line above which the cytoscape canvas
-			// starts to feel noticeably sluggish (edges + HTML labels
-			// are O(n²) for layout), and also the line above which a
-			// preflight-review at upload time becomes impractical.
-			// Common "Account → 600 Contacts" lookups land well above
-			// this so the user gets to choose: bulk-load (capped at
-			// _RELATED_BULK_LOAD_CAP), search-and-pick, or cancel.
 			const _RELATED_SOFT_THRESHOLD = 50;
 			const _RELATED_HARD_THRESHOLD = 5000;
 			const _RELATED_BULK_LOAD_CAP = 200; // matches /by-ref server cap
 			const _relatedCountCache = new Map(); // key: objName|field|recordId -> count
 			const _byRefCache = new Map();        // key: objName|field|hostId -> records[]
-			// In-flight Promise maps: a second caller for the same key
-			// awaits the existing request instead of firing a duplicate.
-			// Without these, prefetch + a fast user click can fire two
-			// identical network round-trips for the same probe; they
-			// both populate the cache eventually, but the user still
-			// waits a full network roundtrip for the second one.
 			const _relatedCountInFlight = new Map();
 			const _byRefInFlight = new Map();
 			const PREFETCH_COUNT_CAP = 25;
@@ -133,14 +58,6 @@ return _relatedCountInFlight.get(key);
 				return p;
 			}
 			
-			// Batched variant: fans out probes server-side instead of
-			// burning the browser's 6-conn HTTP/1.1 cap on N foreground
-			// requests. Returns a Map keyed by `objName|field|id` so
-			// callers index into results without re-resolving keys.
-			// Already-cached probes don't ride the network; in-flight
-			// duplicates piggyback on the existing singleton promise
-			// where possible. Salesforce-side cap is 200 probes per
-			// request; we chunk transparently above that.
 			async function fetchRelatedCountsBatch(probes) {
 				const result = new Map();
 				if (!probes || probes.length === 0) {
@@ -165,8 +82,6 @@ continue;
 					toFetch.push({ key, p });
 				}
 				if (toFetch.length > 0) {
-					// Mark in-flight before the request so concurrent batch
-					// callers dedupe through the same promise.
 					let resolveBatch;
 					const batchPromise = new Promise((r) => {
  resolveBatch = r; 
@@ -174,7 +89,6 @@ continue;
 					toFetch.forEach((x) => {
 						_relatedCountInFlight.set(x.key, batchPromise.then(() => _relatedCountCache.get(x.key) || 0));
 					});
-					// Server caps at 200; chunk if we exceed (rare).
 					const CHUNK = 200;
 					const chunks = [];
 					for (let i = 0; i < toFetch.length; i += CHUNK) {
@@ -201,9 +115,6 @@ return { counts: [] };
 							_relatedCountCache.set(key, c.count || 0);
 							result.set(key, c.count || 0);
 						});
-						// Anything we sent but the server didn't echo back
-						// gets a defensive default so the cache + result Map
-						// stay consistent.
 						toFetch.forEach((x) => {
 							if (!result.has(x.key)) {
 								_relatedCountCache.set(x.key, 0);
@@ -255,16 +166,6 @@ throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
 				return p;
 			}
 			
-			// Speculative two-level-deeper prefetch fired when a type-node
-			// is first rendered. Chains:
-			//   L0  type-node (already shown)
-			//   L1  by-ref → records under this type-node
-			//   L2  count probes for each record's relationships
-			//   L3  by-ref for each L2 relationship whose count is small
-			// All results land in caches consumed by openTypeNode +
-			// seedEditModeTypeNodes. Aggressive caps prevent fan-out
-			// explosions: a User-typed node with 5K children won't get
-			// L1, and L3 only kicks off where L2 count <= PREFETCH_COUNT_CAP.
 			async function prefetchTypeNodeOneLevel(tn) {
 				if (!tn || !tn.isTypeNode) {
 return;
@@ -316,24 +217,11 @@ return;
 						if (!c.field || !c.object) {
 return false;
 }
-						// Always exclude audit FKs: they fan out to every
-						// SObject in the org via User and are never the
-						// useful relationship the user wants here.
 						if (AUDIT_FK_FIELDS.has(c.field)) {
 return false;
 }
 						return true;
 					});
-					// L2: cross product of (records × child fields) for
-					// counts. Round-robin order: child-field-first then
-					// record, so every record receives one probe per
-					// round. Records-first ordering would cap at ~3-4
-					// contacts when the cross product exceeds the cap,
-					// leaving the rest with cold count probes that have
-					// to fire fresh when the user opens the type-node.
-					// Cap is generous (200) because COUNT() queries are
-					// cheap and HTTP/2 / browser concurrency keeps the
-					// total round-trip short.
 					const validRecs = records.filter((r) => r && r.Id);
 					const probes = [];
 					for (let ci = 0; ci < childFields.length; ci++) {
@@ -344,18 +232,11 @@ return false;
 					}
 					const L2_CAP = 200;
 					const probeSlice = probes.slice(0, L2_CAP);
-					// Single batched request for the L2 fan-out: much
-					// kinder to the browser's connection pool than N
-					// singleton fetches.
 					const counts = await fetchRelatedCountsBatch(probeSlice);
 					const probeResults = probeSlice.map((p) => ({
 						...p,
 						count: counts.get(_countCacheKey(p.objectName, p.field, p.id)) || 0,
 					}));
-					// L3: for each L2 hit with a small count, prefetch
-					// the by-ref records too so opening that descendant
-					// type-node also lands instantly. Cap aggressively
-					// because L3 cardinality is records × children × N.
 					const L3_CAP = 30;
 					const l3Targets = probeResults
 						.filter((p) => p.count > 0 && p.count <= PREFETCH_COUNT_CAP)

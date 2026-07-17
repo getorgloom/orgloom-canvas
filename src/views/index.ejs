@@ -1,8 +1,3 @@
-<%# `quickUpload` is true when /quick-upload routes here. Canvas
-    renders normally; the linked-CSV import modal auto-opens in
-    Quick Upload mode (single "Upload to Salesforce" button) on top
-    of the canvas. Closing the modal returns to canvas as expected.
-    Defaults to false so / renders without auto-opening. -%>
 <% var __isQuickUpload = (typeof quickUpload !== 'undefined') && !!quickUpload; %>
 <% var __needsSfConnect = (typeof needsSfConnect !== 'undefined') && !!needsSfConnect; %>
 <% var __sfConnected = !!user && !__needsSfConnect; %>
@@ -15,32 +10,11 @@
 	<link rel="stylesheet" href="/css/app.css">
 </head>
 <body class="canvas-page">
-	<%# Unified top-strip, shared with /workspace, /pricing, /connect,
-	    and signed-out pages. Renders brand only when signed-out;
-	    brand + nav (Docs / Quick Upload) + workspace-switcher chip +
-	    SF chip (when connected) + account dropdown when signed in.
-	    Single source of truth in partials/top-strip.ejs. -%>
 	<%- include('partials/top-strip') %>
 
-	<%# Playground / demo-mode banner. Shown only when playgroundMode is
-	    true (anonymous visitor hit /playground). Persistent strip below
-	    the top-strip; signals "demo mode, nothing is real" and offers a
-	    Sign-up CTA so anyone who likes what they built can convert. -%>
 	<% if (typeof playgroundMode !== 'undefined' && playgroundMode) { %>
 		<div class="app-playground-banner" role="status">
-			<%# "Back to home" anchor positioned left via absolute
-			    so the centered content span stays optically
-			    centered regardless of the link's width. -%>
 			<a class="app-playground-banner-home" href="/?from=playground">&larr; Back to home</a>
-			<%# Everything inline inside one wrapper span so the
-			    `<strong>` and the `<a>` share a single line box.
-			    Two separate flex children produced slightly
-			    different line metrics (bold + variable-weight vs
-			    anchor at font-weight: 500), making the signin look
-			    misaligned and forcing line-height: 1 to even them
-			    out, which then clipped the `g` descender in
-			    "org". One line box, normal line-height, normal
-			    descenders. -%>
 			<span class="app-playground-banner-content">
 				<strong>Demo mode</strong> &middot; no data leaves your browser. You&rsquo;re working against a sample dataset, not a real org.
 			</span>
@@ -49,24 +23,7 @@
 
 	<main class="app-main">
 		<% if (user) { %>
-			<%# Canvas shell, always rendered for signed-in users
-			    regardless of SF connection state. Pre-rewrite, a
-			    signed-in-but-not-connected user hit a full-screen
-			    "Connect to Salesforce" gate that hid the canvas. That
-			    blocked all planning / layout / draft work until the
-			    user finished an OAuth roundtrip. Now the canvas stays
-			    interactive without a connection: the SF chip in the
-			    top strip surfaces "Not connected" status + opens the
-			    connections modal, and SF-touching actions (Load,
-			    Save, Upload) surface their own per-action prompt at
-			    invocation time. -%>
 
-			<%# Upgrade-status banner (pending only). The "success" green
-			    strip was felt to be out of place on the empty canvas
-			    (the workspace plan badge and billing settings are
-			    enough confirmation). Pending stays because ACH/SEPA
-			    users genuinely need the 3-5 day note while their
-			    payment clears. -%>
 			<% if (typeof upgrade !== 'undefined' && upgrade === 'pending') { %>
 			<div id="upgrade-banner" role="status" style="position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--warn,#d29a00);color:#1a1a1a;padding:0.6em 2.5em 0.6em 1em;font-size:0.9em;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.25)"><strong>Payment processing.</strong> We&rsquo;ll upgrade your workspace once your bank confirms (usually 3&ndash;5 business days). You can connect Salesforce and start using Org Loom on your current plan in the meantime.<button type="button" id="upgrade-banner-x" aria-label="Dismiss" style="position:absolute;right:0.5em;top:50%;transform:translateY(-50%);background:none;border:0;color:inherit;font-size:1.1em;cursor:pointer;line-height:1;padding:0.25em 0.5em">&times;</button></div>
 			<script nonce="<%= cspNonce %>">
@@ -81,68 +38,26 @@
 			</script>
 			<% } %>
 
-			<!-- App shell is rendered entirely by app.js into the fixed-position
-			     graph overlay. This `#app-root` placeholder exists only so code
-			     that still references it has a mount point; nothing is rendered
-			     here directly. -->
 			<div id="app-root"></div>
 
-			<!-- Cytoscape powers the parallel records-canvas renderer
-			     (renderBulkCanvasCy in app.js). Loads from node_modules
-			     via the /vendor static route in server.js so the version
-			     is pinned by package.json. Toggled per-session by the
-			     `?cy=0` URL param; the cy renderer is the default. -->
 			<script src="/vendor/cytoscape/dist/cytoscape.umd.js" defer></script>
-			<!-- HTML labels: lets us render the legacy <div class="record-card">
-			     markup verbatim inside cy nodes, instead of cy's plain text
-			     labels. Required for full record-card visual fidelity. -->
 			<script src="/vendor/cytoscape-node-html-label/dist/cytoscape-node-html-label.min.js" defer></script>
 			<script nonce="<%= cspNonce %>">
-				// SF_* globals are null when no SF connection is active.
-				// Every read-site in app.js uses `|| 'anon'` / `|| null`
-				// fallbacks so the canvas keeps working: planning,
-				// drafts, layout, and AI proposals all run without a
-				// connection. SF-touching actions check at invocation
-				// time and surface their own prompt.
 				window.SF_ORG_ID = <%- jsonForScript(user && user.organizationId ? user.organizationId : null) %>;
 				window.SF_USER_ID = <%- jsonForScript(user && user.sfUserId ? user.sfUserId : null) %>;
 				window.SF_USER_NAME = <%- jsonForScript(user && (user.displayName || user.username) ? (user.displayName || user.username) : null) %>;
 				window.SF_INSTANCE_URL = <%- jsonForScript(typeof instanceUrl !== 'undefined' ? instanceUrl : null) %>;
 				window.ORGLOOM_ACCOUNT_ID = <%- jsonForScript(user && user.id ? user.id : null) %>;
 				window.ORGLOOM_SF_CONNECTED = <%- jsonForScript(!!__sfConnected) %>;
-				// Whether the /docs hub is served by this deployment. False
-				// in canvas-standalone (docs.ejs lives in the saas tree);
-				// help-chip + any other docs-link surfaces gate on this.
 				window.ORGLOOM_HAS_DOCS = <%- jsonForScript(typeof saasEnabled !== 'undefined' && !!saasEnabled) %>;
-				// Playground / mock mode. When true, mock-sf.js installs a
-				// fetch interceptor that returns canned data for every
-				// SF-bound API call. The canvas itself doesn't know; it
-				// keeps calling /api/objects/:name/describe etc., the mock
-				// layer just answers from a static dataset.
 				window.ORGLOOM_MOCK = <%- jsonForScript(typeof playgroundMode !== 'undefined' && !!playgroundMode) %>;
-				// Sentry (GlitchTip) browser SDK config. Stays null in
-				// dev / self-host where SENTRY_DSN_BROWSER isn't set;
-				// /js/sentry-init.js no-ops in that case. accountIdHash
-				// is a SHA-256 of the account id, truncated server-side
-				// so the browser never sees the raw id.
 				window.ORGLOOM_SENTRY_DSN = <%- jsonForScript(typeof sentryDsn !== 'undefined' ? sentryDsn : null) %>;
 				window.ORGLOOM_ACCOUNT_ID_HASH = <%- jsonForScript(typeof accountIdHash !== 'undefined' ? accountIdHash : null) %>;
 				window.ORGLOOM_ENV = <%- jsonForScript(typeof appEnv !== 'undefined' ? appEnv : 'production') %>;
 				window.ORGLOOM_RELEASE = <%- jsonForScript(typeof appRelease !== 'undefined' ? appRelease : null) %>;
 				<% if (__isQuickUpload) { %>
-				// Quick Upload mode flag: app.js reads this on init and at
-				// payload-build time. See pricing.ejs FAQ for the user-facing
-				// description; see linkedCsvConfirm in app.js for the upload
-				// path. directUpload=true is set on uploads from this page.
 				window.__orgloomQuickUpload = true;
 				<% } %>
-				// PostHog: explicit canvas_opened event so the funnel
-				// "landing → signup → first canvas opened" works
-				// without relying on autocapture URL matching (which
-				// gets fuzzy with single-page-app-ish behavior).
-				// posthog is loaded by top-strip.ejs before app.js
-				// runs; the optional-chain guard handles the
-				// analytics-disabled case.
 				if (window.posthog && window.posthog.capture) {
 					window.posthog.capture('canvas_opened', {
 						sf_connected: !!window.ORGLOOM_SF_CONNECTED,
@@ -150,72 +65,15 @@
 					});
 				}
 			</script>
-			<%# Sentry browser SDK + scrubbing init. Loads BEFORE app.js
-			    (not deferred) so any error thrown during canvas boot is
-			    captured. Must come AFTER the inline window-stamps block
-			    above so /js/sentry-init.js sees window.ORGLOOM_SENTRY_DSN.
-			    Both tags no-op silently when SENTRY_DSN_BROWSER is unset
-			    (DSN stamped as null → init exits early). -%>
-			<%# Sentry browser SDK loaded from Sentry's CDN. @sentry/browser v7+
-			    stopped shipping a pre-built bundle inside the npm package,
-			    so we either need the CDN, a bundler, or a vendored copy.
-			    CDN is the lowest-friction option. The CSP `script-src`
-			    directive in both server.js files whitelists
-			    browser.sentry-cdn.com to allow this. Loading is synchronous
-			    so window.Sentry is defined before sentry-init.js runs.
-			    The `integrity="sha384-..."` SRI hash pins the exact bundle
-			    bytes: if the CDN ever ships altered code (whether through
-			    a routine version bump or a compromise), the browser refuses
-			    to execute it. Recompute the hash whenever you bump the
-			    version string in the URL: download the new bundle and run
-			    `openssl dgst -sha384 -binary <file> | openssl base64 -A`
-			    (or the PowerShell equivalent in scripts/compute-sri.ps1). -%>
 			<script src="https://browser.sentry-cdn.com/8.55.0/bundle.tracing.min.js" integrity="sha384-ek46VuBjLOrzW6vcL5CcxRrAtcxp4l7tJqnBOW3s7SIYy7qrKN+IzGFT7g1puodV" crossorigin="anonymous"></script>
 			<script src="/js/sentry-init.js"></script>
-			<%# Canvas-side error reporting helper. Exposes
-			    window.ORGLOOM_capture(err, context): the browser
-			    analogue of the server-side ext.captureException. Loaded
-			    AFTER sentry-init.js so window.Sentry (when present) is
-			    already wired. Browser code in app.js / ai-generate.js /
-			    record-diff-modal.js etc. should use this helper inside
-			    silent catches so we get visibility without leaking the
-			    error into the user's flow. -%>
 			<script src="/js/canvas-capture.js"></script>
-			<%# Mock-SF layer for the /playground demo. Loads ONLY when
-			    playgroundMode is true so production users never pay the
-			    JS download cost for code that has no effect for them.
-			    Loads BEFORE sf-fetch.js so the mock interceptor wraps
-			    fetch first (it short-circuits SF-bound calls before they
-			    reach sf-fetch's 401-renewal logic). Synchronous so the
-			    wrap is in place before any deferred script runs. -%>
 			<% if (typeof playgroundMode !== 'undefined' && playgroundMode) { %>
 				<script src="/js/mock-data.js"></script>
 				<script src="/js/mock-sf.js"></script>
 			<% } %>
-			<%# Playground bridge. Handles BOTH sides of the demo→signup
-			    handoff: send (when ORGLOOM_MOCK=true) wires the banner
-			    "Save your work" CTA + fires playground PostHog events;
-			    receive (when signed-in) removes any legacy localStorage
-			    handoff left by older builds. Current playground state is not
-			    transported into a real account. Loads on every
-			    page render; the mode gates branch internally. -%>
 			<script src="/js/playground-bridge.js"></script>
-			<%# sf-fetch.js MUST load before app.js (and before any other code
-			    that calls fetch). It patches window.fetch to handle the
-			    sf-session-expired 401 by running a silent prompt=none
-			    OAuth and retrying the original request. Without it the
-			    user sees a 401 instead of transparent renewal. -%>
 			<script src="/js/sf-fetch.js"></script>
-			<%# Modules extracted out of app.js into separate files for
-			    readability + testability. Each module exposes its public
-			    API as window.OrgLoom.<module-name>. They MUST load before
-			    app.js: `defer` preserves load order across a set of
-			    deferred scripts, so as long as these tags appear in source
-			    order above the app.js tag below, the namespace is
-			    populated when app.js runs.
-			    Order doesn't matter among the modules themselves (none
-			    of them depend on each other); only that they all load
-			    before app.js. -%>
 			<script src="/js/formula.js" defer></script>
 			<script src="/js/import-shared.js" defer></script>
 			<script src="/js/value-compare.js" defer></script>
@@ -264,41 +122,12 @@
 			<script src="/js/canvas-export-csv.js" defer></script>
 			<script src="/js/anchored-popup.js" defer></script>
 			<script src="/js/bulk-toolbar.js" defer></script>
-			<%# Hierarchy-aware layout for bulk-added records. Consumed
-			    by linked-csv, soql-import, and other paths that drop
-			    a connected set of records on the canvas. Must load
-			    before app.js so app.js can mount it and inject the
-			    accessor into the consumer modules. -%>
 			<script src="/js/tree-layout.js" defer></script>
 			<script src="/js/upload-modal.js" defer></script>
-			<%# Support routing: exposes window.Orgloom.support.{openSupportEmail,
-			    openBugReport,buildDiagnostics}. Loaded BEFORE app.js so
-			    UI surfaces that call into Support (workspace dropdown's
-			    Contact-support / Report-a-bug items) have it available. -%>
 			<script src="/js/support.js"></script>
-			<%# workspace-switcher.js is loaded by partials/top-strip.ejs
-			    (which renders the chip element it hydrates). Don't
-			    re-load it here. -%>
 			<script src="/js/app.js" defer></script>
-			<%# MCP relay client: opens an SSE connection to the
-			    server and routes AI read_canvas requests against the
-			    live in-memory canvas state. Replaces the legacy
-			    canvas_cache table. Self-guards on #app-root so it's
-			    a no-op on pages without a canvas. -%>
 			<script src="/js/mcp-relay-client.js" defer></script>
 		<% } else { %>
-			<%# Minimal signed-out screen. The hosted product intentionally
-			    exposes one action only: Sign in. Signup, demo, and source
-			    discovery are kept off the pre-migration landing page. Canvas-
-			    standalone retains its Salesforce-connect entry point because
-			    it has no hosted account sign-in flow. -%>
-			<%# Entry actions branch on saasEnabled. SaaS mode exposes the
-			    hosted account sign-in. Canvas-standalone
-			    (saasEnabled=false) has no hosted account flow; the implicit local
-			    user just needs to connect Salesforce to get into the
-			    canvas. The /auth/login route starts the SF OAuth
-			    flow regardless of mode; in canvas mode the callback
-			    binds the connection to the implicit account. -%>
 			<% var __ts_saas = (typeof saasEnabled !== 'undefined') ? !!saasEnabled : false; %>
 			<section class="signin-gate">
 				<% if (__ts_saas) { %>
@@ -308,12 +137,6 @@
 					<p class="signin-gate-existing">
 						Org Loom Canvas runs entirely on your local machine. Connect a Salesforce org once and the canvas opens.
 					</p>
-					<%# Placeholder for the canvas-standalone landing's
-					    hero video. The lazy-loaded YouTube facade
-					    partial lives in the saas tree; the standalone
-					    build ships with the inert placeholder instead.
-					    Inline a YouTube iframe directly here if you
-					    want a real video on a self-host deployment. -%>
 					<div class="video-embed video-embed--placeholder video-embed--aspect-16-9" role="img" aria-label="Demo video placeholder">
 						<div class="video-embed-empty">
 							<span class="video-embed-empty-icon" aria-hidden="true">▶</span>

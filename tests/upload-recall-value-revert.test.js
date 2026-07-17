@@ -1,24 +1,8 @@
-// Unit tests for the value-revert recall flow:
-//   * classifyValueDrift: buckets each UPDATE row's fields into
-//     clean / drifted / reverted by comparing SF current state against
-//     the priorValues/uploadedValues we stashed at upload time.
-//   * executeRecall({ revertSelections }): PATCHes each selected
-//     record back to its priorValues for the selected fields, and
-//     reports per-record success/failure alongside the existing
-//     delete results.
-//
-// SF connection is mocked. Pattern mirrors upload-recall-drift.test.js
-// for classifyValueDrift's SOQL probe path; the PATCH path mocks
-// conn.sobject(name).update directly.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyValueDrift, executeRecall } from '../src/upload-recall.js';
 
-// classifyValueDrift uses _queryAll → conn.request(GET /queryAll/?q=).
-// Same fake-conn pattern as classifyBatchDrift's tests: parse the SOQL
-// from the URL, look up canned records in stateById, return them with
-// only the fields the SELECT asked for.
 function makeQueryConn(stateById) {
 	return {
 		version: '60.0',
@@ -31,9 +15,6 @@ return { records: [] };
 return { records: [] };
 }
 			const soql = decodeURIComponent(url.slice(qIdx + 3));
-			// Extract field list (SELECT <fields> FROM ...) so we only
-			// echo back the fields the caller requested. Real SF
-			// returns the SELECT shape.
 			const selMatch = soql.match(/^SELECT\s+(.+?)\s+FROM/i);
 			const fields = selMatch
 				? selMatch[1].split(',').map((f) => f.trim())
@@ -128,8 +109,6 @@ describe('classifyValueDrift', () => {
 		});
 		const result = await classifyValueDrift({ conn, batch: { insertedIds: [row] } });
 		const rec = result.records[0];
-		// Industry drifted (SF says Healthcare, we wrote Banking, prior was Tech).
-		// Phone clean (SF matches what we wrote).
 		assert.equal(rec.drifted.length, 1);
 		assert.equal(rec.drifted[0].fieldName, 'Industry');
 		assert.equal(rec.drifted[0].current, 'Healthcare');
@@ -181,17 +160,11 @@ describe('classifyValueDrift', () => {
 		});
 		const result = await classifyValueDrift({ conn, batch: { insertedIds: [row] } });
 		const rec = result.records[0];
-		// SF returns 5 (number), we wrote "5" (string). Loose equality says clean.
 		assert.equal(rec.clean.length, 1);
 		assert.equal(rec.drifted.length, 0);
 	});
 
 	test('field name with bad shape gets dropped from the SOQL SELECT', async () => {
-		// classifyValueDrift filters fields against a strict regex. A malicious
-		// or malformed field name shouldn't leak into the SOQL; the resulting
-		// query just doesn't ask for it. Record-level classification then
-		// can't find a current value for that field; downstream behavior is
-		// "field is missing from SF response so cur === undefined".
 		const conn = makeQueryConn({
 			'001abc': { Id: '001abc', Industry: 'Banking' },
 		});
@@ -200,7 +173,6 @@ describe('classifyValueDrift', () => {
 			priorValues: { Industry: 'Tech', 'BadField; DROP TABLE': 'x' },
 			uploadedValues: { Industry: 'Banking', 'BadField; DROP TABLE': 'y' },
 		});
-		// Should not throw. Industry classifies normally.
 		const result = await classifyValueDrift({ conn, batch: { insertedIds: [row] } });
 		const rec = result.records[0];
 		const industryEntry = [...rec.clean, ...rec.drifted, ...rec.reverted]
@@ -209,8 +181,6 @@ describe('classifyValueDrift', () => {
 	});
 
 	test('multiple records of the same object batched into one SOQL', async () => {
-		// Two records of Account, three fields each. Should be one SOQL query
-		// per object type, not one per record.
 		const queries = [];
 		const conn = {
 			version: '60.0',
@@ -235,26 +205,16 @@ return { records: [] };
 				makeUpdateRow({ sfId: '001b', priorValues: { Phone: 'B' }, uploadedValues: { Phone: '555' } }),
 			] },
 		});
-		// One queryAll call (one object type, all records batched).
 		assert.equal(queries.length, 1, 'should batch all records of one object into one SOQL');
 	});
 });
 
-// Mock conn for executeRecall's PATCH path. Tracks every sobject(...).update
-// call so tests can assert exactly which fields got reverted on which
-// records. delete() returns success: we're not testing the delete path
-// here, that's covered by upload-recall-drift.test.js. queryAll calls
-// (for the IsDeleted pre-query) return empty so no record is treated as
-// already-deleted.
 function makeRecallConn({ updateBehavior = () => ({ success: true }), executionRecords = null } = {}) {
 	const calls = { updates: [], deletes: [] };
 	return {
 		calls,
 		version: '60.0',
 		request: async ({ method, url }) => {
-			// Execution now performs a fresh value-drift read immediately
-			// before PATCH. Return the values written by each fixture so its
-			// selected fields remain safe unless a test explicitly stages drift.
 			if (method === 'GET' && url.indexOf('queryAll') >= 0 && !decodeURIComponent(url).includes('IsDeleted')) {
 				const soql = decodeURIComponent((url.split('q=')[1] || '').replace(/\+/g, ' '));
 				const ids = Array.from(soql.matchAll(/'([^']+)'/g)).map((m) => m[1]);
@@ -266,14 +226,9 @@ function makeRecallConn({ updateBehavior = () => ({ success: true }), executionR
 					LastName: 'New',
 				})) };
 			}
-			// queryAll pre-deleted probe - return empty so pre-deleted set
-			// stays empty.
 			if (method === 'GET' && url.indexOf('queryAll') >= 0) {
 				return { records: [] };
 			}
-			// DELETE composite endpoint (used by the create-recall delete
-			// path). Return per-id success so the existing delete loop
-			// reports clean recall results for any CREATE rows in scope.
 			if (method === 'DELETE' && url.indexOf('/composite/sobjects') >= 0) {
 				const idsMatch = url.match(/ids=([^&]+)/);
 				const ids = idsMatch ? decodeURIComponent(idsMatch[1]).split(',') : [];
@@ -336,7 +291,6 @@ describe('executeRecall - value-revert path', () => {
 		assert.equal(patch.Id, '001abc');
 		assert.equal(patch.Industry, 'Tech');
 		assert.equal(patch.Phone, '555-0000');
-		// Website wasn't selected - must NOT be in the PATCH.
 		assert.equal(patch.Website, undefined);
 		assert.equal(result.revertedCount, 1);
 		assert.equal(result.revertFailedCount, 0);
@@ -439,7 +393,6 @@ describe('executeRecall - value-revert path', () => {
 		});
 		assert.equal(conn.calls.updates.length, 2);
 		assert.equal(result.revertedCount, 2);
-		// Verify each record was routed to the right object endpoint.
 		const accountCall = conn.calls.updates.find((c) => c.object === 'Account');
 		const contactCall = conn.calls.updates.find((c) => c.object === 'Contact');
 		assert.ok(accountCall);

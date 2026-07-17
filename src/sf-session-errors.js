@@ -1,7 +1,3 @@
-// Normalize the different shapes jsforce and Salesforce use when an access
-// token or its in-memory refresh token is no longer valid. Callers use this
-// to distinguish a normal reconnect state from an authorization/configuration
-// failure such as an unreadable PermissionSetAssignment object.
 
 export function isSalesforceSessionExpiredError(error) {
 	if (!error) {

@@ -1,20 +1,4 @@
 
-// Top-strip Help chip: unified "I need help" entry point. Replaces
-// the standalone Docs nav link and the in-canvas "?" button.
-//
-// Dropdown items (rendered conditionally):
-//   • Canvas shortcuts: only when window.Orgloom.canvasHelp is
-//                           defined (set by app.js on the canvas page).
-//   • Contact support: calls window.Orgloom.support.openSupportEmail
-//                           when support.js is loaded (saas only); falls
-//                           back to a plain mailto otherwise.
-//   • Report a bug: same pattern with openBugReport / GitHub
-//                           issues URL fallback.
-//
-// Lives in packages/canvas/src/public/js (not apps/saas) so it ships
-// in both saas + canvas-standalone modes; the canvas-shortcuts row
-// is the chip's most valuable affordance and only the canvas package
-// owns it.
 
 (function () {
 	'use strict';
@@ -61,15 +45,7 @@ _close();
 		const onCanvas = location.pathname === '/' || location.pathname === '';
 		const ctx = onCanvas ? 'canvas' : ('page ' + location.pathname);
 
-		// Canvas shortcuts moved out of this dropdown; they now have a
-		// dedicated `?`-key opener + a discreet bottom-right hint on the
-		// canvas. See app.js (keydown handler) and the
-		// .canvas-shortcut-hint pill.
 		const items = [];
-		// Primary: the in-app documentation hub (walkthroughs, how-do-I,
-		// troubleshooting, security & architecture). This is the ONLY
-		// top-strip path to /docs; the old standalone Docs nav link was
-		// folded into this menu.
 		items.push('<a class="app-help-item" href="/docs">' +
 			'<span class="app-help-item-name">Guides &amp; docs</span>' +
 		'</a>');
@@ -84,9 +60,6 @@ _close();
 		_menu.className = 'app-help-menu';
 		_menu.setAttribute('role', 'menu');
 		_menu.innerHTML = items.join('');
-		// Anchor to the chip; top-strip is position:fixed so absolute
-		// positioning relative to viewport works. Right-align so the
-		// menu doesn't spill off-screen.
 		const rect = chip.getBoundingClientRect();
 		_menu.style.position = 'fixed';
 		_menu.style.top = (rect.bottom + 6) + 'px';
@@ -101,7 +74,6 @@ _close();
 				if (window.Orgloom && window.Orgloom.support && window.Orgloom.support.openSupportEmail) {
 					window.Orgloom.support.openSupportEmail({ topic: 'Support request from ' + ctx });
 				} else {
-					// canvas-standalone fallback: plain mailto with topic.
 					const subj = encodeURIComponent('Org Loom support request from ' + ctx);
 					window.open('mailto:support@orgloom.com?subject=' + subj, '_blank');
 				}
@@ -120,8 +92,6 @@ _close();
 			});
 		}
 
-		// Defer listener install so the chip's own click that opened
-		// the menu doesn't immediately fire the outside-click close.
 		setTimeout(() => {
 			document.addEventListener('mousedown', _outside, true);
 			document.addEventListener('keydown', _onKey, true);
