@@ -1,3 +1,19 @@
+// Regression test for the non-atomic optimistic lock on canvas overwrite.
+//
+// canvas-store.update() reads the latest ContentVersion to compare against
+// the caller's expectedVersionId, then separately writes a new
+// ContentVersion. Salesforce gives no cross-call transaction, so two
+// concurrent PUTs that both loaded version V would each pass the check and
+// each write: a silent lost update, no 409 for the second. The fix
+// serializes the check+write per canvas with an in-process lock, so the
+// second update observes the first's just-written version and gets a clean
+// 409 instead.
+//
+// This uses a PATTERN-MATCHING stateful mock conn (not the queue-based one
+// in canvas-store.test.js) so update() runs end-to-end (including the
+// _writeHybridCanvasRecord metadata write) and the "latest version"
+// advances as writes land.
+
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { canvasStoreFromSfConnection } from '../src/storage/canvas-store.js';
@@ -19,6 +35,9 @@ after(() => {
 });
 beforeEach(clearTestDb);
 
+// Stateful mock: the latest ContentVersion id advances each time a new
+// ContentVersion is created. createDelayMs widens the race window so that,
+// WITHOUT the lock, both concurrent reads would land before either write.
 function makeStatefulConn(canvasId, opts = {}) {
 	const state = { latest: opts.initialVersion || '068V0', counter: 0 };
 	const createDelayMs = opts.createDelayMs || 5;
@@ -28,10 +47,10 @@ function makeStatefulConn(canvasId, opts = {}) {
 		_state: state,
 		async query(soql) {
 			if (/ContentDocumentLink/.test(soql)) {
-				return { records: [{ Id: 'cdl_' + canvasId }] };
+				return { records: [{ Id: 'cdl_' + canvasId }] }; // existing → no CDL insert
 			}
 			if (/Orgloom_Canvas__c/.test(soql)) {
-				return { records: [{ Id: 'a0' + canvasId }] };
+				return { records: [{ Id: 'a0' + canvasId }] }; // metadata row exists
 			}
 			if (/FROM ContentVersion\b/.test(soql)) {
 				return { records: [{ Id: state.latest }] };
@@ -45,7 +64,9 @@ function makeStatefulConn(canvasId, opts = {}) {
 			return {
 				async create(payload) {
 					if (name === 'ContentVersion') {
-
+						// Yield before committing the new latest version, so a
+						// naive (unlocked) concurrent read could still see the
+						// old version. The lock must prevent that interleave.
 						await new Promise((r) => setTimeout(r, createDelayMs));
 						state.counter += 1;
 						state.latest = '068V' + state.counter;
@@ -86,7 +107,7 @@ describe('canvas update: per-canvas optimistic-lock serialization', () => {
 		assert.equal(rejected.length, 1, 'the other is rejected, not silently lost');
 		assert.equal(rejected[0].reason.statusCode, 409);
 		assert.equal(rejected[0].reason.code, 'version-mismatch');
-
+		// The winner advanced the version exactly once (no double-write).
 		assert.equal(conn._state.counter, 1, 'only one ContentVersion was written');
 	});
 
@@ -97,6 +118,7 @@ describe('canvas update: per-canvas optimistic-lock serialization', () => {
 		const first = await store.update(CANVAS, { payload: { n: 1 }, expectedVersionId: '068V0' });
 		assert.equal(first.versionId, '068V1', 'first write advances the version');
 
+		// Retry with the now-stale base version.
 		await assert.rejects(
 			() => store.update(CANVAS, { payload: { n: 2 }, expectedVersionId: '068V0' }),
 			(err) => {
@@ -119,7 +141,8 @@ describe('canvas update: per-canvas optimistic-lock serialization', () => {
 	test('a failing update releases the lock (no deadlock for the next save)', async () => {
 		const conn = makeStatefulConn(CANVAS, { initialVersion: '068V0' });
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID, { sessionId: 'rel-sess' });
-
+		// Force a 409 first (stale base), then a valid save must still run
+		// (the lock from the failed attempt was released in finally).
 		await assert.rejects(() => store.update(CANVAS, { payload: {}, expectedVersionId: '068STALE' }));
 		const ok = await store.update(CANVAS, { payload: { after: 'fail' }, expectedVersionId: '068V0' });
 		assert.equal(ok.versionId, '068V1');

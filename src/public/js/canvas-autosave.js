@@ -1,3 +1,26 @@
+// Canvas autosave + org-switch stash.
+//
+// Two related responsibilities pulled out of app.js for size:
+//
+//   • Autosave: every render of the bulk canvas snapshots a slim
+//     payload (selectedObjects, bulkRecords, associations, hidden
+//     objects, current canvas id, view mode, zoom, diff suppressions)
+//     into sessionStorage so a browser refresh restores the same
+//     working state. Snapshot is debounced 500ms so rapid renders
+//     coalesce into one write. Cleared by canvas-save-load when the
+//     canvas is persisted to SF (the saved canvas is now the source
+//     of truth; the autosave layer would only ever shadow it).
+//
+//   • Org-switch stash: when the active SF org changes mid-session,
+//     app.js stashes the current canvas into sessionStorage BEFORE the
+//     re-auth round-trip, then restores it when the new org boots.
+//     Cross-org records (loaded against the old org's id namespace)
+//     are converted to drafts on restore: SF ids don't carry across
+//     orgs, so trying to round-trip them would silently miswrite.
+//
+// Mount signature mirrors the rest of the modules under window.OrgLoom
+// (mount(deps) returns the public surface, single shared closure).
+
 (function () {
 	'use strict';
 
@@ -18,15 +41,33 @@
 
 			const _CANVAS_DRAFT_KEY = 'orgloom:canvas-draft:v1';
 			const _ORGSWITCH_STASH_KEY = 'orgloom:org-switch-stash:v1';
-
+			// In-flight migration snapshot. Stored in sessionStorage so it
+			// survives the same-tab OAuth round-trip to the target org (the
+			// tab persists across the redirect, so the origin's sessionStorage
+			// persists), but is auto-purged when the tab closes: no record
+			// values are left at rest on disk. A full browser close
+			// mid-migration is NOT recoverable; the user re-initiates and no
+			// durable data is lost (source records are still in SF, saved
+			// canvas structure is still in SF). Still cleared explicitly on
+			// migration complete (upload) or discard.
 			const _MIGRATION_KEY = 'orgloom:migration:v1';
-
+			// One-time purge of legacy localStorage copies of both stashes:
+			// they moved to sessionStorage; this clears any durable on-disk
+			// residue left by an older build in an existing/dev browser.
 			try {
 				window.localStorage.removeItem(_ORGSWITCH_STASH_KEY);
 				window.localStorage.removeItem(_MIGRATION_KEY);
 			} catch (_e) {}
 
+			// Salesforce system fields that must be stripped when a
+			// loaded record crosses orgs: its Id / audit / ownership /
+			// record-type Ids belong to the source org's namespace and
+			// don't carry to the target. Shared by org-switch restore and
+			// migration restore. RecordTypeId is stripped here for the
+			// raw upload payload; migrate mode re-resolves the target
+			// RecordTypeId by RecordType.DeveloperName separately.
 			const SYSTEM_FIELDS_TO_STRIP = [
+				'attributes',
 				'Id',
 				'CreatedDate',
 				'CreatedById',
@@ -41,6 +82,11 @@
 				'MasterRecordId',
 			];
 
+			// Apply a restored canvas state to canvasState, converting
+			// loaded-from-source records to drafts when crossing orgs
+			// (source Ids don't exist in the target). Returns
+			// { convertedCount, isCrossOrg } so the caller can tailor its
+			// toast. Shared by org-switch restore + migration restore.
 			function _applyRestoredState(s, sourceOrg, targetOrg) {
 				const isCrossOrg =
 					!!sourceOrg && !!targetOrg && sourceOrg !== targetOrg;
@@ -49,7 +95,10 @@
 					if (!rec || typeof rec !== 'object') {
 						return rec;
 					}
-
+					// A migrate-matched record's loadedFromId is a TARGET-org
+					// id (it points at the existing record we'll update), not
+					// a stale source id; leave it intact so recovery reloads
+					// don't undo the match.
 					if (isCrossOrg && rec.loadedFromId && !rec._migrateMatchedId) {
 						convertedCount++;
 						const out = Object.assign({}, rec);
@@ -69,7 +118,9 @@
 					}
 					return rec;
 				});
-
+				// Explicit canvas associations are the portable relationship source
+				// of truth. Remove the source-org FK value from the child copy; the
+				// upload graph will substitute the matched/new destination parent Id.
 				if (isCrossOrg && Array.isArray(s.bulkAssociations)) {
 					const byId = new Map(converted.filter(Boolean).map((r) => [r.id, r]));
 					s.bulkAssociations.forEach((a) => {
@@ -84,7 +135,12 @@
 					});
 				}
 				if (Array.isArray(s.selectedObjects)) {
-
+					// Each selection entry caches `.data`: the SOURCE org's
+					// /graph result (parents + children). On a cross-org
+					// restore those relationships may not exist (or differ) in
+					// the target org, so strip the cached data to force a
+					// fresh /graph fetch against the current org. Same-org
+					// restores keep it (a re-fetch would just re-hit SF).
 					canvasState.selectedObjects = isCrossOrg
 						? s.selectedObjects.map((sel) => {
 							if (!sel || typeof sel !== 'object' || !('data' in sel)) {
@@ -208,12 +264,36 @@
 							window.olToast('Canvas restored.', 'info');
 						}
 					} catch (_e) {
-
+						/* uiFeedback not ready; silent */
 					}
 				}, 0);
 				return true;
 			}
 
+			// ---- Durable migration snapshot --------------------------------
+			//
+			// Persist the in-flight migration canvas to sessionStorage so it
+			// survives reload + the same-tab OAuth round-trip without leaving
+			// Salesforce record values durably on the device. Account-scoped;
+			// (cleared explicitly on migration complete / discard).
+
+			// Snapshot the current canvas for the tab-session migration. opts:
+			//   { status }: 'awaiting-target' when the user has just
+			//                       begun a migration and is about to switch
+			//                       to the destination org; 'in-progress'
+			//                       once we've arrived and are reconciling.
+			//                       Default 'in-progress'.
+			//   { targetSfOrgId }: the destination org id, if known.
+			// Returns true on success, false if persistence failed (e.g.
+			// sessionStorage quota exceeded on a very large canvas) so the
+			// caller can warn rather than give false assurance.
+			// Before stashing a migration, capture each loaded record's
+			// RecordType DeveloperName from the SOURCE org's describe (still
+			// cached now; the describe cache is org-scoped and will hold the
+			// TARGET's describes after the switch). RecordTypeIds aren't
+			// portable across orgs, so we resolve them to the portable
+			// DeveloperName here and stamp it on the record; migrate mode
+			// re-resolves the target RecordTypeId from it after arrival.
 			function _stampSourceRecordTypeDevNames() {
 				const cache = canvasState.describeCache || {};
 				(canvasState.bulkRecords || []).forEach((rec) => {
@@ -274,12 +354,21 @@
 				}
 			}
 
+			// Keep the tab-session migration current as the user edits in
+			// migrate mode, so reload/OAuth return recovers the latest state.
+			// where they were, not the initial post-pull snapshot. No-op
+			// unless an in-progress migration exists. Called from the
+			// autosave debounce so it rides the same coalesced writes.
 			function _migrationSyncIfActive() {
 				const existing = _peekMigration();
 				if (!existing || existing.status !== 'in-progress') {
 					return;
 				}
-
+				// The session entry can remain in-progress while the user visits
+				// another org in the same tab. Only the page that actually resumed
+				// migrate mode in the recorded destination may update its state;
+				// otherwise an ordinary autosave on the wrong org replaces the
+				// migration snapshot and loses matches/remaps.
 				if (!canvasState.migrateMode || !canvasState.migrateMode.active) {
 					return;
 				}
@@ -304,6 +393,10 @@
 				} catch (_e) {}
 			}
 
+			// Read the migration meta without applying it: lets boot code
+			// decide whether to resume. Returns the parsed payload (with
+			// state) or null. Account-mismatched or malformed entries
+			// return null.
 			function _peekMigration() {
 				let raw;
 				try {
@@ -330,6 +423,10 @@
 				return payload;
 			}
 
+			// Restore the tab-session migration canvas. Does NOT delete the
+			// entry (the migration is still in progress until completed or
+			// discarded). Returns { restored, convertedCount, isCrossOrg }
+			// or false when there's nothing usable to restore.
 			function _migrationRestore() {
 				const payload = _peekMigration();
 				if (!payload) {
@@ -361,6 +458,17 @@
 				return !!_peekMigration();
 			}
 
+			// Boot-time decision: should this page load resume a migration,
+			// and if so, do it. Encapsulates the status/org logic so app.js
+			// just calls it. Returns a result object on restore, else false.
+			//
+			//   • status 'awaiting-target' + we're now on a DIFFERENT org
+			//     than the source  → this is the post-switch arrival. Restore
+			//     and flip to 'in-progress' (record the target org).
+			//   • status 'in-progress' + we're on the recorded target org
+			//     → recovery after a reload/close mid-migration. Restore.
+			//   • otherwise (still on source, or no migration) → false, so we
+			//     don't hijack an unrelated canvas load.
 			function _migrationResume() {
 				const payload = _peekMigration();
 				if (!payload) {
@@ -387,7 +495,8 @@
 					return false;
 				}
 				if (isArrival) {
-
+					// Promote to in-progress + record the org we landed on
+					// as the target, so a later close/reopen recovers.
 					try {
 						payload.status = 'in-progress';
 						payload.targetSfOrgId = currentOrg;
@@ -408,6 +517,15 @@
 				].join(':');
 			}
 
+			// The draft lives under a scope-NAMESPACED key, not one fixed key
+			// with the scope stored inside. Overloading a single key meant a
+			// scope mismatch on restore (e.g. a signed-in user opening
+			// /playground in the same tab: a different account/org scope)
+			// cleared the entry, silently destroying the real canvas's
+			// unsaved draft. Per-scope keys let the demo and the real canvas
+			// keep independent drafts that never clobber each other; a stale
+			// entry under another scope simply isn't read (and dies with the
+			// tab, since it's sessionStorage).
 			function _scopedDraftKey() {
 				return _CANVAS_DRAFT_KEY + '|' + _autosaveScopeKey();
 			}
@@ -436,7 +554,9 @@
 					sessionStorage.setItem(_scopedDraftKey(), JSON.stringify(payload));
 				} catch (_e) {
 				}
-
+				// Keep the session migration current through migrate-mode edits
+				// so reload/OAuth return recovers where the user was, not the
+				// initial pull. No-op unless a migration is in progress.
 				_migrationSyncIfActive();
 			}
 
@@ -522,11 +642,17 @@
 				}
 			}
 
+			// Compatibility: app.js used to expose the org-switch surface
+			// as window.Orgloom.canvasOrgSwitch for any external caller
+			// that hot-loaded a different page during a switch. Preserve
+			// the surface here so external callers don't break.
 			window.Orgloom = window.Orgloom || {};
 			window.Orgloom.canvasOrgSwitch = {
 				stash: _orgSwitchStash,
 				restore: _orgSwitchRestore,
-
+				// Durable migration surface, reachable cross-module (the
+				// save menu triggers it; the connections modal can read
+				// it; boot resumes it).
 				migrationStash: _migrationStash,
 				migrationResume: _migrationResume,
 				migrationRestore: _migrationRestore,
@@ -541,7 +667,7 @@
 				autosaveSchedule: _autosaveSchedule,
 				autosaveClear: _autosaveClear,
 				autosaveRestore: _autosaveRestore,
-
+				// Durable migration snapshot (Phase 0).
 				migrationStash: _migrationStash,
 				migrationResume: _migrationResume,
 				migrationRestore: _migrationRestore,

@@ -1,14 +1,40 @@
+// Mock dataset for the /playground demo. Loaded as a synchronous
+// classic script before mock-sf.js so the interceptor has data ready
+// when the first canvas request fires.
+//
+// Shape mirrors what real Salesforce returns from describe + record
+// fetches, trimmed to the fields the canvas typically renders. If you
+// add a feature that reads a new field, add it to the relevant
+// describe.fields array AND to each record's values.
+//
+// Exposed as window.OrgLoomMock for the interceptor to consume. The
+// isolation guarantee comes from each page load re-executing this script
+// fresh AND from all demo writes going to a separate localStorage overlay
+// (STORAGE_KEY.records / deletedSfIds) rather than mutating this dataset.
+// Object.freeze below is only a shallow top-level guard: the nested
+// records/describes/fields arrays stay mutable, so don't rely on freezing
+// to prevent in-place mutation; keep write paths on the overlay.
 (function () {
 	'use strict';
 
+	// ---- helpers ----------------------------------------------------------
+
+	// 15-char base + 3-char checksum is the SF Id format. For mock we
+	// emit 18-char Ids that look real (start with the standard object
+	// prefix, alphanumeric body) but are deterministic per index. The
+	// canvas never validates checksums; it just needs a stable id.
 	function mockId(prefix, n) {
 		const padded = String(n).padStart(12, '0');
 		return prefix + padded + 'AAA';
 	}
 
+	// Round-robin pick from an array for synthesizing variety in
+	// generated records.
 	function pick(arr, i) {
  return arr[i % arr.length]; 
 }
+
+	// ---- canned reference data -------------------------------------------
 
 	const COMPANY_NAMES = [
 		'Acme Corporation', 'Globex Industries', 'Initech Systems', 'Soylent Foods',
@@ -91,6 +117,8 @@
 	const QUOTE_STATUSES = ['Draft', 'Needs Review', 'In Review', 'Approved', 'Rejected', 'Presented', 'Accepted', 'Denied'];
 	const ASSET_STATUSES = ['Purchased', 'Shipped', 'Installed', 'Registered', 'Obsolete'];
 
+	// ---- record generation -----------------------------------------------
+
 	function userRow(id, firstName, lastName, email, alias, title) {
 		return {
 			Id: id,
@@ -112,7 +140,9 @@
 		};
 	}
 	const USERS = [
-
+		// Demo User is the "current visitor", first in the list so
+		// OwnerId lookups default to them. Matches the SF identity
+		// stamped by the /playground route in saas/server.js.
 		userRow('005DEMO000000000AAA', 'Demo', 'User', 'demo@orgloom.local', 'duser', 'Salesforce Admin'),
 		userRow(mockId('005', 1), 'Jordan', 'Slattery', 'jordan@acme.demo', 'jslat', 'Account Executive'),
 		userRow(mockId('005', 2), 'Casey', 'Chen', 'casey@acme.demo', 'cchen', 'Senior AE'),
@@ -141,7 +171,9 @@
 			AnnualRevenue: 1_000_000 + (i * 137_000) % 90_000_000,
 			NumberOfEmployees: 5 + (i * 13) % 5000,
 			OwnerId: owner.Id,
-
+			// ParentId pattern: every 5th Account is a parent of the
+			// next 1-3 Accounts, creating shallow hierarchies the visitor
+			// can play with in the relationship view.
 			ParentId: (i % 5 === 1 || i % 5 === 2 || i % 5 === 3) ? mockId('001', i - (i % 5) + 1) : null,
 			BillingStreet: street,
 			BillingCity: city,
@@ -159,11 +191,14 @@
 		};
 	});
 
+	// Contacts: 3-5 per Account, AccountId-related. Names cycle
+	// through FIRST_NAMES × LAST_NAMES so we get 200+ unique combos
+	// without an obvious repeating pattern.
 	const CONTACTS = [];
 	let contactIdx = 0;
 	for (let ai = 0; ai < ACCOUNTS.length; ai++) {
 		const account = ACCOUNTS[ai];
-		const contactCount = 3 + (ai % 3);
+		const contactCount = 3 + (ai % 3); // 3, 4, or 5 contacts per account
 		for (let ci = 0; ci < contactCount; ci++) {
 			const first = pick(FIRST_NAMES, contactIdx + ai);
 			const last = pick(LAST_NAMES, contactIdx);
@@ -196,10 +231,12 @@
 		}
 	}
 
+	// Opportunities: 2 per Account on average. Use a primary Contact
+	// to make a realistic 3-object hierarchy (Account → Contact + Opp).
 	const OPPORTUNITIES = [];
 	for (let ai = 0; ai < ACCOUNTS.length; ai++) {
 		const account = ACCOUNTS[ai];
-		const oppCount = 1 + (ai % 3);
+		const oppCount = 1 + (ai % 3); // 1, 2, or 3 opps per account
 		for (let oi = 0; oi < oppCount; oi++) {
 			const idx = OPPORTUNITIES.length;
 			const owner = pick(USERS, idx);
@@ -237,6 +274,7 @@
 		}
 	}
 
+	// Leads: standalone records, not Account-related until converted.
 	const LEADS = [];
 	for (let li = 0; li < 30; li++) {
 		const first = pick(FIRST_NAMES, li * 3);
@@ -279,10 +317,19 @@
 		});
 	}
 
+	// ---- additional standard object records ------------------------------
+	//
+	// Compact mocks for Case, Task, Event, Campaign, Product2, etc. so
+	// the playground covers the standard CRM/CPQ surface. Volumes are
+	// tuned for "enough to feel real, not enough to overwhelm the
+	// canvas."
+
 	function isoDate(year, monthIdx, day) {
 		return new Date(year, monthIdx, day).toISOString();
 	}
 
+	// Cases: 30, anchored on the top 15 Accounts. Each Case links to a
+	// Contact on the same Account when one exists.
 	const CASES = [];
 	for (let i = 0; i < 30; i++) {
 		const acct = ACCOUNTS[i % 15];
@@ -309,6 +356,10 @@
 		});
 	}
 
+	// Tasks: 50, polymorphic. WhatId points at Account/Opportunity,
+	// WhoId at Contact/Lead. Salesforce treats these as polymorphic
+	// reference fields; the mock leaves them as plain IDs and lets the
+	// canvas resolve via the describe.
 	const TASKS = [];
 	for (let i = 0; i < 50; i++) {
 		const acct = ACCOUNTS[i % ACCOUNTS.length];
@@ -337,6 +388,7 @@
 		});
 	}
 
+	// Events: 20 calendar entries, anchored on Accounts and a Contact.
 	const EVENTS = [];
 	for (let i = 0; i < 20; i++) {
 		const acct = ACCOUNTS[i % 15];
@@ -366,6 +418,7 @@
 		});
 	}
 
+	// Campaigns: 5 standalone marketing campaigns.
 	const CAMPAIGNS = [
 		{ name: 'Spring Webinar Series 2025', type: 'Webinar', cost: 5000, expected: 50_000 },
 		{ name: 'Q1 Email Nurture', type: 'Email', cost: 1500, expected: 25_000 },
@@ -396,6 +449,9 @@
 		};
 	});
 
+	// CampaignMembers: junction. Mix of Lead members and Contact
+	// members across the 5 Campaigns. ~30 total. In SF a CM has
+	// either LeadId or ContactId (never both) plus the CampaignId.
 	const CAMPAIGN_MEMBERS = [];
 	for (let i = 0; i < 30; i++) {
 		const campaign = CAMPAIGNS[i % CAMPAIGNS.length];
@@ -416,6 +472,7 @@
 		});
 	}
 
+	// Products: 10 SKUs across the product families.
 	const PRODUCTS = [
 		{ name: 'Platform: Starter', family: 'Software', sku: 'PLT-STR' },
 		{ name: 'Platform: Pro', family: 'Software', sku: 'PLT-PRO' },
@@ -439,6 +496,7 @@
 		LastModifiedDate: isoDate(2025, 0, 1),
 	}));
 
+	// Pricebook2: one standard pricebook.
 	const PRICEBOOKS = [
 		{
 			Id: mockId('01s', 1),
@@ -452,6 +510,7 @@
 		},
 	];
 
+	// PricebookEntries: one per Product, linked to the standard PB.
 	const PRICEBOOK_PRICES = [499, 999, 2999, 199, 599, 4999, 12_500, 2_500, 1_200, 600];
 	const PRICEBOOK_ENTRIES = PRODUCTS.map((p, i) => ({
 		Id: mockId('01u', i + 1),
@@ -466,6 +525,7 @@
 		LastModifiedDate: isoDate(2025, 0, 1),
 	}));
 
+	// OpportunityLineItems: ~2 per Opportunity, drawing from PBE.
 	const OPP_LINE_ITEMS = [];
 	OPPORTUNITIES.forEach((opp, oi) => {
 		const itemCount = 1 + (oi % 3);
@@ -491,6 +551,7 @@
 		}
 	});
 
+	// Contracts: 10, on top Accounts.
 	const CONTRACTS = [];
 	for (let i = 0; i < 10; i++) {
 		const acct = ACCOUNTS[i];
@@ -519,6 +580,7 @@
 		});
 	}
 
+	// Orders: 15, ~half tied to a Contract, all tied to an Account.
 	const ORDERS = [];
 	for (let i = 0; i < 15; i++) {
 		const acct = ACCOUNTS[i % 15];
@@ -555,6 +617,7 @@
 		});
 	}
 
+	// OrderItems: ~2 per Order.
 	const ORDER_ITEMS = [];
 	ORDERS.forEach((ord, oi) => {
 		const count = 1 + (oi % 3);
@@ -579,6 +642,7 @@
 		}
 	});
 
+	// Quotes: 10, derived from Opportunities.
 	const QUOTES = [];
 	for (let i = 0; i < 10; i++) {
 		const opp = OPPORTUNITIES[i];
@@ -616,6 +680,7 @@
 		});
 	}
 
+	// QuoteLineItems: ~2-3 per Quote.
 	const QUOTE_LINE_ITEMS = [];
 	QUOTES.forEach((q, qi) => {
 		const count = 2 + (qi % 2);
@@ -641,6 +706,8 @@
 		}
 	});
 
+	// Assets: 15, on Accounts (with optional Contact pointer). Standard
+	// SF Asset can carry AccountId and/or ContactId.
 	const ASSETS = [];
 	for (let i = 0; i < 15; i++) {
 		const acct = ACCOUNTS[i % 15];
@@ -666,8 +733,15 @@
 		});
 	}
 
-	function field(opts) {
+	// ---- describe metadata -----------------------------------------------
+	//
+	// Trimmed but realistic shape. The canvas reads fields, recordTypeInfos,
+	// childRelationships, nameField, referenceTo, picklistValues. Anything
+	// it doesn't need (compoundFieldName, encryption stuff, audit columns
+	// not present in our mock) is omitted.
 
+	function field(opts) {
+		// Defaults that match a sensible Salesforce field. Override per call.
 		return Object.assign({
 			label: opts.name,
 			type: 'string',
@@ -904,6 +978,8 @@
 		recordTypeInfos: [],
 		childRelationships: [],
 	};
+
+	// ---- additional standard object describes ----------------------------
 
 	const CASE_DESCRIBE = {
 		name: 'Case', label: 'Case', labelPlural: 'Cases', keyPrefix: '500',
@@ -1273,6 +1349,20 @@
 		childRelationships: [],
 	};
 
+	// ---- page layouts ----------------------------------------------------
+	//
+	// Mirrors what Salesforce's UI API would return for the standard
+	// default page layout per object (Sales / Service Edition). Each
+	// section is { heading, columns, collapsible, rows[][] } with cells
+	// of shape { apiName, label, required, editableForNew,
+	// editableForUpdate }, the same wire shape as canvas-routes.js's real
+	// /api/objects/:name/layout handler. The mock layout endpoint
+	// reads these straight; the canvas's edit modal lays out cards from
+	// them exactly as it would for a real org. Without this, every
+	// edit form falls back to "no layout returned" and shows just the
+	// nameField row, confusing for visitors who know what Account
+	// records normally look like in SF.
+
 	function c(apiName, label) {
 		return { apiName, label: label || apiName, required: false, editableForNew: true, editableForUpdate: true };
 	}
@@ -1589,12 +1679,17 @@
 		]),
 	]};
 
-	window.OrgLoomMock = Object.freeze({
+	// ---- export -----------------------------------------------------------
 
+	window.OrgLoomMock = Object.freeze({
+		// Identity that the /playground route stamped into the page.
 		demoOrgId: '00DDEMO000000000AAA',
 		demoUserId: '005DEMO000000000AAA',
 		instanceUrl: 'https://demo.orgloom.local',
 
+		// All sObjects this mock supports. Ordered for the object-picker
+		// dropdown: Account first because that's the most common entry
+		// point in a Salesforce data flow.
 		objects: [
 			{ name: 'Account', label: 'Account', keyPrefix: '001', custom: false, queryable: true },
 			{ name: 'Contact', label: 'Contact', keyPrefix: '003', custom: false, queryable: true },

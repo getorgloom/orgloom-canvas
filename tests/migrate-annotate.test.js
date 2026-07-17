@@ -1,10 +1,39 @@
+// Tests for the migrate-mode annotation engine. Pure logic: no DOM,
+// no SF. Exercises each issue kind + the status rollup + record-type
+// resolution by DeveloperName.
+//
+// The describe fixtures here mirror the REAL Org Loom client describe
+// shape (the output of sf-describe.js#loadDescribeForObject), NOT the
+// raw jsforce shape:
+//   • fields[] are already filtered to createable, carry a single
+//     `required` boolean (nillable + defaultedOnCreate folded in), and
+//     picklistValues[] contain only active values as { value, label }.
+//   • recordTypes[] = { id, developerName, name, label } and are already
+//     filtered to available record types server-side.
+
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
+// migrate-annotate.js is a browser IIFE that attaches to
+// window.Orgloom.migrateAnnotate. This package is type:module, so a
+// plain require() returns {}; instead run the script in a VM sandbox
+// with a fake window and read the global off it.
 const _src = readFileSync(
 	new URL('../src/public/js/migrate-annotate.js', import.meta.url),
+	'utf8',
+);
+const _recordsCanvasSrc = readFileSync(
+	new URL('../src/public/js/records-canvas.js', import.meta.url),
+	'utf8',
+);
+const _insertModalSrc = readFileSync(
+	new URL('../src/public/js/insert-modal.js', import.meta.url),
+	'utf8',
+);
+const _appSrc = readFileSync(
+	new URL('../src/public/js/app.js', import.meta.url),
 	'utf8',
 );
 const _sandbox = { window: {} };
@@ -12,6 +41,7 @@ vm.createContext(_sandbox);
 vm.runInContext(_src, _sandbox);
 const annotate = _sandbox.window.Orgloom.migrateAnnotate;
 
+// Org Loom describe builder (loadDescribeForObject shape).
 function describe_(fields, recordTypes) {
 	return { fields: fields || [], recordTypes: recordTypes || [] };
 }
@@ -23,11 +53,11 @@ function field(name, opts) {
 		type: opts.type || 'string',
 		createable: opts.createable !== false,
 		required: !!opts.required,
-
+		// active-only values, as the server projects them
 		picklistValues: opts.picklistValues || [],
 	};
 }
-
+// picklist value entry, server shape
 function pv(value) {
 	return { value: value, label: value };
 }
@@ -59,7 +89,7 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('required-on-create field unfilled -> blocked', () => {
-
+		// Phone is on the target too, so the only issue is the unfilled Name.
 		const d = describe_([field('Name', { required: true }), field('Phone')]);
 		const rec = { objectName: 'Account', values: { Phone: '555' } };
 		const res = annotate.computeMigrationStatus(rec, d);
@@ -92,12 +122,13 @@ describe('computeMigrationStatus', () => {
 			field('AccountId', { required: true, type: 'reference' }),
 		]);
 		const rec = { objectName: 'Contact', values: { Name: 'Bob' } };
-
+		// AccountId is required + a reference, so it must NOT produce a block.
 		assert.equal(annotate.computeMigrationStatus(rec, d).status, 'ready');
 	});
 
 	test('non-required field (defaulted/optional) is not flagged', () => {
-
+		// The server folds defaultedOnCreate into required:false, so an
+		// unset optional field never blocks.
 		const d = describe_([field('Status', { required: false })]);
 		const rec = { objectName: 'Case', values: {} };
 		assert.equal(annotate.computeMigrationStatus(rec, d).status, 'ready');
@@ -111,7 +142,8 @@ describe('computeMigrationStatus', () => {
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.equal(res.status, 'warning');
 		assert.equal(res.issues[0].kind, 'picklist-mismatch');
-
+		// invalidValues is created inside the VM realm; normalize to the
+		// test realm's Array so deepEqual's prototype check passes.
 		assert.deepEqual(Array.from(res.issues[0].invalidValues), ['Frozen']);
 	});
 
@@ -125,7 +157,8 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('value dropped from target picklist (e.g. inactive) is invalid', () => {
-
+		// Inactive values are filtered out server-side, so the target simply
+		// doesn't list them; a record still carrying one flags as a mismatch.
 		const d = describe_([
 			field('Stage', { type: 'picklist', picklistValues: [pv('Open')] }),
 		]);
@@ -165,7 +198,8 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('record type absent from target (e.g. unavailable) -> blocked', () => {
-
+		// Unavailable record types are filtered out server-side, so they
+		// never appear in recordTypes; resolution fails -> blocked.
 		const d = describe_([field('Name', { required: true })], []);
 		const rec = {
 			objectName: 'Account',
@@ -177,7 +211,7 @@ describe('computeMigrationStatus', () => {
 
 	test('blocked dominates warning in the status rollup', () => {
 		const d = describe_([field('Name', { required: true })]);
-		const rec = { objectName: 'Account', values: { Extra__c: 'x' } };
+		const rec = { objectName: 'Account', values: { Extra__c: 'x' } }; // missing-field warn + Name required block
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.equal(res.status, 'blocked');
 	});
@@ -190,8 +224,8 @@ describe('computeMigrationStatus', () => {
 		const rec = {
 			objectName: 'Account',
 			values: { Name: 'Acme' },
-			_sourceRecordTypeDeveloperName: 'Business',
-			_migrateRecordTypeId: '012CHOSEN',
+			_sourceRecordTypeDeveloperName: 'Business', // no target match
+			_migrateRecordTypeId: '012CHOSEN', // user picked one
 		};
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.equal(res.status, 'ready');
@@ -215,10 +249,11 @@ describe('computeMigrationStatus', () => {
 		const d = describe_([field('Name', { required: true })]);
 		const rec = {
 			objectName: 'Account',
-			values: { Phone: '555' },
-			loadedFromId: '001TARGET',
+			values: { Phone: '555' }, // Name unfilled, but...
+			loadedFromId: '001TARGET', // matched to an existing target record
 		};
-
+		// Phone isn't on the describe so it's a missing-field warning, but the
+		// required Name must NOT block (the target already has it).
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.equal(res.status, 'warning');
 		assert.ok(!res.issues.some((i) => i.kind === 'required-unfilled'));
@@ -255,7 +290,7 @@ describe('computeMigrationStatus', () => {
 		const rec = {
 			objectName: 'X',
 			values: { Tags: 'A;Y;Z' },
-			_migratePicklistRemap: { Tags: { Y: 'A' } },
+			_migratePicklistRemap: { Tags: { Y: 'A' } }, // Z still unmapped
 		};
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.equal(res.status, 'warning');
@@ -266,7 +301,13 @@ describe('computeMigrationStatus', () => {
 		const d = describe_([field('Name', { required: true })]);
 		const rec = {
 			objectName: 'Account',
-			values: { Name: 'Acme', Id: '001X', OwnerId: '005X', _wasLoadedFromId: '001Y' },
+			values: {
+				Name: 'Acme',
+				attributes: { type: 'Account', url: '/services/data/vXX.X/sobjects/Account/001X' },
+				Id: '001X',
+				OwnerId: '005X',
+				_wasLoadedFromId: '001Y',
+			},
 		};
 		assert.equal(annotate.computeMigrationStatus(rec, d).status, 'ready');
 	});
@@ -275,7 +316,7 @@ describe('computeMigrationStatus', () => {
 describe('annotateRecords + summarize', () => {
 	test('records without a describe yet are pending', () => {
 		const recs = [{ objectName: 'Account', values: { Name: 'A' } }];
-		const out = annotate.annotateRecords(recs, {});
+		const out = annotate.annotateRecords(recs, {}); // no describe
 		assert.equal(out[0].status, 'pending');
 	});
 
@@ -287,9 +328,9 @@ describe('annotateRecords + summarize', () => {
 	test('summarize counts by status', () => {
 		const d = describe_([field('Name', { required: true })]);
 		const recs = [
-			{ objectName: 'Account', values: { Name: 'A' } },
-			{ objectName: 'Account', values: { Extra__c: 'x' } },
-			{ isTypeNode: true, objectName: 'Account' },
+			{ objectName: 'Account', values: { Name: 'A' } }, // ready
+			{ objectName: 'Account', values: { Extra__c: 'x' } }, // blocked (Name missing)
+			{ isTypeNode: true, objectName: 'Account' }, // null
 		];
 		const anns = annotate.annotateRecords(recs, { Account: d });
 		const counts = annotate.summarize(anns);
@@ -299,8 +340,80 @@ describe('annotateRecords + summarize', () => {
 	});
 });
 
+describe('badgeSummary: one contextual card badge', () => {
+	test('ready records have no migration badge', () => {
+		assert.equal(annotate.badgeSummary({ status: 'ready', issues: [] }), null);
+	});
+
+	test('blocked records use one direct fix-required label', () => {
+		const badge = annotate.badgeSummary({
+			status: 'blocked',
+			issues: [{ kind: 'required-unfilled' }, { kind: 'missing-field' }],
+		});
+		assert.equal(badge.status, 'blocked');
+		assert.equal(badge.label, 'fix required');
+		assert.match(badge.title, /2 migration issues/);
+	});
+
+	test('unavailable fields are counted without claiming they are absent', () => {
+		const badge = annotate.badgeSummary({
+			status: 'warning',
+			issues: [
+				{ kind: 'missing-field', field: 'Source_Only__c' },
+				{ kind: 'missing-field', field: 'Hidden_By_Fls__c' },
+			],
+		});
+		assert.equal(badge.label, '2 fields unavailable');
+		assert.match(badge.title, /may not exist/);
+		assert.match(badge.title, /permissions may hide/);
+	});
+
+	test('picklist badge counts invalid values rather than fields', () => {
+		const badge = annotate.badgeSummary({
+			status: 'warning',
+			issues: [
+				{ kind: 'picklist-mismatch', invalidValues: ['Old', 'Legacy'] },
+				{ kind: 'picklist-mismatch', invalidValues: ['Retired'] },
+			],
+		});
+		assert.equal(badge.label, '3 values need mapping');
+	});
+
+	test('mixed warnings use a single generic issue count', () => {
+		const badge = annotate.badgeSummary({
+			status: 'warning',
+			issues: [
+				{ kind: 'missing-field' },
+				{ kind: 'picklist-mismatch', invalidValues: ['Old'] },
+			],
+		});
+		assert.equal(badge.label, '2 migration issues');
+	});
+
+	test('pending records use a neutral checking label', () => {
+		assert.equal(
+			annotate.badgeSummary({ status: 'pending', issues: [] }).label,
+			'checking...',
+		);
+	});
+
+	test('migration issue details are not rendered as competing canvas-card badges', () => {
+		assert.doesNotMatch(_recordsCanvasSrc, /\.badgeSummary\(_ann\)/);
+		assert.doesNotMatch(_recordsCanvasSrc, /record-migrate-badge/);
+		assert.doesNotMatch(_recordsCanvasSrc, /record-orphan-badge/);
+		assert.doesNotMatch(_recordsCanvasSrc, />review<\/span>/);
+	});
+
+	test('permission changes can force-refresh fields without losing the tab migration', () => {
+		assert.match(_insertModalSrc, /data-orphan-refresh/);
+		assert.match(_insertModalSrc, /ensureDescribe\(currentObject, \{ force: true \}\)/);
+		assert.match(_insertModalSrc, /currentFields = refreshedDescribe\.fields \|\| \[\]/);
+		assert.match(_appSrc, /sessionStorage\.removeItem\(_describeStorageKey\(name\)\)/);
+	});
+});
+
 describe('prepareMigrationValues: destination-safe upload payload', () => {
-	test('omits destination-missing fields instead of sending an INVALID_FIELD payload', () => {
+	test('omits destination-missing fields instead of sending a clear or INVALID_FIELD payload', () => {
 		const record = { values: { Name: 'Acme', Source_Only__c: 'must not cross' } };
 		const ann = { issues: [{ kind: 'missing-field', severity: 'warning', field: 'Source_Only__c' }] };
 		assert.equal(JSON.stringify(annotate.prepareMigrationValues(record, ann)), JSON.stringify({ Name: 'Acme' }));

@@ -1,3 +1,13 @@
+// Unit tests for src/database/view-state.js. Tiny module: covers
+// lazy-create, partial patches, and per-axis setters.
+//
+// view-state's FK columns reference the workspaces + connections
+// tables, but the workspaces module itself lives in the saas package.
+// To keep this test self-contained inside the canvas package, we
+// insert workspace rows via raw kysely instead of going through the
+// saas workspaces.create() helper. The schema's the same; only the
+// constructor shortcut is missing.
+
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -11,6 +21,13 @@ async function makeAccount(email = 'a@x.com') {
 	return (await accounts.upsertByEmail({ email })).account;
 }
 
+// Raw workspace insert: bypasses the saas workspaces.create() helper
+// (which also wires workspace_members + workspace_settings). For these
+// tests we only need a valid workspaces.id to satisfy the FK on
+// account_view_state.current_workspace_id; the related-table rows
+// aren't read. We use only the canvas-base columns (id, name,
+// owner_account_id, created_at, updated_at) so this works without the
+// saas migrations that add kind / plan / paid_seats.
 async function makeWorkspace(ownerAccountId, name = 'W') {
 	const { ext } = await import('../src/extensions.js');
 	const db = ext.getDb();
@@ -20,7 +37,11 @@ async function makeWorkspace(ownerAccountId, name = 'W') {
 		id, name, owner_account_id: ownerAccountId,
 		created_at: now, updated_at: now,
 	}).execute();
-
+	// Mirror the saas-side workspacesDb.create() shape: the owner is
+	// always inserted as an admin member in the same transaction. The
+	// defense-in-depth membership check inside setCurrentWorkspace
+	// expects this row; without it the helper-created workspace would
+	// fail the gate.
 	await db.insertInto('workspace_members').values({
 		workspace_id: id,
 		account_id: ownerAccountId,
@@ -77,7 +98,7 @@ describe('viewStateDb', () => {
 		const { viewState } = await import('../src/database/index.js');
 		const owner = await makeAccount('owner@x.com');
 		const stranger = await makeAccount('stranger@x.com');
-		const ws = await makeWorkspace(owner.id);
+		const ws = await makeWorkspace(owner.id); // stranger is NOT a member
 		await assert.rejects(
 			() => viewState.setCurrentWorkspace(stranger.id, ws.id),
 			(err) => {
@@ -85,7 +106,7 @@ describe('viewStateDb', () => {
 				return true;
 			},
 		);
-
+		// And the view-state must not have been written.
 		const v = await viewState.get(stranger.id);
 		assert.equal(v, undefined);
 	});

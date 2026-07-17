@@ -1,3 +1,24 @@
+// Salesforce-formula parser + evaluator (client-side, partial).
+//
+// Supports: AND, OR, NOT, ISBLANK, ISNULL, LEN, ISPICKVAL, TEXT, TRIM,
+// UPPER, LOWER, LEFT, RIGHT, MID, CONTAINS, BEGINS, IF; operators =, <>,
+// !=, <, >, <=, >=, +, -, *, /, &; string/number/TRUE/FALSE literals;
+// bare field references (including dotted paths through reference fields).
+// Unsupported constructs throw, making the formula "unevaluable" (the
+// caller renders this as status=unknown).
+//
+// All functions in this module are PURE: they read only from their
+// arguments and return values. State that callers need to supply (saved
+// records, describe cache, current record context, bulk associations)
+// is passed via the `opts` parameter to `resolveFieldValue` and `evalNode`.
+// That's by design: this module knows nothing about the canvas state
+// model and can be unit-tested without any DOM or fetch mocks.
+//
+// Exposed as `window.OrgLoom.formula.{tokenize, parseFormula,
+// resolveFieldValue, evalNode, num, looseEq}` for the legacy app.js
+// global-namespace consumer. Load order: this file must be loaded
+// BEFORE app.js (both deferred is fine; defer preserves order).
+
 (function () {
 	'use strict';
 
@@ -159,6 +180,10 @@ throw new Error('trailing tokens');
 		return tree;
 	}
 
+	// Resolve a (possibly dotted) field path against the current object's
+	// values, chaining through saved drafts of related objects when the
+	// path traverses a reference field. Returns null if the chain can't
+	// be resolved (related object not drafted, describe not cached, etc).
 	function resolveFieldValue(path, vals, opts) {
 		if (vals && Object.prototype.hasOwnProperty.call(vals, path)) {
 			const raw = vals[path];
@@ -172,7 +197,8 @@ throw new Error('trailing tokens');
 		const head = path.substring(0, dotIdx);
 		const tail = path.substring(dotIdx + 1);
 		const fields = (opts && opts.currentFields) || [];
-
+		// Match on relationshipName first (e.g. "Account" for AccountId),
+		// then fall back to exact field name and a case-insensitive match.
 		const refField = fields.find(f => f.relationshipName === head)
 			|| fields.find(f => f.name === head)
 			|| fields.find(f => (f.relationshipName || '').toLowerCase() === head.toLowerCase())
@@ -181,7 +207,11 @@ throw new Error('trailing tokens');
 return UNRESOLVED_FIELD;
 }
 		const targetObjectName = refField.referenceTo[0];
-
+		// Bulk-edit context: follow an association from the current record
+		// to a sibling bulk record and resolve against that record's
+		// values. This lets cross-object rules (e.g., LEN(Account.Name) > 5
+		// on a Contact) keep evaluating correctly even after related
+		// records have been uploaded.
 		if (opts && opts.currentRecord && Array.isArray(opts.bulkAssociations) && Array.isArray(opts.bulkRecords)) {
 			const assoc = opts.bulkAssociations.find(a => a.fromId === opts.currentRecord.id && a.fieldName === refField.name);
 			if (assoc) {

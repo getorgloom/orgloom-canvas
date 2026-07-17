@@ -1,3 +1,50 @@
+// Generic dialog helpers used across the canvas. Five modals, each
+// returning a Promise that resolves with the user's choice:
+//
+//   showPromptModal({title, label, ...}): text-input prompt
+//                                                  (replacement for
+//                                                  window.prompt).
+//                                                  Resolves with the
+//                                                  entered string or null.
+//   showReplaceOrMergeDialog(): used when loading a
+//                                                  canvas/template onto a
+//                                                  canvas that already has
+//                                                  records. Resolves with
+//                                                  'replace' / 'merge' /
+//                                                  'cancel'.
+//   showLargeRelatedConfirm({...}): confirmation before
+//                                                  loading many related
+//                                                  records. Resolves with
+//                                                  'load' / 'search' /
+//                                                  'cancel'.
+//   showRelatedSearchModal({..., onPick}): search-and-pick a
+//                                                  specific related record.
+//                                                  Invokes onPick({id,name})
+//                                                  when the user clicks Add.
+//   showBulkSwitchWarning({recordCount, ...}): confirm before falling
+//                                                  back from the atomic
+//                                                  Composite Graph API to
+//                                                  Bulk API v2. Resolves
+//                                                  with boolean (proceed).
+//
+// Owned DOM: the prompt-modal singleton is created at mount time
+// (singleton so the input keeps state across calls, and avoiding a
+// fresh DOM per call lets the focus restoration after submit feel
+// snappy). All other dialogs build their overlay each call and tear it
+// down on close (fine for one-off confirms).
+//
+// Dependencies passed to mount():
+//   escapeHtml: HTML escape utility
+//   csrfFetch: fetch wrapper (used by showRelatedSearchModal
+//                            to hit /api/objects/:name/by-ref-search)
+//   relatedHardThreshold: Number. Above this count, the "Load all"
+//                            button is hidden in showLargeRelatedConfirm
+//                            (rendering 5K+ cards would choke cytoscape).
+//   relatedBulkLoadCap: Number. The /by-ref server cap; "Load all"
+//                            will actually only pull this many.
+//
+// Exposed as window.OrgLoom.supportModals. Load order: before app.js.
+
 (function () {
 	'use strict';
 
@@ -15,6 +62,9 @@
 			const _RELATED_HARD_THRESHOLD = deps.relatedHardThreshold;
 			const _RELATED_BULK_LOAD_CAP = deps.relatedBulkLoadCap;
 
+			// Styled prompt modal (replacement for window.prompt) so
+			// save-schema (and anywhere else that needs a name input)
+			// looks consistent.
 			const promptModal = document.createElement('div');
 			promptModal.className = 'modal hidden';
 			promptModal.innerHTML =
@@ -66,6 +116,8 @@ return;
 				}
 			});
 
+			// Opens the prompt modal and returns a promise that resolves with the
+			// entered value or null if the user cancelled.
 			function showPromptModal({ title, label, placeholder, defaultValue, submitText, helpText } = {}) {
 				promptModal.querySelector('#prompt-modal-title').textContent = title || 'Enter a value';
 				promptModal.querySelector('#prompt-modal-label').textContent = label || 'Value';
@@ -88,6 +140,17 @@ return;
 });
 			}
 
+			// Replace-or-merge confirm dialog shown before loading a
+			// JSON canvas / saved schema when the user already has
+			// content on the canvas. Returns a promise resolving to
+			// 'replace' (clear canvas first), 'merge' (append on top
+			// of existing), or 'cancel' (don't apply). One-off DOM:
+			// built each call so concurrent prompts don't fight over
+			// a singleton element.
+			// Optional info.summaryLines (array of strings) renders a
+			// what's-in-this-file block above the mode choices: the
+			// import preview, so a wrong-file mistake is caught before
+			// the canvas mutates rather than after.
 			function showReplaceOrMergeDialog(info) {
 				return new Promise((resolve) => {
 					const overlay = document.createElement('div');
@@ -143,6 +206,14 @@ overlay.remove();
 				});
 			}
 
+			// Pre-fetch confirm shown when a type-node's related-count
+			// is above _RELATED_SOFT_THRESHOLD. Three outcomes:
+			//   'load': bulk-load the first _RELATED_BULK_LOAD_CAP
+			//   'search': open the search modal to pick specific records
+			//   'cancel': bail
+			// Above _RELATED_HARD_THRESHOLD the 'load' button is hidden
+			// because rendering 5K+ cards will choke cytoscape regardless
+			// of intent.
 			function showLargeRelatedConfirm({ targetLabel, count, hostLabel }) {
 				return new Promise((resolve) => {
 					const overlay = document.createElement('div');
@@ -207,6 +278,11 @@ overlay.remove();
 				});
 			}
 
+			// Search modal for picking a specific related record when
+			// the bulk-load path would either truncate or break. Hits
+			// /api/objects/:name/by-ref-search which combines the
+			// parent-FK constraint with a name LIKE filter, so results
+			// are scoped to the type-node's host record.
 			function showRelatedSearchModal({ targetType, targetLabel, fkField, hostId, hostLabel, onPick }) {
 				const overlay = document.createElement('div');
 				overlay.className = 'modal';
@@ -307,6 +383,11 @@ status.textContent = 'Search failed: ' + (e.message || e);
 				});
 			}
 
+			// Shown when the upload payload exceeds the atomic Composite
+			// Graph API's caps and we're about to fall through to Bulk
+			// API v2. Bulk's semantics are different enough (non-atomic,
+			// per-record failures, separate quota) that we want explicit
+			// user buy-in before switching. Returns Promise<boolean>.
 			function showBulkSwitchWarning({ recordCount, reasons }) {
 				return new Promise((resolve) => {
 					const reasonsHtml = (reasons && reasons.length > 0)

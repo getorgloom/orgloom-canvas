@@ -1,9 +1,12 @@
+// MCP relay: server-side router between AI clients (via the MCP
+// endpoint) and browser tabs that have a canvas open. 
 import crypto from "node:crypto";
 
+// connectionId → { sseRes, accountId, workspaceId, canvasIds:Set, openedAt }
 const connections = new Map();
-
+// workspaceId → (canvasId → { connectionIds:Set, meta:{title, ownerSfUserId, accountId} })
 const canvasIndex = new Map();
-
+// requestId → { resolve, reject, timer, connectionId, canvasId }
 const pendingRequests = new Map();
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 5000;
@@ -22,10 +25,12 @@ function _writeSseEvent(res, event, data) {
 		}
 		res.write("data: " + JSON.stringify(data) + "\n\n");
 	} catch (e) {
-
+		// write failed, connection dead. nothing to do here.
 	}
 }
 
+// register a long-lived SSE connection. The browser opens this once
+// per page-load
 export function registerConnection({ accountId, workspaceId, sseRes }) {
 	const connectionId = crypto.randomUUID();
 	connections.set(connectionId, {
@@ -62,6 +67,7 @@ export function registerConnection({ accountId, workspaceId, sseRes }) {
 	return connectionId;
 }
 
+// browser disconnect cleanup
 export function unregisterConnection(connectionId) {
 	const conn = connections.get(connectionId);
 	if (!conn) {
@@ -95,6 +101,11 @@ export function unregisterConnection(connectionId) {
 	}
 }
 
+// tell the registry this connection is now hosting the given canvas.
+// `accountId` (optional) binds the mutation to the connection's owner:
+// when supplied, a mismatch is rejected. connectionIds are unguessable
+// UUIDs, so this is defense-in-depth - it makes a leaked connectionId
+// useless to any other authenticated account.
 export function registerCanvas({ connectionId, canvasId, meta, accountId }) {
 	const conn = connections.get(connectionId);
 	if (!conn) {
@@ -223,7 +234,9 @@ export function recordResponse({ connectionId, requestId, result, error, account
 	if (pending.connectionId !== connectionId) {
 		return false;
 	}
-
+	// Account binding (optional, same contract as registerCanvas): a
+	// response is only accepted from the account that owns the SSE
+	// connection the request was dispatched to.
 	if (accountId !== undefined) {
 		const conn = connections.get(connectionId);
 		if (!conn || conn.accountId !== accountId) {
@@ -270,6 +283,7 @@ export function purgeWorkspace(workspaceId) {
 	return removed;
 }
 
+// workspace-settings panel helper.
 export function workspaceLiveSummary(workspaceId) {
 	const rows = listCanvasesInWorkspace(workspaceId);
 	const distinctConnections = new Set();

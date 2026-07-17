@@ -1,3 +1,19 @@
+// Playground mock-layer tests. Loads mock-data.js + mock-sf.js (browser
+// IIFEs) in a VM sandbox and drives the installed fetch interceptor the
+// way the canvas would. Locks the three properties the demo's safety
+// story rests on:
+//
+//   1. INTERCEPTION POLICY: same-origin /api/* is default-blocked: every
+//      unmatched call gets a local 501, and the REAL fetch is never
+//      invoked (a demo page must never fire authenticated app calls; a
+//      signed-in visitor's stale session cookie would ride along).
+//   2. DATASET INTEGRITY: describes and records agree: every reference
+//      field targets an object that exists in the dataset, every seeded
+//      record's object has a describe, seeded FK values point at records
+//      that exist.
+//   3. CORE FLOWS round-trip through the mock: canvas save/list/get and
+//      an upload happy path return production-shaped responses.
+
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -5,8 +21,8 @@ import vm from 'node:vm';
 
 const ORIGIN = 'https://demo.orgloom.test';
 
-let W;
-let realFetchCalls;
+let W; // sandbox window
+let realFetchCalls; // URLs the interceptor passed through to "real" fetch
 
 function makeStorage() {
 	const map = new Map();
@@ -28,7 +44,8 @@ before(() => {
 		SF_ORG_ID: '00DDEMO000000000AAA',
 		SF_USER_ID: '005DEMO000000000AAA',
 	};
-
+	// The pre-existing "real" fetch the interceptor wraps. Recording stub:
+	// the whole point is asserting it is (or isn't) reached.
 	windowShim.fetch = (input) => {
 		realFetchCalls.push(typeof input === 'string' ? input : input.url);
 		return Promise.resolve(new Response('{}', { status: 200 }));
@@ -52,6 +69,7 @@ before(() => {
 	assert.equal(W.fetch.name, 'mockFetch', 'fetch interceptor installed');
 });
 
+// Drive the interceptor like the canvas would.
 async function call(method, path, body) {
 	const res = await W.fetch(ORIGIN + path, {
 		method,
@@ -104,7 +122,8 @@ describe('dataset integrity: describes vs records', () => {
 					continue;
 				}
 				for (const target of f.referenceTo) {
-
+					// Reference targets must be resolvable inside the demo:
+					// User is the only allowed external (owner fields).
 					assert.ok(
 						objectNames.has(target) || target === 'User',
 						objName + '.' + f.name + ' references ' + target + ' which is not in the dataset',
@@ -132,7 +151,7 @@ describe('dataset integrity: describes vs records', () => {
 					}
 					const refersToUser = (f.referenceTo || []).includes('User');
 					if (refersToUser && String(v).startsWith('005')) {
-						continue;
+						continue; // demo user ids are synthesized, not in records
 					}
 					assert.ok(
 						allIds.has(v),

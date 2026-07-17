@@ -1,3 +1,36 @@
+// Direct-share modal for saved canvases.
+//
+// Owns the "Share canvas" modal and its supporting pieces:
+//
+//   attachSfUserPicker(hostEl, {onPick, placeholder})
+//     Generic SF user search popover. Used as the recipient field in
+//     the share modal and as the "slot assignee" picker on bulk cards
+//     (one external caller still in app.js).
+//   openCanvasEmailLinkModal(canvasId, canvasTitle)
+//     Renders the progressive share modal: recipient picker + role
+//     select, followed by a concise access review and Share button that triggers
+//     /api/canvas/:id/direct-share. Post-success view surfaces the
+//     /?openCanvas=<id> URL so the sender can forward the link via
+//     Slack / IM / whatever channel they prefer.
+//   openCanvasShareManagementModal(canvasId, canvasTitle)
+//     Lists current recipients and allows the owner to revoke access.
+//
+// Dependencies passed to mount():
+//   canvasState: shared canvas state.
+//   csrfFetch: fetch wrapper.
+//   escapeHtml: for the modal body.
+//   showBulkToast: error / success toast.
+//   showConfirmDialog: confirm prompts inside the modal.
+//   _hasCap: plan-cap check used to gate sharing.
+//   _invalidateShareCountForCanvas: refreshes the toolbar's separate
+//                                    Access shortcut after share changes.
+//
+// Public API (returned from mount):
+//   openCanvasEmailLinkModal, openCanvasShareManagementModal,
+//   attachSfUserPicker.
+//
+// Exposed as window.OrgLoom.canvasShare. Load order: before app.js.
+
 (function () {
 	'use strict';
 
@@ -28,7 +61,15 @@ throw new Error('canvas-share.mount: missing deps object');
 
 			function attachSfUserPicker(hostEl, { onPick, placeholder = 'Search by name, email, or username…' } = {}) {
 				hostEl.classList.add('sf-user-picker');
-
+				// type="search" + a non-credential name + the
+				// password-manager opt-out attributes below tell
+				// Bitwarden / 1Password / LastPass that this is a
+				// search field, not a username/email login field, so
+				// they leave the autofill UI off it. `autocomplete`
+				// uses the named "off-like" value `search` (Chrome
+				// ignores plain `off` on visible text inputs) plus
+				// `webauthn` as a no-op signal to discourage passkey
+				// prompts.
 				hostEl.innerHTML =
 					'<input type="search" name="sf-user-search" class="sf-user-picker-input" ' +
 						'placeholder="' + escapeHtml(placeholder) + '" ' +
@@ -39,10 +80,10 @@ throw new Error('canvas-share.mount: missing deps object');
 				const input = hostEl.querySelector('.sf-user-picker-input');
 				const results = hostEl.querySelector('.sf-user-picker-results');
 				const selected = hostEl.querySelector('.sf-user-picker-selected');
-
+			
 				let _seq = 0;
 				let _picked = null;
-
+			
 				async function runSearch(q) {
 					const mySeq = ++_seq;
 					results.hidden = false;
@@ -89,7 +130,7 @@ return;
 						results.innerHTML = '<div class="sf-user-picker-empty">Search failed: ' + escapeHtml(err.message || String(err)) + '</div>';
 					}
 				}
-
+			
 				function pick(u) {
 					_picked = u;
 					input.value = '';
@@ -105,7 +146,7 @@ return;
 onPick(u);
 }
 				}
-
+			
 				function clear() {
 					_picked = null;
 					selected.hidden = true;
@@ -118,15 +159,18 @@ onPick(u);
 onPick(null);
 }
 				}
-
+			
 				let _debounce;
 				input.addEventListener('input', () => {
 					clearTimeout(_debounce);
 					const q = input.value.trim();
 					_debounce = setTimeout(() => runSearch(q), 220);
 				});
-				input.addEventListener('focus', () => {
-					if (!_picked && results.innerHTML === '') {
+				input.addEventListener('focus', (event) => {
+					// The share modal focuses this field for keyboard users. Do not
+					// immediately cover the role choices with an empty-query result
+					// menu; open that menu only when the user actually focuses it.
+					if (event.isTrusted && !_picked && results.innerHTML === '') {
 runSearch('');
 }
 				});
@@ -135,7 +179,8 @@ runSearch('');
 results.hidden = true;
 }
 				});
-
+			
+				// Public API: get current selection, force clear externally.
 				return {
 					getPicked() {
  return _picked; 
@@ -148,55 +193,16 @@ input.focus();
 },
 				};
 			}
-
-			function _shareDisclosureRecords() {
-				const seen = new Set();
-				const out = [];
-				for (const rec of canvasState.bulkRecords) {
-					if (!rec || rec.isTypeNode || rec.isPending) {
-continue;
-}
-					if (!rec.loadedFromId || !rec.objectName) {
-continue;
-}
-					if (seen.has(rec.loadedFromId)) {
-continue;
-}
-					seen.add(rec.loadedFromId);
-					const v = rec.values || {};
-					const composedPerson = ((v.FirstName || '') + ' ' + (v.LastName || '')).trim();
-					const objectLabel = rec.label || rec.objectName;
-
-					const namedDisplay =
-						v.Name
-						|| (composedPerson || null)
-						|| v.Subject
-						|| v.CaseNumber
-						|| v.Title
-						|| null;
-					const displayName = namedDisplay
-						|| (objectLabel + ' record ' + String(rec.loadedFromId).slice(0, 6) + '…');
-					out.push({
-						recordId: rec.loadedFromId,
-						objectLabel,
-						displayName: String(displayName),
-					});
-				}
-				return out;
-			}
-
+			
+			// Direct-share modal. Sender picks a SF user from their
+			// connected org via the typeahead picker, server resolves
+			// the user's Email, grants access to the saved canvas, stores
+			// the Org Loom role, and sends a notification. Sharing never
+			// creates access grants for Salesforce business records; the
+			// recipient continues to see and update those records only as
+			// allowed by their existing Salesforce permissions.
 			function openCanvasEmailLinkModal(canvasId, canvasTitle) {
 				document.querySelectorAll('.canvas-share-modal').forEach((el) => el.remove());
-
-				const _disclosureRecords = _shareDisclosureRecords();
-				const _disclosureItemsHtml = _disclosureRecords.length === 0
-					? '<li class="cs-disclosure-empty">No underlying records on this canvas; only the canvas itself will be shared.</li>'
-					: _disclosureRecords.map((r) =>
-						'<li>' +
-							'<span class="cs-disclosure-name">' + escapeHtml(r.displayName) + '</span> ' +
-							'<span class="tag">' + escapeHtml(r.objectLabel) + '</span>' +
-						'</li>'
-					).join('');
 				const modal = document.createElement('div');
 				modal.className = 'modal canvas-share-modal';
 				modal.innerHTML =
@@ -207,7 +213,10 @@ continue;
 							'<button class="modal-close" data-cs-close>&times;</button>' +
 						'</div>' +
 						'<div class="modal-content">' +
-							'<p class="tag" id="cs-intro">Pick a teammate from your Salesforce org. They’ll get an email notification, and the canvas appears in their Saved Canvases the next time they sign in to Org Loom with this Salesforce org connected.</p>' +
+							'<p class="tag" id="cs-intro">This shares the canvas only. Salesforce record access stays unchanged.</p>' +
+							'<div class="cs-field-label">Pick a teammate</div>' +
+							'<div id="cs-link-picker"></div>' +
+							'<div class="cs-field-label">Choose their canvas role</div>' +
 							'<div class="cs-role-picker" role="radiogroup" aria-label="Recipient role">' +
 								'<label class="cs-role-option">' +
 									'<input type="radio" name="cs-role" value="viewer">' +
@@ -220,47 +229,37 @@ continue;
 									'<span class="cs-role-desc">Fills assigned slots and submits changes back. Cannot edit the canvas itself.</span>' +
 								'</label>' +
 								'<label class="cs-role-option">' +
-									'<input type="radio" name="cs-role" value="editor" checked>' +
+									'<input type="radio" name="cs-role" value="editor">' +
 									'<span class="cs-role-name">Editor</span>' +
-									'<span class="cs-role-desc">Co-authors the canvas. Can add records, mark slots, and re-share.</span>' +
+									'<span class="cs-role-desc">Co-authors the canvas. Can add records, mark slots, and save changes. Only the owner manages sharing.</span>' +
 								'</label>' +
 							'</div>' +
-							'<div id="cs-link-picker" style="margin-top:0.8em"></div>' +
-							'<div class="cs-disclosure" id="cs-disclosure">' +
-								'<div class="cs-disclosure-head">' +
-									'<strong>The recipient will get Read/Edit access to:</strong>' +
+							'<section class="cs-share-review" id="cs-share-review" hidden>' +
+								'<h4>Review access</h4>' +
+								'<p class="cs-share-review-summary" id="cs-share-review-summary"></p>' +
+								'<div class="cs-share-actions">' +
+									'<button type="button" class="button" id="cs-link-send" disabled>Share with teammate</button>' +
+									'<span class="tag" id="cs-link-msg" aria-live="polite"></span>' +
 								'</div>' +
-								'<ul class="cs-disclosure-list">' +
-									'<li class="cs-disclosure-canvas">' +
-										'<span class="cs-disclosure-name">' + escapeHtml(canvasTitle || 'this canvas') + '</span> ' +
-										'<span class="tag">Canvas</span>' +
-									'</li>' +
-									_disclosureItemsHtml +
-								'</ul>' +
-								'<p class="cs-disclosure-foot">' +
-									'You can revoke access at any time from the Active shares list below. The recipient views the canvas from the perspective of ' +
-									'their Salesforce user. Any Salesforce data that they do not have access to will not appear on their shared view of the canvas.' +
-								'</p>' +
-							'</div>' +
-							'<div style="display:flex;gap:0.5em;align-items:center;margin-top:0.8em">' +
-								'<button type="button" class="button" id="cs-link-send" disabled>Share with teammate</button>' +
-								'<span class="tag" id="cs-link-msg" aria-live="polite"></span>' +
-							'</div>' +
-
+							'</section>' +
+							// Share-result slot: after a successful share,
+							// surfaces the canvas URL with a Copy button so
+							// the sender can forward it via Slack/IM/email.
 							'<div id="cs-share-result" style="display:none;margin-top:0.9em;padding:0.7em 0.85em;border:1px solid var(--border);border-radius:4px;background:var(--bg-elev)"></div>' +
-							'<h4 style="margin:1.2em 0 0.4em;font-size:0.92rem">Active shares</h4>' +
-							'<div id="cs-link-list"><div class="tag">Loading…</div></div>' +
-						'</div>' +
+							'</div>' +
 						'<div class="modal-footer">' +
 							'<button class="button secondary" data-cs-close>Close</button>' +
 						'</div>' +
 					'</div>';
 				document.body.appendChild(modal);
-
+			
 				const cleanup = () => {
 					modal.remove();
 					document.removeEventListener('keydown', onKey);
-
+					// After the modal closes, the active-share count
+					// for this canvas may have changed (send / revoke).
+					// Invalidate the cached count so the toolbar badge
+					// re-fetches and reflects reality.
 					_invalidateShareCountForCanvas(canvasId);
 				};
 				const onKey = (e) => {
@@ -270,16 +269,59 @@ cleanup();
 };
 				document.addEventListener('keydown', onKey);
 				modal.querySelectorAll('[data-cs-close]').forEach((el) => el.addEventListener('click', cleanup));
-
+			
 				const sendBtnEl = modal.querySelector('#cs-link-send');
 				const shareResultEl = modal.querySelector('#cs-share-result');
+				const reviewEl = modal.querySelector('#cs-share-review');
+				const reviewSummaryEl = modal.querySelector('#cs-share-review-summary');
+				const roleInputs = Array.from(modal.querySelectorAll('input[name="cs-role"]'));
+				let shareComplete = false;
+				const selectedRole = () => {
+					const checked = modal.querySelector('input[name="cs-role"]:checked');
+					return checked ? checked.value : null;
+				};
+				const roleSummary = {
+					viewer: 'can open and explore the canvas, but cannot change it.',
+					contributor: 'can fill assigned fields and submit those values, but cannot otherwise edit the canvas.',
+					editor: 'can add, edit, and remove canvas records and relationships, then save canvas changes.',
+				};
+				function updateShareReview() {
+					const picked = picker.getPicked();
+					const role = selectedRole();
+					const ready = !!(picked && role);
+					reviewEl.hidden = !ready;
+					if (ready) {
+						const who = picked.name || picked.email || 'This teammate';
+						reviewSummaryEl.textContent = who + ' will be a ' + role + ' and ' + roleSummary[role];
+					}
+					sendBtnEl.disabled = !ready || shareComplete || !!window.ORGLOOM_MOCK;
+				}
 				const picker = attachSfUserPicker(modal.querySelector('#cs-link-picker'), {
 					placeholder: 'Pick a teammate by name, email, or username…',
-					onPick(user) {
-						sendBtnEl.disabled = !user;
+					onPick() {
+						shareComplete = false;
+						sendBtnEl.textContent = 'Share with teammate';
+						shareResultEl.style.display = 'none';
+						shareResultEl.innerHTML = '';
+						updateShareReview();
 					},
 				});
-
+				roleInputs.forEach((input) => input.addEventListener('change', () => {
+					shareComplete = false;
+					sendBtnEl.textContent = 'Share with teammate';
+					shareResultEl.style.display = 'none';
+					shareResultEl.innerHTML = '';
+					updateShareReview();
+				}));
+				// Playground lock-down. The visitor can see the recipient and
+				// role controls but can't
+				// actually share. Demo banner above the role picker
+				// frames the limitation up front; teammate input is
+				// disabled; Share button is force-disabled and the
+				// onPick callback is replaced with a no-op so it can't
+				// be re-enabled. Mock handlers in mock-sf.js feed the
+				// list+picker fetches so nothing surfaces as a
+				// 'mock-not-implemented' error.
 				if (window.ORGLOOM_MOCK) {
 					const demoBanner = document.createElement('div');
 					demoBanner.className = 'banner warn';
@@ -300,85 +342,22 @@ intro.parentNode.insertBefore(demoBanner, intro);
 					sendBtnEl.disabled = true;
 					sendBtnEl.title = 'Sharing is disabled in demo mode. Sign up to share canvases with your teammates.';
 				}
-
-				async function refreshList() {
-					const listEl = modal.querySelector('#cs-link-list');
-					listEl.innerHTML = '<div class="tag">Loading…</div>';
-					try {
-						const r = await csrfFetch('/api/canvas/' + encodeURIComponent(canvasId) + '/share-links', { credentials: 'same-origin' });
-						const data = await r.json().catch(() => null);
-						if (!r.ok) {
-throw new Error(data && data.error || 'HTTP ' + r.status);
-}
-						const shares = (data && data.shares) || [];
-						const directShares = (data && data.directShares) || [];
-						if (shares.length === 0 && directShares.length === 0) {
-							listEl.innerHTML = '<div class="tag">No active shares. Pick a teammate above to share this canvas with them. <a href="/docs/walkthroughs/share-canvas" target="_blank" rel="noopener" class="empty-doclink">How sharing &amp; co-editing work &rarr;</a></div>';
-							return;
-						}
-
-						const directHtml = directShares.map((d) => {
-
-							const role = d.role || (d.accessLevel === 'Collaborator' ? 'editor' : 'viewer');
-							const roleLabel = role.toUpperCase();
-							const roleTagClass = role === 'editor' ? 'tpl-scope-tag--editor' : 'tpl-scope-tag--template';
-							return '<div class="cs-link-row" style="display:flex;align-items:center;gap:0.4em;padding:0.4em 0.5em;border:1px solid var(--border-soft);border-radius:4px;margin-bottom:0.3em;flex-wrap:wrap">' +
-								'<div style="flex:1;min-width:200px">' +
-									'<div style="display:flex;align-items:center;gap:0.4em">' +
-										'<span style="font-family:var(--font-mono);font-size:0.82rem">' + escapeHtml(d.name) + '</span>' +
-										'<span class="tpl-scope-tag ' + roleTagClass + '" style="margin-left:0">' + roleLabel + '</span>' +
-										'<span class="tag" style="font-size:0.7rem">direct</span>' +
-									'</div>' +
-									'<div class="tag" style="font-size:0.72rem">Salesforce share, no expiry. Visible in their Saved Canvases.</div>' +
-								'</div>' +
-								'<button type="button" class="button secondary cs-direct-revoke" data-sf-user-id="' + escapeHtml(d.sfUserId) + '" style="font-size:0.78rem;padding:0.25em 0.6em">Revoke</button>' +
-							'</div>';
-						}).join('');
-
-						listEl.innerHTML = directHtml;
-						listEl.querySelectorAll('.cs-direct-revoke').forEach((btn) => {
-							btn.addEventListener('click', async () => {
-								const sfUserId = btn.dataset.sfUserId;
-								if (!(await showConfirmDialog({
-									title: 'Revoke direct share?',
-									message: 'The recipient will lose access to this canvas in their Saved Canvases immediately. To restore access later, you\'ll need to re-share.',
-									confirmLabel: 'Revoke',
-									cancelLabel: 'Keep share',
-									danger: true,
-								}))) {
-return;
-}
-								btn.disabled = true;
-								try {
-									const dr = await csrfFetch('/api/canvas/' + encodeURIComponent(canvasId) + '/direct-shares/' + encodeURIComponent(sfUserId), {
-										method: 'DELETE',
-										credentials: 'same-origin',
-									});
-									const dd = await dr.json().catch(() => ({}));
-									if (!dr.ok) {
-throw new Error(dd && dd.error || 'HTTP ' + dr.status);
-}
-									refreshList();
-								} catch (err) {
-									btn.disabled = false;
-									showBulkToast('Revoke failed: ' + (err.message || err), 'error');
-								}
-							});
-						});
-					} catch (err) {
-						listEl.innerHTML = '<div class="tag">Couldn’t load active links: ' + escapeHtml(err.message || String(err)) + '</div>';
-					}
-				}
-
+			
+			
 				const msgEl = modal.querySelector('#cs-link-msg');
 				async function sendLink() {
-
+					// Playground hard stop. The button is disabled in
+					// mock mode and the picker is locked, so this
+					// shouldn't fire, but as defense-in-depth: no fetch
+					// can reach /api/canvas/:id/direct-share from the
+					// demo, regardless of how the click was triggered.
 					if (window.ORGLOOM_MOCK) {
 return;
 }
 					const picked = picker.getPicked();
-					if (!picked) {
-						msgEl.textContent = 'Pick a teammate first.';
+					const role = selectedRole();
+					if (!picked || !role) {
+						msgEl.textContent = 'Pick a teammate and choose a role first.';
 						msgEl.style.color = 'var(--danger)';
 						return;
 					}
@@ -392,7 +371,7 @@ return;
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
 								recipientSfUserId: picked.id,
-								role: (modal.querySelector('input[name="cs-role"]:checked') || {}).value || 'editor',
+								role,
 							}),
 						});
 						const data = await r.json().catch(() => ({}));
@@ -413,12 +392,14 @@ return;
 							}
 							throw new Error((data && (data.message || data.error)) || 'HTTP ' + r.status);
 						}
-
+						// Direct-share success: set the inline status
+						// message, then populate the share-result slot
+						// with the canvas URL for manual delivery.
 						const r2 = data.recipient || {};
 						const who = r2.name || r2.email || picked.email || picked.name || 'the recipient';
 						let nextStep;
 						if (data.emailDeliverFailed) {
-							nextStep = 'Salesforce access granted, but the notification email failed to send. ' + who + ' can find the canvas in their Saved Canvases, or copy the link below.';
+							nextStep = 'Canvas access was granted, but the notification email failed to send. ' + who + ' can find the canvas in their Saved Canvases, or copy the link below.';
 						} else if (data.updated) {
 							nextStep = who + '\'s access updated to ' + (data.role || 'the new role') + '. Emailed them about the change.';
 						} else if (r2.hasAccount && r2.hasConnection) {
@@ -430,7 +411,13 @@ return;
 						}
 						msgEl.textContent = nextStep;
 						msgEl.style.color = 'var(--success)';
-
+						shareComplete = true;
+						sendBtnEl.textContent = 'Shared';
+						// Surface the canvas URL with a Copy button so
+						// the sender can forward via Slack/IM/wherever
+						// in addition to the auto-email. The URL is
+						// recipient-locked at the SF-side share level:
+						// only the picked user can use it.
 						if (shareResultEl) {
 							const canvasUrl = window.location.origin + '/?openCanvas=' + encodeURIComponent(canvasId);
 							shareResultEl.style.display = '';
@@ -466,47 +453,27 @@ return;
 								}
 							});
 						}
-
-						if (data.recordAccess) {
-							const note = document.createElement('div');
-							note.style.cssText = 'margin-top:0.5em;font-size:0.82rem';
-							if (data.recordAccess.failed && data.recordAccess.failed.length > 0) {
-								const lines = data.recordAccess.failed.map((f) =>
-									'<li><code>' + escapeHtml(f.objectName) + '</code> ' +
-									'<code>' + escapeHtml(f.recordId) + '</code>: ' +
-									escapeHtml(f.error) + '</li>'
-								).join('');
-								note.style.color = 'var(--warn)';
-								note.innerHTML =
-									'<div><strong>Manual sharing needed:</strong> ' +
-										'Auto-shared ' + data.recordAccess.grantedCount + ' record' +
-										(data.recordAccess.grantedCount === 1 ? '' : 's') +
-										', but ' + data.recordAccess.failed.length + " couldn't be shared. " +
-										'Ask your admin to share these with the recipient:</div>' +
-									'<ul style="margin:0.4em 0 0 1.2em;font-family:var(--font-mono);font-size:0.78rem">' +
-										lines +
-									'</ul>';
-							} else if (data.recordAccess.grantedCount > 0) {
-								note.style.color = 'var(--ink-soft)';
-								note.textContent = 'Also granted Salesforce access to ' +
-									data.recordAccess.grantedCount + ' underlying record' +
-									(data.recordAccess.grantedCount === 1 ? '' : 's') + '.';
-							}
-							if (note.innerHTML || note.textContent) {
-msgEl.appendChild(note);
-}
-						}
-						picker.clear();
-						refreshList();
 					} catch (err) {
+						shareComplete = false;
 						msgEl.textContent = err.message || String(err);
 						msgEl.style.color = 'var(--danger)';
 					} finally {
-						sendBtnEl.disabled = !picker.getPicked();
+						updateShareReview();
 					}
 				}
 				sendBtnEl.addEventListener('click', sendLink);
 
+			
+				// Free-tier read-only treatment. share-canvas is Pro+.
+				// If the active workspace lacks the capability, render
+				// the modal in a visibly locked state with an upfront
+				// upgrade CTA, so the user learns the constraint
+				// BEFORE filling out the form and hitting a 402 on
+				// Send. Access management remains available in its separate
+				// owner-only modal so existing grants can still be revoked. Server-
+				// side POST /api/canvas/:id/direct-share is the source
+				// of truth: this UI lock is defense-in-depth + UX
+				// clarity, not a security boundary.
 				if (!_hasCap('share-canvas')) {
 					const contentEl = modal.querySelector('.modal-content');
 					const upgradeBanner = document.createElement('div');
@@ -520,11 +487,10 @@ msgEl.appendChild(note);
 						' &middot; ' +
 						'<a href="/pricing" target="_blank" rel="noopener">Compare plans</a>';
 					contentEl.insertBefore(upgradeBanner, contentEl.firstChild);
-
+					// Lock the editable invite surface.
 					const lockTargets = [
 						modal.querySelector('.cs-role-picker'),
 						modal.querySelector('#cs-link-picker'),
-						modal.querySelector('#cs-disclosure'),
 					].filter(Boolean);
 					lockTargets.forEach((el) => {
 						el.style.pointerEvents = 'none';
@@ -533,27 +499,138 @@ msgEl.appendChild(note);
  c.disabled = true; 
 });
 					});
-
+					// Replace the Send button with an Upgrade CTA in
+					// the same slot. Remove the original (with its
+					// sendLink listener) so the click can't fire
+					// through and hit the 402 path anyway.
 					const upgradeBtn = document.createElement('a');
 					upgradeBtn.className = 'button';
 					upgradeBtn.href = '/workspace/upgrade';
 					upgradeBtn.textContent = 'Upgrade to Pro to share';
 					sendBtnEl.replaceWith(upgradeBtn);
-
+					// Suppress the live-region "Pick a teammate first."
+					// message: it makes no sense in locked mode.
 					const msgEl = modal.querySelector('#cs-link-msg');
 					if (msgEl) {
 msgEl.textContent = '';
 }
 				}
+			
+			}
+
+			function openCanvasShareManagementModal(canvasId, canvasTitle) {
+				document.querySelectorAll('.canvas-share-modal, .canvas-share-management-modal')
+					.forEach((el) => el.remove());
+				const modal = document.createElement('div');
+				modal.className = 'modal canvas-share-management-modal';
+				modal.innerHTML =
+					'<div class="modal-overlay" data-csm-close></div>' +
+					'<div class="modal-body" style="max-width:560px">' +
+						'<div class="modal-header">' +
+							'<h3>Manage canvas access</h3>' +
+							'<button class="modal-close" data-csm-close>&times;</button>' +
+						'</div>' +
+						'<div class="modal-content">' +
+							'<p class="tag">People who can open <strong>' + escapeHtml(canvasTitle || 'this canvas') + '</strong>.</p>' +
+							'<div id="cs-manage-list"><div class="tag">Loading…</div></div>' +
+						'</div>' +
+						'<div class="modal-footer">' +
+							'<button class="button" type="button" data-csm-share>Share with teammate</button>' +
+							'<button class="button secondary" data-csm-close>Close</button>' +
+						'</div>' +
+					'</div>';
+				document.body.appendChild(modal);
+
+				const cleanup = () => {
+					document.removeEventListener('keydown', onKey);
+					if (modal.parentNode) {
+						modal.remove();
+					}
+					_invalidateShareCountForCanvas(canvasId);
+				};
+				const onKey = (event) => {
+					if (event.key === 'Escape') {
+						cleanup();
+					}
+				};
+				document.addEventListener('keydown', onKey);
+				modal.querySelectorAll('[data-csm-close]').forEach((el) => el.addEventListener('click', cleanup));
+				modal.querySelector('[data-csm-share]').addEventListener('click', () => {
+					cleanup();
+					openCanvasEmailLinkModal(canvasId, canvasTitle);
+				});
+
+				async function refreshList() {
+					const listEl = modal.querySelector('#cs-manage-list');
+					listEl.innerHTML = '<div class="tag">Loading…</div>';
+					try {
+						const response = await csrfFetch('/api/canvas/' + encodeURIComponent(canvasId) + '/share-links', { credentials: 'same-origin' });
+						const data = await response.json().catch(() => null);
+						if (!response.ok) {
+							throw new Error(data && data.error || 'HTTP ' + response.status);
+						}
+						const directShares = (data && data.directShares) || [];
+						if (directShares.length === 0) {
+							listEl.innerHTML = '<div class="tag cs-manage-empty">No active shares. Only you can open this canvas.</div>';
+							return;
+						}
+						listEl.innerHTML = directShares.map((share) => {
+							const role = share.role || (share.accessLevel === 'Collaborator' ? 'editor' : 'viewer');
+							const roleTagClass = role === 'editor' ? 'tpl-scope-tag--editor' : 'tpl-scope-tag--template';
+							return '<div class="cs-link-row">' +
+								'<div class="cs-link-person">' +
+									'<div class="cs-link-person-line">' +
+										'<span class="cs-link-person-name">' + escapeHtml(share.name || 'Salesforce user') + '</span>' +
+										'<span class="tpl-scope-tag ' + roleTagClass + '">' + escapeHtml(role.toUpperCase()) + '</span>' +
+									'</div>' +
+									'<div class="tag cs-link-note">Can open this canvas. No expiration.</div>' +
+								'</div>' +
+								'<button type="button" class="button secondary cs-direct-revoke" data-sf-user-id="' + escapeHtml(share.sfUserId) + '">Revoke</button>' +
+							'</div>';
+						}).join('');
+						listEl.querySelectorAll('.cs-direct-revoke').forEach((button) => {
+							button.addEventListener('click', async () => {
+								const sfUserId = button.dataset.sfUserId;
+								if (!(await showConfirmDialog({
+									title: 'Revoke canvas access?',
+									message: 'This teammate will immediately lose access to the canvas. Their Salesforce record permissions will not change.',
+									confirmLabel: 'Revoke',
+									cancelLabel: 'Keep access',
+									danger: true,
+								}))) {
+									return;
+								}
+								button.disabled = true;
+								try {
+									const response = await csrfFetch('/api/canvas/' + encodeURIComponent(canvasId) + '/direct-shares/' + encodeURIComponent(sfUserId), {
+										method: 'DELETE',
+										credentials: 'same-origin',
+									});
+									const body = await response.json().catch(() => ({}));
+									if (!response.ok) {
+										throw new Error(body && body.error || 'HTTP ' + response.status);
+									}
+									_invalidateShareCountForCanvas(canvasId);
+									await refreshList();
+								} catch (error) {
+									button.disabled = false;
+									showBulkToast('Revoke failed: ' + (error.message || error), 'error');
+								}
+							});
+						});
+					} catch (error) {
+						listEl.innerHTML = '<div class="tag">Couldn’t load active shares: ' + escapeHtml(error.message || String(error)) + '</div>';
+					}
+				}
 
 				refreshList();
-				setTimeout(() => picker.focus(), 0);
 			}
+			
 
 			return {
 				attachSfUserPicker: attachSfUserPicker,
-				_shareDisclosureRecords: _shareDisclosureRecords,
 				openCanvasEmailLinkModal: openCanvasEmailLinkModal,
+				openCanvasShareManagementModal: openCanvasShareManagementModal,
 			};
 		},
 	};

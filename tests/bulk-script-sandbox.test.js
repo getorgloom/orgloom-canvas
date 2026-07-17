@@ -1,3 +1,35 @@
+// Bulk-script sandbox attack suite.
+//
+// The script-runner in src/public/js/bulk-script.js sells two
+// promises: scripts can't reach Salesforce, and scripts can't escape
+// the browser sandbox into real JavaScript. The sandbox enforces this
+// through three layers:
+//   1. Custom AST interpreter (no `eval`, no `new Function`).
+//   2. Identifiers resolve only against an explicit `env` object:
+//      `window`, `document`, `fetch`, etc. are not visible by name.
+//   3. Member access goes through a checkProp() guard that blocks
+//      prototype-chain escape hatches (`constructor`, `__proto__`,
+//      `prototype`, `__defineGetter__`, etc.).
+//
+// This file proves those layers hold by running known attacks against
+// the real interpreter and asserting every one of them throws. The
+// suite doubles as a regression net: any future change to the parser
+// or interpreter that re-opens an escape will fail here.
+//
+// LOADING STRATEGY
+//
+// bulk-script.js is a browser IIFE, wrapping its internals in a
+// closure and only exposes `mount()` via window.OrgLoom.bulkScript.
+// To test the internals (_bsTokenize, _bsParse, _bsInterpret) we
+// need a way past the closure boundary without modifying the source.
+//
+// This test file reads the source, finds the line where the IIFE
+// assigns its public API, and inserts a one-line export of the
+// closure-internal functions immediately before it. Then it runs the
+// modified source in a Node vm context with a minimal `window` stub
+// and captures the internals via the injected global. Production
+// bulk-script.js is never touched.
+
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -12,7 +44,13 @@ let _bsTokenize, _bsParse, _bsInterpret, _BS_FORBIDDEN_PROPS;
 
 before(() => {
 	const src = readFileSync(BULK_SCRIPT_PATH, 'utf8');
-
+	// Anchor line: the very last `return {` inside the mount function
+	// which is where the internals (_bsTokenize / _bsParse /
+	// _bsInterpret) are STILL in lexical scope. We inject a global
+	// leak right before mount's return so the closure exposes them
+	// once. Running the IIFE doesn't call mount on its own, so to
+	// trigger the leak we call mount() ourselves after evaluating
+	// the source.
 	const ANCHOR = 'return {\n\t\t\t\topenModal: openBulkScriptModal,';
 	if (!src.includes(ANCHOR)) {
 		throw new Error('Could not find injection anchor in bulk-script.js: refactor may have moved mount\'s return. Update ANCHOR.');
@@ -20,6 +58,12 @@ before(() => {
 	const INJECTED = 'globalThis.__bsTestInternals = { _bsTokenize, _bsParse, _bsInterpret, _BS_FORBIDDEN_PROPS };\n\t\t\t';
 	const modifiedSrc = src.replace(ANCHOR, INJECTED + ANCHOR);
 
+	// Minimal stubs so the IIFE + mount can run without a DOM:
+	//   * document.createElement returns a chainable stub that absorbs
+	//     every method call we make on it (modal setup creates elements
+	//     and wires events). We don't care about the wiring, we just
+	//     need it to not throw.
+	//   * document.body, document.addEventListener: same.
 	const makeStubEl = () => {
 		const el = new Proxy(function () {}, {
 			get(_, prop) {
@@ -68,6 +112,8 @@ return 0;
 	vm.createContext(sandbox);
 	vm.runInContext(modifiedSrc, sandbox);
 
+	// Trigger the leak: call mount() with stub deps so it runs to its
+	// return statement (where the injected export executes).
 	const stubDeps = {
 		canvasState: { bulkRecords: [] },
 		showBulkToast: () => {},
@@ -86,6 +132,12 @@ throw new Error('Internals not captured: bulk-script.js may have changed shape.'
 	_BS_FORBIDDEN_PROPS = internals._BS_FORBIDDEN_PROPS;
 });
 
+// ----- Test helpers -----
+
+// Build the same env object the real bulk-script runtime passes to
+// _bsInterpret. We re-implement the helpers locally because they're
+// not exported; they only need to behave plausibly for these tests
+// (sandbox safety is what we're proving, not helper correctness).
 function makeEnv(records = []) {
 	return {
 		records,
@@ -111,6 +163,10 @@ function makeEnv(records = []) {
 	};
 }
 
+// Run a script against a fresh env. Returns { env, error }; error
+// is null on success, the thrown Error on failure. Useful for tests
+// that want to verify a specific message OR for tests that should
+// succeed without throwing.
 function runScript(source, records = []) {
 	const env = makeEnv(records);
 	try {
@@ -123,6 +179,7 @@ function runScript(source, records = []) {
 	}
 }
 
+// Sugar for the common case: "this script should throw."
 function assertRejects(source, matchMessage, records = []) {
 	const { error } = runScript(source, records);
 	assert.ok(error, 'Expected script to throw, but it succeeded:\n  ' + source);
@@ -131,14 +188,27 @@ function assertRejects(source, matchMessage, records = []) {
 	}
 }
 
+// Sugar for "this script should run cleanly."
 function assertAccepts(source, records = []) {
 	const { error } = runScript(source, records);
 	assert.equal(error, null, 'Expected script to succeed, but it threw:\n  ' + source + '\n  Error: ' + (error && error.message));
 }
 
+// ----- 1. Prototype-chain escape attempts -----
+//
+// The classic sandbox-escape vector: from any value, reach
+// `.constructor.constructor` to get the Function constructor, which
+// lets you build a function from a string, equivalent to eval().
+// Variants reach the same goal through __proto__, prototype, or the
+// __defineGetter__ family. checkProp() in the interpreter blocks
+// every name in _BS_FORBIDDEN_PROPS, so every variant below MUST
+// throw at member-access time.
+
 describe('Sandbox: prototype-chain escape attempts must throw', () => {
 	test('object literal .constructor blocked', () => {
-
+		// Object literals aren't supported by the parser, so we reach
+		// the same constructor via a helper function's prototype.
+		// max is Math.max, a real JS function with .constructor.
 		assertRejects('let f = max.constructor;', /Property "constructor" is not allowed/);
 	});
 
@@ -171,7 +241,9 @@ describe('Sandbox: prototype-chain escape attempts must throw', () => {
 	});
 
 	test('bracket-notation .constructor blocked (computed access path)', () => {
-
+		// A naive checkProp() that only inspects the AST property name
+		// would miss r.values["constructor"]. Verify the runtime
+		// check fires on the resolved string too.
 		const records = [{ id: 1, values: {} }];
 		assertRejects('records[0]["constructor"];', /Property "constructor" is not allowed/, records);
 	});
@@ -195,6 +267,12 @@ describe('Sandbox: prototype-chain escape attempts must throw', () => {
 	});
 });
 
+// ----- 2. Browser globals must be unreachable by name -----
+//
+// The interpreter resolves identifiers against the env we hand it.
+// Anything not in env should fail with "Undefined identifier".
+// Verify every dangerous global is invisible.
+
 describe('Sandbox: browser globals are not in scope', () => {
 	const FORBIDDEN_GLOBALS = [
 		'window', 'document', 'fetch', 'XMLHttpRequest', 'localStorage',
@@ -208,6 +286,13 @@ describe('Sandbox: browser globals are not in scope', () => {
 		});
 	}
 });
+
+// ----- 3. Record-identity guards -----
+//
+// r.id and r.loadedFromId are the canvas-side bookkeeping. A script
+// that reassigns either silently aims an upload at the wrong SF row,
+// or breaks delete/association lookups. Identity guard at writeMember
+// must refuse.
 
 describe('Sandbox: record identity is read-only', () => {
 	test('reading r.id is allowed', () => {
@@ -237,11 +322,22 @@ describe('Sandbox: record identity is read-only', () => {
 	});
 
 	test('reassigning a NON-identity field on r is allowed', () => {
-
+		// label and objectName aren't in _IDENTITY_PROPS, so the guard
+		// shouldn't fire. (Whether scripts SHOULD rewrite these is a
+		// product decision; the security claim is just that the
+		// sandbox doesn't pretend identity guard covers them.)
 		const records = [{ id: 1, label: 'old', values: {} }];
 		assertAccepts("records[0].label = 'new';", records);
 	});
 });
+
+// ----- 4. Helper-function abuse -----
+//
+// Functions exposed via env are real JS functions (Math.max etc.):
+// they have .call, .apply, .bind, .name. None of these grant escape
+// (.call(x) just invokes the function with a different `this`), but
+// the forbidden-props list IS what stops .constructor on them.
+// Verify the helpers aren't a back door.
 
 describe('Sandbox: exposed helpers can\'t be used to escape', () => {
 	test('max.call.constructor still blocked', () => {
@@ -260,6 +356,12 @@ describe('Sandbox: exposed helpers can\'t be used to escape', () => {
 		assertRejects("abort('stop');", /stop/);
 	});
 });
+
+// ----- 5. Syntax restrictions -----
+//
+// The parser deliberately doesn't accept several syntaxes. Verify
+// they're rejected at parse time, not silently accepted and run as
+// something unexpected.
 
 describe('Sandbox: parser rejects out-of-spec syntax', () => {
 	test('arrow function rejected', () => {
@@ -307,11 +409,17 @@ describe('Sandbox: parser rejects out-of-spec syntax', () => {
 	});
 });
 
+// ----- 6. DoS / step limit -----
+
 describe('Sandbox: runaway loops abort via step cap', () => {
 	test('1M-step counter trips before infinite loop completes', () => {
-
+		// A tight loop that would run forever native-side. The step
+		// counter should catch it. We use a for-of over records to
+		// stay in supported syntax; pad the records array so we burn
+		// steps without succeeding.
 		const records = Array.from({ length: 100000 }, (_, i) => ({ id: i, values: {} }));
-
+		// Each iteration does several operations (member access,
+		// assignment, log call) so the counter ticks fast.
 		const src = `
 			for (const r of records) {
 				r.values.X = 1;
@@ -323,6 +431,11 @@ describe('Sandbox: runaway loops abort via step cap', () => {
 		assertRejects(src, /Script exceeded/, records);
 	});
 });
+
+// ----- 7. Positive smoke tests -----
+//
+// Verify the sandbox doesn't OVER-block. The features the cheat sheet
+// documents must actually work.
 
 describe('Sandbox: documented features actually work', () => {
 	test('basic for-of mutation', () => {
@@ -393,10 +506,15 @@ describe('Sandbox: documented features actually work', () => {
 			}
 		`, records);
 		assert.equal(records[0].values.Touched, true);
-		assert.equal(records[1].values.Touched, undefined);
-		assert.equal(records[2].values.Touched, undefined);
+		assert.equal(records[1].values.Touched, undefined); // continued
+		assert.equal(records[2].values.Touched, undefined); // broke before reaching
 	});
 });
+
+// ----- 8. Forbidden-props list integrity -----
+//
+// Asserts the inventory itself, so anyone editing the list sees the
+// test go red rather than silently widening the sandbox.
 
 describe('Sandbox: forbidden-props list inventory', () => {
 	test('forbidden set has not shrunk', () => {

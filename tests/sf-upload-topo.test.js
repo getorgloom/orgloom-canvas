@@ -1,3 +1,13 @@
+// Locks the upload-graph mechanics in sf-upload.js:
+//   * topoSortRecords produces an order where every child appears AFTER
+//     all parents it depends on (FK insert order).
+//   * Cycle records get flagged via cycleIds and not interleaved into
+//     order chaos.
+//   * groupConnectedComponents partitions submitted ids into
+//     FK-connected groups, preserving topo order within each component.
+//   * GRAPH_PER_GRAPH_CAP / GRAPH_TOTAL_NODES_CAP are the contracts the
+//     caller checks against: fixed to the published values.
+
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -21,7 +31,8 @@ describe('topoSortRecords', () => {
 		const associations = [fk(3, 2), fk(2, 1)];
 		const { order, cycleIds } = topoSortRecords(records, associations);
 		assert.equal(cycleIds.size, 0);
-
+		// Verify topological constraint: for every association (from→to),
+		// the parent (to) comes before the child (from).
 		const pos = new Map(order.map((id, i) => [id, i]));
 		for (const a of associations) {
 			assert.ok(pos.get(a.toId) < pos.get(a.fromId),
@@ -48,15 +59,16 @@ describe('topoSortRecords', () => {
 
 	test('circular FK reference is detected via cycleIds', () => {
 		const records = [rec(1), rec(2), rec(3)];
-
+		// 1 → 2 → 3 → 1
 		const associations = [fk(1, 2), fk(2, 3), fk(3, 1)];
 		const { order, cycleIds } = topoSortRecords(records, associations);
-
+		// All three ids are in the cycle.
 		assert.equal(cycleIds.size, 3);
 		assert.ok(cycleIds.has(1));
 		assert.ok(cycleIds.has(2));
 		assert.ok(cycleIds.has(3));
-
+		// Order still contains all records (caller decides what to do
+		// with the cycle).
 		assert.equal(order.length, 3);
 	});
 
@@ -100,7 +112,7 @@ describe('groupConnectedComponents', () => {
 		const components = groupConnectedComponents(submittedIds, [1, 2, 3], [fk(2, 1)]);
 		const sizes = components.map((c) => c.length).sort();
 		assert.deepEqual(sizes, [1, 2]);
-
+		// The size-2 component contains 1 + 2 in topo order; size-1 is 3.
 		const big = components.find((c) => c.length === 2);
 		const small = components.find((c) => c.length === 1);
 		assert.deepEqual(big, [1, 2]);
@@ -119,8 +131,8 @@ describe('groupConnectedComponents', () => {
 
 	test('records preserved in submittedOrder within each component', () => {
 		const submittedIds = new Set([10, 20, 30]);
-		const order = [10, 20, 30];
-
+		const order = [10, 20, 30]; // topo order
+		// Star pattern: 20 and 30 both reference 10; all in one component.
 		const components = groupConnectedComponents(submittedIds, order, [
 			fk(20, 10), fk(30, 10),
 		]);
@@ -132,7 +144,7 @@ describe('groupConnectedComponents', () => {
 		const submittedIds = new Set([1, 2]);
 		const components = groupConnectedComponents(submittedIds, [1, 2], [
 			fk(2, 1),
-			fk(1, 99),
+			fk(1, 99), // 99 not submitted; must NOT pull 1 into a cross-graph component
 		]);
 		assert.equal(components.length, 1);
 		assert.deepEqual(components[0], [1, 2]);

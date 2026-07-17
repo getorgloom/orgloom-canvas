@@ -44,7 +44,9 @@ before(async () => {
 	app.use((req, _res, next) => {
 		req.session = { id: 'session-ledger' };
 		businessWrites = 0;
-
+		// The first Salesforce operation for a write route must be the
+		// attempt-ledger lookup/create. Make that surface unavailable and
+		// count any later business-object DML as a test failure signal.
 		req.sf = {
 			sfOrgId: '00D000000000001',
 			sfUserId: '005000000000001',

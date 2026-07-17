@@ -1,3 +1,14 @@
+// Focused unit tests for POST /api/records/refresh validation paths.
+// Boots a canvas-only Express app and exercises the request-shape
+// validation that fires BEFORE any SF call: no stubbed jsforce conn
+// needed.
+//
+// Deeper integration (per-object SOQL grouping, retrieve→ok/error
+// translation, audit-row emission) needs a real conn or a mocked
+// jsforce instance; that's covered manually in QA + future Playwright
+// rather than baked in here because the harness lift is large for
+// one route.
+
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -7,7 +18,11 @@ import { ext } from '../src/extensions.js';
 let app;
 let server;
 let baseUrl;
-
+// Set true once the validation describe is active; the pre-mount middleware
+// then injects a fake req.sf (with a no-op conn) so requireSfConnection's
+// pre-resolved-bundle seam lets the request through to the route's own input
+// validation without any real Salesforce call. The mount/401 test leaves it
+// false so requireAccount still gates first.
 let injectFakeSf = false;
 
 before(async () => {
@@ -24,7 +39,12 @@ before(async () => {
 		req.session = {};
 		next();
 	});
-
+	// Registered BEFORE the routes so it runs first in the chain. When the
+	// validation suite is active it pre-resolves req.sf with a no-op conn;
+	// requireSfConnection then short-circuits (its already-resolved seam),
+	// letting the route's synchronous input validation run without a real SF
+	// call. The conn's retrieve returns [] so per-record tests don't hit the
+	// network either.
 	app.use('/api/records/refresh', (req, _res, next) => {
 		if (injectFakeSf) {
 			req.sf = {
@@ -56,7 +76,9 @@ after(async () => {
 
 describe('POST /api/records/refresh (route mounts)', () => {
 	test('route exists (auth gate fires, not 404)', async () => {
-
+		// Without a session the default getCurrentAccount returns null,
+		// so requireAccount returns 401. The point is to assert mount:
+		// a 404 here would mean the route was never registered.
 		const r = await fetch(baseUrl + '/api/records/refresh', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -68,7 +90,13 @@ describe('POST /api/records/refresh (route mounts)', () => {
 });
 
 describe('POST /api/records/refresh (validation)', () => {
-
+	// These tests bypass the auth gate by registering a permissive
+	// getCurrentAccount + a permissive capability resolver. The SF
+	// connection requirement is faked by registering a session stub
+	// that injects a dummy req.sf, which the test fixture sets up.
+	//
+	// Past this gate, the route's own validation runs synchronously
+	// before any conn call; that's exactly what we want to exercise.
 	let prevAccountResolver;
 	let prevCapResolver;
 
@@ -77,7 +105,7 @@ describe('POST /api/records/refresh (validation)', () => {
 		prevCapResolver = ext.getCapability;
 		ext.registerAuthProvider(async () => ({ id: 'acc_test', email: 'test@x.com' }));
 		ext.registerCapabilityResolver(async () => ({ allowed: true, role: 'admin', plan: 'team' }));
-
+		// Turn on the pre-mount fake-req.sf injector (see the outer before).
 		injectFakeSf = true;
 	});
 

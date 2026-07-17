@@ -1,3 +1,11 @@
+// Unit tests for src/database/accounts.js (post-rewrite). Covers the
+// account-identity surface: upsert-by-email, normalization, soft-
+// delete, admin-projection list. Plan/credit fields are gone from
+// accounts (they're workspace-keyed now), so those projections aren't
+// tested here. The super-admin surface (setSuperAdmin / countSuperAdmins)
+// moved to apps/saas/src/database/accounts-ext.js and is tested in
+// apps/saas/tests/accounts-ext.test.js.
+
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { initTestDb, clearTestDb } from './helpers/db.js';

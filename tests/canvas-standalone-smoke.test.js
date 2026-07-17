@@ -1,3 +1,19 @@
+// Canvas-standalone smoke test: boots an Express app with ONLY the
+// canvas-side route mount (no registerSaasProviders, no saas-routes.js)
+// and asserts that:
+//   * canvas-only routes mount cleanly (e.g. /api/canvas hits its auth
+//     gate rather than 404ing; the registry's default getCurrentAccount
+//     returns null without a session, so we expect 401 not 404).
+//   * routes that ONLY exist in saas-routes.js are absent; the open-core
+//     promise is "you can run canvas without the saas package."
+//   * the registry uses the default capability resolver (allowed:true for
+//     known caps).
+//
+// This is the contract that backs the open-core split. After the route
+// extraction in apps/saas/src/saas-routes.js, this test would catch a
+// regression where a saas-only route accidentally got moved back into
+// canvas-routes.js.
+
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -10,7 +26,9 @@ let baseUrl;
 
 before(async () => {
 	await initTestDb();
-
+	// Reset to defaults (no saas providers); test DB is already registered
+	// by initTestDb. Re-register the providers after the reset so the test
+	// DB is still resolvable.
 	const dbProvider = ext.getDb;
 	const rawProvider = ext.getRawClient;
 	ext._resetForTests();
@@ -19,7 +37,8 @@ before(async () => {
 
 	app = express();
 	app.use(express.json());
-
+	// Stub session middleware: canvas-standalone uses a session store
+	// but we don't need persistence for this smoke test.
 	app.use((req, _res, next) => {
  req.session = {}; next(); 
 });
@@ -49,7 +68,9 @@ describe('canvas-only routes mount and respond', () => {
 
 	test('GET /api/setup → 200 or 404 (page route, not 500)', async () => {
 		const r = await fetch(baseUrl + '/api/setup');
-
+		// /api/setup may not exist; canvas-standalone exposes a setup
+		// wizard at /setup itself. Either way, status must be a clean
+		// HTTP code, not 500 from a crash.
 		assert.ok(r.status === 200 || r.status === 401 || r.status === 404);
 	});
 });

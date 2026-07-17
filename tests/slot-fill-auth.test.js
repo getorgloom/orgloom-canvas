@@ -1,7 +1,19 @@
+// Unit tests for mergeSlotFills (slot-helpers.js): the pure auth +
+// merge function extracted from POST /api/canvas/:id/slot-fill.
+// Covers D6 (per-slot assignment) and the long-standing field-level
+// allowlist behavior the function inherited.
+//
+// The tests are intentionally exhaustive on the assignment-auth axis
+// since that's the security boundary D6 introduces: a recipient must
+// not be able to write to a slot another teammate was named for, even
+// if their share grant is otherwise valid.
+
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeSlotFills } from '../src/slot-helpers.js';
 
+// Tiny factory for slot records so individual tests stay focused on
+// the assignment / kind axes rather than rebuilding boilerplate.
 function slotRec({ slotId, kind = 'whole-record', fields, assigneeSfUserId, values, objectName = 'Account' }) {
 	const slot = { slotId, kind };
 	if (fields) {
@@ -59,15 +71,15 @@ describe('mergeSlotFills, assignment authorization', () => {
 		assert.deepEqual(out.skipped, [
 			{ slotId: 1, reason: 'not_assigned_to_you', assignee: '005other' },
 		]);
-
+		// Critical: the slot's existing values must be untouched.
 		assert.equal(out.records[0].values.Name, 'original');
 	});
 
 	test('mixed batch: applied + skipped land in the right buckets', () => {
 		const records = [
-			slotRec({ slotId: 1 }),
-			slotRec({ slotId: 2, assigneeSfUserId: '005me' }),
-			slotRec({ slotId: 3, assigneeSfUserId: '005other' }),
+			slotRec({ slotId: 1 }),                                 // generic
+			slotRec({ slotId: 2, assigneeSfUserId: '005me' }),      // mine
+			slotRec({ slotId: 3, assigneeSfUserId: '005other' }),   // other
 		];
 		const out = mergeSlotFills({
 			records,
@@ -85,12 +97,17 @@ describe('mergeSlotFills, assignment authorization', () => {
 		]);
 		assert.equal(out.records[0].values.Name, 'a');
 		assert.equal(out.records[1].values.Name, 'b');
-
+		// slot 3 had no values to begin with; should still have none.
 		assert.deepEqual(out.records[2].values, {});
 	});
 
 	test('assigneeSfUserId comparison is strict-string (15 vs 18 char ids do NOT match)', () => {
-
+		// SF Ids come in 15-char and 18-char flavors; the canvas store
+		// records whichever the picker returned. The auth check uses
+		// strict string equality: if a recipient's session id is the
+		// 18-char form but the assignee was stored as 15-char, they
+		// won't match. This test pins that behavior so changes to it
+		// (e.g., adding 15→18 normalization) are deliberate.
 		const records = [slotRec({ slotId: 1, assigneeSfUserId: '005xx0000000001' })];
 		const out = mergeSlotFills({
 			records,
@@ -102,7 +119,8 @@ describe('mergeSlotFills, assignment authorization', () => {
 	});
 
 	test('empty-string assigneeSfUserId is treated as unassigned (generic)', () => {
-
+		// Defensive against the picker round-tripping an empty string
+		// instead of null. Both should mean "no assignee."
 		const records = [{
 			objectName: 'Account',
 			values: {},
@@ -118,7 +136,10 @@ describe('mergeSlotFills, assignment authorization', () => {
 	});
 
 	test('coerces non-string assigneeSfUserId via String() before comparing', () => {
-
+		// Belt-and-suspenders: if a buggy save-path stored a number
+		// instead of a string, the helper still does the right thing
+		// (would never actually equal a real SF id of 005..., but the
+		// comparison pathway should not throw).
 		const records = [{
 			objectName: 'Account',
 			values: {},
@@ -176,7 +197,7 @@ describe('mergeSlotFills, unknown / malformed fills', () => {
 		});
 		assert.equal(out.appliedCount, 1);
 		assert.deepEqual(out.applied, [{ slotId: 1, fieldCount: 0 }]);
-
+		// Existing values preserved.
 		assert.equal(out.records[0].values.Name, 'pre-existing');
 	});
 });
@@ -196,8 +217,8 @@ describe('mergeSlotFills, slot kind / field allowlist', () => {
 				values: {
 					StageName: 'Closed Won',
 					CloseDate: '2030-12-31',
-					Amount: 999999,
-					Name: 'evil',
+					Amount: 999999,        // not in allowlist
+					Name: 'evil',          // not in allowlist
 				},
 			}],
 			recipientSfUserId: '005me',
@@ -205,9 +226,9 @@ describe('mergeSlotFills, slot kind / field allowlist', () => {
 		assert.equal(out.appliedCount, 1);
 		assert.equal(out.records[0].values.StageName, 'Closed Won');
 		assert.equal(out.records[0].values.CloseDate, '2030-12-31');
-
+		// Pre-existing Amount must NOT be overwritten.
 		assert.equal(out.records[0].values.Amount, 100);
-
+		// New non-allowlisted key must NOT be introduced.
 		assert.equal(out.records[0].values.Name, undefined);
 	});
 
@@ -250,7 +271,7 @@ describe('mergeSlotFills, slot kind / field allowlist', () => {
 		const records = [{
 			objectName: 'Account',
 			values: {},
-			slot: { slotId: 1, label: 'Customer' },
+			slot: { slotId: 1, label: 'Customer' },  // no kind
 		}];
 		const out = mergeSlotFills({
 			records,
@@ -271,7 +292,9 @@ describe('mergeSlotFills, purity / immutability', () => {
 			fills: [{ slotId: 1, values: { Name: 'new' } }],
 			recipientSfUserId: '005me',
 		});
-
+		// Top-level array reference not retained, AND the inner record's
+		// values must be untouched (helper splices a new object, not in-
+		// place mutation).
 		assert.deepEqual(original, snapshot);
 	});
 
@@ -294,7 +317,7 @@ describe('mergeSlotFills, purity / immutability', () => {
 			fills: [{ slotId: 2, values: { Name: 'x' } }],
 			recipientSfUserId: '005me',
 		});
-
+		// untouched record is the SAME reference; target is a fresh object.
 		assert.equal(out.records[0], untouched);
 		assert.notEqual(out.records[1], target);
 	});
@@ -309,7 +332,7 @@ describe('mergeSlotFills, input edge cases', () => {
 		});
 		assert.deepEqual(out.records, []);
 		assert.equal(out.appliedCount, 0);
-
+		// Fill against a non-existent slot → unknown_slot.
 		assert.equal(out.skipped[0].reason, 'unknown_slot');
 	});
 
@@ -322,7 +345,7 @@ describe('mergeSlotFills, input edge cases', () => {
 		});
 		assert.equal(out.appliedCount, 0);
 		assert.deepEqual(out.skipped, []);
-
+		// Records pass through unchanged.
 		assert.equal(out.records.length, 1);
 	});
 
@@ -338,7 +361,7 @@ describe('mergeSlotFills, input edge cases', () => {
 
 	test('records without slot are ignored when building the index', () => {
 		const records = [
-			{ objectName: 'Account', values: { Name: 'plain' } },
+			{ objectName: 'Account', values: { Name: 'plain' } },  // not a slot
 			slotRec({ slotId: 1 }),
 		];
 		const out = mergeSlotFills({
@@ -347,12 +370,15 @@ describe('mergeSlotFills, input edge cases', () => {
 			recipientSfUserId: '005me',
 		});
 		assert.equal(out.appliedCount, 1);
-
+		// Plain record at index 0 stays put and is unchanged.
 		assert.equal(out.records[0].values.Name, 'plain');
 	});
 
 	test('slotId can be a number or string; index uses the same key type', () => {
-
+		// The canvas client emits numeric slotIds (slotIdSeq++); the
+		// auth route only checks Map.has on the value, so numeric
+		// matches work both ways. Pin this so a future "stringify all
+		// slotIds on the wire" change doesn't silently break the auth.
 		const records = [slotRec({ slotId: 7 })];
 		const out = mergeSlotFills({
 			records,
@@ -365,7 +391,10 @@ describe('mergeSlotFills, input edge cases', () => {
 
 describe('mergeSlotFills, fieldCount accounting', () => {
 	test('fieldCount reflects the number of incoming keys, not the merged count', () => {
-
+		// Even when half the incoming keys get dropped by the allowlist,
+		// fieldCount is what the recipient *attempted* to send. The
+		// audit log relies on this distinction to surface filter
+		// drops.
 		const records = [slotRec({
 			slotId: 1,
 			kind: 'fields',
@@ -378,7 +407,7 @@ describe('mergeSlotFills, fieldCount accounting', () => {
 			recipientSfUserId: '005me',
 		});
 		assert.equal(out.applied[0].fieldCount, 3);
-
+		// But only StageName actually landed.
 		assert.deepEqual(Object.keys(out.records[0].values), ['StageName']);
 	});
 

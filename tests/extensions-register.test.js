@@ -1,9 +1,19 @@
+// Locks the registration + flush behavior of the plug-point registry.
+// Phase 3 saas-side registration must produce stable behavior; these
+// tests assert: registered providers replace defaults, queued
+// registrations apply at flush, double-flush throws, register-after-
+// flush throws.
+
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { ext } from '../src/extensions.js';
 
 beforeEach(() => ext._resetForTests());
 
+// Minimal Express-shaped mock: collects what was registered so we can
+// assert the registry applied things correctly. Real Express isn't
+// needed since we only care that .use() and .set() were called with
+// the right arguments.
 function mockApp() {
 	const calls = { use: [], set: {} };
 	return {
@@ -55,7 +65,7 @@ describe('provider replacement', () => {
 	test('registerQuotaProvider with partial object preserves missing fns', async () => {
 		ext.registerQuotaProvider({
 			getQuota: async () => ({ cap: 5, used: 0, remaining: 5 }),
-
+			// no chargeQuota, keeps the default
 		});
 		const q = await ext.getQuota({}, 'uploads');
 		assert.equal(q.cap, 5);
@@ -141,7 +151,7 @@ describe('queued registrations + flush', () => {
 
 	test('multiple view dirs deduplicate', () => {
 		ext.registerViewDir('/abs/views/saas');
-		ext.registerViewDir('/abs/views/saas');
+		ext.registerViewDir('/abs/views/saas'); // dup
 		const app = mockApp();
 		app.set('views', '/abs/views/canvas');
 		ext.flush(app);
@@ -233,7 +243,7 @@ describe('nav links', () => {
 		const links = ext.getNavLinks();
 		assert.equal(links.length, 2);
 		assert.equal(links[0].label, 'Pricing');
-		assert.equal(links[0].position, 'right');
+		assert.equal(links[0].position, 'right'); // default
 		assert.equal(links[1].position, 'left');
 	});
 

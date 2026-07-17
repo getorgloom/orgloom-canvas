@@ -1,3 +1,4 @@
+// AI: generate records from a plain-text description.
 (function () {
 	"use strict";
 
@@ -27,7 +28,8 @@
 			const pushUndo = deps.pushUndo;
 			const getGraph = deps.getGraph;
 			const startElapsedTicker = deps.startElapsedTicker;
-
+			// Canvas record-cap gate (single source of truth). Optional dep
+			// so older mounts don't throw; defaults to "always allowed".
 			const canvasCapCheck = typeof deps.canvasCapCheck === "function"
 				? deps.canvasCapCheck
 				: function () {
@@ -86,8 +88,54 @@
 				}
 			});
 
-			let aiGenState = null;
+			let aiGenState = null; // { step, scope, text, plan, warnings, usage }
 			let _aiElapsedStop = null;
+
+			// The API returns stable machine codes in `error` and helpful
+			// copy in `message`. Older mocks used `code` plus a human-readable
+			// `error`, so accept both shapes while never showing an internal
+			// code such as "member-grant-required" to the user.
+			function presentAiPlanError(resp, data) {
+				const rawCode = data && (data.code || data.error);
+				const code = typeof rawCode === "string"
+					? rawCode.toLowerCase().replace(/_/g, "-")
+					: "";
+				const rawError = data && data.error;
+				const humanError = typeof rawError === "string" && /[\s.!?]/.test(rawError)
+					? rawError
+					: "";
+				const defaults = {
+					"cap-reached": "This workspace has used its monthly AI allowance. Wait for it to reset or ask a workspace admin to review billing and AI credits.",
+					"plan-insufficient": "Generate with AI is available on Pro and Team plans. Upgrade the active workspace to use it.",
+					"member-grant-required": "Generate with AI is not enabled for your account in this workspace. Ask a workspace admin to grant the Generate with AI permission.",
+					"workspace-toggle-off": "AI access is disabled for this workspace. A workspace admin can enable it in Workspace settings.",
+					"no-workspace": "Select or create a workspace before using Generate with AI.",
+					"no-active-workspace": "Select or create a workspace before using Generate with AI.",
+					"not-a-member": "Your account is not a member of the active workspace. Switch workspaces or ask a workspace admin to add you.",
+					"ai-disabled": "Generate with AI is temporarily unavailable. Try again later or contact Org Loom support if the problem continues.",
+					"sf-session-expired": "Your Salesforce connection has expired. Reconnect the org, then try Generate with AI again.",
+				};
+				const message = (data && data.message)
+					|| humanError
+					|| defaults[code]
+					|| (resp && resp.status >= 500
+						? "Generate with AI could not complete the request. Try again, and contact support if the problem continues."
+						: "Generate with AI could not complete the request. Check your selections and try again.");
+
+				let action = null;
+				if (code === "cap-reached") {
+					action = { href: "/workspace#billing", label: "Review AI usage", attr: " data-ai-open-account" };
+				} else if (code === "plan-insufficient" || code === "ai-not-included") {
+					action = { href: "/pricing", label: "View plans" };
+				} else if (code === "workspace-toggle-off") {
+					action = { href: "/workspace#team-flags", label: "Open workspace settings" };
+				} else if (code === "no-workspace" || code === "no-active-workspace" || code === "not-a-member") {
+					action = { href: "/workspace", label: "Choose a workspace" };
+				} else if (code === "sf-session-expired") {
+					action = { href: "/", label: "Return to canvas and reconnect" };
+				}
+				return { code, message, action };
+			}
 
 			async function openAiGenModal() {
 				aiGenState = { step: "scope", scope: { objects: [] } };
@@ -101,7 +149,7 @@
 						renderAiUsageBanner();
 					}
 				} catch (_) {
-
+					/* banner stays empty on failure */
 				}
 			}
 			function closeAiGenModal() {
@@ -183,7 +231,11 @@
 
 				const renderObjects = () => {
 					const q = (searchInput.value || "").toLowerCase().trim();
-
+					// Read allObjects LIVE on every render, since the modal can open
+					// while /api/objects is still in flight, and a one-time
+					// capture would strand this step on "Loading objects…" (or
+					// "No matching objects." after typing) until a full close +
+					// reopen, no matter when the list actually arrived.
 					const all = Array.isArray(canvasState.allObjects)
 						? canvasState.allObjects
 						: [];
@@ -265,7 +317,10 @@
 				});
 
 				renderObjects();
-
+				// If /api/objects is still in flight, re-render when it lands:
+				// nothing else re-triggers renderObjects except typing in the
+				// search box. Stops when the list arrives, the step re-renders
+				// (objectsList detaches), or the modal closes.
 				if (canvasState.allObjects === null) {
 					const _arrival = setInterval(() => {
 						if (
@@ -359,7 +414,7 @@
 						try {
 							await addToSelection(name);
 						} catch (e) {
-
+							/* tolerated: applyAiPlan falls back to objectName */
 						}
 					}
 				}
@@ -428,16 +483,12 @@
 						data = null;
 					}
 					if (!resp.ok) {
-						const msg =
-							(data && data.error) || "HTTP " + resp.status;
-						const code = data && data.code;
-						const showCapCtas = code === "cap_reached";
-						const showPricingCta = code === "ai_not_included";
+						const presented = presentAiPlanError(resp, data);
 						body.innerHTML =
 							'<div class="banner error">' +
-							escapeHtml(msg) +
+							escapeHtml(presented.message) +
 							"</div>" +
-							(code === "cap_reached" &&
+							(presented.code === "cap-reached" &&
 							data.tokensUsed != null &&
 							data.tokenCap != null
 								? '<p class="tag" style="margin-top:0.4em">Used <strong>' +
@@ -447,11 +498,8 @@
 									" tokens this month.</p>"
 								: "");
 						footer.innerHTML =
-							(showCapCtas
-								? '<a class="button" href="/workspace/upgrade">Upgrade plan &rarr;</a>'
-								: "") +
-							(showPricingCta
-								? '<a class="button" href="/pricing" target="_blank" rel="noopener">View pricing</a>'
+							(presented.action
+								? '<a class="button" href="' + escapeHtml(presented.action.href) + '"' + (presented.action.attr || "") + '>' + escapeHtml(presented.action.label) + "</a>"
 								: "") +
 							'<button class="button secondary" data-ai-close>Close</button>';
 						footer
@@ -461,7 +509,9 @@
 							);
 						return;
 					}
-
+					// Merge onto the existing state (don't replace it) so the
+					// chosen `scope` survives, otherwise Regenerate / Back reset
+					// the object selection to empty after a generation.
 					aiGenState = Object.assign({}, aiGenState, {
 						text,
 						plan: data,
@@ -589,7 +639,13 @@
 			function applyAiPlan(plan, clearFirst) {
 				const records = plan.records || [];
 				const associations = plan.associations || [];
-
+				// Canvas record-cap enforcement, checked BEFORE the clearFirst
+				// wipe so a blocked plan never destroys the existing canvas.
+				// With clearFirst the canvas would be emptied first, so the
+				// only constraint is that the plan itself fits under the cap
+				// (post-clear baseline is 0); otherwise it stacks on the
+				// current live count. Refuse the WHOLE plan if it would exceed
+				// the cap (no partial-fill).
 				let _aiCap;
 				if (clearFirst) {
 					const _probe = canvasCapCheck(records.length);
@@ -603,7 +659,8 @@
 					showBulkToast(_aiCap.reason);
 					return;
 				}
-
+				// Ctrl+Z snapshot: capture the pre-apply canvas so the whole
+				// AI generation (clear+fill, or add) reverts in one undo.
 				const _preAi = {
 					bulkRecords: canvasState.bulkRecords.slice(),
 					bulkAssociations: canvasState.bulkAssociations.slice(),
@@ -655,6 +712,7 @@
 					}
 				});
 
+				// card positioning
 				function layoutCluster(memberIds) {
 					const memberSet = new Set(memberIds);
 					let rootId = memberIds[0];
@@ -740,7 +798,7 @@
 					levels.forEach((levelIds, levelIdx) => {
 						const levelPixelWidth =
 							levelIds.length * (NODE_W + INTRA_GAP_X);
-
+						// Center each level within the cluster's bounding box.
 						const startInCluster =
 							curX +
 							(size.width - levelPixelWidth) / 2 +
@@ -765,6 +823,7 @@
 					}
 				});
 
+				// --- Commit records + associations to the canvas state.
 				const idMap = new Map();
 				records.forEach((r) => {
 					const newId = canvasState.bulkIdSeq++;
@@ -784,7 +843,11 @@
 						values: r.values || {},
 					});
 				});
-
+				// Single-value lookups stay single: route every edge through the
+				// shared admission filter (same as the CSV/SOQL/JSON imports),
+				// seeded with the canvas's existing associations so AI can't add
+				// a second parent to an already-filled lookup. Rejected edges are
+				// counted and surfaced in the result toast.
 				const _importShared = window.OrgLoom.importShared;
 				const _usedFk = new Set(
 					canvasState.bulkAssociations.map((x) => x.fromId + "::" + x.fieldName),

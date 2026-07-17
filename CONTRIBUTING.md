@@ -45,7 +45,10 @@ If you don't have a Salesforce External Client App yet (the Summer-'24 successor
 npm test
 ```
 
-The test suite is currently small; it locks the plug-point registry's contracts (51 tests across `extensions-defaults.test.js` + `extensions-register.test.js`). New tests are very welcome, especially around:
+The unit suite covers the extension contracts, Salesforce query and upload
+boundaries, canvas persistence, recall, validation formulas, CSV handling, and
+the browser-side helpers that can be exercised without a live org. New tests
+are especially welcome around:
 
 - `sf-upload.js` topological sort + composite graph
 - `upload-recall.js` cascade detection
@@ -62,11 +65,19 @@ The test suite is currently small; it locks the plug-point registry's contracts 
 
 ## PR process
 
+The public `orgloom-canvas` repository is the contribution surface and a
+maintained source repository. It is not a generated mirror. A merged public
+change is imported into the private hosted-app integration repository through
+a reviewed subtree pull request before it is deployed. Contributors never
+need access to the private repository, and a later Org Loom sync will not
+overwrite public commits.
+
 1. Open an issue first if the change is non-trivial (more than 50 lines, new feature, schema change). Saves both sides the back-and-forth.
 2. Branch from `main`. Name the branch something descriptive (`fix-soql-empty-result`, `add-bulk-edit-find-replace`).
 3. Keep PRs focused. One concept per PR: separate bug fixes from feature work.
-4. Run `npm test` locally. CI will run it again.
-5. In the PR description, include:
+4. Keep useful comments. Comments should explain constraints, security boundaries, or non-obvious decisions. Do not include secrets, customer data, or internal incident details.
+5. Run `npm test` locally. CI will run it again.
+6. In the PR description, include:
    - What changed and why
    - How to verify (browser steps, curl commands, screenshots if UI)
    - Anything reviewers should pay particular attention to
@@ -81,7 +92,7 @@ Open an issue with:
 - Expected vs. actual behavior
 - Relevant log output (redact any tokens / org IDs)
 
-Security issues: please email security@orgloom.com instead of opening a public issue. See [`../SECURITY.md`](../../SECURITY.md).
+Security issues: please email security@orgloom.com instead of opening a public issue. See [`SECURITY.md`](./SECURITY.md).
 
 ## License
 

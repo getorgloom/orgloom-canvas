@@ -1,3 +1,15 @@
+// Regression test for the autosave key-scoping fix.
+//
+// The canvas autosave used ONE fixed sessionStorage key with the
+// account/org scope stored inside the payload; on a scope mismatch,
+// restore cleared the entry. So a signed-in user with unsaved real-canvas
+// drafts who opened /playground in the same tab (a different scope) had
+// their real draft silently deleted on demo boot. The fix namespaces the
+// key by scope so the real and demo drafts coexist and never clobber.
+//
+// canvas-autosave.js is a browser IIFE (window.OrgLoom.canvasAutosave);
+// run it in a VM sandbox and drive the exported autosave API.
+
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -20,6 +32,9 @@ function makeStorage() {
 	};
 }
 
+// Build a mounted autosave instance sharing one sessionStorage across
+// "page loads" (we mutate window scope + re-call the API to simulate
+// navigating between the real canvas and the playground in one tab).
 function harness() {
 	const sessionStorage = makeStorage();
 	const localStorage = makeStorage();
@@ -34,7 +49,9 @@ function harness() {
 		window: win,
 		document: { addEventListener() {} },
 		console,
-
+		// The module references bare sessionStorage / setTimeout: point
+		// them at the same objects the test inspects, and run the debounced
+		// snapshot immediately so the test is synchronous.
 		sessionStorage,
 		localStorage,
 		setTimeout: (fn) => {
@@ -64,11 +81,13 @@ function harness() {
 	return { api, win, sessionStorage, localStorage, canvasState };
 }
 
+// Point the "current page" at a scope (like a real signed-in canvas vs a
+// playground demo render).
 function setScope(win, canvasState, { account, org, user }) {
 	win.ORGLOOM_ACCOUNT_ID = account;
 	win.SF_ORG_ID = org;
 	win.SF_USER_ID = user;
-	canvasState.currentCanvas = null;
+	canvasState.currentCanvas = null; // both scopes are an unsaved ('new') canvas
 }
 
 const REAL = { account: 'acc_real', org: '00DREAL', user: '005REAL' };
@@ -78,20 +97,24 @@ describe('autosave scope-namespacing (playground vs real)', () => {
 	test('opening the playground scope does NOT clear the real draft', () => {
 		const { api, win, sessionStorage, canvasState } = harness();
 
+		// 1. Real canvas: author a draft, autosave it.
 		setScope(win, canvasState, REAL);
 		canvasState.bulkRecords = [{ id: 'r1', objectName: 'Account', values: { Name: 'Real Co' } }];
 		api.autosaveSchedule();
 		const realKeys = sessionStorage._dump().filter((k) => k.indexOf('orgloom:canvas-draft:v1') === 0);
 		assert.equal(realKeys.length, 1, 'one scoped draft key written');
 
+		// 2. Same tab → /playground: demo boot restores under the DEMO scope.
 		setScope(win, canvasState, DEMO);
-		canvasState.bulkRecords = [];
+		canvasState.bulkRecords = []; // demo canvas starts empty
 		const restoredDemo = api.autosaveRestore();
 		assert.equal(restoredDemo, false, 'no demo draft to restore');
 
+		// The real draft MUST still be there (the bug deleted it here).
 		const afterDemo = sessionStorage._dump().filter((k) => k.indexOf('orgloom:canvas-draft:v1') === 0);
 		assert.ok(afterDemo.includes(realKeys[0]), 'real scoped draft survives the playground visit');
 
+		// 3. Back to the real canvas → the draft restores.
 		setScope(win, canvasState, REAL);
 		canvasState.bulkRecords = [];
 		const restoredReal = api.autosaveRestore();
@@ -114,6 +137,7 @@ describe('autosave scope-namespacing (playground vs real)', () => {
 		const keys = sessionStorage._dump().filter((k) => k.indexOf('orgloom:canvas-draft:v1') === 0);
 		assert.equal(keys.length, 2, 'real and demo drafts under separate keys');
 
+		// Restoring under REAL yields the real record, not the demo one.
 		setScope(win, canvasState, REAL);
 		canvasState.bulkRecords = [];
 		api.autosaveRestore();
@@ -129,7 +153,11 @@ describe('cross-org migration session-only recovery and isolation', () => {
 			id: 1,
 			objectName: 'Account',
 			loadedFromId: '001SOURCE',
-			values: { Id: '001SOURCE', Name: 'Durable Co' },
+			values: {
+				attributes: { type: 'Account', url: '/services/data/vXX.X/sobjects/Account/001SOURCE' },
+				Id: '001SOURCE',
+				Name: 'Durable Co',
+			},
 		}];
 		assert.equal(first.api.migrationStash({ status: 'awaiting-target' }), true);
 		assert.ok(first.sessionStorage.getItem('orgloom:migration:v1'));
@@ -141,6 +169,7 @@ describe('cross-org migration session-only recovery and isolation', () => {
 		assert.equal(resumed.isCrossOrg, true);
 		assert.equal(first.canvasState.bulkRecords[0].loadedFromId, undefined, 'source Id stripped');
 		assert.equal(first.canvasState.bulkRecords[0].values.Id, undefined, 'source values.Id stripped');
+		assert.equal(first.canvasState.bulkRecords[0].values.attributes, undefined, 'Salesforce transport metadata stripped');
 	});
 
 	test('another Org Loom account cannot resume the same-tab migration', () => {
@@ -168,6 +197,8 @@ describe('cross-org migration session-only recovery and isolation', () => {
 		h.canvasState.bulkRecords[0]._migrateMatchedId = '001TARGET';
 		h.api.migrationSyncIfActive();
 
+		// Visit the source/wrong org in the same tab. Its ordinary autosave
+		// must not replace the bound migration state with this unrelated row.
 		setScope(h.win, h.canvasState, REAL);
 		h.canvasState.migrateMode.active = false;
 		h.canvasState.bulkRecords = [{ id: 99, objectName: 'Contact', values: { LastName: 'Wrong page' } }];

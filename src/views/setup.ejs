@@ -1,3 +1,26 @@
+<%# First-boot setup wizard for self-host. Renders when SF_CLIENT_ID
+    is unset in the environment; guides the user through creating a
+    Salesforce External Client App and pasting the credentials in. On
+    submit, writes the values to .env in the repo root and signals the
+    user to restart the server (the dev runner reloads automatically;
+    the production runner needs a manual restart).
+
+    Terminology note: Salesforce renamed "Connected Apps" to "External
+    Client Apps" in Summer '24. New apps are created via "External
+    Client App Manager"; the legacy "App Manager" page still exists
+    for managing pre-Summer-'24 Connected Apps but no longer accepts
+    new app creation in most orgs. The underlying OAuth flow is
+    unchanged.
+
+    Locals:
+      appUrl: public URL of this instance (e.g. http://localhost:3000),
+                     used to compute the callback URL the user pastes into
+                     their Connected App.
+      submitError: optional error string surfaced after a failed
+                     write attempt.
+      submitted: true after a successful save; renders the
+                     "restart now" notice instead of the form.
+-%>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,7 +28,9 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Org Loom Canvas: First-boot setup</title>
 	<link rel="stylesheet" href="/css/app.css">
-
+	<%# Setup-wizard styling (.setup, .setup-step, .setup-form, ...)
+	    lives in public/css/app.css. Moved out of an inline <style>
+	    block so the CSP can keep style-src strict. -%>
 </head>
 <body>
 	<main class="setup">
@@ -169,7 +194,8 @@
 			</section>
 		<% } %>
 	</main>
-
+	<%# Wire data-select-on-click inputs to select-all on focus.
+	    Replaces an inline onclick=this.select() that violated CSP. -%>
 	<script nonce="<%= cspNonce %>">
 		document.querySelectorAll('input[data-select-on-click]').forEach(function (el) {
 			el.addEventListener('click', function () { el.select(); });

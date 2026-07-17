@@ -4,7 +4,13 @@ A canvas for staging Salesforce records: load existing data, edit it, generate n
 
 **Source-available under the PolyForm Internal Use License 1.0.0.** You can read, audit, modify, and run the source for your company's own internal business purposes. You may not provide it to anyone outside your company: no managed-service hosting, no consulting use, no redistribution to third parties. There is no auto-conversion to an OSI-approved open source license. See [`LICENSE`](./LICENSE).
 
-This package is published so customers, prospects, and their security teams can read the code behind the hosted service at [orgloom.com](https://orgloom.com). **It is not packaged as a turnkey self-host distribution.** The supported product is the hosted one.
+This repository is the maintained source for the canvas code used by the
+hosted service at [orgloom.com](https://orgloom.com). Customers, prospects,
+and security teams can review the same canvas source, including the comments
+that explain non-obvious constraints. Public pull requests are reviewed here
+and then imported into the private hosted-app integration repository before
+deployment. **It is not packaged as a turnkey self-host distribution.** The
+supported product is the hosted one.
 
 ## What's in this package
 

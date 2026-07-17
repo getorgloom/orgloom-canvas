@@ -1,9 +1,56 @@
+// SF record-level sharing helpers. Used by the magic-link share flow
+// to grant a recipient SF user direct read/edit access to the
+// underlying records a canvas references; without it, the recipient's
+// connection can't see the records and their slot-fills fail with
+// "no record to update."
+//
+// Share-table schema conventions (different for custom vs standard):
+//
+//   Custom objects: <ObjectName>__c → <ObjectName>__Share
+//     - parent-id field: ParentId
+//     - access-level field: AccessLevel
+//     - e.g., Project__c → Project__Share with
+//       { ParentId, UserOrGroupId, AccessLevel, RowCause }
+//     - Namespaced custom objects (ns__Foo__c) follow the same rule:
+//       ns__Foo__c → ns__Foo__Share.
+//
+//   Standard objects: <ObjectName> → <ObjectName>Share
+//     - parent-id field: <ObjectName>Id
+//     - access-level field: <ObjectName>AccessLevel
+//     - e.g., Account → AccountShare with
+//       { AccountId, UserOrGroupId, AccountAccessLevel, RowCause }
+//     - Account additionally has OpportunityAccessLevel /
+//       CaseAccessLevel / ContactAccessLevel fields; when omitted SF
+//       defaults them to 'None' which works for our recipient-fill
+//       use case (we just need access to the Account itself).
+//
+//   Some standard objects (User, Profile, ContentDocument, etc.) and
+//   some org configurations (OWD = Public Read/Write) reject share
+//   inserts entirely. Failures bubble up per-record so the owner can
+//   see which records need a manual sharing rule from their admin.
+
+// Map an SObject API name to the schema of its sharing table. Pure,
+// extracted so tests pin the standard-vs-custom split explicitly.
+// Returns { shareTable, parentField, accessLevelField, extraFields }.
+//
+// `extraFields` covers SF's quirk where AccountShare requires extra
+// AccessLevel axes (OpportunityAccessLevel + CaseAccessLevel) even
+// when the caller only cares about Account access. SF errors with
+// "missing required field: [OpportunityAccessLevel]" if these are
+// omitted. We default them to 'None': share grants Account access
+// only, child records are governed by their own sharing.
+//
+// Other standard-object shares (Opportunity / Lead / Case / Contact /
+// Campaign) are single-axis and need no extras. Custom-object shares
+// are uniform: ParentId + AccessLevel + RowCause.
 export function shareSchemaFor(objectName) {
 	if (typeof objectName !== 'string' || !objectName) {
 		throw new Error('shareSchemaFor: objectName is required');
 	}
 	if (objectName.endsWith('__c')) {
-
+		// Custom objects: <X>__c → <X>__Share with ParentId / AccessLevel.
+		// Namespaced custom objects (ns__Foo__c) follow the same rule
+		// (ns__Foo__c → ns__Foo__Share).
 		return {
 			shareTable: objectName.slice(0, -3) + '__Share',
 			parentField: 'ParentId',
@@ -11,7 +58,11 @@ export function shareSchemaFor(objectName) {
 			extraFields: {},
 		};
 	}
-
+	// AccountShare's multi-axis quirk. Required extras default to 'None'
+	// so the grant scopes to Account only; child Opportunity/Case
+	// access is whatever the recipient already had via their own
+	// profile/sharing. Setting them to anything other than 'None'
+	// would silently grant cascading access we didn't ask about.
 	if (objectName === 'Account') {
 		return {
 			shareTable: 'AccountShare',
@@ -23,7 +74,7 @@ export function shareSchemaFor(objectName) {
 			},
 		};
 	}
-
+	// Standard objects: <X> → <X>Share with <X>Id / <X>AccessLevel.
 	return {
 		shareTable: objectName + 'Share',
 		parentField: objectName + 'Id',
@@ -32,10 +83,21 @@ export function shareSchemaFor(objectName) {
 	};
 }
 
+// Back-compat alias for callers that just want the table name.
 export function shareTableFor(objectName) {
 	return shareSchemaFor(objectName).shareTable;
 }
 
+// Classify a SF share-insert error string into one of:
+//   'duplicate': DUPLICATE_VALUE; row already exists. Recipient has access.
+//   'covered-by-owd': "below organization levels"; OWD already grants the
+//                       recipient at least what we asked for. Manual share is
+//                       redundant; recipient has access.
+//   'fatal': anything else; surface to the caller as a real failure.
+//
+// Exported so tests can pin the classification matrix and the route
+// layer (or future callers) can reuse the same buckets without re-
+// implementing the regex.
 export function _classifyShareError(msg) {
 	if (!msg) {
 return 'fatal';
@@ -50,6 +112,26 @@ return 'covered-by-owd';
 	return 'fatal';
 }
 
+// Grant a SF user manual share access to a list of records. Each item
+// is { objectName, recordId }. Inserts a manual share row per record
+// using the recipient's SF user id as UserOrGroupId, AccessLevel =
+// 'Edit' (covers both read and write; slot-fill needs both).
+//
+// Returns { granted, failed }. Each entry carries the (objectName,
+// recordId) pair so the caller can correlate. Failures include the
+// SF error message so the UI can surface "ask your admin to share
+// X" (usually fired by insufficient-owner-perms cases).
+//
+// Two no-op-but-recipient-has-access conditions are normalized to
+// `granted` (with a flag on the entry):
+//   * DUPLICATE_VALUE: the share already exists. `alreadyShared: true`.
+//   * "below organization levels": the org's sharing defaults already
+//     grant the recipient at least the access we asked for, so the
+//     manual share row is redundant. SF rejects with that string when
+//     OWD on the object (or its child Opp/Case for AccountShare) is
+//     looser than what we passed in. `coveredByOWD: true`. The
+//     recipient HAS access either way; we just can't record it as
+//     a manual share row.
 export async function grantRecordAccess(conn, items, recipientSfUserId) {
 	const granted = [];
 	const failed = [];
@@ -60,6 +142,10 @@ return { granted, failed };
 		throw new Error('grantRecordAccess: recipientSfUserId is required');
 	}
 
+	// Sequential per-record insert. Could batch via composite REST for
+	// many records, but the typical canvas has <20 records and the
+	// failure-isolation per-record matches the UX (we want to know
+	// exactly which records bounced, not "the whole batch failed").
 	for (const item of items) {
 		const objectName = item && item.objectName;
 		const recordId = item && item.recordId;
@@ -78,7 +164,12 @@ return { granted, failed };
 			failed.push({ objectName, recordId, error: e.message || String(e) });
 			continue;
 		}
-
+		// Build the share row using the per-object field names. Custom
+		// objects get { ParentId, AccessLevel }; standard objects get
+		// { <Object>Id, <Object>AccessLevel }. AccountShare additionally
+		// requires { OpportunityAccessLevel, CaseAccessLevel } per the
+		// schema's `extraFields` map (defaulted to 'None'; see
+		// shareSchemaFor for the rationale).
 		const row = Object.assign(
 			{
 				[schema.parentField]: recordId,
@@ -119,6 +210,16 @@ return { granted, failed };
 	return { granted, failed };
 }
 
+// Build the list of unique (objectName, recordId) pairs to share for a
+// given canvas manifest. Drafts (no loadedFromId) and non-record
+// entries (type-nodes, pending) are excluded: they have nothing to
+// share. De-duplicates by recordId so a canvas with two slots on the
+// same record only triggers one share.
+//
+// Handles both payload shapes: the client serializes records into
+// `loadedRecords` + `drafts` arrays, while internal/test code may use
+// a unified `records` array. We walk whichever is present (or both)
+// so the helper works against any caller.
 export function recordsToShareFromManifest(payload) {
 	const out = [];
 	const seen = new Set();

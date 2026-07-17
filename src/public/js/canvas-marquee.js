@@ -1,3 +1,22 @@
+// Marquee selection + copy/paste clipboard.
+//
+// Two related responsibilities pulled out of app.js for size:
+//
+//   • Marquee: click-drag rectangular selection on the bulk canvas.
+//     A live DOM element follows the drag; on mouseup, records whose
+//     centers fall inside the rectangle become selected. Shift/Ctrl/Cmd
+//     during the drag makes it additive (union with prior selection)
+//     instead of replacing it.
+//
+//   • Clipboard: Ctrl/Cmd-C copies the current selection (records +
+//     internal associations) into an in-memory clipboard. Ctrl/Cmd-V
+//     pastes a single copy; Ctrl/Cmd-Shift-V opens a count prompt so
+//     the user can paste N copies in a grid. Pasted records get fresh
+//     temp ids and don't carry SF ids; they're drafts until upload.
+//
+// Mount pattern matches the rest of the modules under window.OrgLoom
+// (mount(deps) returns the public surface; single shared closure).
+
 (function () {
 	'use strict';
 
@@ -180,6 +199,7 @@
 					return;
 				}
 
+				// Selection bounding box + card padding define each cluster's footprint.
 				const xs = canvasState.bulkClipboard.records.map((r) => r.x);
 				const ys = canvasState.bulkClipboard.records.map((r) => r.y);
 				const minX = Math.min.apply(null, xs);
@@ -242,7 +262,7 @@
 				canvasState.bulkSelectedEdgeId = null;
 				renderBulkView();
 				showBulkToast('Pasted ' + n + ' cop' + (n === 1 ? 'y' : 'ies') + '.');
-
+				// Ctrl+Z: remove the pasted cards and the edges pasted with them.
 				const _pastedIds = new Set(newIds);
 				if (typeof pushUndo === 'function' && _pastedIds.size > 0) {
 					pushUndo('Paste', function () {

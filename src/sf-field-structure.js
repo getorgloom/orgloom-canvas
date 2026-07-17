@@ -1,3 +1,8 @@
+// Shared interpretation of Salesforce field-describe structure. Keep these
+// rules in one place: raw `nillable=false` does not by itself mean a caller
+// must supply the field during create (compound and server-managed fields are
+// common counterexamples).
+
 export function isCompoundContainer(field) {
 	return !!field && (field.type === 'address' || field.type === 'location');
 }
