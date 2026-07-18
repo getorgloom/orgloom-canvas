@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Runs user-authored transformations in a restricted interpreter with all-or-nothing rollback.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -20,93 +20,95 @@
 			bulkScriptModal.innerHTML =
 				'<div class="modal-overlay" data-bs-close></div>' +
 				'<div class="modal-body" style="max-width:780px">' +
-					'<div class="modal-header">' +
-						'<h3>Run script on records</h3>' +
-						'<button class="modal-close" data-bs-close>&times;</button>' +
-					'</div>' +
-					'<div class="modal-content">' +
-						'<p class="bs-blurb">JavaScript that runs locally against the records on your canvas. Nothing is sent to Salesforce until you click <em>Upload to Salesforce</em>.</p>' +
-						'<textarea id="bs-source" class="bs-source" spellcheck="false" autocomplete="off" autocorrect="off"></textarea>' +
-						'<details class="bs-cheatsheet">' +
-							'<summary>Cheat sheet</summary>' +
-							'<div class="bs-cheatsheet-body">' +
-								'<h4>Recipes</h4>' +
-								'<pre class="bs-recipe">// Bump every Opportunity Amount by 10%\n' +
-								'for (const r of records) {\n' +
-								'  if (r.objectName === \'Opportunity\' &amp;&amp; r.values.Amount) {\n' +
-								'    r.values.Amount = toNum(r.values.Amount) * 1.1;\n' +
-								'  }\n' +
-								'}</pre>' +
-								'<pre class="bs-recipe">// Set Stage = "Closed Lost" on every Opp with no Amount\n' +
-								'for (const r of records) {\n' +
-								'  if (r.objectName === \'Opportunity\' &amp;&amp; isBlank(r.values.Amount)) {\n' +
-								'    r.values.StageName = \'Closed Lost\';\n' +
-								'  }\n' +
-								'}</pre>' +
-								'<h4>What you can use</h4>' +
-								'<ul class="bs-vars">' +
-									'<li><code>records</code>: every card on the canvas. Each has <code>id</code>, <code>objectName</code>, <code>label</code>, <code>values</code>, and (for loaded SF rows) <code>loadedFromId</code>. Edit a field with <code>r.values.FieldName = ...</code>.</li>' +
-									'<li><code>r.loadedFromId</code>: the Salesforce Id of the row a card was pulled from. Set on cards loaded via Browse / SOQL / record-browse; empty on drafts you created on the canvas. At Upload time, cards <em>with</em> <code>loadedFromId</code> become UPDATEs and cards <em>without</em> become INSERTs, so this is the field to check when you want to touch only one or the other:' +
-										'<pre class="bs-recipe">// Only update existing SF rows, leave drafts alone\n' +
-										'for (const r of records) {\n' +
-										'  if (r.loadedFromId) {\n' +
-										'    r.values.LastReviewed__c = today();\n' +
-										'  }\n' +
-										'}</pre>' +
-									'</li>' +
-									'<li><strong>Helpers</strong>: <code>log(x)</code>, <code>abort(msg)</code>, <code>isBlank(x)</code>, <code>isNotBlank(x)</code>, <code>isEmpty(x)</code>, <code>isNotEmpty(x)</code>, <code>today()</code>, <code>now()</code>, <code>daysFromToday(n)</code>, <code>toStr(x)</code>, <code>toNum(x)</code>, <code>max(a,b)</code>, <code>min(a,b)</code>, <code>round(x)</code>, <code>floor(x)</code>, <code>ceil(x)</code>, <code>abs(x)</code>.</li>' +
-								'</ul>' +
-								'<h4>Quick syntax reference</h4>' +
-								'<ul class="bs-syntax">' +
-									'<li><code>let</code> / <code>const</code>, <code>if/else</code>, <code>for (const r of records)</code>, <code>break</code>, <code>continue</code></li>' +
-									'<li>Operators: <code>+ - * / %</code>, <code>== != === !==</code>, <code>&lt; &lt;= &gt; &gt;=</code>, <code>&amp;&amp; ||</code>, ternary <code>?:</code>, <code>+= -= *= /= %=</code></li>' +
-									'<li>Comments: <code>//</code> and <code>/* */</code>. Strings: <code>\'foo\'</code> or <code>"foo"</code>.</li>' +
-								'</ul>' +
-								'<details class="bs-nested">' +
-									'<summary>What\'s NOT supported (and why)</summary>' +
-									'<p>This is a safe subset of JavaScript run by a hand-written interpreter, not the browser\'s. To keep the sandbox honest, several things are unavailable on purpose:</p>' +
-									'<ul>' +
-										'<li><strong>Functions you write</strong> (arrow fns, function declarations), <code>this</code>, <code>new</code>, <code>try/catch</code>, <code>while</code>, classic <code>for(;;)</code>, regex literals, template strings, spread, destructuring, <code>async</code>/<code>await</code>.</li>' +
-										'<li><strong>Browser surface</strong>: <code>fetch</code>, <code>document</code>, <code>window</code>, <code>localStorage</code>, <code>setTimeout</code>. None are exposed.</li>' +
-										'<li><strong>Property names that escape sandboxes</strong>: <code>constructor</code>, <code>__proto__</code>, <code>prototype</code>. Blocked.</li>' +
-										'<li>SOQL, DML, <code>@future</code>: not available here. Use Upload to push changes to Salesforce.</li>' +
-									'</ul>' +
-								'</details>' +
-								'<details class="bs-nested">' +
-									'<summary>Coming from Apex?</summary>' +
-									'<table class="bs-map">' +
-										'<tr><th>Apex</th><th>Script here</th></tr>' +
-										'<tr><td><code>for (Account a : records)</code></td><td><code>for (const a of records)</code></td></tr>' +
-										'<tr><td><code>String.isBlank(x)</code></td><td><code>isBlank(x)</code></td></tr>' +
-										'<tr><td><code>Date.today()</code></td><td><code>today()</code></td></tr>' +
-										'<tr><td><code>record.Field__c</code></td><td><code>r.values.Field__c</code></td></tr>' +
-										'<tr><td><code>String x = \'foo\';</code></td><td><code>let x = \'foo\';</code></td></tr>' +
-										'<tr><td><code>Math.max(a, b)</code></td><td><code>max(a, b)</code></td></tr>' +
-									'</table>' +
-								'</details>' +
-								'<p class="bs-footnotes"><strong>Heads up:</strong> <code>Ctrl/Cmd+Enter</code> runs the script. Errors roll back every change. <code>r.id</code> and <code>r.loadedFromId</code> are read-only.</p>' +
-							'</div>' +
-						'</details>' +
-						'<div id="bs-output" class="bs-output" hidden></div>' +
-					'</div>' +
-					'<div class="modal-footer">' +
-						'<span class="bs-counter" id="bs-counter"></span>' +
-						'<button class="button secondary" data-bs-close>Cancel</button>' +
-						'<button class="button" id="bs-run">Run</button>' +
-					'</div>' +
+				'<div class="modal-header">' +
+				'<h3>Run script on records</h3>' +
+				'<button class="modal-close" data-bs-close>&times;</button>' +
+				'</div>' +
+				'<div class="modal-content">' +
+				'<p class="bs-blurb">JavaScript that runs locally against the records on your canvas. Nothing is sent to Salesforce until you click <em>Upload to Salesforce</em>.</p>' +
+				'<textarea id="bs-source" class="bs-source" spellcheck="false" autocomplete="off" autocorrect="off"></textarea>' +
+				'<details class="bs-cheatsheet">' +
+				'<summary>Cheat sheet</summary>' +
+				'<div class="bs-cheatsheet-body">' +
+				'<h4>Recipes</h4>' +
+				'<pre class="bs-recipe">// Bump every Opportunity Amount by 10%\n' +
+				'for (const r of records) {\n' +
+				"  if (r.objectName === 'Opportunity' &amp;&amp; r.values.Amount) {\n" +
+				'    r.values.Amount = toNum(r.values.Amount) * 1.1;\n' +
+				'  }\n' +
+				'}</pre>' +
+				'<pre class="bs-recipe">// Set Stage = "Closed Lost" on every Opp with no Amount\n' +
+				'for (const r of records) {\n' +
+				"  if (r.objectName === 'Opportunity' &amp;&amp; isBlank(r.values.Amount)) {\n" +
+				"    r.values.StageName = 'Closed Lost';\n" +
+				'  }\n' +
+				'}</pre>' +
+				'<h4>What you can use</h4>' +
+				'<ul class="bs-vars">' +
+				'<li><code>records</code>: every card on the canvas. Each has <code>id</code>, <code>objectName</code>, <code>label</code>, <code>values</code>, and (for loaded SF rows) <code>loadedFromId</code>. Edit a field with <code>r.values.FieldName = ...</code>.</li>' +
+				'<li><code>r.loadedFromId</code>: the Salesforce Id of the row a card was pulled from. Set on cards loaded via Browse / SOQL / record-browse; empty on drafts you created on the canvas. At Upload time, cards <em>with</em> <code>loadedFromId</code> become UPDATEs and cards <em>without</em> become INSERTs, so this is the field to check when you want to touch only one or the other:' +
+				'<pre class="bs-recipe">// Only update existing SF rows, leave drafts alone\n' +
+				'for (const r of records) {\n' +
+				'  if (r.loadedFromId) {\n' +
+				'    r.values.LastReviewed__c = today();\n' +
+				'  }\n' +
+				'}</pre>' +
+				'</li>' +
+				'<li><strong>Helpers</strong>: <code>log(x)</code>, <code>abort(msg)</code>, <code>isBlank(x)</code>, <code>isNotBlank(x)</code>, <code>isEmpty(x)</code>, <code>isNotEmpty(x)</code>, <code>today()</code>, <code>now()</code>, <code>daysFromToday(n)</code>, <code>toStr(x)</code>, <code>toNum(x)</code>, <code>max(a,b)</code>, <code>min(a,b)</code>, <code>round(x)</code>, <code>floor(x)</code>, <code>ceil(x)</code>, <code>abs(x)</code>.</li>' +
+				'</ul>' +
+				'<h4>Quick syntax reference</h4>' +
+				'<ul class="bs-syntax">' +
+				'<li><code>let</code> / <code>const</code>, <code>if/else</code>, <code>for (const r of records)</code>, <code>break</code>, <code>continue</code></li>' +
+				'<li>Operators: <code>+ - * / %</code>, <code>== != === !==</code>, <code>&lt; &lt;= &gt; &gt;=</code>, <code>&amp;&amp; ||</code>, ternary <code>?:</code>, <code>+= -= *= /= %=</code></li>' +
+				'<li>Comments: <code>//</code> and <code>/* */</code>. Strings: <code>\'foo\'</code> or <code>"foo"</code>.</li>' +
+				'</ul>' +
+				'<details class="bs-nested">' +
+				"<summary>What's NOT supported (and why)</summary>" +
+				"<p>This is a safe subset of JavaScript run by a hand-written interpreter, not the browser's. To keep the sandbox honest, several things are unavailable on purpose:</p>" +
+				'<ul>' +
+				'<li><strong>Functions you write</strong> (arrow fns, function declarations), <code>this</code>, <code>new</code>, <code>try/catch</code>, <code>while</code>, classic <code>for(;;)</code>, regex literals, template strings, spread, destructuring, <code>async</code>/<code>await</code>.</li>' +
+				'<li><strong>Browser surface</strong>: <code>fetch</code>, <code>document</code>, <code>window</code>, <code>localStorage</code>, <code>setTimeout</code>. None are exposed.</li>' +
+				'<li><strong>Property names that escape sandboxes</strong>: <code>constructor</code>, <code>__proto__</code>, <code>prototype</code>. Blocked.</li>' +
+				'<li>SOQL, DML, <code>@future</code>: not available here. Use Upload to push changes to Salesforce.</li>' +
+				'</ul>' +
+				'</details>' +
+				'<details class="bs-nested">' +
+				'<summary>Coming from Apex?</summary>' +
+				'<table class="bs-map">' +
+				'<tr><th>Apex</th><th>Script here</th></tr>' +
+				'<tr><td><code>for (Account a : records)</code></td><td><code>for (const a of records)</code></td></tr>' +
+				'<tr><td><code>String.isBlank(x)</code></td><td><code>isBlank(x)</code></td></tr>' +
+				'<tr><td><code>Date.today()</code></td><td><code>today()</code></td></tr>' +
+				'<tr><td><code>record.Field__c</code></td><td><code>r.values.Field__c</code></td></tr>' +
+				"<tr><td><code>String x = 'foo';</code></td><td><code>let x = 'foo';</code></td></tr>" +
+				'<tr><td><code>Math.max(a, b)</code></td><td><code>max(a, b)</code></td></tr>' +
+				'</table>' +
+				'</details>' +
+				'<p class="bs-footnotes"><strong>Heads up:</strong> <code>Ctrl/Cmd+Enter</code> runs the script. Errors roll back every change. <code>r.id</code> and <code>r.loadedFromId</code> are read-only.</p>' +
+				'</div>' +
+				'</details>' +
+				'<div id="bs-output" class="bs-output" hidden></div>' +
+				'</div>' +
+				'<div class="modal-footer">' +
+				'<span class="bs-counter" id="bs-counter"></span>' +
+				'<button class="button secondary" data-bs-close>Cancel</button>' +
+				'<button class="button" id="bs-run">Run</button>' +
+				'</div>' +
 				'</div>';
 			document.body.appendChild(bulkScriptModal);
-			bulkScriptModal.querySelectorAll('[data-bs-close]').forEach(el => el.addEventListener('click', closeBulkScriptModal));
-			document.addEventListener('keydown', e => {
- if (e.key === 'Escape' && !bulkScriptModal.classList.contains('hidden')) {
-closeBulkScriptModal();
-} 
-});
+			bulkScriptModal
+				.querySelectorAll('[data-bs-close]')
+				.forEach((el) => el.addEventListener('click', closeBulkScriptModal));
+			document.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape' && !bulkScriptModal.classList.contains('hidden')) {
+					closeBulkScriptModal();
+				}
+			});
 
 			const _bsExample =
 				'// Example: bump every Opportunity Amount by 10%\n' +
 				'for (const r of records) {\n' +
-				'\tif (r.objectName === \'Opportunity\' && r.values.Amount) {\n' +
+				"\tif (r.objectName === 'Opportunity' && r.values.Amount) {\n" +
 				'\t\tr.values.Amount = toNum(r.values.Amount) * 1.1;\n' +
 				'\t}\n' +
 				'}\n';
@@ -137,8 +139,8 @@ closeBulkScriptModal();
 			function closeBulkScriptModal() {
 				const ta = bulkScriptModal.querySelector('#bs-source');
 				if (ta) {
-_bsLastSource = ta.value;
-}
+					_bsLastSource = ta.value;
+				}
 				bulkScriptModal.classList.add('hidden');
 			}
 
@@ -167,13 +169,29 @@ _bsLastSource = ta.value;
 				out.textContent = text;
 			}
 
-			const _BS_KEYWORDS = ['let', 'const', 'if', 'else', 'for', 'of', 'true', 'false', 'null', 'break', 'continue'];
+			const _BS_KEYWORDS = [
+				'let',
+				'const',
+				'if',
+				'else',
+				'for',
+				'of',
+				'true',
+				'false',
+				'null',
+				'break',
+				'continue',
+			];
 			const _BS_OPS_MULTI = ['===', '!==', '==', '!=', '<=', '>=', '&&', '||', '+=', '-=', '*=', '/=', '%='];
 			const _BS_OPS_SINGLE = '+-*/%<>=!?:.,;(){}[]';
 			const _BS_FORBIDDEN_PROPS = new Set([
-				'constructor', '__proto__', 'prototype',
-				'__defineGetter__', '__defineSetter__',
-				'__lookupGetter__', '__lookupSetter__',
+				'constructor',
+				'__proto__',
+				'prototype',
+				'__defineGetter__',
+				'__defineSetter__',
+				'__lookupGetter__',
+				'__lookupSetter__',
 			]);
 			const _BS_MAX_STEPS = 1000000;
 			const _BS_BREAK = Symbol('break');
@@ -181,14 +199,17 @@ _bsLastSource = ta.value;
 
 			function _bsTokenize(src) {
 				const toks = [];
-				let i = 0, line = 1, col = 1;
+				let i = 0,
+					line = 1,
+					col = 1;
 				const advance = () => {
 					const c = src[i++];
 					if (c === '\n') {
- line++; col = 1; 
-} else {
- col++; 
-}
+						line++;
+						col = 1;
+					} else {
+						col++;
+					}
 					return c;
 				};
 				const peek = (n) => src[i + (n || 0)];
@@ -199,37 +220,41 @@ _bsLastSource = ta.value;
 				while (i < src.length) {
 					const c = src[i];
 					if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
- advance(); continue; 
-}
+						advance();
+						continue;
+					}
 					if (c === '/' && peek(1) === '/') {
 						while (i < src.length && src[i] !== '\n') {
-advance();
-}
+							advance();
+						}
 						continue;
 					}
 					if (c === '/' && peek(1) === '*') {
-						advance(); advance();
+						advance();
+						advance();
 						while (i < src.length && !(src[i] === '*' && peek(1) === '/')) {
-advance();
-}
+							advance();
+						}
 						if (i < src.length) {
- advance(); advance(); 
-}
+							advance();
+							advance();
+						}
 						continue;
 					}
-					const startLine = line, startCol = col;
+					const startLine = line,
+						startCol = col;
 					if (isDigit(c) || (c === '.' && isDigit(peek(1)))) {
 						let s = '';
 						while (i < src.length && (isDigit(src[i]) || src[i] === '.')) {
-s += advance();
-}
+							s += advance();
+						}
 						if (s.split('.').length > 2 || Number.isNaN(Number(s))) {
 							throw new Error('Malformed number "' + s + '" at line ' + startLine);
 						}
 						toks.push({ type: 'num', value: Number(s), line: startLine, col: startCol });
 						continue;
 					}
-					if (c === '"' || c === '\'') {
+					if (c === '"' || c === "'") {
 						const quote = c;
 						advance();
 						let s = '';
@@ -237,15 +262,15 @@ s += advance();
 							if (src[i] === '\\') {
 								advance();
 								const esc = advance();
-								const map = { 'n': '\n', 't': '\t', 'r': '\r', '\\': '\\', '\'': '\'', '"': '"', '0': '\0' };
-								s += (esc in map) ? map[esc] : esc;
+								const map = { n: '\n', t: '\t', r: '\r', '\\': '\\', "'": "'", '"': '"', 0: '\0' };
+								s += esc in map ? map[esc] : esc;
 							} else {
 								s += advance();
 							}
 						}
 						if (i >= src.length) {
-throw new Error('Unterminated string at line ' + startLine);
-}
+							throw new Error('Unterminated string at line ' + startLine);
+						}
 						advance();
 						toks.push({ type: 'str', value: s, line: startLine, col: startCol });
 						continue;
@@ -253,8 +278,8 @@ throw new Error('Unterminated string at line ' + startLine);
 					if (isIdStart(c)) {
 						let s = '';
 						while (i < src.length && isIdPart(src[i])) {
-s += advance();
-}
+							s += advance();
+						}
 						const type = _BS_KEYWORDS.indexOf(s) !== -1 ? s : 'id';
 						toks.push({ type, value: s, line: startLine, col: startCol });
 						continue;
@@ -263,13 +288,14 @@ s += advance();
 					for (let k = 0; k < _BS_OPS_MULTI.length; k++) {
 						const op = _BS_OPS_MULTI[k];
 						if (src.substr(i, op.length) === op) {
- matched = op; break; 
-}
+							matched = op;
+							break;
+						}
 					}
 					if (matched) {
 						for (let k = 0; k < matched.length; k++) {
-advance();
-}
+							advance();
+						}
 						toks.push({ type: 'op', value: matched, line: startLine, col: startCol });
 						continue;
 					}
@@ -285,6 +311,7 @@ advance();
 			}
 
 			function _bsParse(tokens) {
+				// Parse a small supported language instead of evaluating arbitrary JavaScript.
 				let pos = 0;
 				const peek = (n) => tokens[pos + (n || 0)];
 				const eat = () => tokens[pos++];
@@ -295,7 +322,16 @@ advance();
 				const consume = (type, value, msg) => {
 					if (!check(type, value)) {
 						const t = peek();
-						throw new Error('Parse error at line ' + t.line + ': expected ' + (value || type) + ', got "' + (t.value !== undefined ? t.value : t.type) + '"' + (msg ? ' (' + msg + ')' : ''));
+						throw new Error(
+							'Parse error at line ' +
+								t.line +
+								': expected ' +
+								(value || type) +
+								', got "' +
+								(t.value !== undefined ? t.value : t.type) +
+								'"' +
+								(msg ? ' (' + msg + ')' : ''),
+						);
 					}
 					return eat();
 				};
@@ -303,29 +339,33 @@ advance();
 				function parseProgram() {
 					const body = [];
 					while (!check('eof')) {
-body.push(parseStatement());
-}
+						body.push(parseStatement());
+					}
 					return { type: 'program', body };
 				}
 				function parseStatement() {
 					if (check('let') || check('const')) {
-return parseLet();
-}
+						return parseLet();
+					}
 					if (check('if')) {
-return parseIf();
-}
+						return parseIf();
+					}
 					if (check('for')) {
-return parseFor();
-}
+						return parseFor();
+					}
 					if (check('break')) {
- eat(); maybeSemi(); return { type: 'break' }; 
-}
+						eat();
+						maybeSemi();
+						return { type: 'break' };
+					}
 					if (check('continue')) {
- eat(); maybeSemi(); return { type: 'continue' }; 
-}
+						eat();
+						maybeSemi();
+						return { type: 'continue' };
+					}
 					if (check('op', '{')) {
-return parseBlock();
-}
+						return parseBlock();
+					}
 					const expr = parseExpression();
 					maybeSemi();
 					return { type: 'expr', expr };
@@ -346,8 +386,9 @@ return parseBlock();
 					const then = parseStatement();
 					let alt = null;
 					if (check('else')) {
- eat(); alt = parseStatement(); 
-}
+						eat();
+						alt = parseStatement();
+					}
 					return { type: 'if', cond, then, else: alt };
 				}
 				function parseFor() {
@@ -368,20 +409,20 @@ return parseBlock();
 					consume('op', '{');
 					const body = [];
 					while (!check('op', '}') && !check('eof')) {
-body.push(parseStatement());
-}
+						body.push(parseStatement());
+					}
 					consume('op', '}');
 					return { type: 'block', body };
 				}
 				function maybeSemi() {
- if (check('op', ';')) {
-eat();
-} 
-}
+					if (check('op', ';')) {
+						eat();
+					}
+				}
 
 				function parseExpression() {
- return parseAssign(); 
-}
+					return parseAssign();
+				}
 				const ASSIGN_OPS = ['=', '+=', '-=', '*=', '/=', '%='];
 				function parseAssign() {
 					const left = parseTernary();
@@ -406,15 +447,17 @@ eat();
 				function parseLogicOr() {
 					let left = parseLogicAnd();
 					while (check('op', '||')) {
- eat(); left = { type: 'logical', op: '||', left, right: parseLogicAnd() }; 
-}
+						eat();
+						left = { type: 'logical', op: '||', left, right: parseLogicAnd() };
+					}
 					return left;
 				}
 				function parseLogicAnd() {
 					let left = parseEquality();
 					while (check('op', '&&')) {
- eat(); left = { type: 'logical', op: '&&', left, right: parseEquality() }; 
-}
+						eat();
+						left = { type: 'logical', op: '&&', left, right: parseEquality() };
+					}
 					return left;
 				}
 				function parseEquality() {
@@ -474,8 +517,9 @@ eat();
 							if (!check('op', ')')) {
 								args.push(parseExpression());
 								while (check('op', ',')) {
- eat(); args.push(parseExpression()); 
-}
+									eat();
+									args.push(parseExpression());
+								}
 							}
 							consume('op', ')');
 							node = { type: 'call', callee: node, args };
@@ -488,27 +532,34 @@ eat();
 				function parsePrimary() {
 					const t = peek();
 					if (t.type === 'num' || t.type === 'str') {
- eat(); return { type: 'lit', value: t.value }; 
-}
+						eat();
+						return { type: 'lit', value: t.value };
+					}
 					if (t.type === 'true') {
- eat(); return { type: 'lit', value: true }; 
-}
+						eat();
+						return { type: 'lit', value: true };
+					}
 					if (t.type === 'false') {
- eat(); return { type: 'lit', value: false }; 
-}
+						eat();
+						return { type: 'lit', value: false };
+					}
 					if (t.type === 'null') {
- eat(); return { type: 'lit', value: null }; 
-}
+						eat();
+						return { type: 'lit', value: null };
+					}
 					if (t.type === 'id') {
- eat(); return { type: 'ident', name: t.value }; 
-}
+						eat();
+						return { type: 'ident', name: t.value };
+					}
 					if (t.type === 'op' && t.value === '(') {
 						eat();
 						const e = parseExpression();
 						consume('op', ')');
 						return e;
 					}
-					throw new Error('Unexpected token "' + (t.value !== undefined ? t.value : t.type) + '" at line ' + t.line);
+					throw new Error(
+						'Unexpected token "' + (t.value !== undefined ? t.value : t.type) + '" at line ' + t.line,
+					);
 				}
 
 				return parseProgram();
@@ -524,30 +575,31 @@ eat();
 					}
 				}
 				function makeScope(parent) {
- return { vars: new Map(), parent }; 
-}
+					return { vars: new Map(), parent };
+				}
 				function lookup(scope, name) {
 					let s = scope;
 					while (s) {
 						if (s.vars.has(name)) {
-return s.vars.get(name);
-}
+							return s.vars.get(name);
+						}
 						s = s.parent;
 					}
 					throw new Error('Undefined identifier: ' + name);
 				}
 				function defineVar(scope, name, value) {
 					if (scope.vars.has(name)) {
-throw new Error('Variable "' + name + '" is already defined in this scope');
-}
+						throw new Error('Variable "' + name + '" is already defined in this scope');
+					}
 					scope.vars.set(name, value);
 				}
 				function assignVar(scope, name, value) {
 					let s = scope;
 					while (s) {
 						if (s.vars.has(name)) {
- s.vars.set(name, value); return; 
-}
+							s.vars.set(name, value);
+							return;
+						}
 						s = s.parent;
 					}
 					throw new Error('Cannot assign to undeclared variable: ' + name);
@@ -559,45 +611,49 @@ throw new Error('Variable "' + name + '" is already defined in this scope');
 				}
 				function readMember(obj, prop) {
 					if (obj == null) {
-throw new Error('Cannot read property "' + prop + '" of ' + obj);
-}
+						throw new Error('Cannot read property "' + prop + '" of ' + obj);
+					}
 					checkProp(prop);
 					return obj[prop];
 				}
 				function writeMember(obj, prop, value) {
 					if (obj == null) {
-throw new Error('Cannot write property "' + prop + '" of ' + obj);
-}
+						throw new Error('Cannot write property "' + prop + '" of ' + obj);
+					}
 					checkProp(prop);
 					if (_identityGuarded.has(obj) && _IDENTITY_PROPS.has(String(prop))) {
-						throw new Error('Record identity is read-only: cannot assign r.' + prop + ' (edit r.values.* instead)');
+						throw new Error(
+							'Record identity is read-only: cannot assign r.' + prop + ' (edit r.values.* instead)',
+						);
 					}
 					obj[prop] = value;
 				}
 				function applyAssignOp(op, oldVal, r) {
 					if (op === '=') {
-return r;
-}
+						return r;
+					}
 					if (op === '+=') {
-return oldVal + r;
-}
+						return oldVal + r;
+					}
 					if (op === '-=') {
-return oldVal - r;
-}
+						return oldVal - r;
+					}
 					if (op === '*=') {
-return oldVal * r;
-}
+						return oldVal * r;
+					}
 					if (op === '/=') {
-return oldVal / r;
-}
+						return oldVal / r;
+					}
 					return oldVal % r;
 				}
 
 				function evalExpr(node, scope) {
 					tick();
 					switch (node.type) {
-						case 'lit': return node.value;
-						case 'ident': return lookup(scope, node.name);
+						case 'lit':
+							return node.value;
+						case 'ident':
+							return lookup(scope, node.name);
 						case 'member': {
 							const obj = evalExpr(node.object, scope);
 							const prop = node.computed ? evalExpr(node.property, scope) : node.property;
@@ -608,7 +664,9 @@ return oldVal / r;
 							let fn, thisArg;
 							if (node.callee.type === 'member') {
 								const obj = evalExpr(node.callee.object, scope);
-								const prop = node.callee.computed ? evalExpr(node.callee.property, scope) : node.callee.property;
+								const prop = node.callee.computed
+									? evalExpr(node.callee.property, scope)
+									: node.callee.property;
 								fn = readMember(obj, prop);
 								thisArg = obj;
 							} else {
@@ -616,45 +674,58 @@ return oldVal / r;
 								thisArg = undefined;
 							}
 							if (typeof fn !== 'function') {
-throw new Error('Cannot call non-function');
-}
+								throw new Error('Cannot call non-function');
+							}
 							return fn.apply(thisArg, args);
 						}
 						case 'unary': {
 							const v = evalExpr(node.arg, scope);
 							if (node.op === '!') {
-return !v;
-}
+								return !v;
+							}
 							if (node.op === '-') {
-return -v;
-}
+								return -v;
+							}
 							return +v;
 						}
 						case 'binary': {
 							const l = evalExpr(node.left, scope);
 							const r = evalExpr(node.right, scope);
 							switch (node.op) {
-								case '+': return l + r;
-								case '-': return l - r;
-								case '*': return l * r;
-								case '/': return l / r;
-								case '%': return l % r;
-								case '==': return l == r;
-								case '!=': return l != r;
-								case '===': return l === r;
-								case '!==': return l !== r;
-								case '<': return l < r;
-								case '<=': return l <= r;
-								case '>': return l > r;
-								case '>=': return l >= r;
+								case '+':
+									return l + r;
+								case '-':
+									return l - r;
+								case '*':
+									return l * r;
+								case '/':
+									return l / r;
+								case '%':
+									return l % r;
+								case '==':
+									return l == r;
+								case '!=':
+									return l != r;
+								case '===':
+									return l === r;
+								case '!==':
+									return l !== r;
+								case '<':
+									return l < r;
+								case '<=':
+									return l <= r;
+								case '>':
+									return l > r;
+								case '>=':
+									return l >= r;
 							}
 							throw new Error('Unknown binary op');
 						}
 						case 'logical': {
 							const l = evalExpr(node.left, scope);
 							if (node.op === '&&') {
-return l ? evalExpr(node.right, scope) : l;
-}
+								return l ? evalExpr(node.right, scope) : l;
+							}
 							return l ? l : evalExpr(node.right, scope);
 						}
 						case 'ternary':
@@ -685,25 +756,29 @@ return l ? evalExpr(node.right, scope) : l;
 				function execStmt(node, scope) {
 					tick();
 					switch (node.type) {
-						case 'expr': evalExpr(node.expr, scope); return;
-						case 'let': defineVar(scope, node.name, evalExpr(node.init, scope)); return;
+						case 'expr':
+							evalExpr(node.expr, scope);
+							return;
+						case 'let':
+							defineVar(scope, node.name, evalExpr(node.init, scope));
+							return;
 						case 'block': {
 							const inner = makeScope(scope);
 							for (let k = 0; k < node.body.length; k++) {
 								const r = execStmt(node.body[k], inner);
 								if (r === _BS_BREAK || r === _BS_CONTINUE) {
-return r;
-}
+									return r;
+								}
 							}
 							return;
 						}
 						case 'if':
 							if (evalExpr(node.cond, scope)) {
-return execStmt(node.then, scope);
-}
+								return execStmt(node.then, scope);
+							}
 							if (node.else) {
-return execStmt(node.else, scope);
-}
+								return execStmt(node.else, scope);
+							}
 							return;
 						case 'forof': {
 							const iter = evalExpr(node.iterable, scope);
@@ -715,16 +790,18 @@ return execStmt(node.else, scope);
 								inner.vars.set(node.name, v);
 								const r = execStmt(node.body, inner);
 								if (r === _BS_BREAK) {
-break;
-}
+									break;
+								}
 								if (r === _BS_CONTINUE) {
-continue;
-}
+									continue;
+								}
 							}
 							return;
 						}
-						case 'break': return _BS_BREAK;
-						case 'continue': return _BS_CONTINUE;
+						case 'break':
+							return _BS_BREAK;
+						case 'continue':
+							return _BS_CONTINUE;
 					}
 					throw new Error('Unknown statement: ' + node.type);
 				}
@@ -732,14 +809,15 @@ continue;
 				const root = makeScope(null);
 				Object.keys(env).forEach((k) => root.vars.set(k, env[k]));
 				for (let k = 0; k < ast.body.length; k++) {
-execStmt(ast.body[k], root);
-}
+					execStmt(ast.body[k], root);
+				}
 			}
 
 			function runBulkScript(source) {
 				const out = bulkScriptModal.querySelector('#bs-output');
 				_bsLastSource = source;
 
+				// Snapshot every record so syntax/runtime failures leave the canvas unchanged.
 				const recordSnapshots = new Map();
 				canvasState.bulkRecords.forEach((r) => {
 					let snap;
@@ -756,20 +834,24 @@ execStmt(ast.body[k], root);
 				const logs = [];
 				const log = function () {
 					const args = Array.prototype.slice.call(arguments);
-					logs.push(args.map((a) => {
-						if (typeof a === 'string') {
-return a;
-}
-						try {
- return JSON.stringify(a); 
-} catch (_) {
- return String(a); 
-}
-					}).join(' '));
+					logs.push(
+						args
+							.map((a) => {
+								if (typeof a === 'string') {
+									return a;
+								}
+								try {
+									return JSON.stringify(a);
+								} catch (_) {
+									return String(a);
+								}
+							})
+							.join(' '),
+					);
 				};
 				const abort = (msg) => {
- throw new Error(msg || 'Script aborted'); 
-};
+					throw new Error(msg || 'Script aborted');
+				};
 				const h = _bsBuildHelpers();
 
 				let ast;
@@ -806,12 +888,12 @@ return a;
 					canvasState.bulkRecords.forEach((r) => {
 						const snap = recordSnapshots.get(r.id);
 						if (!snap) {
-return;
-}
+							return;
+						}
 						for (const key of Object.keys(r)) {
 							if (!(key in snap)) {
-delete r[key];
-}
+								delete r[key];
+							}
 						}
 						Object.assign(r, snap);
 					});
@@ -819,30 +901,32 @@ delete r[key];
 				const renderScriptError = (msg) => {
 					const lines = [];
 					if (logs.length) {
-lines.push('--- log ---', logs.join('\n'), '');
-}
+						lines.push('--- log ---', logs.join('\n'), '');
+					}
 					lines.push('Error: ' + msg, '(no changes applied)');
 					_bsRender(out, 'error', lines.join('\n'));
 				};
 
-				const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+				const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
 				let elapsed;
 				let changed = 0;
 				try {
 					_bsInterpret(ast, env);
-					elapsed = (((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0).toFixed(1);
+					elapsed = (
+						(typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - t0
+					).toFixed(1);
 					canvasState.bulkRecords.forEach((r) => {
 						const snap = recordSnapshots.get(r.id);
 						if (!snap) {
-return;
-}
+							return;
+						}
 						if (JSON.stringify(snap.values || {}) !== JSON.stringify(r.values || {})) {
-changed++;
-}
+							changed++;
+						}
 					});
 				} catch (err) {
 					rollbackAll();
-					const raw = (err && err.message) ? err.message : String(err);
+					const raw = err && err.message ? err.message : String(err);
 					const msg = /circular/i.test(raw)
 						? 'A field was set to point back at its own record (circular reference). Nothing was applied; set r.values fields to plain values, not the record or values object itself.'
 						: raw;
@@ -851,13 +935,15 @@ changed++;
 				}
 
 				if (changed > 0) {
-renderBulkView();
-}
+					renderBulkView();
+				}
 				const lines = [];
 				if (logs.length) {
-lines.push('--- log ---', logs.join('\n'), '');
-}
-				lines.push('OK · ' + changed + ' record' + (changed === 1 ? '' : 's') + ' changed · ' + elapsed + ' ms');
+					lines.push('--- log ---', logs.join('\n'), '');
+				}
+				lines.push(
+					'OK · ' + changed + ' record' + (changed === 1 ? '' : 's') + ' changed · ' + elapsed + ' ms',
+				);
 				_bsRender(out, changed > 0 ? 'ok' : 'info', lines.join('\n'));
 				if (changed > 0) {
 					const _doneMsg = 'Script updated ' + changed + ' record' + (changed === 1 ? '' : 's') + '.';
@@ -865,7 +951,13 @@ lines.push('--- log ---', logs.join('\n'), '');
 						showBulkToastWithAction(_doneMsg, 'Undo', () => {
 							rollbackAll();
 							renderBulkView();
-							showBulkToast('Reverted the script’s changes to ' + changed + ' record' + (changed === 1 ? '' : 's') + '.');
+							showBulkToast(
+								'Reverted the script’s changes to ' +
+									changed +
+									' record' +
+									(changed === 1 ? '' : 's') +
+									'.',
+							);
 						});
 					} else {
 						showBulkToast(_doneMsg);
@@ -874,22 +966,26 @@ lines.push('--- log ---', logs.join('\n'), '');
 			}
 
 			async function runBulkScriptWithGate(source) {
-				const loadedCount = _bsScriptableRecords()
-					.filter((r) => r.loadedFromId)
-					.length;
+				const loadedCount = _bsScriptableRecords().filter((r) => r.loadedFromId).length;
 				if (loadedCount > 0) {
 					const ok = await showConfirmDialog({
 						title: 'Run script on ' + loadedCount + ' loaded record' + (loadedCount === 1 ? '' : 's') + '?',
-						message: 'This script will modify ' + loadedCount + ' record' + (loadedCount === 1 ? '' : 's') +
-							' that map' + (loadedCount === 1 ? 's' : '') + ' to existing Salesforce rows. ' +
+						message:
+							'This script will modify ' +
+							loadedCount +
+							' record' +
+							(loadedCount === 1 ? '' : 's') +
+							' that map' +
+							(loadedCount === 1 ? 's' : '') +
+							' to existing Salesforce rows. ' +
 							'Edits run locally; your next Upload is what would push them to Salesforce. Make sure you trust this script before running.',
 						confirmLabel: 'Run script',
 						cancelLabel: 'Cancel',
 						danger: true,
 					});
 					if (!ok) {
-return;
-}
+						return;
+					}
 				}
 				runBulkScript(source);
 			}

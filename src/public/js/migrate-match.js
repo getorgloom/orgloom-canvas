@@ -1,12 +1,20 @@
-
 (function () {
 	'use strict';
+	// Guides destination matching and field mapping without mutating Salesforce until upload.
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	// Match keys must also be marked filterable by the destination describe response.
 	const KEYABLE_TYPES = new Set([
-		'string', 'email', 'phone', 'url', 'textarea',
-		'int', 'double', 'currency', 'percent',
+		'string',
+		'email',
+		'phone',
+		'url',
+		'textarea',
+		'int',
+		'double',
+		'currency',
+		'percent',
 	]);
 
 	function _distinctObjects(canvasState) {
@@ -39,10 +47,9 @@
 			}
 			return 3;
 		}
-		return fields.slice().sort((a, b) =>
-			rank(a) - rank(b) ||
-			String(a.label || a.name).localeCompare(String(b.label || b.name)),
-		);
+		return fields
+			.slice()
+			.sort((a, b) => rank(a) - rank(b) || String(a.label || a.name).localeCompare(String(b.label || b.name)));
 	}
 
 	function _tierLabel(f) {
@@ -59,10 +66,12 @@
 	}
 
 	function _preferredKeyCandidate(describe, rec) {
-		return _keyCandidates(describe).find((field) => {
-			const value = _lookup(rec && rec.values, field.name);
-			return value !== null && value !== undefined && String(value) !== '';
-		}) || null;
+		return (
+			_keyCandidates(describe).find((field) => {
+				const value = _lookup(rec && rec.values, field.name);
+				return value !== null && value !== undefined && String(value) !== '';
+			}) || null
+		);
 	}
 
 	function _lookup(values, fieldName) {
@@ -141,24 +150,21 @@
 		}
 		if (type === 'multipicklist') {
 			const allowed = new Set(_activePicklistValues(field));
-			const values = String(raw).split(';').map((value) => value.trim()).filter(Boolean);
-			return values.length > 0 && values.every((value) => allowed.has(value))
-				? 'direct'
-				: 'incompatible';
+			const values = String(raw)
+				.split(';')
+				.map((value) => value.trim())
+				.filter(Boolean);
+			return values.length > 0 && values.every((value) => allowed.has(value)) ? 'direct' : 'incompatible';
 		}
 		if (['int', 'double', 'currency', 'percent'].includes(type)) {
 			if (typeof raw === 'string' && raw.trim() === '') {
 				return 'incompatible';
 			}
 			const number = Number(raw);
-			return Number.isFinite(number) && (type !== 'int' || Number.isInteger(number))
-				? 'direct'
-				: 'incompatible';
+			return Number.isFinite(number) && (type !== 'int' || Number.isInteger(number)) ? 'direct' : 'incompatible';
 		}
 		if (type === 'boolean') {
-			return typeof raw === 'boolean' || /^(true|false)$/i.test(String(raw))
-				? 'direct'
-				: 'incompatible';
+			return typeof raw === 'boolean' || /^(true|false)$/i.test(String(raw)) ? 'direct' : 'incompatible';
 		}
 		if (type === 'date') {
 			const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(raw));
@@ -180,7 +186,11 @@
 				? 'direct'
 				: 'incompatible';
 		}
-		if (Number.isFinite(Number(field.length)) && Number(field.length) >= 0 && String(raw).length > Number(field.length)) {
+		if (
+			Number.isFinite(Number(field.length)) &&
+			Number(field.length) >= 0 &&
+			String(raw).length > Number(field.length)
+		) {
 			return 'incompatible';
 		}
 		return 'direct';
@@ -196,9 +206,7 @@
 		}
 		const wanted = String(value).toLowerCase();
 		const key = Object.keys(candidatesByValue).find((k) => k.toLowerCase() === wanted);
-		return key && Array.isArray(candidatesByValue[key])
-			? candidatesByValue[key]
-			: [];
+		return key && Array.isArray(candidatesByValue[key]) ? candidatesByValue[key] : [];
 	}
 
 	function _applyMatchResponse(recs, keyField, data) {
@@ -221,8 +229,7 @@
 		let matched = 0;
 		let unresolved = 0;
 		byValue.forEach((sourceRecords, value) => {
-			const candidates = _candidateList(candidatesByValue, value)
-				.filter((c) => c && typeof c.id === 'string');
+			const candidates = _candidateList(candidatesByValue, value).filter((c) => c && typeof c.id === 'string');
 			if (candidates.length === 1 && sourceRecords.length === 1) {
 				const rec = sourceRecords[0];
 				rec.loadedFromId = candidates[0].id;
@@ -284,9 +291,10 @@
 			rec._migrateMatchIntent = 'existing';
 			return { ok: false, error: 'unknown-candidate' };
 		}
-		const claimed = (allRecords || []).some((other) =>
-			other && other !== rec && other._migrateMatchedId === candidate.id,
+		const claimed = (allRecords || []).some(
+			(other) => other && other !== rec && other._migrateMatchedId === candidate.id,
 		);
+		// One destination row may satisfy only one canvas record in a migration plan.
 		if (claimed) {
 			delete rec._migrateMatchResolution;
 			rec._migrateMatchIntent = 'existing';
@@ -315,64 +323,78 @@
 				const objects = _distinctObjects(canvasState);
 				const snapshotFields = [
 					'values',
-					'loadedFromId', '_migrateMatchedId', '_migrateMatchKey', '_migrateMatchValue',
-					'_migrateMatchAmbiguous', '_migrateMatchResolution', '_migrateMatchIntent',
-					'_migrateMatchCandidates', '_migrateRecordTypeId', '_migrateClearRecordType',
-					'_migratePicklistRemap', '_migrateFieldResolutions',
-					'_migrateMatchSearched', '_migrateMatchSearchError',
+					'loadedFromId',
+					'_migrateMatchedId',
+					'_migrateMatchKey',
+					'_migrateMatchValue',
+					'_migrateMatchAmbiguous',
+					'_migrateMatchResolution',
+					'_migrateMatchIntent',
+					'_migrateMatchCandidates',
+					'_migrateRecordTypeId',
+					'_migrateClearRecordType',
+					'_migratePicklistRemap',
+					'_migrateFieldResolutions',
+					'_migrateMatchSearched',
+					'_migrateMatchSearchError',
 				];
 				const matchSnapshot = new Map();
-				objects.forEach((recs) => recs.forEach((rec) => {
-					const state = {};
-					snapshotFields.forEach((field) => {
-						if (Object.prototype.hasOwnProperty.call(rec, field)) {
-							state[field] = _clone(rec[field]);
-						}
-					});
-					matchSnapshot.set(rec, state);
-				}));
+				objects.forEach((recs) =>
+					recs.forEach((rec) => {
+						const state = {};
+						snapshotFields.forEach((field) => {
+							if (Object.prototype.hasOwnProperty.call(rec, field)) {
+								state[field] = _clone(rec[field]);
+							}
+						});
+						matchSnapshot.set(rec, state);
+					}),
+				);
 				let committed = false;
 				let closed = false;
 				const overlay = document.createElement('div');
 				overlay.className = 'modal migrate-match-modal';
-				const destinationHost = (window.SF_INSTANCE_URL || '')
-					.replace(/^https?:\/\//, '')
-					.replace(/\/$/, '') || window.SF_ORG_ID || 'the connected Salesforce org';
+				const destinationHost =
+					(window.SF_INSTANCE_URL || '').replace(/^https?:\/\//, '').replace(/\/$/, '') ||
+					window.SF_ORG_ID ||
+					'the connected Salesforce org';
 				overlay.innerHTML =
 					'<div class="modal-overlay" data-mm-close></div>' +
 					'<div class="modal-body mm-modal-body">' +
-						'<div class="modal-header">' +
-							'<div><h3>Prepare migration</h3>' +
-							'<div class="mm-destination">Destination: <strong>' + escapeHtml(destinationHost) + '</strong></div></div>' +
-							'<button class="modal-close" data-mm-close>&times;</button>' +
-						'</div>' +
-						'<div class="modal-content mm-content">' +
-							'<div class="mm-stepper" aria-label="Migration progress">' +
-								'<button type="button" class="mm-step is-active" data-mm-step="matches"><span>1</span><strong>Decide record actions</strong></button>' +
-								'<span class="mm-step-line" aria-hidden="true"></span>' +
-								'<button type="button" class="mm-step" data-mm-step="differences"><span>2</span><strong>Resolve differences</strong></button>' +
-								'<span class="mm-step-line" aria-hidden="true"></span>' +
-								'<button type="button" class="mm-step" data-mm-step="review"><span>3</span><strong>Review migration</strong></button>' +
-							'</div>' +
-							'<div class="mm-summary"></div>' +
-							'<section class="mm-panel" data-mm-panel="matches">' +
-								'<div class="mm-decision-intro"><div><strong>Choose what happens to each canvas record</strong><span>Records start as Create new. Choose Update existing when a record should target one already in this Salesforce org.</span></div></div>' +
-								'<div class="mm-record-decisions"></div>' +
-							'</section>' +
-							'<section class="mm-panel" data-mm-panel="differences" hidden>' +
-								'<div class="mm-difference-intro"><div><strong>Resolve destination differences</strong><span>Resolve values the destination cannot accept. An unavailable field may not exist in this org or may be hidden by Salesforce permissions. Don\'t map leaves that source field out of this migration; it does not clear or overwrite destination data. The source canvas remains unchanged.</span></div></div>' +
-								'<div class="mm-differences"></div>' +
-							'</section>' +
-							'<section class="mm-panel" data-mm-panel="review" hidden>' +
-								'<div class="mm-final-review"></div>' +
-							'</section>' +
-						'</div>' +
-						'<div class="modal-footer mm-footer">' +
-							'<button type="button" class="button secondary mm-back" data-mm-back hidden>Back</button>' +
-							'<span class="mm-footer-spacer"></span>' +
-							'<button type="button" class="button secondary" data-mm-close>Cancel</button>' +
-							'<button type="button" class="button mm-primary" data-mm-primary disabled>Loading fields…</button>' +
-						'</div>' +
+					'<div class="modal-header">' +
+					'<div><h3>Prepare migration</h3>' +
+					'<div class="mm-destination">Destination: <strong>' +
+					escapeHtml(destinationHost) +
+					'</strong></div></div>' +
+					'<button class="modal-close" data-mm-close>&times;</button>' +
+					'</div>' +
+					'<div class="modal-content mm-content">' +
+					'<div class="mm-stepper" aria-label="Migration progress">' +
+					'<button type="button" class="mm-step is-active" data-mm-step="matches"><span>1</span><strong>Decide record actions</strong></button>' +
+					'<span class="mm-step-line" aria-hidden="true"></span>' +
+					'<button type="button" class="mm-step" data-mm-step="differences"><span>2</span><strong>Resolve differences</strong></button>' +
+					'<span class="mm-step-line" aria-hidden="true"></span>' +
+					'<button type="button" class="mm-step" data-mm-step="review"><span>3</span><strong>Review migration</strong></button>' +
+					'</div>' +
+					'<div class="mm-summary"></div>' +
+					'<section class="mm-panel" data-mm-panel="matches">' +
+					'<div class="mm-decision-intro"><div><strong>Choose what happens to each canvas record</strong><span>Records start as Create new. Choose Update existing when a record should target one already in this Salesforce org.</span></div></div>' +
+					'<div class="mm-record-decisions"></div>' +
+					'</section>' +
+					'<section class="mm-panel" data-mm-panel="differences" hidden>' +
+					'<div class="mm-difference-intro"><div><strong>Resolve destination differences</strong><span>Resolve values the destination cannot accept. An unavailable field may not exist in this org or may be hidden by Salesforce permissions. Don\'t map leaves that source field out of this migration; it does not clear or overwrite destination data. The source canvas remains unchanged.</span></div></div>' +
+					'<div class="mm-differences"></div>' +
+					'</section>' +
+					'<section class="mm-panel" data-mm-panel="review" hidden>' +
+					'<div class="mm-final-review"></div>' +
+					'</section>' +
+					'</div>' +
+					'<div class="modal-footer mm-footer">' +
+					'<button type="button" class="button secondary mm-back" data-mm-back hidden>Back</button>' +
+					'<span class="mm-footer-spacer"></span>' +
+					'<button type="button" class="button secondary" data-mm-close>Cancel</button>' +
+					'<button type="button" class="button mm-primary" data-mm-primary disabled>Loading fields…</button>' +
+					'</div>' +
 					'</div>';
 				document.body.appendChild(overlay);
 
@@ -408,9 +430,7 @@
 					}
 				};
 				document.addEventListener('keydown', onEsc, true);
-				overlay.querySelectorAll('[data-mm-close]').forEach((el) =>
-					el.addEventListener('click', cleanup),
-				);
+				overlay.querySelectorAll('[data-mm-close]').forEach((el) => el.addEventListener('click', cleanup));
 
 				const summaryEl = overlay.querySelector('.mm-summary');
 				const decisionsEl = overlay.querySelector('.mm-record-decisions');
@@ -450,7 +470,7 @@
 					_renderRecordDecisions();
 				});
 
-					overlay.querySelectorAll('[data-mm-step]').forEach((stepBtn) => {
+				overlay.querySelectorAll('[data-mm-step]').forEach((stepBtn) => {
 					stepBtn.addEventListener('click', () => {
 						if (!describesReady || pendingMatches.size > 0) {
 							return;
@@ -459,13 +479,22 @@
 						const counts = _statusCounts();
 						const differences = _differenceCounts();
 						if (requested !== 'matches' && counts.unresolved > 0) {
-							showBulkToast('Decide whether every record should update an existing record or be created as new.', 'warning');
+							showBulkToast(
+								'Decide whether every record should update an existing record or be created as new.',
+								'warning',
+							);
 							return;
 						}
-						if (requested === 'review' && (differences.blocked > 0 || differences.pending > 0 || pendingFieldMaps.size > 0)) {
-							showBulkToast(pendingFieldMaps.size > 0
-								? 'Choose a destination value for each pending field mapping before reviewing the migration.'
-								: 'Resolve the blocked destination differences before reviewing the migration.', 'warning');
+						if (
+							requested === 'review' &&
+							(differences.blocked > 0 || differences.pending > 0 || pendingFieldMaps.size > 0)
+						) {
+							showBulkToast(
+								pendingFieldMaps.size > 0
+									? 'Choose a destination value for each pending field mapping before reviewing the migration.'
+									: 'Resolve the blocked destination differences before reviewing the migration.',
+								'warning',
+							);
 							return;
 						}
 						_setStep(requested);
@@ -564,13 +593,18 @@
 				}
 
 				function _initializeRecordDecisions() {
-					_allRecords().filter((rec) =>
-						!rec._migrateMatchSearched && !rec._migrateMatchedId &&
-						!rec._migrateMatchResolution && !rec._migrateMatchAmbiguous,
-					).forEach((rec) => {
-						_clearMatchState(rec);
-						_markCreate(rec);
-					});
+					_allRecords()
+						.filter(
+							(rec) =>
+								!rec._migrateMatchSearched &&
+								!rec._migrateMatchedId &&
+								!rec._migrateMatchResolution &&
+								!rec._migrateMatchAmbiguous,
+						)
+						.forEach((rec) => {
+							_clearMatchState(rec);
+							_markCreate(rec);
+						});
 					_recomputeSummary();
 				}
 
@@ -603,7 +637,10 @@
 							counts.pending++;
 						}
 						(annotation.issues || []).forEach((issue) => {
-							if (issue.kind === 'missing-field' && resolvedFieldMaps.has(_fieldMapKey(recordIndex, issue.field))) {
+							if (
+								issue.kind === 'missing-field' &&
+								resolvedFieldMaps.has(_fieldMapKey(recordIndex, issue.field))
+							) {
 								return;
 							}
 							if (issue.severity === 'blocked') {
@@ -630,22 +667,38 @@
 
 				function _fieldFor(rec, fieldName) {
 					const describe = rec && canvasState.describeCache[rec.objectName];
-					return ((describe && describe.fields) || []).find((field) =>
-						field && field.name && String(field.name).toLowerCase() === String(fieldName).toLowerCase(),
-					) || null;
+					return (
+						((describe && describe.fields) || []).find(
+							(field) =>
+								field &&
+								field.name &&
+								String(field.name).toLowerCase() === String(fieldName).toLowerCase(),
+						) || null
+					);
 				}
 
 				function _valueKey(rec, fieldName) {
-					return rec && rec.values && Object.keys(rec.values).find((key) =>
-						key.toLowerCase() === String(fieldName).toLowerCase(),
-					) || null;
+					return (
+						(rec &&
+							rec.values &&
+							Object.keys(rec.values).find(
+								(key) => key.toLowerCase() === String(fieldName).toLowerCase(),
+							)) ||
+						null
+					);
 				}
 
 				function _writableFields(rec, excludedField) {
 					const describe = rec && canvasState.describeCache[rec.objectName];
 					return ((describe && describe.fields) || [])
 						.filter((field) => {
-							if (!field || !field.name || String(field.name).toLowerCase() === String(excludedField).toLowerCase() || field.calculated || field.autoNumber) {
+							if (
+								!field ||
+								!field.name ||
+								String(field.name).toLowerCase() === String(excludedField).toLowerCase() ||
+								field.calculated ||
+								field.autoNumber
+							) {
 								return false;
 							}
 							if (field.compoundFieldName || field.type === 'address' || field.type === 'location') {
@@ -660,10 +713,21 @@
 					return _writableFields(rec, excludedField)
 						.map((field) => ({ field: field, disposition: _fieldMapDisposition(raw, field) }))
 						.filter((entry) => entry.disposition !== 'incompatible')
-						.map((entry) => '<option value="' + escapeHtml(entry.field.name) + '"' +
-							(entry.field.name === selectedTarget ? ' selected' : '') + '>' +
-							'Map to ' + escapeHtml(entry.field.label || entry.field.name) + ' (' + escapeHtml(entry.field.name) + ')' +
-							(entry.disposition === 'choice' ? ' (value selection required)' : '') + '</option>')
+						.map(
+							(entry) =>
+								'<option value="' +
+								escapeHtml(entry.field.name) +
+								'"' +
+								(entry.field.name === selectedTarget ? ' selected' : '') +
+								'>' +
+								'Map to ' +
+								escapeHtml(entry.field.label || entry.field.name) +
+								' (' +
+								escapeHtml(entry.field.name) +
+								')' +
+								(entry.disposition === 'choice' ? ' (value selection required)' : '') +
+								'</option>',
+						)
 						.join('');
 				}
 
@@ -672,8 +736,9 @@
 				}
 
 				function _resolvedFieldMapsForRecord(recordIndex) {
-					return Array.from(resolvedFieldMaps.entries())
-						.filter((entry) => entry[1].recordIndex === recordIndex);
+					return Array.from(resolvedFieldMaps.entries()).filter(
+						(entry) => entry[1].recordIndex === recordIndex,
+					);
 				}
 
 				function _persistResolvedFieldMap(rec, resolved) {
@@ -682,6 +747,7 @@
 					}
 					const stored = _clone(resolved);
 					delete stored.recordIndex;
+					// Store the decision on the record so closing the guide does not erase user choices.
 					rec._migrateFieldResolutions = rec._migrateFieldResolutions || {};
 					rec._migrateFieldResolutions[String(resolved.sourceField).toLowerCase()] = stored;
 				}
@@ -761,32 +827,99 @@
 				function _fieldMapValueControl(raw, field, recordIndex, sourceField, selectedValue) {
 					const options = ((field && field.picklistValues) || [])
 						.filter((entry) => entry && entry.active !== false && entry.value !== undefined)
-						.map((entry) => '<option value="' + escapeHtml(entry.value) + '"' +
-							(String(entry.value) === String(selectedValue) ? ' selected' : '') + '>' + escapeHtml(entry.label || entry.value) + '</option>')
+						.map(
+							(entry) =>
+								'<option value="' +
+								escapeHtml(entry.value) +
+								'"' +
+								(String(entry.value) === String(selectedValue) ? ' selected' : '') +
+								'>' +
+								escapeHtml(entry.label || entry.value) +
+								'</option>',
+						)
 						.join('');
-					return '<div class="mm-map-value-resolution">' +
-						'<span>Source value <code>' + escapeHtml(_displayValue(raw)) + '</code> is not available for ' + escapeHtml(field.label || field.name) + '.</span>' +
-						'<label>Destination value<select data-mm-map-value data-mm-map-record="' + recordIndex + '" data-mm-map-source="' + escapeHtml(sourceField) + '" data-mm-map-target="' + escapeHtml(field.name) + '">' +
-						'<option value=""' + (selectedValue ? '' : ' selected') + '>Choose a destination value...</option>' + options + '</select></label></div>';
+					return (
+						'<div class="mm-map-value-resolution">' +
+						'<span>Source value <code>' +
+						escapeHtml(_displayValue(raw)) +
+						'</code> is not available for ' +
+						escapeHtml(field.label || field.name) +
+						'.</span>' +
+						'<label>Destination value<select data-mm-map-value data-mm-map-record="' +
+						recordIndex +
+						'" data-mm-map-source="' +
+						escapeHtml(sourceField) +
+						'" data-mm-map-target="' +
+						escapeHtml(field.name) +
+						'">' +
+						'<option value=""' +
+						(selectedValue ? '' : ' selected') +
+						'>Choose a destination value...</option>' +
+						options +
+						'</select></label></div>'
+					);
 				}
 
 				function _requiredFieldControl(rec, issue, recordIndex) {
-					const field = _fieldFor(rec, issue.field) || { name: issue.field, label: issue.field, type: 'string' };
-					const attrs = ' data-mm-required-record="' + recordIndex + '" data-mm-required-field="' + escapeHtml(field.name) + '"';
+					const field = _fieldFor(rec, issue.field) || {
+						name: issue.field,
+						label: issue.field,
+						type: 'string',
+					};
+					const attrs =
+						' data-mm-required-record="' +
+						recordIndex +
+						'" data-mm-required-field="' +
+						escapeHtml(field.name) +
+						'"';
 					if (field.type === 'picklist' || field.type === 'multipicklist') {
 						const options = (field.picklistValues || [])
 							.filter((value) => value && value.active !== false)
-							.map((value) => '<option value="' + escapeHtml(value.value) + '">' + escapeHtml(value.label || value.value) + '</option>')
+							.map(
+								(value) =>
+									'<option value="' +
+									escapeHtml(value.value) +
+									'">' +
+									escapeHtml(value.label || value.value) +
+									'</option>',
+							)
 							.join('');
-						return '<select class="mm-difference-input"' + attrs + '><option value="">Select a value...</option>' + options + '</select>';
+						return (
+							'<select class="mm-difference-input"' +
+							attrs +
+							'><option value="">Select a value...</option>' +
+							options +
+							'</select>'
+						);
 					}
 					if (field.type === 'textarea') {
-						return '<textarea class="mm-difference-input" rows="2" placeholder="Enter ' + escapeHtml(field.label || field.name) + '"' + attrs + '></textarea>';
+						return (
+							'<textarea class="mm-difference-input" rows="2" placeholder="Enter ' +
+							escapeHtml(field.label || field.name) +
+							'"' +
+							attrs +
+							'></textarea>'
+						);
 					}
 					const numeric = ['int', 'double', 'currency', 'percent'].includes(field.type);
-					const inputType = numeric ? 'number' : (field.type === 'date' ? 'date' : (field.type === 'datetime' ? 'datetime-local' : 'text'));
-					return '<input class="mm-difference-input" type="' + inputType + '"' + (numeric ? ' step="any"' : '') +
-						' placeholder="Enter ' + escapeHtml(field.label || field.name) + '"' + attrs + '>';
+					const inputType = numeric
+						? 'number'
+						: field.type === 'date'
+							? 'date'
+							: field.type === 'datetime'
+								? 'datetime-local'
+								: 'text';
+					return (
+						'<input class="mm-difference-input" type="' +
+						inputType +
+						'"' +
+						(numeric ? ' step="any"' : '') +
+						' placeholder="Enter ' +
+						escapeHtml(field.label || field.name) +
+						'"' +
+						attrs +
+						'>'
+					);
 				}
 
 				function _differenceIssueHtml(rec, issue, recordIndex) {
@@ -795,9 +928,14 @@
 						const mapKey = _fieldMapKey(recordIndex, issue.field);
 						const resolvedMap = resolvedFieldMaps.get(mapKey);
 						const sourceKey = resolvedMap ? resolvedMap.sourceKey : _valueKey(rec, issue.field);
-						const raw = resolvedMap ? resolvedMap.sourceValue : (sourceKey ? rec.values[sourceKey] : undefined);
+						const raw = resolvedMap
+							? resolvedMap.sourceValue
+							: sourceKey
+								? rec.values[sourceKey]
+								: undefined;
 						const pendingMap = pendingFieldMaps.get(mapKey);
-						let selectedTarget = resolvedMap && resolvedMap.targetField || pendingMap && pendingMap.targetField;
+						let selectedTarget =
+							(resolvedMap && resolvedMap.targetField) || (pendingMap && pendingMap.targetField);
 						let selectedField = selectedTarget && _fieldFor(rec, selectedTarget);
 						if (!resolvedMap && selectedTarget && _fieldMapDisposition(raw, selectedField) !== 'choice') {
 							pendingFieldMaps.delete(mapKey);
@@ -805,48 +943,131 @@
 							selectedField = null;
 						}
 						const mapOptions = _writableFieldOptions(rec, issue.field, raw, selectedTarget);
-						const valueControl = selectedField && _fieldMapDisposition(raw, selectedField) === 'choice'
-							? _fieldMapValueControl(raw, selectedField, recordIndex, issue.field, resolvedMap && resolvedMap.mappedValue)
-							: '';
-						const statusText = resolvedMap ? 'Resolved' : (pendingMap ? 'Needs destination value' : 'Needs attention');
-						const statusClass = resolvedMap ? 'resolved' : (pendingMap ? 'pending' : 'attention');
-						const statusId = 'mm-field-status-' + recordIndex + '-' + String(issue.field).replace(/[^a-z0-9_-]/gi, '-');
-						return '<div class="mm-difference-row' + (resolvedMap ? ' mm-difference-row--resolved' : '') + '" data-mm-missing-record="' + recordIndex + '" data-mm-missing-field="' + escapeHtml(issue.field) + '">' +
-							'<div class="mm-difference-meta"><strong>' + escapeHtml(issue.field) + '</strong></div>' +
+						const valueControl =
+							selectedField && _fieldMapDisposition(raw, selectedField) === 'choice'
+								? _fieldMapValueControl(
+										raw,
+										selectedField,
+										recordIndex,
+										issue.field,
+										resolvedMap && resolvedMap.mappedValue,
+									)
+								: '';
+						const statusText = resolvedMap
+							? 'Resolved'
+							: pendingMap
+								? 'Needs destination value'
+								: 'Needs attention';
+						const statusClass = resolvedMap ? 'resolved' : pendingMap ? 'pending' : 'attention';
+						const statusId =
+							'mm-field-status-' + recordIndex + '-' + String(issue.field).replace(/[^a-z0-9_-]/gi, '-');
+						return (
+							'<div class="mm-difference-row' +
+							(resolvedMap ? ' mm-difference-row--resolved' : '') +
+							'" data-mm-missing-record="' +
+							recordIndex +
+							'" data-mm-missing-field="' +
+							escapeHtml(issue.field) +
+							'">' +
+							'<div class="mm-difference-meta"><strong>' +
+							escapeHtml(issue.field) +
+							'</strong></div>' +
 							'<div class="mm-difference-actions"><div class="mm-field-resolution-head"><span>Destination action</span>' +
-							'<span id="' + statusId + '" class="mm-field-resolution-state mm-field-resolution-state--' + statusClass + '">' + statusText + '</span></div>' +
-							'<select data-mm-field-resolution aria-label="How to handle ' + escapeHtml(issue.field) + '" aria-describedby="' + statusId + '">' +
-							'<option value=""' + (!resolvedMap && !pendingMap ? ' selected' : '') + '>Choose how to handle this field...</option>' +
-							'<option value="__omit__"' + (resolvedMap && resolvedMap.resolution === '__omit__' ? ' selected' : '') + '>Don\'t map (destination unchanged)</option>' +
-							(mapOptions ? '<optgroup label="Map to a destination field">' + mapOptions + '</optgroup>' : '') +
-							'</select>' + valueControl + '</div>' +
-						'</div>';
+							'<span id="' +
+							statusId +
+							'" class="mm-field-resolution-state mm-field-resolution-state--' +
+							statusClass +
+							'">' +
+							statusText +
+							'</span></div>' +
+							'<select data-mm-field-resolution aria-label="How to handle ' +
+							escapeHtml(issue.field) +
+							'" aria-describedby="' +
+							statusId +
+							'">' +
+							'<option value=""' +
+							(!resolvedMap && !pendingMap ? ' selected' : '') +
+							'>Choose how to handle this field...</option>' +
+							'<option value="__omit__"' +
+							(resolvedMap && resolvedMap.resolution === '__omit__' ? ' selected' : '') +
+							">Don't map (destination unchanged)</option>" +
+							(mapOptions
+								? '<optgroup label="Map to a destination field">' + mapOptions + '</optgroup>'
+								: '') +
+							'</select>' +
+							valueControl +
+							'</div>' +
+							'</div>'
+						);
 					}
 					if (issue.kind === 'required-unfilled') {
-						return '<div class="mm-difference-row mm-difference-row--blocked"><div class="mm-difference-meta"><strong>' + escapeHtml(fieldLabel) + '</strong>' +
-							'<span>Required when creating this record in the destination</span></div>' + _requiredFieldControl(rec, issue, recordIndex) + '</div>';
+						return (
+							'<div class="mm-difference-row mm-difference-row--blocked"><div class="mm-difference-meta"><strong>' +
+							escapeHtml(fieldLabel) +
+							'</strong>' +
+							'<span>Required when creating this record in the destination</span></div>' +
+							_requiredFieldControl(rec, issue, recordIndex) +
+							'</div>'
+						);
 					}
 					if (issue.kind === 'recordtype-unresolved') {
 						const describe = canvasState.describeCache[rec.objectName] || {};
-						const options = (describe.recordTypes || []).map((recordType) =>
-							'<option value="' + escapeHtml(recordType.id) + '">' + escapeHtml(recordType.label || recordType.name || recordType.developerName) + '</option>',
-						).join('');
-						return '<div class="mm-difference-row mm-difference-row--blocked"><div class="mm-difference-meta"><strong>Record type</strong>' +
-							'<span>Source record type ' + escapeHtml(issue.developerName || '') + ' is not available in the destination</span></div>' +
-							'<select class="mm-difference-input" data-mm-recordtype-record="' + recordIndex + '"><option value="">Choose a destination record type...</option>' + options + '<option value="__clear__">No record type</option></select></div>';
+						const options = (describe.recordTypes || [])
+							.map(
+								(recordType) =>
+									'<option value="' +
+									escapeHtml(recordType.id) +
+									'">' +
+									escapeHtml(recordType.label || recordType.name || recordType.developerName) +
+									'</option>',
+							)
+							.join('');
+						return (
+							'<div class="mm-difference-row mm-difference-row--blocked"><div class="mm-difference-meta"><strong>Record type</strong>' +
+							'<span>Source record type ' +
+							escapeHtml(issue.developerName || '') +
+							' is not available in the destination</span></div>' +
+							'<select class="mm-difference-input" data-mm-recordtype-record="' +
+							recordIndex +
+							'"><option value="">Choose a destination record type...</option>' +
+							options +
+							'<option value="__clear__">No record type</option></select></div>'
+						);
 					}
 					if (issue.kind === 'picklist-mismatch') {
 						const field = _fieldFor(rec, issue.field) || {};
 						const options = (field.picklistValues || [])
 							.filter((value) => value && value.active !== false)
-							.map((value) => '<option value="' + escapeHtml(value.value) + '">' + escapeHtml(value.label || value.value) + '</option>')
+							.map(
+								(value) =>
+									'<option value="' +
+									escapeHtml(value.value) +
+									'">' +
+									escapeHtml(value.label || value.value) +
+									'</option>',
+							)
 							.join('');
-						return (issue.invalidValues || []).map((sourceValue) =>
-							'<div class="mm-difference-row"><div class="mm-difference-meta"><strong>' + escapeHtml(fieldLabel) + '</strong>' +
-							'<span><code>' + escapeHtml(sourceValue) + '</code> is not valid in the destination</span></div>' +
-							'<select class="mm-difference-input" data-mm-picklist-record="' + recordIndex + '" data-mm-picklist-field="' + escapeHtml(issue.field) + '" data-mm-picklist-source="' + escapeHtml(sourceValue) + '">' +
-							'<option value="__unresolved__">Omit on upload</option>' + options + '<option value="__drop__">Don\'t map this value</option></select></div>',
-						).join('');
+						return (issue.invalidValues || [])
+							.map(
+								(sourceValue) =>
+									'<div class="mm-difference-row"><div class="mm-difference-meta"><strong>' +
+									escapeHtml(fieldLabel) +
+									'</strong>' +
+									'<span><code>' +
+									escapeHtml(sourceValue) +
+									'</code> is not valid in the destination</span></div>' +
+									'<select class="mm-difference-input" data-mm-picklist-record="' +
+									recordIndex +
+									'" data-mm-picklist-field="' +
+									escapeHtml(issue.field) +
+									'" data-mm-picklist-source="' +
+									escapeHtml(sourceValue) +
+									'">' +
+									'<option value="__unresolved__">Omit on upload</option>' +
+									options +
+									'<option value="__drop__">Don\'t map this value</option></select></div>',
+							)
+							.join('');
 					}
 					return '';
 				}
@@ -875,7 +1096,13 @@
 					all.forEach((rec, recordIndex) => {
 						const annotation = _annotationFor(rec);
 						if (annotation.status === 'pending') {
-							rows.push('<section class="mm-difference-record mm-difference-record--blocked"><div class="mm-difference-record-head"><div><strong>' + escapeHtml(_differenceRecordLabel(rec)) + '</strong></div><span>Schema unavailable</span></div><p>Org Loom could not read this object\'s destination fields. Check the connection and try again.</p><button type="button" class="button secondary" data-mm-retry-schema="' + escapeHtml(rec.objectName) + '">Retry</button></section>');
+							rows.push(
+								'<section class="mm-difference-record mm-difference-record--blocked"><div class="mm-difference-record-head"><div><strong>' +
+									escapeHtml(_differenceRecordLabel(rec)) +
+									'</strong></div><span>Schema unavailable</span></div><p>Org Loom could not read this object\'s destination fields. Check the connection and try again.</p><button type="button" class="button secondary" data-mm-retry-schema="' +
+									escapeHtml(rec.objectName) +
+									'">Retry</button></section>',
+							);
 							return;
 						}
 						const issues = annotation.issues || [];
@@ -901,12 +1128,31 @@
 						const resolvedCount = issueEntries.filter((entry) => entry.resolved).length;
 						const attentionCount = issueEntries.length - resolvedCount;
 						const recordStatus = attentionCount
-							? attentionCount + ' need' + (attentionCount === 1 ? 's' : '') + ' attention' + (resolvedCount ? ' \u00b7 ' + resolvedCount + ' resolved' : '')
+							? attentionCount +
+								' need' +
+								(attentionCount === 1 ? 's' : '') +
+								' attention' +
+								(resolvedCount ? ' \u00b7 ' + resolvedCount + ' resolved' : '')
 							: resolvedCount + ' resolved';
-						rows.push('<section class="mm-difference-record' + (annotation.status === 'blocked' && attentionCount ? ' mm-difference-record--blocked' : '') + (!attentionCount ? ' mm-difference-record--resolved' : '') + '">' +
-							'<div class="mm-difference-record-head"><div><strong>' + escapeHtml(_differenceRecordLabel(rec)) + '</strong></div>' +
-							'<span>' + recordStatus + '</span></div>' +
-							'<div class="mm-difference-record-body">' + issueEntries.map((entry) => _differenceIssueHtml(rec, entry.issue, recordIndex)).join('') + '</div></section>');
+						rows.push(
+							'<section class="mm-difference-record' +
+								(annotation.status === 'blocked' && attentionCount
+									? ' mm-difference-record--blocked'
+									: '') +
+								(!attentionCount ? ' mm-difference-record--resolved' : '') +
+								'">' +
+								'<div class="mm-difference-record-head"><div><strong>' +
+								escapeHtml(_differenceRecordLabel(rec)) +
+								'</strong></div>' +
+								'<span>' +
+								recordStatus +
+								'</span></div>' +
+								'<div class="mm-difference-record-body">' +
+								issueEntries
+									.map((entry) => _differenceIssueHtml(rec, entry.issue, recordIndex))
+									.join('') +
+								'</div></section>',
+						);
 					});
 					differencesEl.innerHTML = rows.length
 						? rows.join('')
@@ -921,7 +1167,10 @@
 								await ensureDescribe(objectName, { force: true });
 								await Promise.resolve(onApplied()).catch(() => null);
 							} catch (_err) {
-								showBulkToast('Could not read Salesforce fields. Check the connection and try again.', 'warning');
+								showBulkToast(
+									'Could not read Salesforce fields. Check the connection and try again.',
+									'warning',
+								);
 							}
 							if (!closed) {
 								_renderDifferences();
@@ -968,7 +1217,10 @@
 							}
 							if (disposition === 'incompatible') {
 								pendingFieldMaps.delete(mapKey);
-								showBulkToast('That destination field cannot safely accept this source value.', 'warning');
+								showBulkToast(
+									'That destination field cannot safely accept this source value.',
+									'warning',
+								);
 								_renderDifferences();
 								_recomputeSummary();
 								return;
@@ -1048,7 +1300,8 @@
 							if (select.value === '__unresolved__') {
 								delete rec._migratePicklistRemap[field][sourceValue];
 							} else {
-								rec._migratePicklistRemap[field][sourceValue] = select.value === '__drop__' ? '' : select.value;
+								rec._migratePicklistRemap[field][sourceValue] =
+									select.value === '__drop__' ? '' : select.value;
 							}
 							_afterDifferenceDecision();
 						});
@@ -1063,25 +1316,42 @@
 				}
 
 				function _renderFinalReview() {
+					// This is a plan summary only; the separate Upload action performs Salesforce DML.
 					const status = _statusCounts();
 					const differences = _differenceCounts();
 					const omitted = differences.unavailableValues + differences.omittedPicklistValues;
-					const warning = omitted > 0
-						? '<div class="mm-final-note mm-final-note--warn"><strong>' + omitted + ' value' + (omitted === 1 ? '' : 's') + ' will be omitted</strong><span>Return to Resolve differences if you want to map them. Unmapped values do not clear or overwrite destination data.</span></div>'
-						: '<div class="mm-final-note"><strong>No unresolved destination values</strong><span>The reviewed values can be sent through the current Salesforce connection.</span></div>';
-					finalReviewEl.innerHTML = '<div class="mm-final-heading"><strong>Review the migration plan</strong><span>Nothing is written to Salesforce until you use Upload from the canvas.</span></div>' +
-						'<div class="mm-final-counts"><div><strong>' + status.updates + '</strong><span>Update existing</span></div><div><strong>' + status.creates + '</strong><span>Create new</span></div><div><strong>' + omitted + '</strong><span>Values omitted</span></div></div>' + warning +
+					const warning =
+						omitted > 0
+							? '<div class="mm-final-note mm-final-note--warn"><strong>' +
+								omitted +
+								' value' +
+								(omitted === 1 ? '' : 's') +
+								' will be omitted</strong><span>Return to Resolve differences if you want to map them. Unmapped values do not clear or overwrite destination data.</span></div>'
+							: '<div class="mm-final-note"><strong>No unresolved destination values</strong><span>The reviewed values can be sent through the current Salesforce connection.</span></div>';
+					finalReviewEl.innerHTML =
+						'<div class="mm-final-heading"><strong>Review the migration plan</strong><span>Nothing is written to Salesforce until you use Upload from the canvas.</span></div>' +
+						'<div class="mm-final-counts"><div><strong>' +
+						status.updates +
+						'</strong><span>Update existing</span></div><div><strong>' +
+						status.creates +
+						'</strong><span>Create new</span></div><div><strong>' +
+						omitted +
+						'</strong><span>Values omitted</span></div></div>' +
+						warning +
 						'<div class="mm-final-note"><strong>Source remains unchanged</strong><span>This plan only affects the connected destination org.</span></div>';
 				}
 
 				function _differenceRecordLabel(rec) {
 					const describe = canvasState.describeCache[rec.objectName];
-					const objectLabel = describe && describe.label || rec.objectName;
+					const objectLabel = (describe && describe.label) || rec.objectName;
 					const nameField = ((describe && describe.fields) || []).find((field) => field && field.nameField);
 					const nameValue = nameField && _lookup(rec && rec.values, nameField.name);
 					let recordLabel = rec && rec.label ? String(rec.label) : '';
-					if (!recordLabel || recordLabel.toLowerCase() === String(objectLabel).toLowerCase() ||
-						recordLabel.toLowerCase() === String(objectLabel + ' record').toLowerCase()) {
+					if (
+						!recordLabel ||
+						recordLabel.toLowerCase() === String(objectLabel).toLowerCase() ||
+						recordLabel.toLowerCase() === String(objectLabel + ' record').toLowerCase()
+					) {
 						recordLabel = nameValue == null ? '' : String(nameValue);
 					}
 					return !recordLabel || recordLabel.toLowerCase() === String(objectLabel).toLowerCase()
@@ -1111,26 +1381,31 @@
 						return '';
 					}
 					const field = _fieldFor(rec, key);
-					const value = rec._migrateMatchKey
-						? rec._migrateMatchValue
-						: _lookup(rec.values, key);
-					return (field && field.label || key) + ' = ' + _displayValue(value);
+					const value = rec._migrateMatchKey ? rec._migrateMatchValue : _lookup(rec.values, key);
+					return ((field && field.label) || key) + ' = ' + _displayValue(value);
 				}
 
 				function _recordOpenUrl(rec) {
 					const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
 					return rec._migrateMatchedId && sfBase
-						? sfBase + '/lightning/r/' + encodeURIComponent(rec.objectName) + '/' + encodeURIComponent(rec._migrateMatchedId) + '/view'
+						? sfBase +
+								'/lightning/r/' +
+								encodeURIComponent(rec.objectName) +
+								'/' +
+								encodeURIComponent(rec._migrateMatchedId) +
+								'/view'
 						: '';
 				}
 
 				function _canvasIdentity(rec) {
 					const describe = canvasState.describeCache[rec.objectName];
-					const objectLabel = describe && describe.label || rec.objectName;
+					const objectLabel = (describe && describe.label) || rec.objectName;
 					const keyText = _recordKeyText(rec);
-					return '<strong class="mm-record-identity">' +
+					return (
+						'<strong class="mm-record-identity">' +
 						escapeHtml(objectLabel + (keyText ? ' \u00b7 ' + keyText : '')) +
-					'</strong>';
+						'</strong>'
+					);
 				}
 
 				function _candidateReason(rec, candidate) {
@@ -1138,8 +1413,12 @@
 						return '';
 					}
 					const field = _fieldFor(rec, candidate.matchField);
-					return 'Matched using ' + (field && field.label || candidate.matchField) +
-						' = ' + (candidate.matchValue == null ? '' : candidate.matchValue);
+					return (
+						'Matched using ' +
+						((field && field.label) || candidate.matchField) +
+						' = ' +
+						(candidate.matchValue == null ? '' : candidate.matchValue)
+					);
 				}
 
 				function _decisionCard(rec, index, all) {
@@ -1157,51 +1436,113 @@
 					} else if (rec._migrateMatchedId) {
 						badge = '<span class="mm-plan-badge mm-plan-badge--ok">Update existing</span>';
 					}
-					const candidateOptions = candidates.map((candidate) => {
-						const claimedByOther = all.some((other) =>
-							other && other !== rec && other._migrateMatchedId === candidate.id,
-						);
-						const reason = _candidateReason(rec, candidate);
-						const label = _candidateText(candidate) + (reason ? ' \u00b7 ' + reason : '') +
-							(claimedByOther ? ' (already selected)' : '');
-						return '<option value="' + escapeHtml(candidate.id) + '"' +
-							(candidate.id === rec._migrateMatchedId ? ' selected' : '') +
-							(claimedByOther ? ' disabled' : '') + '>' + escapeHtml(label) + '</option>';
-					}).join('');
+					const candidateOptions = candidates
+						.map((candidate) => {
+							const claimedByOther = all.some(
+								(other) => other && other !== rec && other._migrateMatchedId === candidate.id,
+							);
+							const reason = _candidateReason(rec, candidate);
+							const label =
+								_candidateText(candidate) +
+								(reason ? ' \u00b7 ' + reason : '') +
+								(claimedByOther ? ' (already selected)' : '');
+							return (
+								'<option value="' +
+								escapeHtml(candidate.id) +
+								'"' +
+								(candidate.id === rec._migrateMatchedId ? ' selected' : '') +
+								(claimedByOther ? ' disabled' : '') +
+								'>' +
+								escapeHtml(label) +
+								'</option>'
+							);
+						})
+						.join('');
 					const targetControl = candidates.length
-						? '<label>Destination record</label><select class="mm-resolution-select" aria-label="Destination record"><option value="">Select a Salesforce record...</option>' + candidateOptions + '</select>'
+						? '<label>Destination record</label><select class="mm-resolution-select" aria-label="Destination record"><option value="">Select a Salesforce record...</option>' +
+							candidateOptions +
+							'</select>'
 						: '<div class="mm-no-suggestions"><strong>No destination suggestions found</strong><span>Choose a different identifying field below, or create this as a new record.</span></div>';
 					const keyFields = _keyCandidates(canvasState.describeCache[rec.objectName]).filter((field) => {
 						const value = _lookup(rec.values, field.name);
 						return value !== null && value !== undefined && String(value) !== '';
 					});
-					const keyOptions = keyFields.map((field) =>
-						'<option value="' + escapeHtml(field.name) + '"' + (rec._migrateMatchKey === field.name ? ' selected' : '') + '>' +
-						escapeHtml(field.label || field.name) + ' (' + escapeHtml(field.name) + ')' + escapeHtml(_tierLabel(field)) + '</option>',
-					).join('');
-					const searchMessage = action === 'existing' && rec._migrateMatchSearchError
-						? '<div class="mm-search-error"><span>' + escapeHtml(rec._migrateMatchSearchError) + '</span><button type="button" class="link-button" data-mm-retry-search>Retry</button></div>'
-						: '';
-					const matchOptions = action === 'existing'
-						? '<details class="mm-match-options"' + ((rec._migrateMatchSearchError || candidates.length === 0) ? ' open' : '') + '><summary>Change how matches are found</summary>' +
-							(keyOptions ? '<label>Identifying field for this record</label><select class="mm-record-key-select"><option value="">Choose a field...</option>' + keyOptions + '</select>' : '<p>No populated, queryable identifying fields are available on this record.</p>') +
-							'<small>This changes suggestions for this record only.</small></details>'
-						: '';
+					const keyOptions = keyFields
+						.map(
+							(field) =>
+								'<option value="' +
+								escapeHtml(field.name) +
+								'"' +
+								(rec._migrateMatchKey === field.name ? ' selected' : '') +
+								'>' +
+								escapeHtml(field.label || field.name) +
+								' (' +
+								escapeHtml(field.name) +
+								')' +
+								escapeHtml(_tierLabel(field)) +
+								'</option>',
+						)
+						.join('');
+					const searchMessage =
+						action === 'existing' && rec._migrateMatchSearchError
+							? '<div class="mm-search-error"><span>' +
+								escapeHtml(rec._migrateMatchSearchError) +
+								'</span><button type="button" class="link-button" data-mm-retry-search>Retry</button></div>'
+							: '';
+					const matchOptions =
+						action === 'existing'
+							? '<details class="mm-match-options"' +
+								(rec._migrateMatchSearchError || candidates.length === 0 ? ' open' : '') +
+								'><summary>Change how matches are found</summary>' +
+								(keyOptions
+									? '<label>Identifying field for this record</label><select class="mm-record-key-select"><option value="">Choose a field...</option>' +
+										keyOptions +
+										'</select>'
+									: '<p>No populated, queryable identifying fields are available on this record.</p>') +
+								'<small>This changes suggestions for this record only.</small></details>'
+							: '';
 					const openUrl = _recordOpenUrl(rec);
 					const radioName = 'mm-action-' + index;
-					return '<section class="mm-decision-card' + (needsDecision || rec._migrateMatchSearchError ? ' mm-decision-card--needs' : '') + '" data-mm-record-index="' + index + '">' +
-						'<div class="mm-decision-head">' + _canvasIdentity(rec) + badge + '</div>' +
+					return (
+						'<section class="mm-decision-card' +
+						(needsDecision || rec._migrateMatchSearchError ? ' mm-decision-card--needs' : '') +
+						'" data-mm-record-index="' +
+						index +
+						'">' +
+						'<div class="mm-decision-head">' +
+						_canvasIdentity(rec) +
+						badge +
+						'</div>' +
 						searchMessage +
-						'<fieldset class="mm-review-choice"' + (pending ? ' disabled' : '') + '><legend>What should happen to this record?</legend>' +
-							'<label class="mm-action-option"><input type="radio" class="mm-action-radio" name="' + radioName + '" value="new"' + (action === 'new' ? ' checked' : '') + '>' +
-								'<span><strong>Create new</strong><small>Insert this as a separate destination record.</small></span></label>' +
-							'<label class="mm-action-option"><input type="radio" class="mm-action-radio" name="' + radioName + '" value="existing"' + (action === 'existing' ? ' checked' : '') + '>' +
-								'<span><strong>Update existing</strong><small>Apply this canvas record to a destination record.</small></span></label>' +
-							'<div class="mm-target-choice"' + (action === 'existing' ? '' : ' hidden') + '>' + targetControl +
-								(openUrl ? '<a class="mm-open-record" href="' + escapeHtml(openUrl) + '" target="_blank" rel="noopener">Open selected record in Salesforce</a>' : '') + '</div>' +
+						'<fieldset class="mm-review-choice"' +
+						(pending ? ' disabled' : '') +
+						'><legend>What should happen to this record?</legend>' +
+						'<label class="mm-action-option"><input type="radio" class="mm-action-radio" name="' +
+						radioName +
+						'" value="new"' +
+						(action === 'new' ? ' checked' : '') +
+						'>' +
+						'<span><strong>Create new</strong><small>Insert this as a separate destination record.</small></span></label>' +
+						'<label class="mm-action-option"><input type="radio" class="mm-action-radio" name="' +
+						radioName +
+						'" value="existing"' +
+						(action === 'existing' ? ' checked' : '') +
+						'>' +
+						'<span><strong>Update existing</strong><small>Apply this canvas record to a destination record.</small></span></label>' +
+						'<div class="mm-target-choice"' +
+						(action === 'existing' ? '' : ' hidden') +
+						'>' +
+						targetControl +
+						(openUrl
+							? '<a class="mm-open-record" href="' +
+								escapeHtml(openUrl) +
+								'" target="_blank" rel="noopener">Open selected record in Salesforce</a>'
+							: '') +
+						'</div>' +
 						'</fieldset>' +
 						matchOptions +
-					'</section>';
+						'</section>'
+					);
 				}
 
 				function _renderRecordDecisions() {
@@ -1220,8 +1561,12 @@
 									_resolveRecord(rec, 'new', all);
 									delete rec._migrateMatchSearchError;
 								} else {
-									const available = (rec._migrateMatchCandidates || []).filter((candidate) =>
-										!all.some((other) => other && other !== rec && other._migrateMatchedId === candidate.id),
+									const available = (rec._migrateMatchCandidates || []).filter(
+										(candidate) =>
+											!all.some(
+												(other) =>
+													other && other !== rec && other._migrateMatchedId === candidate.id,
+											),
 									);
 									let searchField = '';
 									if (available.length === 1) {
@@ -1249,7 +1594,10 @@
 							resolution.addEventListener('change', () => {
 								const result = _resolveRecord(rec, resolution.value || 'update', all);
 								if (!result.ok && result.error === 'candidate-already-used') {
-									showBulkToast('That Salesforce record is already matched to another canvas record.', 'warning');
+									showBulkToast(
+										'That Salesforce record is already matched to another canvas record.',
+										'warning',
+									);
 								}
 								_afterRecordDecision();
 							});
@@ -1305,9 +1653,13 @@
 							_applyMatchResponse([rec], keyField, result.data);
 							if (!rec._migrateMatchedId && !rec._migrateMatchAmbiguous) {
 								_markUpdateWithoutMatch(rec);
-							} else if (rec._migrateMatchedId && all.some((other) =>
-								other && other !== rec && other._migrateMatchedId === rec._migrateMatchedId,
-							)) {
+							} else if (
+								rec._migrateMatchedId &&
+								all.some(
+									(other) =>
+										other && other !== rec && other._migrateMatchedId === rec._migrateMatchedId,
+								)
+							) {
 								delete rec.loadedFromId;
 								delete rec._migrateMatchedId;
 								delete rec._migrateMatchResolution;
@@ -1363,27 +1715,42 @@
 					const differencesStep = overlay.querySelector('[data-mm-step="differences"]');
 					const reviewStep = overlay.querySelector('[data-mm-step="review"]');
 					differencesStep.disabled = !describesReady || pending > 0 || counts.unresolved > 0;
-					reviewStep.disabled = differencesStep.disabled || differences.blocked > 0 || differences.pending > 0 || pendingFieldMapCount > 0;
+					reviewStep.disabled =
+						differencesStep.disabled ||
+						differences.blocked > 0 ||
+						differences.pending > 0 ||
+						pendingFieldMapCount > 0;
 					if (currentStep === 'matches') {
 						primaryBtn.disabled = !describesReady || pending > 0 || counts.unresolved > 0;
 						primaryBtn.textContent = !describesReady
 							? 'Loading fields…'
 							: pending > 0
-							? 'Searching for ' + pending + ' record' + (pending === 1 ? '' : 's') + '…'
-							: counts.unresolved > 0
-							? 'Resolve ' + counts.unresolved + ' record decision' + (counts.unresolved === 1 ? '' : 's')
-							: 'Next: Resolve differences';
+								? 'Searching for ' + pending + ' record' + (pending === 1 ? '' : 's') + '…'
+								: counts.unresolved > 0
+									? 'Resolve ' +
+										counts.unresolved +
+										' record decision' +
+										(counts.unresolved === 1 ? '' : 's')
+									: 'Next: Resolve differences';
 						return;
 					}
 					if (currentStep === 'differences') {
-						primaryBtn.disabled = differences.blocked > 0 || differences.pending > 0 || pendingFieldMapCount > 0;
-						primaryBtn.textContent = differences.pending > 0
-							? 'Waiting for destination fields...'
-							: differences.blocked > 0
-							? 'Resolve ' + differences.blocked + ' required difference' + (differences.blocked === 1 ? '' : 's')
-							: pendingFieldMapCount > 0
-							? 'Choose ' + pendingFieldMapCount + ' destination value' + (pendingFieldMapCount === 1 ? '' : 's')
-							: 'Next: Review migration';
+						primaryBtn.disabled =
+							differences.blocked > 0 || differences.pending > 0 || pendingFieldMapCount > 0;
+						primaryBtn.textContent =
+							differences.pending > 0
+								? 'Waiting for destination fields...'
+								: differences.blocked > 0
+									? 'Resolve ' +
+										differences.blocked +
+										' required difference' +
+										(differences.blocked === 1 ? '' : 's')
+									: pendingFieldMapCount > 0
+										? 'Choose ' +
+											pendingFieldMapCount +
+											' destination value' +
+											(pendingFieldMapCount === 1 ? '' : 's')
+										: 'Next: Review migration';
 						return;
 					}
 					primaryBtn.disabled = false;
@@ -1393,11 +1760,20 @@
 				function _recomputeSummary() {
 					const counts = _statusCounts();
 					const differences = _differenceCounts();
-					const attention = counts.unresolved + differences.blocked + differences.warnings + differences.pending;
+					const attention =
+						counts.unresolved + differences.blocked + differences.warnings + differences.pending;
 					summaryEl.innerHTML =
-						'<div class="mm-summary-item mm-summary-item--update"><strong>' + counts.updates + '</strong><span>Updating</span></div>' +
-						'<div class="mm-summary-item mm-summary-item--new"><strong>' + counts.creates + '</strong><span>Creating</span></div>' +
-						'<div class="mm-summary-item' + (attention ? ' mm-summary-item--warn' : '') + '"><strong>' + attention + '</strong><span>Need attention</span></div>';
+						'<div class="mm-summary-item mm-summary-item--update"><strong>' +
+						counts.updates +
+						'</strong><span>Updating</span></div>' +
+						'<div class="mm-summary-item mm-summary-item--new"><strong>' +
+						counts.creates +
+						'</strong><span>Creating</span></div>' +
+						'<div class="mm-summary-item' +
+						(attention ? ' mm-summary-item--warn' : '') +
+						'"><strong>' +
+						attention +
+						'</strong><span>Need attention</span></div>';
 					_updateFooter(counts);
 				}
 			}

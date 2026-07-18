@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Computes contributor slot assignment and completion state without exposing unrelated fields.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -15,55 +15,61 @@
 
 			function _isEmptySlot(rec) {
 				if (!rec || !rec.slot || rec.slot.slotId == null) {
-return false;
-}
+					return false;
+				}
 				if (rec.loadedFromId) {
-return false;
-}
+					return false;
+				}
 				if (!rec._recipientSlot) {
-return false;
-}
+					return false;
+				}
 				const v = rec.values || {};
 				for (const k in v) {
- if (v[k] != null && v[k] !== '') {
-return false;
-} 
-}
+					if (v[k] != null && v[k] !== '') {
+						return false;
+					}
+				}
 				return true;
 			}
-			
+
 			function _slotAssignmentState(rec) {
 				if (!rec || !rec.slot || rec.slot.slotId == null) {
-return null;
-}
+					return null;
+				}
 				const assignee = rec.slot.assigneeSfUserId || null;
 				if (!assignee) {
-return 'generic';
-}
-				return (window.SF_USER_ID && assignee === window.SF_USER_ID) ? 'mine' : 'other';
+					return 'generic';
+				}
+				return window.SF_USER_ID && assignee === window.SF_USER_ID ? 'mine' : 'other';
 			}
-			
+
 			function _slotAssigneeBadgeHtml(rec) {
 				const state = _slotAssignmentState(rec);
 				if (state !== 'mine' && state !== 'other') {
-return '';
-}
+					return '';
+				}
 				if (state === 'mine') {
 					return '<span class="slot-assignee-badge slot-assignee-badge--mine" title="Assigned to you: your fills will be saved when you submit.">for you</span>';
 				}
-				const name = (rec.slot.assigneeName || rec.slot.assigneeEmail || 'someone else');
-				return '<span class="slot-assignee-badge slot-assignee-badge--other" title="Assigned to ' + escapeHtml(name) + ': only they can fill this slot.">for ' + escapeHtml(name) + '</span>';
+				const name = rec.slot.assigneeName || rec.slot.assigneeEmail || 'someone else';
+				return (
+					'<span class="slot-assignee-badge slot-assignee-badge--other" title="Assigned to ' +
+					escapeHtml(name) +
+					': only they can fill this slot.">for ' +
+					escapeHtml(name) +
+					'</span>'
+				);
 			}
-			
+
 			function _slotAssignmentCardClass(rec) {
 				const state = _slotAssignmentState(rec);
 				return state === 'other' ? ' record-card--slot-locked' : '';
 			}
-			
+
 			function _slotProgress(rec) {
 				if (!rec || !rec.slot || rec.slot.slotId == null) {
-return null;
-}
+					return null;
+				}
 				const kind = rec.slot.kind || 'whole-record';
 				if (kind === 'fields') {
 					const fields = Array.isArray(rec.slot.fields) ? rec.slot.fields : [];
@@ -73,8 +79,8 @@ return null;
 					for (const f of fields) {
 						const x = v[f];
 						if (x != null && x !== '') {
-filled++;
-}
+							filled++;
+						}
 					}
 					return { filled, total };
 				}
@@ -82,105 +88,109 @@ filled++;
 				const hasValue = (() => {
 					const v = rec.values || {};
 					for (const k in v) {
- if (v[k] != null && v[k] !== '') {
-return true;
-} 
-}
+						if (v[k] != null && v[k] !== '') {
+							return true;
+						}
+					}
 					return false;
 				})();
-				return { filled: (loaded || hasValue) ? 1 : 0, total: 1 };
+				return { filled: loaded || hasValue ? 1 : 0, total: 1 };
 			}
-			
+
 			function _aggregateSlotProgress() {
-				let filled = 0, total = 0, recordCount = 0;
+				let filled = 0,
+					total = 0,
+					recordCount = 0;
 				for (const r of canvasState.bulkRecords) {
 					if (r.isTypeNode || r.isPending) {
-continue;
-}
+						continue;
+					}
 					const p = _slotProgress(r);
 					if (!p) {
-continue;
-}
+						continue;
+					}
 					filled += p.filled;
 					total += p.total;
 					recordCount++;
 				}
 				return { filled, total, recordCount };
 			}
-			
+
 			function _slotProgressClass(progress) {
 				if (!progress || progress.total === 0) {
-return 'slot-progress-empty';
-}
+					return 'slot-progress-empty';
+				}
 				if (progress.filled >= progress.total) {
-return 'slot-progress-full';
-}
+					return 'slot-progress-full';
+				}
 				if (progress.filled === 0) {
-return 'slot-progress-empty';
-}
+					return 'slot-progress-empty';
+				}
 				return 'slot-progress-partial';
 			}
-			
+
 			const _userNameCache = new Map();
 			async function _resolveUserName(userId) {
 				if (!userId) {
-return null;
-}
+					return null;
+				}
 				if (_userNameCache.has(userId)) {
-return _userNameCache.get(userId);
-}
+					return _userNameCache.get(userId);
+				}
 				if (window.SF_USER_ID && userId === window.SF_USER_ID) {
 					_userNameCache.set(userId, 'you');
 					return 'you';
 				}
 				try {
-					const r = await csrfFetch('/api/objects/User/records/' + encodeURIComponent(userId), { credentials: 'same-origin' });
+					const r = await csrfFetch('/api/objects/User/records/' + encodeURIComponent(userId), {
+						credentials: 'same-origin',
+					});
 					if (!r.ok) {
-return null;
-}
+						return null;
+					}
 					const u = await r.json();
 					const name = (u && (u.Name || ((u.FirstName || '') + ' ' + (u.LastName || '')).trim())) || null;
 					if (name) {
-_userNameCache.set(userId, name);
-}
+						_userNameCache.set(userId, name);
+					}
 					return name;
 				} catch (e) {
- return null; 
-}
+					return null;
+				}
 			}
-			
+
 			function _formatRelativeTime(iso) {
 				if (!iso) {
-return '';
-}
+					return '';
+				}
 				const t = new Date(iso).getTime();
 				if (!isFinite(t)) {
-return '';
-}
+					return '';
+				}
 				const sec = Math.max(0, Math.round((Date.now() - t) / 1000));
 				if (sec < 60) {
-return 'just now';
-}
+					return 'just now';
+				}
 				const min = Math.round(sec / 60);
 				if (min < 60) {
-return min + ' minute' + (min === 1 ? '' : 's') + ' ago';
-}
+					return min + ' minute' + (min === 1 ? '' : 's') + ' ago';
+				}
 				const hr = Math.round(min / 60);
 				if (hr < 24) {
-return hr + ' hour' + (hr === 1 ? '' : 's') + ' ago';
-}
+					return hr + ' hour' + (hr === 1 ? '' : 's') + ' ago';
+				}
 				const day = Math.round(hr / 24);
 				if (day < 30) {
-return day + ' day' + (day === 1 ? '' : 's') + ' ago';
-}
+					return day + ' day' + (day === 1 ? '' : 's') + ' ago';
+				}
 				return new Date(iso).toLocaleDateString();
 			}
-			
+
 			const _slotInaccessibleObjects = new Set();
 			function _slotPreflightWarn(rec) {
 				if (!_isEmptySlot(rec)) {
-return false;
-}
+					return false;
+				}
 				return _slotInaccessibleObjects.has(rec.objectName);
 			}
 

@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeSlotFills } from '../src/slot-helpers.js';
@@ -6,11 +5,11 @@ import { mergeSlotFills } from '../src/slot-helpers.js';
 function slotRec({ slotId, kind = 'whole-record', fields, assigneeSfUserId, values, objectName = 'Account' }) {
 	const slot = { slotId, kind };
 	if (fields) {
-slot.fields = fields;
-}
+		slot.fields = fields;
+	}
 	if (assigneeSfUserId) {
-slot.assigneeSfUserId = assigneeSfUserId;
-}
+		slot.assigneeSfUserId = assigneeSfUserId;
+	}
 	return {
 		objectName,
 		values: values || {},
@@ -45,11 +44,13 @@ describe('mergeSlotFills, assignment authorization', () => {
 	});
 
 	test('slot assigned to someone else is skipped, not filled', () => {
-		const records = [slotRec({
-			slotId: 1,
-			assigneeSfUserId: '005other',
-			values: { Name: 'original' },
-		})];
+		const records = [
+			slotRec({
+				slotId: 1,
+				assigneeSfUserId: '005other',
+				values: { Name: 'original' },
+			}),
+		];
 		const out = mergeSlotFills({
 			records,
 			fills: [{ slotId: 1, values: { Name: 'evil-overwrite' } }],
@@ -57,17 +58,15 @@ describe('mergeSlotFills, assignment authorization', () => {
 		});
 		assert.equal(out.appliedCount, 0);
 		assert.deepEqual(out.applied, []);
-		assert.deepEqual(out.skipped, [
-			{ slotId: 1, reason: 'not_assigned_to_you', assignee: '005other' },
-		]);
+		assert.deepEqual(out.skipped, [{ slotId: 1, reason: 'not_assigned_to_you', assignee: '005other' }]);
 		assert.equal(out.records[0].values.Name, 'original');
 	});
 
 	test('mixed batch: applied + skipped land in the right buckets', () => {
 		const records = [
-			slotRec({ slotId: 1 }),                                 // generic
-			slotRec({ slotId: 2, assigneeSfUserId: '005me' }),      // mine
-			slotRec({ slotId: 3, assigneeSfUserId: '005other' }),   // other
+			slotRec({ slotId: 1 }), // generic
+			slotRec({ slotId: 2, assigneeSfUserId: '005me' }), // mine
+			slotRec({ slotId: 3, assigneeSfUserId: '005other' }), // other
 		];
 		const out = mergeSlotFills({
 			records,
@@ -80,9 +79,7 @@ describe('mergeSlotFills, assignment authorization', () => {
 		});
 		assert.equal(out.appliedCount, 2);
 		assert.deepEqual(out.applied.map((a) => a.slotId).sort(), [1, 2]);
-		assert.deepEqual(out.skipped, [
-			{ slotId: 3, reason: 'not_assigned_to_you', assignee: '005other' },
-		]);
+		assert.deepEqual(out.skipped, [{ slotId: 3, reason: 'not_assigned_to_you', assignee: '005other' }]);
 		assert.equal(out.records[0].values.Name, 'a');
 		assert.equal(out.records[1].values.Name, 'b');
 		assert.deepEqual(out.records[2].values, {});
@@ -100,11 +97,13 @@ describe('mergeSlotFills, assignment authorization', () => {
 	});
 
 	test('empty-string assigneeSfUserId is treated as unassigned (generic)', () => {
-		const records = [{
-			objectName: 'Account',
-			values: {},
-			slot: { slotId: 1, kind: 'whole-record', assigneeSfUserId: '' },
-		}];
+		const records = [
+			{
+				objectName: 'Account',
+				values: {},
+				slot: { slotId: 1, kind: 'whole-record', assigneeSfUserId: '' },
+			},
+		];
 		const out = mergeSlotFills({
 			records,
 			fills: [{ slotId: 1, values: { Name: 'a' } }],
@@ -115,11 +114,13 @@ describe('mergeSlotFills, assignment authorization', () => {
 	});
 
 	test('coerces non-string assigneeSfUserId via String() before comparing', () => {
-		const records = [{
-			objectName: 'Account',
-			values: {},
-			slot: { slotId: 1, kind: 'whole-record', assigneeSfUserId: 12345 },
-		}];
+		const records = [
+			{
+				objectName: 'Account',
+				values: {},
+				slot: { slotId: 1, kind: 'whole-record', assigneeSfUserId: 12345 },
+			},
+		];
 		const out = mergeSlotFills({
 			records,
 			fills: [{ slotId: 1, values: { Name: 'a' } }],
@@ -178,23 +179,27 @@ describe('mergeSlotFills, unknown / malformed fills', () => {
 
 describe('mergeSlotFills, slot kind / field allowlist', () => {
 	test('field-level slot drops non-allowlisted keys', () => {
-		const records = [slotRec({
-			slotId: 1,
-			kind: 'fields',
-			fields: ['StageName', 'CloseDate'],
-			values: { StageName: 'Prospecting', CloseDate: '2030-01-01', Amount: 100 },
-		})];
+		const records = [
+			slotRec({
+				slotId: 1,
+				kind: 'fields',
+				fields: ['StageName', 'CloseDate'],
+				values: { StageName: 'Prospecting', CloseDate: '2030-01-01', Amount: 100 },
+			}),
+		];
 		const out = mergeSlotFills({
 			records,
-			fills: [{
-				slotId: 1,
-				values: {
-					StageName: 'Closed Won',
-					CloseDate: '2030-12-31',
-					Amount: 999999,        // not in allowlist
-					Name: 'evil',          // not in allowlist
+			fills: [
+				{
+					slotId: 1,
+					values: {
+						StageName: 'Closed Won',
+						CloseDate: '2030-12-31',
+						Amount: 999999, // not in allowlist
+						Name: 'evil', // not in allowlist
+					},
 				},
-			}],
+			],
 			recipientSfUserId: '005me',
 		});
 		assert.equal(out.appliedCount, 1);
@@ -205,12 +210,14 @@ describe('mergeSlotFills, slot kind / field allowlist', () => {
 	});
 
 	test('field-level slot with empty fields array drops everything', () => {
-		const records = [slotRec({
-			slotId: 1,
-			kind: 'fields',
-			fields: [],
-			values: { Existing: 'x' },
-		})];
+		const records = [
+			slotRec({
+				slotId: 1,
+				kind: 'fields',
+				fields: [],
+				values: { Existing: 'x' },
+			}),
+		];
 		const out = mergeSlotFills({
 			records,
 			fills: [{ slotId: 1, values: { StageName: 'will-be-dropped' } }],
@@ -222,11 +229,13 @@ describe('mergeSlotFills, slot kind / field allowlist', () => {
 	});
 
 	test('whole-record slot merges all incoming keys (no allowlist)', () => {
-		const records = [slotRec({
-			slotId: 1,
-			kind: 'whole-record',
-			values: { Existing: 'x' },
-		})];
+		const records = [
+			slotRec({
+				slotId: 1,
+				kind: 'whole-record',
+				values: { Existing: 'x' },
+			}),
+		];
 		const out = mergeSlotFills({
 			records,
 			fills: [{ slotId: 1, values: { Name: 'Acme', Industry: 'Tech', Phone: '555' } }],
@@ -240,11 +249,13 @@ describe('mergeSlotFills, slot kind / field allowlist', () => {
 	});
 
 	test('legacy slot (no kind property) is treated as whole-record', () => {
-		const records = [{
-			objectName: 'Account',
-			values: {},
-			slot: { slotId: 1, label: 'Customer' },  // no kind
-		}];
+		const records = [
+			{
+				objectName: 'Account',
+				values: {},
+				slot: { slotId: 1, label: 'Customer' }, // no kind
+			},
+		];
 		const out = mergeSlotFills({
 			records,
 			fills: [{ slotId: 1, values: { Name: 'Acme' } }],
@@ -327,7 +338,7 @@ describe('mergeSlotFills, input edge cases', () => {
 
 	test('records without slot are ignored when building the index', () => {
 		const records = [
-			{ objectName: 'Account', values: { Name: 'plain' } },  // not a slot
+			{ objectName: 'Account', values: { Name: 'plain' } }, // not a slot
 			slotRec({ slotId: 1 }),
 		];
 		const out = mergeSlotFills({
@@ -352,12 +363,14 @@ describe('mergeSlotFills, input edge cases', () => {
 
 describe('mergeSlotFills, fieldCount accounting', () => {
 	test('fieldCount reflects the number of incoming keys, not the merged count', () => {
-		const records = [slotRec({
-			slotId: 1,
-			kind: 'fields',
-			fields: ['StageName'],
-			values: {},
-		})];
+		const records = [
+			slotRec({
+				slotId: 1,
+				kind: 'fields',
+				fields: ['StageName'],
+				values: {},
+			}),
+		];
 		const out = mergeSlotFills({
 			records,
 			fills: [{ slotId: 1, values: { StageName: 'x', Amount: 100, NextStep: 'y' } }],

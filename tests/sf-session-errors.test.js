@@ -12,7 +12,10 @@ describe('Salesforce session error classification', () => {
 	});
 
 	test('does not misclassify permission and availability failures', () => {
-		assert.equal(isSalesforceSessionExpiredError(new Error('sObject type PermissionSetAssignment is not supported')), false);
+		assert.equal(
+			isSalesforceSessionExpiredError(new Error('sObject type PermissionSetAssignment is not supported')),
+			false,
+		);
 		assert.equal(isSalesforceSessionExpiredError(new Error('request timed out')), false);
 		assert.equal(isSalesforceSessionExpiredError(null), false);
 	});

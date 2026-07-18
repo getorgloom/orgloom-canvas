@@ -28,7 +28,10 @@ describe('upload attempt concurrency claim', () => {
 	test('scopes claims by account and Salesforce user', () => {
 		assert.equal(_claimUploadAttemptForTests(request(), new EventEmitter(), 'attempt-1'), true);
 		assert.equal(_claimUploadAttemptForTests(request('acct-2'), new EventEmitter(), 'attempt-1'), true);
-		assert.equal(_claimUploadAttemptForTests(request('acct-1', 'sf-user-2'), new EventEmitter(), 'attempt-1'), true);
+		assert.equal(
+			_claimUploadAttemptForTests(request('acct-1', 'sf-user-2'), new EventEmitter(), 'attempt-1'),
+			true,
+		);
 	});
 
 	test('requests without an attempt id do not create a claim', () => {
@@ -76,23 +79,30 @@ describe('known no-commit settlement', () => {
 			{ tempId: 3, success: false, errorCode: 'REQUIRED_FIELD_MISSING' },
 		];
 		assert.equal(_countCommittedMutationsForTests(results), 0);
-		assert.equal(_countCommittedMutationsForTests([
-			...results,
-			{ tempId: 4, success: true, id: '003-created', mode: 'create' },
-		]), 1);
+		assert.equal(
+			_countCommittedMutationsForTests([
+				...results,
+				{ tempId: 4, success: true, id: '003-created', mode: 'create' },
+			]),
+			1,
+		);
 	});
 
 	test('a terminal failed rewrite keeps retry safe when optional File cleanup fails', async () => {
 		const calls = [];
-		const result = await _settleKnownNoCommitForTests({
-			async markFailed(id, details) {
-				calls.push(['markFailed', id, details.errorCode]);
+		const result = await _settleKnownNoCommitForTests(
+			{
+				async markFailed(id, details) {
+					calls.push(['markFailed', id, details.errorCode]);
+				},
+				async remove(id) {
+					calls.push(['remove', id]);
+					throw new Error('delete denied');
+				},
 			},
-			async remove(id) {
-				calls.push(['remove', id]);
-				throw new Error('delete denied');
-			},
-		}, '069-terminal', { errorCode: 'VALIDATION' });
+			'069-terminal',
+			{ errorCode: 'VALIDATION' },
+		);
 		assert.deepEqual(result, { settled: true, method: 'failed-row' });
 		assert.deepEqual(calls, [
 			['markFailed', '069-terminal', 'VALIDATION'],
@@ -101,12 +111,16 @@ describe('known no-commit settlement', () => {
 	});
 
 	test('File deletion is a safe fallback when the terminal rewrite fails', async () => {
-		const result = await _settleKnownNoCommitForTests({
-			async markFailed() {
-				throw new Error('rewrite denied');
+		const result = await _settleKnownNoCommitForTests(
+			{
+				async markFailed() {
+					throw new Error('rewrite denied');
+				},
+				async remove() {},
 			},
-			async remove() {},
-		}, '069-fallback', { errorCode: 'VALIDATION' });
+			'069-fallback',
+			{ errorCode: 'VALIDATION' },
+		);
 		assert.deepEqual(result, { settled: true, method: 'removed' });
 	});
 });

@@ -1,15 +1,11 @@
-
-import { ext } from "../extensions.js";
-import {
-	generateDataKey,
-	getCachedDek,
-	putCachedDek,
-} from "../storage/canvas-encryption.js";
+// Wrapped per-canvas DEKs. Unwrapped keys exist only in the bounded server-session cache.
+import { ext } from '../extensions.js';
+import { generateDataKey, getCachedDek, putCachedDek } from '../storage/canvas-encryption.js';
 
 async function _insertOrReplaceWrappedKey(db, { sfOrgId, canvasId, wrapped }) {
 	const now = Date.now();
 	await db
-		.insertInto("canvas_keys")
+		.insertInto('canvas_keys')
 		.values({
 			sf_org_id: sfOrgId,
 			canvas_id: canvasId,
@@ -20,21 +16,16 @@ async function _insertOrReplaceWrappedKey(db, { sfOrgId, canvasId, wrapped }) {
 			created_at: now,
 			updated_at: now,
 		})
-		.onConflict((oc) => oc.columns(["sf_org_id", "canvas_id"]).doNothing())
+		.onConflict((oc) => oc.columns(['sf_org_id', 'canvas_id']).doNothing())
 		.execute();
 }
 
 async function _readRow(db, sfOrgId, canvasId) {
 	return db
-		.selectFrom("canvas_keys")
-		.select([
-			"wrapped_key",
-			"wrap_iv",
-			"wrap_auth_tag",
-			"master_key_version",
-		])
-		.where("sf_org_id", "=", sfOrgId)
-		.where("canvas_id", "=", canvasId)
+		.selectFrom('canvas_keys')
+		.select(['wrapped_key', 'wrap_iv', 'wrap_auth_tag', 'master_key_version'])
+		.where('sf_org_id', '=', sfOrgId)
+		.where('canvas_id', '=', canvasId)
 		.executeTakeFirst();
 }
 
@@ -52,7 +43,7 @@ export async function get({ sfOrgId, canvasId, kekProvider, sessionId }) {
 		return null;
 	}
 	if (!kekProvider) {
-		throw new Error("canvas-keys.get: kekProvider required");
+		throw new Error('canvas-keys.get: kekProvider required');
 	}
 	const cached = getCachedDek(sessionId, 'canvas', canvasId);
 	if (cached) {
@@ -69,14 +60,15 @@ export async function get({ sfOrgId, canvasId, kekProvider, sessionId }) {
 }
 
 export async function getOrMint({ sfOrgId, canvasId, kekProvider, sessionId }) {
+	// Conflict-safe insert ensures concurrent first saves converge on the persisted key.
 	if (!sfOrgId) {
-		throw new Error("sfOrgId required");
+		throw new Error('sfOrgId required');
 	}
 	if (!canvasId) {
-		throw new Error("canvasId required");
+		throw new Error('canvasId required');
 	}
 	if (!kekProvider) {
-		throw new Error("canvas-keys.getOrMint: kekProvider required");
+		throw new Error('canvas-keys.getOrMint: kekProvider required');
 	}
 	const existing = await get({ sfOrgId, canvasId, kekProvider, sessionId });
 	if (existing) {
@@ -102,13 +94,13 @@ export async function getOrMint({ sfOrgId, canvasId, kekProvider, sessionId }) {
 
 export async function persist({ sfOrgId, canvasId, dataKey, kekProvider, sessionId }) {
 	if (!sfOrgId) {
-		throw new Error("sfOrgId required");
+		throw new Error('sfOrgId required');
 	}
 	if (!canvasId) {
-		throw new Error("canvasId required");
+		throw new Error('canvasId required');
 	}
 	if (!kekProvider) {
-		throw new Error("canvas-keys.persist: kekProvider required");
+		throw new Error('canvas-keys.persist: kekProvider required');
 	}
 	const wrapped = await kekProvider.wrapDataKey(dataKey);
 	const db = ext.getDb();
@@ -122,9 +114,9 @@ export async function remove({ sfOrgId, canvasId }) {
 	}
 	const db = ext.getDb();
 	const result = await db
-		.deleteFrom("canvas_keys")
-		.where("sf_org_id", "=", sfOrgId)
-		.where("canvas_id", "=", canvasId)
+		.deleteFrom('canvas_keys')
+		.where('sf_org_id', '=', sfOrgId)
+		.where('canvas_id', '=', canvasId)
 		.executeTakeFirst();
 	return Number(result && result.numDeletedRows) || 0;
 }

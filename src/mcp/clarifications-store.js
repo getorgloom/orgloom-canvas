@@ -1,4 +1,6 @@
-import crypto from "node:crypto";
+import crypto from 'node:crypto';
+
+// Ephemeral clarification queue; entries expire in memory and are never a durable canvas store.
 
 const DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24h
 const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
@@ -22,7 +24,7 @@ function _shape({
 		workspaceId,
 		requestingAccountId,
 		requestingTokenId: requestingTokenId || null,
-		status: "pending",
+		status: 'pending',
 		question: String(question).slice(0, 500),
 		options: Array.isArray(options) ? options.slice() : null,
 		responseText: null,
@@ -34,27 +36,20 @@ function _shape({
 	};
 }
 
-export async function create({
-	canvasId,
-	workspaceId,
-	requestingAccountId,
-	requestingTokenId,
-	question,
-	options,
-}) {
+export async function create({ canvasId, workspaceId, requestingAccountId, requestingTokenId, question, options }) {
 	if (!canvasId) {
-		throw new Error("canvasId required");
+		throw new Error('canvasId required');
 	}
 	if (!workspaceId) {
-		throw new Error("workspaceId required");
+		throw new Error('workspaceId required');
 	}
 	if (!requestingAccountId) {
-		throw new Error("requestingAccountId required");
+		throw new Error('requestingAccountId required');
 	}
 	if (!question) {
-		throw new Error("question required");
+		throw new Error('question required');
 	}
-	const id = "clar_" + crypto.randomUUID();
+	const id = 'clar_' + crypto.randomUUID();
 	const now = Date.now();
 	const record = _shape({
 		id,
@@ -85,7 +80,7 @@ export async function listPendingForCanvas(canvasId) {
 	}
 	const out = [];
 	for (const r of _clarifications.values()) {
-		if (r.canvasId === canvasId && r.status === "pending") {
+		if (r.canvasId === canvasId && r.status === 'pending') {
 			out.push(_clone(r));
 		}
 	}
@@ -94,20 +89,15 @@ export async function listPendingForCanvas(canvasId) {
 }
 
 const ANSWERED_RETENTION_MS = 60 * 60 * 1000; // 1h
-export async function markAnswered({
-	id,
-	responseText,
-	responseOption,
-	respondedByAccountId,
-}) {
+export async function markAnswered({ id, responseText, responseOption, respondedByAccountId }) {
 	if (!id) {
-		throw new Error("id required");
+		throw new Error('id required');
 	}
 	const r = _clarifications.get(id);
-	if (!r || r.status !== "pending") {
+	if (!r || r.status !== 'pending') {
 		return false;
 	}
-	r.status = "answered";
+	r.status = 'answered';
 	r.responseText = responseText || null;
 	r.responseOption = responseOption || null;
 	r.respondedAt = Date.now();
@@ -122,10 +112,10 @@ export async function markAnswered({
 
 export async function markWithdrawn({ id }) {
 	if (!id) {
-		throw new Error("id required");
+		throw new Error('id required');
 	}
 	const r = _clarifications.get(id);
-	if (!r || r.status !== "pending") {
+	if (!r || r.status !== 'pending') {
 		return false;
 	}
 	_clarifications.delete(id);

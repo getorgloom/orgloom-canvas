@@ -1,4 +1,3 @@
-
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -8,11 +7,11 @@ function makeStorage() {
 	const map = new Map();
 	return {
 		get length() {
- return map.size; 
-},
+			return map.size;
+		},
 		key(i) {
- return Array.from(map.keys())[i] ?? null; 
-},
+			return Array.from(map.keys())[i] ?? null;
+		},
 		getItem: (k) => (map.has(k) ? map.get(k) : null),
 		setItem: (k, v) => map.set(k, String(v)),
 		removeItem: (k) => map.delete(k),
@@ -38,8 +37,9 @@ function harness() {
 		sessionStorage,
 		localStorage,
 		setTimeout: (fn) => {
- fn(); return 1; 
-},
+			fn();
+			return 1;
+		},
 		clearTimeout: () => {},
 	};
 	vm.createContext(sandbox);
@@ -125,19 +125,25 @@ describe('cross-org migration session-only recovery and isolation', () => {
 	test('migration snapshot stays in sessionStorage and leaves no durable localStorage copy', () => {
 		const first = harness();
 		setScope(first.win, first.canvasState, REAL);
-		first.canvasState.bulkRecords = [{
-			id: 1,
-			objectName: 'Account',
-			loadedFromId: '001SOURCE',
-			values: {
-				attributes: { type: 'Account', url: '/services/data/vXX.X/sobjects/Account/001SOURCE' },
-				Id: '001SOURCE',
-				Name: 'Durable Co',
+		first.canvasState.bulkRecords = [
+			{
+				id: 1,
+				objectName: 'Account',
+				loadedFromId: '001SOURCE',
+				values: {
+					attributes: { type: 'Account', url: '/services/data/vXX.X/sobjects/Account/001SOURCE' },
+					Id: '001SOURCE',
+					Name: 'Durable Co',
+				},
 			},
-		}];
+		];
 		assert.equal(first.api.migrationStash({ status: 'awaiting-target' }), true);
 		assert.ok(first.sessionStorage.getItem('orgloom:migration:v1'));
-		assert.equal(first.localStorage.getItem('orgloom:migration:v1'), null, 'Salesforce data is not persisted beyond the tab session');
+		assert.equal(
+			first.localStorage.getItem('orgloom:migration:v1'),
+			null,
+			'Salesforce data is not persisted beyond the tab session',
+		);
 
 		setScope(first.win, first.canvasState, { account: REAL.account, org: '00DTARGET', user: REAL.user });
 		const resumed = first.api.migrationResume();
@@ -145,7 +151,11 @@ describe('cross-org migration session-only recovery and isolation', () => {
 		assert.equal(resumed.isCrossOrg, true);
 		assert.equal(first.canvasState.bulkRecords[0].loadedFromId, undefined, 'source Id stripped');
 		assert.equal(first.canvasState.bulkRecords[0].values.Id, undefined, 'source values.Id stripped');
-		assert.equal(first.canvasState.bulkRecords[0].values.attributes, undefined, 'Salesforce transport metadata stripped');
+		assert.equal(
+			first.canvasState.bulkRecords[0].values.attributes,
+			undefined,
+			'Salesforce transport metadata stripped',
+		);
 	});
 
 	test('another Org Loom account cannot resume the same-tab migration', () => {
@@ -179,7 +189,11 @@ describe('cross-org migration session-only recovery and isolation', () => {
 		h.api.autosaveSchedule();
 		const stored = JSON.parse(h.sessionStorage.getItem('orgloom:migration:v1'));
 		assert.equal(stored.targetSfOrgId, target.org);
-		assert.equal(stored.state.bulkRecords[0].loadedFromId, '001TARGET', 'destination match survives wrong-org autosave');
+		assert.equal(
+			stored.state.bulkRecords[0].loadedFromId,
+			'001TARGET',
+			'destination match survives wrong-org autosave',
+		);
 		assert.equal(stored.state.bulkRecords[0].objectName, 'Account');
 
 		setScope(h.win, h.canvasState, target);

@@ -1,9 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-	installOperationalConsoleGuard,
-	sanitizeConsoleArgs,
-} from '../src/operational-console.js';
+import { installOperationalConsoleGuard, sanitizeConsoleArgs } from '../src/operational-console.js';
 
 describe('production operational console privacy guard', () => {
 	test('drops arbitrary messages, email, Salesforce IDs, tokens, URLs, and object values', () => {
@@ -18,7 +15,13 @@ describe('production operational console privacy guard', () => {
 			7,
 		]);
 		const serialized = JSON.stringify(result);
-		for (const forbidden of ['jane@example.com', '003xx000004TmiQAAS', 'secret', 'customer value', 'example.test']) {
+		for (const forbidden of [
+			'jane@example.com',
+			'003xx000004TmiQAAS',
+			'secret',
+			'customer value',
+			'example.test',
+		]) {
 			assert.ok(!serialized.includes(forbidden), `must remove ${forbidden}`);
 		}
 		assert.deepEqual(result[0], '[upload] failed');
@@ -39,14 +42,14 @@ describe('production operational console privacy guard', () => {
 	});
 
 	test('never throws when a logged proxy rejects inspection', () => {
-		const hostile = new Proxy({}, {
-			ownKeys() {
-				throw new Error('do not inspect me');
+		const hostile = new Proxy(
+			{},
+			{
+				ownKeys() {
+					throw new Error('do not inspect me');
+				},
 			},
-		});
-		assert.deepEqual(sanitizeConsoleArgs(['[worker] failed:', hostile]), [
-			'[worker] failed',
-			'[redacted]',
-		]);
+		);
+		assert.deepEqual(sanitizeConsoleArgs(['[worker] failed:', hostile]), ['[worker] failed', '[redacted]']);
 	});
 });

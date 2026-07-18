@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateAiPlan } from '../src/ai-plan.js';
@@ -11,14 +10,22 @@ function describes() {
 				label: 'Account',
 				fields: [
 					{ name: 'Name', type: 'string', createable: true, nillable: false, defaultedOnCreate: false },
-					{ name: 'Industry', type: 'picklist', createable: true, nillable: true,
+					{
+						name: 'Industry',
+						type: 'picklist',
+						createable: true,
+						nillable: true,
 						picklistValues: [
 							{ value: 'Technology', active: true },
 							{ value: 'Finance', active: true },
 							{ value: 'Retired', active: false },
 						],
 					},
-					{ name: 'Tags__c', type: 'multipicklist', createable: true, nillable: true,
+					{
+						name: 'Tags__c',
+						type: 'multipicklist',
+						createable: true,
+						nillable: true,
 						picklistValues: [
 							{ value: 'A', active: true },
 							{ value: 'B', active: true },
@@ -36,12 +43,27 @@ function describes() {
 				label: 'Contact',
 				fields: [
 					{ name: 'LastName', type: 'string', createable: true, nillable: false, defaultedOnCreate: false },
-					{ name: 'AccountId', type: 'reference', createable: true, nillable: true,
-						referenceTo: ['Account'] },
-					{ name: 'ReportsToId', type: 'reference', createable: true, nillable: true,
-						referenceTo: ['Contact'] },
-					{ name: 'ReadOnlyAccount__c', type: 'reference', createable: false, updateable: false,
-						referenceTo: ['Account'] },
+					{
+						name: 'AccountId',
+						type: 'reference',
+						createable: true,
+						nillable: true,
+						referenceTo: ['Account'],
+					},
+					{
+						name: 'ReportsToId',
+						type: 'reference',
+						createable: true,
+						nillable: true,
+						referenceTo: ['Contact'],
+					},
+					{
+						name: 'ReadOnlyAccount__c',
+						type: 'reference',
+						createable: false,
+						updateable: false,
+						referenceTo: ['Account'],
+					},
 				],
 			},
 		},
@@ -55,9 +77,7 @@ describe('validateAiPlan: happy path', () => {
 				{ tempId: 1, objectName: 'Account', values: { Name: 'Acme', Industry: 'Technology' } },
 				{ tempId: 2, objectName: 'Contact', values: { LastName: 'Doe' } },
 			],
-			associations: [
-				{ fromTempId: 2, toTempId: 1, fieldName: 'AccountId' },
-			],
+			associations: [{ fromTempId: 2, toTempId: 1, fieldName: 'AccountId' }],
 		};
 		const r = validateAiPlan(plan, describes());
 		assert.equal(r.warnings.length, 0);
@@ -80,7 +100,11 @@ describe('validateAiPlan: happy path', () => {
 describe('validateAiPlan: record drops', () => {
 	test('caps a poisoned/model-invalid response at 100 records', () => {
 		const plan = {
-			records: Array.from({ length: 101 }, (_, i) => ({ tempId: i + 1, objectName: 'Account', values: { Name: `A${i}` } })),
+			records: Array.from({ length: 101 }, (_, i) => ({
+				tempId: i + 1,
+				objectName: 'Account',
+				values: { Name: `A${i}` },
+			})),
 			associations: [],
 		};
 		const r = validateAiPlan(plan, describes());
@@ -98,7 +122,10 @@ describe('validateAiPlan: record drops', () => {
 			associations: [],
 		};
 		const r = validateAiPlan(plan, describes());
-		assert.deepEqual(r.records.map((record) => record.values.Name), ['First']);
+		assert.deepEqual(
+			r.records.map((record) => record.values.Name),
+			['First'],
+		);
 		assert.equal(r.warnings.length, 2);
 	});
 
@@ -121,7 +148,9 @@ describe('validateAiPlan: record drops', () => {
 
 	test('non-createable field (Id, CreatedDate) is dropped per-field', () => {
 		const plan = {
-			records: [{ tempId: 1, objectName: 'Account', values: { Name: 'Acme', Id: '001ABC', CreatedDate: '2020-01-01' } }],
+			records: [
+				{ tempId: 1, objectName: 'Account', values: { Name: 'Acme', Id: '001ABC', CreatedDate: '2020-01-01' } },
+			],
 			associations: [],
 		};
 		const r = validateAiPlan(plan, describes());
@@ -213,7 +242,7 @@ describe('validateAiPlan: association drops', () => {
 		assert.ok(r.warnings.some((w) => /not a reference/.test(w)));
 	});
 
-	test('association whose target object type doesn\'t match referenceTo is dropped', () => {
+	test("association whose target object type doesn't match referenceTo is dropped", () => {
 		const plan = {
 			records: [
 				{ tempId: 1, objectName: 'Account', values: { Name: 'Acme' } },
@@ -248,7 +277,7 @@ describe('validateAiPlan: empty input', () => {
 		assert.equal(r.warnings.length, 0);
 	});
 
-	test('missing records/associations arrays don\'t crash', () => {
+	test("missing records/associations arrays don't crash", () => {
 		const r = validateAiPlan({}, describes());
 		assert.equal(r.records.length, 0);
 		assert.equal(r.associations.length, 0);

@@ -1,4 +1,3 @@
-
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { ext } from '../src/extensions.js';
@@ -9,14 +8,15 @@ function mockApp() {
 	const calls = { use: [], set: {} };
 	return {
 		use(...args) {
- calls.use.push(args); 
-},
+			calls.use.push(args);
+		},
 		set(key, val) {
- calls.set[key] = val; return this; 
-},
+			calls.set[key] = val;
+			return this;
+		},
 		get(key) {
- return calls.set[key]; 
-},
+			return calls.set[key];
+		},
 		_calls: calls,
 	};
 }
@@ -65,7 +65,11 @@ describe('provider replacement', () => {
 	});
 
 	test('registerActiveWorkspaceProvider replaces the default', async () => {
-		ext.registerActiveWorkspaceProvider(async (req) => ({ id: 'ws_1', name: 'Acme', userId: req.session.accountId }));
+		ext.registerActiveWorkspaceProvider(async (req) => ({
+			id: 'ws_1',
+			name: 'Acme',
+			userId: req.session.accountId,
+		}));
 		const ws = await ext.getActiveWorkspace({ session: { accountId: 'a1' } });
 		assert.equal(ws.id, 'ws_1');
 		assert.equal(ws.userId, 'a1');
@@ -160,8 +164,8 @@ describe('queued registrations + flush', () => {
 	test('route mountFn receives (app, ext)', () => {
 		let received = null;
 		ext.registerRoutes((app, extArg) => {
- received = { app, extArg }; 
-});
+			received = { app, extArg };
+		});
 		const app = mockApp();
 		ext.flush(app);
 		assert.equal(received.app, app);

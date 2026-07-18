@@ -83,12 +83,14 @@ async function post(body) {
 
 describe('POST /api/migrate/match field-aware SOQL literals', () => {
 	test('AnnualRevenue uses an unquoted numeric IN literal', async () => {
-		queryRecords = [{
-			Id: '001000000000001AAA',
-			Name: 'Numeric account',
-			AnnualRevenue: 100,
-			LastModifiedDate: '2026-07-16T00:00:00.000Z',
-		}];
+		queryRecords = [
+			{
+				Id: '001000000000001AAA',
+				Name: 'Numeric account',
+				AnnualRevenue: 100,
+				LastModifiedDate: '2026-07-16T00:00:00.000Z',
+			},
+		];
 		const response = await post({ objectName: 'Account', keyField: 'AnnualRevenue', values: ['100'] });
 		assert.equal(response.status, 200);
 		assert.match(capturedQueries[0], /AnnualRevenue IN \(100\)$/);
@@ -107,7 +109,11 @@ describe('POST /api/migrate/match field-aware SOQL literals', () => {
 	});
 
 	test('invalid numeric match values fail before a Salesforce query', async () => {
-		const response = await post({ objectName: 'Account', keyField: 'AnnualRevenue', values: ["100) OR Name != ''"] });
+		const response = await post({
+			objectName: 'Account',
+			keyField: 'AnnualRevenue',
+			values: ["100) OR Name != ''"],
+		});
 		assert.equal(response.status, 400);
 		assert.equal((await response.json()).error, 'invalid-key-value');
 		assert.equal(capturedQueries.length, 0);

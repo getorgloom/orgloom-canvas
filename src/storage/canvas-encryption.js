@@ -1,4 +1,4 @@
-
+// Canvas envelopes use AES-256-GCM; DEKs are wrapped by the managed package's org-local KEK.
 import { randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 
 const ALGO = 'aes-256-gcm';
@@ -24,10 +24,7 @@ export function encryptPayload(plaintextJson, dataKey) {
 	}
 	const iv = randomBytes(IV_BYTES);
 	const cipher = createCipheriv(ALGO, dataKey, iv);
-	const ciphertext = Buffer.concat([
-		cipher.update(plaintextJson, 'utf8'),
-		cipher.final(),
-	]);
+	const ciphertext = Buffer.concat([cipher.update(plaintextJson, 'utf8'), cipher.final()]);
 	const authTag = cipher.getAuthTag();
 	return Buffer.concat([MAGIC, iv, authTag, ciphertext]);
 }
@@ -51,15 +48,12 @@ export function decryptPayload(envelope, dataKey) {
 	const ciphertext = envelope.slice(HEADER_BYTES);
 	const decipher = createDecipheriv(ALGO, dataKey, iv);
 	decipher.setAuthTag(authTag);
-	const plaintext = Buffer.concat([
-		decipher.update(ciphertext),
-		decipher.final(),
-	]);
+	const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 	return plaintext.toString('utf8');
 }
 
-
 export function makeSfApexKekProvider(conn) {
+	// Only packaged Apex can use the protected KEK; Org Loom handles wrapped keys or transient DEKs.
 	if (!conn || !conn.instanceUrl || !conn.accessToken) {
 		throw new Error('makeSfApexKekProvider: conn with instanceUrl + accessToken required');
 	}
@@ -91,7 +85,9 @@ export function makeSfApexKekProvider(conn) {
 			}
 			const dek = Buffer.from(response.dek, 'base64');
 			if (dek.length !== KEY_BYTES) {
-				throw new Error('sf-apex.unwrapDataKey: dek decoded to ' + dek.length + ' bytes, expected ' + KEY_BYTES);
+				throw new Error(
+					'sf-apex.unwrapDataKey: dek decoded to ' + dek.length + ' bytes, expected ' + KEY_BYTES,
+				);
 			}
 			return dek;
 		},
@@ -115,7 +111,9 @@ async function _apexKekRequest(conn, suffix, body) {
 			if (parsed && (parsed.error || parsed.message)) {
 				detail = (parsed.error || 'kek-error') + ': ' + (parsed.message || '');
 			}
-		} catch (_) { /* response wasn't JSON */ }
+		} catch (_) {
+			/* response wasn't JSON */
+		}
 		throw new Error('Apex KEK call failed (POST /orgloom/kek' + suffix + '): ' + detail);
 	}
 	return res.json();
@@ -131,7 +129,6 @@ export async function ensureSfApexKek(conn) {
 	}
 	return true;
 }
-
 
 const CACHE_ENTRY_TTL_MS = 60 * 60 * 1000; // 1h
 const CACHE_MAX_ENTRIES = 5000;
@@ -164,6 +161,7 @@ function _cachePut(key, dek) {
 }
 
 export function clearKekCacheForSession(sessionId) {
+	// Sign-out and disconnect clear every transient DEK associated with the server session.
 	if (!sessionId) {
 		return 0;
 	}

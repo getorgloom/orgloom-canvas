@@ -1,27 +1,20 @@
-import crypto from "node:crypto";
+import crypto from 'node:crypto';
+
+// Ephemeral proposal queue; accepted changes still require a live browser canvas to apply.
 
 const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 
 const _proposals = new Map();
 
-function _shape({
-	id,
-	canvasId,
-	workspaceId,
-	proposingAccountId,
-	proposingTokenId,
-	changes,
-	summary,
-	createdAt,
-}) {
+function _shape({ id, canvasId, workspaceId, proposingAccountId, proposingTokenId, changes, summary, createdAt }) {
 	return {
 		id,
 		canvasId,
 		workspaceId,
 		proposingAccountId,
 		proposingTokenId: proposingTokenId || null,
-		status: "pending",
+		status: 'pending',
 		changes: changes.slice(),
 		summary: summary ? String(summary).slice(0, 500) : null,
 		createdAt,
@@ -30,27 +23,20 @@ function _shape({
 	};
 }
 
-export async function create({
-	canvasId,
-	workspaceId,
-	proposingAccountId,
-	proposingTokenId,
-	changes,
-	summary,
-}) {
+export async function create({ canvasId, workspaceId, proposingAccountId, proposingTokenId, changes, summary }) {
 	if (!canvasId) {
-		throw new Error("canvasId required");
+		throw new Error('canvasId required');
 	}
 	if (!workspaceId) {
-		throw new Error("workspaceId required");
+		throw new Error('workspaceId required');
 	}
 	if (!proposingAccountId) {
-		throw new Error("proposingAccountId required");
+		throw new Error('proposingAccountId required');
 	}
 	if (!Array.isArray(changes) || changes.length === 0) {
-		throw new Error("changes must be a non-empty array");
+		throw new Error('changes must be a non-empty array');
 	}
-	const id = "prop_" + crypto.randomUUID();
+	const id = 'prop_' + crypto.randomUUID();
 	const record = _shape({
 		id,
 		canvasId,
@@ -79,7 +65,7 @@ export async function listPendingForCanvas(canvasId) {
 	}
 	const out = [];
 	for (const r of _proposals.values()) {
-		if (r.canvasId === canvasId && r.status === "pending") {
+		if (r.canvasId === canvasId && r.status === 'pending') {
 			out.push(_clone(r));
 		}
 	}
@@ -94,10 +80,10 @@ export async function listForCanvas(canvasId, { limit = 100 } = {}) {
 
 export async function markApplied({ id }) {
 	if (!id) {
-		throw new Error("id required");
+		throw new Error('id required');
 	}
 	const r = _proposals.get(id);
-	if (!r || r.status !== "pending") {
+	if (!r || r.status !== 'pending') {
 		return false;
 	}
 	_proposals.delete(id);
@@ -106,10 +92,10 @@ export async function markApplied({ id }) {
 
 export async function markRejected({ id }) {
 	if (!id) {
-		throw new Error("id required");
+		throw new Error('id required');
 	}
 	const r = _proposals.get(id);
-	if (!r || r.status !== "pending") {
+	if (!r || r.status !== 'pending') {
 		return false;
 	}
 	_proposals.delete(id);
@@ -118,10 +104,10 @@ export async function markRejected({ id }) {
 
 export async function markWithdrawn({ id }) {
 	if (!id) {
-		throw new Error("id required");
+		throw new Error('id required');
 	}
 	const r = _proposals.get(id);
-	if (!r || r.status !== "pending") {
+	if (!r || r.status !== 'pending') {
 		return false;
 	}
 	_proposals.delete(id);
@@ -136,9 +122,7 @@ function _clone(r) {
 		proposingAccountId: r.proposingAccountId,
 		proposingTokenId: r.proposingTokenId,
 		status: r.status,
-		changes: r.changes.map((c) =>
-			c && typeof c === "object" ? Object.assign({}, c) : c,
-		),
+		changes: r.changes.map((c) => (c && typeof c === 'object' ? Object.assign({}, c) : c)),
 		summary: r.summary,
 		createdAt: r.createdAt,
 		decidedAt: r.decidedAt,
@@ -147,7 +131,7 @@ function _clone(r) {
 }
 function _purgeOrphans(now = Date.now()) {
 	for (const [id, r] of _proposals.entries()) {
-		if (r.status === "pending" && now - r.createdAt > PENDING_TTL_MS) {
+		if (r.status === 'pending' && now - r.createdAt > PENDING_TTL_MS) {
 			_proposals.delete(id);
 		}
 	}

@@ -1,4 +1,3 @@
-
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { canvasStoreFromSfConnection } from '../src/storage/canvas-store.js';
@@ -11,12 +10,12 @@ const CANVAS = '069LOCK0000001';
 let _stub;
 before(initTestDb);
 before(() => {
- _stub = installSfFetchStub(); 
+	_stub = installSfFetchStub();
 });
 after(() => {
- if (_stub) {
- _stub.restore(); 
-} 
+	if (_stub) {
+		_stub.restore();
+	}
 });
 beforeEach(clearTestDb);
 
@@ -54,17 +53,17 @@ function makeStatefulConn(canvasId, opts = {}) {
 					return { success: true, id: 'x_' + name };
 				},
 				async upsert() {
- return { success: true }; 
-},
+					return { success: true };
+				},
 				async update() {
- return { success: true }; 
-},
+					return { success: true };
+				},
 				async retrieve() {
- return null; 
-},
+					return null;
+				},
 				async destroy() {
- return { success: true }; 
-},
+					return { success: true };
+				},
 			};
 		},
 	};

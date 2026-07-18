@@ -1,4 +1,3 @@
-
 import { test, describe, before, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -24,17 +23,23 @@ function fakeRes() {
 		body: undefined,
 		ended: false,
 		status(code) {
- this.statusCode = code; return this; 
-},
+			this.statusCode = code;
+			return this;
+		},
 		setHeader(name, value) {
- this.headers = this.headers || {}; this.headers[name] = value; return this; 
-},
+			this.headers = this.headers || {};
+			this.headers[name] = value;
+			return this;
+		},
 		json(obj) {
- this.body = obj; this.ended = true; return this; 
-},
+			this.body = obj;
+			this.ended = true;
+			return this;
+		},
 		end() {
- this.ended = true; return this; 
-},
+			this.ended = true;
+			return this;
+		},
 	};
 	return res;
 }
@@ -63,13 +68,27 @@ async function makeWorkspace(ownerAccountId, name = 'W') {
 	}
 	const { ext } = await import('../src/extensions.js');
 	const now = Date.now();
-	await ext.getDb().insertInto('workspaces').values({
-		id, name, owner_account_id: ownerAccountId,
-		created_at: now, updated_at: now,
-	}).execute();
-	await ext.getDb().insertInto('workspace_members').values({
-		workspace_id: id, account_id: ownerAccountId, role: 'admin', joined_at: now,
-	}).execute();
+	await ext
+		.getDb()
+		.insertInto('workspaces')
+		.values({
+			id,
+			name,
+			owner_account_id: ownerAccountId,
+			created_at: now,
+			updated_at: now,
+		})
+		.execute();
+	await ext
+		.getDb()
+		.insertInto('workspace_members')
+		.values({
+			workspace_id: id,
+			account_id: ownerAccountId,
+			role: 'admin',
+			joined_at: now,
+		})
+		.execute();
 	return { id };
 }
 
@@ -161,7 +180,10 @@ describe('auth resolution', () => {
 		const originalEvents = await audit.list({ workspaceId: ws.id });
 		const otherEvents = await audit.list({ workspaceId: other.id });
 		assert.ok(originalEvents.some((event) => event.action === 'mcp_tool_call'));
-		assert.equal(otherEvents.some((event) => event.action === 'mcp_tool_call'), false);
+		assert.equal(
+			otherEvents.some((event) => event.action === 'mcp_tool_call'),
+			false,
+		);
 	});
 });
 
@@ -187,10 +209,17 @@ describe('protocol methods', () => {
 		assert.ok(Array.isArray(tools) && tools.length >= 11, 'expected ≥11 tools, got ' + tools.length);
 		const names = tools.map((t) => t.name);
 		for (const expected of [
-			'list_canvases', 'read_canvas', 'propose_record_changes',
-			'list_pending_proposals', 'describe_object', 'withdraw_proposal',
-			'read_proposal_outcome', 'get_canvas_summary', 'get_my_capabilities',
-			'request_clarification', 'read_clarification',
+			'list_canvases',
+			'read_canvas',
+			'propose_record_changes',
+			'list_pending_proposals',
+			'describe_object',
+			'withdraw_proposal',
+			'read_proposal_outcome',
+			'get_canvas_summary',
+			'get_my_capabilities',
+			'request_clarification',
+			'read_clarification',
 		]) {
 			assert.ok(names.includes(expected), 'tool registered: ' + expected);
 		}
@@ -264,7 +293,10 @@ describe('tools/call', () => {
 
 	test('a tool handler failure writes mcp_tool_call_failed and surfaces the error', async () => {
 		const { ws, token } = await makeMcpFixture();
-		const res = await callMcp({ body: rpc('tools/call', { name: 'read_canvas', arguments: { canvasId: 'cv_nope' } }), token });
+		const res = await callMcp({
+			body: rpc('tools/call', { name: 'read_canvas', arguments: { canvasId: 'cv_nope' } }),
+			token,
+		});
 		assert.ok(res.body.error, 'tool call failed as expected');
 		const { audit } = await import('../src/database/index.js');
 		const events = await audit.list({ workspaceId: ws.id });

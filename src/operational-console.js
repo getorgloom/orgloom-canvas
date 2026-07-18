@@ -1,7 +1,19 @@
 const LEVELS = ['log', 'info', 'warn', 'error', 'debug'];
 const OUTCOMES = [
-	'failed', 'failure', 'error', 'blocked', 'denied', 'missing', 'invalid',
-	'expired', 'disabled', 'enabled', 'started', 'complete', 'ready', 'retry',
+	'failed',
+	'failure',
+	'error',
+	'blocked',
+	'denied',
+	'missing',
+	'invalid',
+	'expired',
+	'disabled',
+	'enabled',
+	'started',
+	'complete',
+	'ready',
+	'retry',
 ];
 
 function safeCode(value) {

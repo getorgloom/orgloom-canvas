@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Batches and caches related-record counts used by relationship chips and type nodes.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -18,57 +18,63 @@
 			const _RELATED_HARD_THRESHOLD = 5000;
 			const _RELATED_BULK_LOAD_CAP = 200; // matches /by-ref server cap
 			const _relatedCountCache = new Map(); // key: objName|field|recordId -> count
-			const _byRefCache = new Map();        // key: objName|field|hostId -> records[]
+			const _byRefCache = new Map(); // key: objName|field|hostId -> records[]
 			const _relatedCountInFlight = new Map();
 			const _byRefInFlight = new Map();
 			const PREFETCH_COUNT_CAP = 25;
-			
+
 			function _countCacheKey(objectName, field, id) {
 				return objectName + '|' + field + '|' + id;
 			}
-			
+
 			function fetchRelatedCount(objectName, field, id) {
 				const key = _countCacheKey(objectName, field, id);
 				if (_relatedCountCache.has(key)) {
-return Promise.resolve(_relatedCountCache.get(key));
-}
+					return Promise.resolve(_relatedCountCache.get(key));
+				}
 				if (_relatedCountInFlight.has(key)) {
-return _relatedCountInFlight.get(key);
-}
-				const url = '/api/objects/' + encodeURIComponent(objectName)
-					+ '/related-count?field=' + encodeURIComponent(field)
-					+ '&id=' + encodeURIComponent(id);
+					return _relatedCountInFlight.get(key);
+				}
+				const url =
+					'/api/objects/' +
+					encodeURIComponent(objectName) +
+					'/related-count?field=' +
+					encodeURIComponent(field) +
+					'&id=' +
+					encodeURIComponent(id);
 				const p = csrfFetch(url, { credentials: 'same-origin' })
 					.then(async (r) => {
 						if (!r.ok) {
- _relatedCountCache.set(key, 0); return 0; 
-}
+							_relatedCountCache.set(key, 0);
+							return 0;
+						}
 						const body = await r.json();
 						const c = body && typeof body.count === 'number' ? body.count : 0;
 						_relatedCountCache.set(key, c);
 						return c;
 					})
 					.catch(() => {
- _relatedCountCache.set(key, 0); return 0; 
-})
+						_relatedCountCache.set(key, 0);
+						return 0;
+					})
 					.finally(() => {
- _relatedCountInFlight.delete(key); 
-});
+						_relatedCountInFlight.delete(key);
+					});
 				_relatedCountInFlight.set(key, p);
 				return p;
 			}
-			
+
 			async function fetchRelatedCountsBatch(probes) {
 				const result = new Map();
 				if (!probes || probes.length === 0) {
-return result;
-}
+					return result;
+				}
 				const toFetch = [];
 				const inflightWaits = [];
 				for (const p of probes) {
 					if (!p || !p.objectName || !p.field || !p.id) {
-continue;
-}
+						continue;
+					}
 					const key = _countCacheKey(p.objectName, p.field, p.id);
 					if (_relatedCountCache.has(key)) {
 						result.set(key, _relatedCountCache.get(key));
@@ -84,31 +90,40 @@ continue;
 				if (toFetch.length > 0) {
 					let resolveBatch;
 					const batchPromise = new Promise((r) => {
- resolveBatch = r; 
-});
+						resolveBatch = r;
+					});
 					toFetch.forEach((x) => {
-						_relatedCountInFlight.set(x.key, batchPromise.then(() => _relatedCountCache.get(x.key) || 0));
+						_relatedCountInFlight.set(
+							x.key,
+							batchPromise.then(() => _relatedCountCache.get(x.key) || 0),
+						);
 					});
 					const CHUNK = 200;
 					const chunks = [];
 					for (let i = 0; i < toFetch.length; i += CHUNK) {
-chunks.push(toFetch.slice(i, i + CHUNK));
-}
+						chunks.push(toFetch.slice(i, i + CHUNK));
+					}
 					try {
-						const responses = await Promise.all(chunks.map(async (chunk) => {
-							const resp = await csrfFetch('/api/related-counts', {
-								method: 'POST',
-								headers: { 'Content-Type': 'application/json' },
-								credentials: 'same-origin',
-								body: JSON.stringify({
-									probes: chunk.map((x) => ({ name: x.p.objectName, field: x.p.field, id: x.p.id })),
-								}),
-							});
-							if (!resp.ok) {
-return { counts: [] };
-}
-							return resp.json().catch(() => ({ counts: [] }));
-						}));
+						const responses = await Promise.all(
+							chunks.map(async (chunk) => {
+								const resp = await csrfFetch('/api/related-counts', {
+									method: 'POST',
+									headers: { 'Content-Type': 'application/json' },
+									credentials: 'same-origin',
+									body: JSON.stringify({
+										probes: chunk.map((x) => ({
+											name: x.p.objectName,
+											field: x.p.field,
+											id: x.p.id,
+										})),
+									}),
+								});
+								if (!resp.ok) {
+									return { counts: [] };
+								}
+								return resp.json().catch(() => ({ counts: [] }));
+							}),
+						);
 						const allCounts = responses.flatMap((b) => (b && b.counts) || []);
 						allCounts.forEach((c) => {
 							const key = _countCacheKey(c.name, c.field, c.id);
@@ -137,47 +152,51 @@ return { counts: [] };
 				}
 				return result;
 			}
-			
+
 			function fetchByRefCached(objectName, field, hostId) {
 				const key = _countCacheKey(objectName, field, hostId);
 				if (_byRefCache.has(key)) {
-return Promise.resolve(_byRefCache.get(key));
-}
+					return Promise.resolve(_byRefCache.get(key));
+				}
 				if (_byRefInFlight.has(key)) {
-return _byRefInFlight.get(key);
-}
-				const url = '/api/objects/' + encodeURIComponent(objectName)
-					+ '/by-ref?field=' + encodeURIComponent(field)
-					+ '&id=' + encodeURIComponent(hostId);
+					return _byRefInFlight.get(key);
+				}
+				const url =
+					'/api/objects/' +
+					encodeURIComponent(objectName) +
+					'/by-ref?field=' +
+					encodeURIComponent(field) +
+					'&id=' +
+					encodeURIComponent(hostId);
 				const p = csrfFetch(url, { credentials: 'same-origin' })
 					.then(async (r) => {
 						if (!r.ok) {
-throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
-}
+							throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+						}
 						const body = await r.json();
 						const records = body.records || [];
 						_byRefCache.set(key, records);
 						return records;
 					})
 					.finally(() => {
- _byRefInFlight.delete(key); 
-});
+						_byRefInFlight.delete(key);
+					});
 				_byRefInFlight.set(key, p);
 				return p;
 			}
-			
+
 			async function prefetchTypeNodeOneLevel(tn) {
 				if (!tn || !tn.isTypeNode) {
-return;
-}
+					return;
+				}
 				const host = canvasState.bulkRecords.find((r) => r.id === tn.hostRecordId);
 				if (!host || !host.loadedFromId) {
-return;
-}
+					return;
+				}
 				const dedupKey = tn.id + '|' + host.id;
 				if (canvasState._prefetchedTypeNodeKeys.has(dedupKey)) {
-return;
-}
+					return;
+				}
 				canvasState._prefetchedTypeNodeKeys.add(dedupKey);
 				try {
 					let records;
@@ -185,41 +204,51 @@ return;
 						const cacheKey = _countCacheKey(tn.objectName, tn.fieldOnOther, host.loadedFromId);
 						const knownCount = _relatedCountCache.get(cacheKey);
 						if (typeof knownCount === 'number' && knownCount > PREFETCH_COUNT_CAP) {
-return;
-}
+							return;
+						}
 						records = await fetchByRefCached(tn.objectName, tn.fieldOnOther, host.loadedFromId);
 					} else {
 						const cacheKey = _countCacheKey(tn.objectName, 'Id', tn.parentId);
 						if (_byRefCache.has(cacheKey)) {
-records = _byRefCache.get(cacheKey);
-} else {
-							const r = await csrfFetch('/api/objects/' + encodeURIComponent(tn.objectName) + '/records/' + encodeURIComponent(tn.parentId), { credentials: 'same-origin' });
+							records = _byRefCache.get(cacheKey);
+						} else {
+							const r = await csrfFetch(
+								'/api/objects/' +
+									encodeURIComponent(tn.objectName) +
+									'/records/' +
+									encodeURIComponent(tn.parentId),
+								{ credentials: 'same-origin' },
+							);
 							if (!r.ok) {
-return;
-}
+								return;
+							}
 							const single = await r.json();
 							records = single ? [single] : [];
 							_byRefCache.set(cacheKey, records);
 						}
 					}
 					if (!records || records.length === 0) {
-return;
-}
+						return;
+					}
 					let targetSel = canvasState.selectedObjects.find((s) => s.name === tn.objectName);
 					if (!targetSel) {
 						try {
-							targetSel = await fetchGraphData(tn.objectName).then((data) => ({ name: data.name, label: data.label || data.name, data }));
+							targetSel = await fetchGraphData(tn.objectName).then((data) => ({
+								name: data.name,
+								label: data.label || data.name,
+								data,
+							}));
 						} catch (e) {
- return; 
-}
+							return;
+						}
 					}
-					const childFields = (targetSel.data && targetSel.data.children || []).filter((c) => {
+					const childFields = ((targetSel.data && targetSel.data.children) || []).filter((c) => {
 						if (!c.field || !c.object) {
-return false;
-}
+							return false;
+						}
 						if (AUDIT_FK_FIELDS.has(c.field)) {
-return false;
-}
+							return false;
+						}
 						return true;
 					});
 					const validRecs = records.filter((r) => r && r.Id);
@@ -241,9 +270,9 @@ return false;
 					const l3Targets = probeResults
 						.filter((p) => p.count > 0 && p.count <= PREFETCH_COUNT_CAP)
 						.slice(0, L3_CAP);
-					await Promise.all(l3Targets.map((p) =>
-						fetchByRefCached(p.objectName, p.field, p.id).catch(() => null)
-					));
+					await Promise.all(
+						l3Targets.map((p) => fetchByRefCached(p.objectName, p.field, p.id).catch(() => null)),
+					);
 				} catch (e) {
 					console.warn('prefetchTypeNodeOneLevel:', e);
 				}

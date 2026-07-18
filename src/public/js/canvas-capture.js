@@ -5,7 +5,9 @@
 		try {
 			var msg = (err && (err.stack || err.message)) || String(err);
 			console.warn('[canvas] ' + msg, context || '');
-		} catch (_) { /* console itself failed; nothing more to do */ }
+		} catch (_) {
+			/* console itself failed; nothing more to do */
+		}
 	}
 
 	window.ORGLOOM_capture = function (err, context) {
@@ -16,7 +18,9 @@
 					tags: { source: 'canvas' },
 					extra: context || {},
 				});
-			} catch (_) { /* Sentry call failed; console.warn above is the fallback */ }
+			} catch (_) {
+				/* Sentry call failed; console.warn above is the fallback */
+			}
 		}
 	};
 })();

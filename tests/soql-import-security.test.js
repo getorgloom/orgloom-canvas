@@ -1,4 +1,3 @@
-
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -46,10 +45,7 @@ function makeMockConn() {
 	const describes = {
 		Account: {
 			name: 'Account',
-			fields: [
-				{ name: 'Id' }, { name: 'Name' }, { name: 'Industry' },
-				{ name: 'Phone' }, { name: 'Type' },
-			],
+			fields: [{ name: 'Id' }, { name: 'Name' }, { name: 'Industry' }, { name: 'Phone' }, { name: 'Type' }],
 			childRelationships: [
 				{ relationshipName: 'Contacts', childSObject: 'Contact', field: 'AccountId' },
 				{ relationshipName: 'Tasks', childSObject: 'Task', field: 'WhatId' },
@@ -96,8 +92,8 @@ function makeMockConn() {
 		captured,
 		describes,
 		setNextQueryResult: (r) => {
- nextQueryResult = r; 
-},
+			nextQueryResult = r;
+		},
 	};
 }
 
@@ -122,8 +118,9 @@ before(async () => {
 	app = express();
 	app.use(express.json());
 	app.use((req, _res, next) => {
- req.session = {}; next(); 
-});
+		req.session = {};
+		next();
+	});
 	app.use('/api/query', (req, _res, next) => {
 		if (injectFakeSf && activeMock) {
 			req.sf = {
@@ -390,7 +387,11 @@ describe('regex guards behave as intended', () => {
 	});
 
 	test('result row missing Id is rejected', async () => {
-		activeMock.setNextQueryResult({ records: [{ Name: 'x', attributes: { type: 'Account' } }], totalSize: 1, done: true });
+		activeMock.setNextQueryResult({
+			records: [{ Name: 'x', attributes: { type: 'Account' } }],
+			totalSize: 1,
+			done: true,
+		});
 		const r = await post({ soql: 'SELECT Name FROM Account', fullFields: false });
 		assert.equal(r.status, 400);
 		assert.equal((await r.json()).error, 'must-include-id');

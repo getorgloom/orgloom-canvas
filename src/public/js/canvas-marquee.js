@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Implements marquee selection and in-memory copy/paste for canvas records and their internal links.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -61,22 +61,10 @@
 				if (!canvasState.bulkMarquee || !canvasState.bulkMarquee.el) {
 					return;
 				}
-				const x1 = Math.min(
-					canvasState.bulkMarquee.startX,
-					canvasState.bulkMarquee.currentX,
-				);
-				const y1 = Math.min(
-					canvasState.bulkMarquee.startY,
-					canvasState.bulkMarquee.currentY,
-				);
-				const x2 = Math.max(
-					canvasState.bulkMarquee.startX,
-					canvasState.bulkMarquee.currentX,
-				);
-				const y2 = Math.max(
-					canvasState.bulkMarquee.startY,
-					canvasState.bulkMarquee.currentY,
-				);
+				const x1 = Math.min(canvasState.bulkMarquee.startX, canvasState.bulkMarquee.currentX);
+				const y1 = Math.min(canvasState.bulkMarquee.startY, canvasState.bulkMarquee.currentY);
+				const x2 = Math.max(canvasState.bulkMarquee.startX, canvasState.bulkMarquee.currentX);
+				const y2 = Math.max(canvasState.bulkMarquee.startY, canvasState.bulkMarquee.currentY);
 				canvasState.bulkMarquee.el.style.left = x1 + 'px';
 				canvasState.bulkMarquee.el.style.top = y1 + 'px';
 				canvasState.bulkMarquee.el.style.width = x2 - x1 + 'px';
@@ -84,34 +72,16 @@
 			}
 
 			function clearMarqueeElement() {
-				if (
-					canvasState.bulkMarquee &&
-					canvasState.bulkMarquee.el &&
-					canvasState.bulkMarquee.el.parentNode
-				) {
-					canvasState.bulkMarquee.el.parentNode.removeChild(
-						canvasState.bulkMarquee.el,
-					);
+				if (canvasState.bulkMarquee && canvasState.bulkMarquee.el && canvasState.bulkMarquee.el.parentNode) {
+					canvasState.bulkMarquee.el.parentNode.removeChild(canvasState.bulkMarquee.el);
 				}
 			}
 
 			function finalizeMarqueeSelection() {
-				const x1 = Math.min(
-					canvasState.bulkMarquee.startX,
-					canvasState.bulkMarquee.currentX,
-				);
-				const y1 = Math.min(
-					canvasState.bulkMarquee.startY,
-					canvasState.bulkMarquee.currentY,
-				);
-				const x2 = Math.max(
-					canvasState.bulkMarquee.startX,
-					canvasState.bulkMarquee.currentX,
-				);
-				const y2 = Math.max(
-					canvasState.bulkMarquee.startY,
-					canvasState.bulkMarquee.currentY,
-				);
+				const x1 = Math.min(canvasState.bulkMarquee.startX, canvasState.bulkMarquee.currentX);
+				const y1 = Math.min(canvasState.bulkMarquee.startY, canvasState.bulkMarquee.currentY);
+				const x2 = Math.max(canvasState.bulkMarquee.startX, canvasState.bulkMarquee.currentX);
+				const y2 = Math.max(canvasState.bulkMarquee.startY, canvasState.bulkMarquee.currentY);
 				const hits = new Set();
 				canvasState.bulkRecords.forEach((rec) => {
 					if (rec.x >= x1 && rec.x <= x2 && rec.y >= y1 && rec.y <= y2) {
@@ -131,9 +101,7 @@
 				if (canvasState.bulkSelectedIds.size === 0) {
 					return false;
 				}
-				const selRecs = canvasState.bulkRecords.filter((r) =>
-					canvasState.bulkSelectedIds.has(r.id),
-				);
+				const selRecs = canvasState.bulkRecords.filter((r) => canvasState.bulkSelectedIds.has(r.id));
 				const selIds = new Set(selRecs.map((r) => r.id));
 				const selAssocs = canvasState.bulkAssociations.filter(
 					(a) => selIds.has(a.fromId) && selIds.has(a.toId),
@@ -153,24 +121,13 @@
 						fieldName: a.fieldName,
 					})),
 				};
-				showBulkToast(
-					'Copied ' +
-						selRecs.length +
-						' record' +
-						(selRecs.length === 1 ? '' : 's') +
-						'.',
-				);
+				showBulkToast('Copied ' + selRecs.length + ' record' + (selRecs.length === 1 ? '' : 's') + '.');
 				return true;
 			}
 
 			function pasteFromClipboard(count) {
-				if (
-					!canvasState.bulkClipboard ||
-					!canvasState.bulkClipboard.records.length
-				) {
-					showBulkToast(
-						'Clipboard is empty. Select records then press Ctrl+C.',
-					);
+				if (!canvasState.bulkClipboard || !canvasState.bulkClipboard.records.length) {
+					showBulkToast('Clipboard is empty. Select records then press Ctrl+C.');
 					return;
 				}
 				const n = Math.max(1, Math.floor(Number(count) || 1));
@@ -190,18 +147,10 @@
 				const clusterW = Math.max(240, maxX - minX + 240);
 				const clusterH = Math.max(180, maxY - minY + 180);
 
-				const canvasMaxX = canvasState.bulkRecords.reduce(
-					(m, r) => Math.max(m, r.x),
-					0,
-				);
+				const canvasMaxX = canvasState.bulkRecords.reduce((m, r) => Math.max(m, r.x), 0);
 				const baseX = canvasMaxX + 260 - minX;
 				const graph = getGraph();
-				const baseY =
-					Math.max(
-						80,
-						graph.querySelector('#bulk-canvas').clientHeight / 2 -
-							clusterH / 2,
-					) - minY;
+				const baseY = Math.max(80, graph.querySelector('#bulk-canvas').clientHeight / 2 - clusterH / 2) - minY;
 
 				const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
 
@@ -246,9 +195,7 @@
 				const _pastedIds = new Set(newIds);
 				if (typeof pushUndo === 'function' && _pastedIds.size > 0) {
 					pushUndo('Paste', function () {
-						canvasState.bulkRecords = canvasState.bulkRecords.filter(
-							(r) => !r || !_pastedIds.has(r.id),
-						);
+						canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => !r || !_pastedIds.has(r.id));
 						canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
 							(a) => a && !_pastedIds.has(a.fromId) && !_pastedIds.has(a.toId),
 						);
@@ -259,13 +206,8 @@
 			}
 
 			function openPasteCountPrompt() {
-				if (
-					!canvasState.bulkClipboard ||
-					!canvasState.bulkClipboard.records.length
-				) {
-					showBulkToast(
-						'Clipboard is empty. Select records then press Ctrl+C.',
-					);
+				if (!canvasState.bulkClipboard || !canvasState.bulkClipboard.records.length) {
+					showBulkToast('Clipboard is empty. Select records then press Ctrl+C.');
 					return;
 				}
 				showPromptModal({

@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Creates one canvas edge per writable Salesforce lookup and keeps FK values synchronized.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -38,24 +38,16 @@
 			const _sfIdMatch = deps._sfIdMatch;
 
 			function inferRefFromGraphData(fromName, toName) {
-				const fromObj = canvasState.selectedObjects.find(
-					(s) => s.name === fromName,
-				);
+				const fromObj = canvasState.selectedObjects.find((s) => s.name === fromName);
 				if (fromObj && fromObj.data) {
-					const p = (fromObj.data.parents || []).find(
-						(pp) => pp.object === toName,
-					);
+					const p = (fromObj.data.parents || []).find((pp) => pp.object === toName);
 					if (p) {
 						return { direction: 'fwd', fieldName: p.field };
 					}
 				}
-				const toObj = canvasState.selectedObjects.find(
-					(s) => s.name === toName,
-				);
+				const toObj = canvasState.selectedObjects.find((s) => s.name === toName);
 				if (toObj && toObj.data) {
-					const p = (toObj.data.parents || []).find(
-						(pp) => pp.object === fromName,
-					);
+					const p = (toObj.data.parents || []).find((pp) => pp.object === fromName);
 					if (p) {
 						return { direction: 'rev', fieldName: p.field };
 					}
@@ -81,11 +73,7 @@
 				const fromDesc = canvasState.describeCache[fromName];
 				if (fromDesc) {
 					(fromDesc.fields || []).forEach((f) => {
-						if (
-							f.type === 'reference' &&
-							(f.referenceTo || []).includes(toName) &&
-							fkWritable(f)
-						) {
+						if (f.type === 'reference' && (f.referenceTo || []).includes(toName) && fkWritable(f)) {
 							add('fwd', f.name);
 						}
 					});
@@ -93,19 +81,13 @@
 				const toDesc = canvasState.describeCache[toName];
 				if (toDesc) {
 					(toDesc.fields || []).forEach((f) => {
-						if (
-							f.type === 'reference' &&
-							(f.referenceTo || []).includes(fromName) &&
-							fkWritable(f)
-						) {
+						if (f.type === 'reference' && (f.referenceTo || []).includes(fromName) && fkWritable(f)) {
 							add('rev', f.name);
 						}
 					});
 				}
 
-				const fromObj = canvasState.selectedObjects.find(
-					(s) => s.name === fromName,
-				);
+				const fromObj = canvasState.selectedObjects.find((s) => s.name === fromName);
 				if (fromObj && fromObj.data) {
 					(fromObj.data.parents || []).forEach((p) => {
 						if (p.object === toName && fkWritable(p)) {
@@ -113,9 +95,7 @@
 						}
 					});
 				}
-				const toObj = canvasState.selectedObjects.find(
-					(s) => s.name === toName,
-				);
+				const toObj = canvasState.selectedObjects.find((s) => s.name === toName);
 				if (toObj && toObj.data) {
 					(toObj.data.parents || []).forEach((p) => {
 						if (p.object === fromName && fkWritable(p)) {
@@ -127,6 +107,7 @@
 			}
 
 			function createAssociation(srcRec, targetRec, direction, fieldName) {
+				// A lookup field may point to only one target, even if duplicate edges are attempted.
 				const fromId = direction === 'fwd' ? srcRec.id : targetRec.id;
 				const toId = direction === 'fwd' ? targetRec.id : srcRec.id;
 				const holderRec = canvasState.bulkRecords.find((r) => r.id === fromId);
@@ -146,22 +127,12 @@
 			}
 
 			function finalizeAssociation(srcRec, targetRec, clientX, clientY) {
-				Promise.all([
-					ensureDescribe(srcRec.objectName),
-					ensureDescribe(targetRec.objectName),
-				])
+				Promise.all([ensureDescribe(srcRec.objectName), ensureDescribe(targetRec.objectName)])
 					.then(() => {
-						const all = inferAllReferences(
-							srcRec.objectName,
-							targetRec.objectName,
-						);
+						const all = inferAllReferences(srcRec.objectName, targetRec.objectName);
 						if (all.length === 0) {
 							showBulkToast(
-								'No reference field connects ' +
-									srcRec.label +
-									' and ' +
-									targetRec.label +
-									'.',
+								'No reference field connects ' + srcRec.label + ' and ' + targetRec.label + '.',
 								'error',
 							);
 							renderBulkView();
@@ -170,17 +141,17 @@
 
 						const remaining = all.filter((o) => {
 							const holderId = o.direction === 'fwd' ? srcRec.id : targetRec.id;
-							const occupied = canvasState.bulkAssociations.some((a) =>
-								a.fromId === holderId && a.fieldName === o.fieldName);
+							const occupied = canvasState.bulkAssociations.some(
+								(a) => a.fromId === holderId && a.fieldName === o.fieldName,
+							);
 							return !occupied;
 						});
 						if (remaining.length === 0) {
-							const fieldSubject = all.length === 1
-								? 'A matching relationship field connects '
-								: 'Matching relationship fields connect ';
-							const occupiedSubject = all.length === 1
-								? 'that field is'
-								: 'those fields are';
+							const fieldSubject =
+								all.length === 1
+									? 'A matching relationship field connects '
+									: 'Matching relationship fields connect ';
+							const occupiedSubject = all.length === 1 ? 'that field is' : 'those fields are';
 							showBulkToast(
 								fieldSubject +
 									srcRec.label +
@@ -194,36 +165,16 @@
 							return;
 						}
 						if (remaining.length === 1) {
-							createAssociation(
-								srcRec,
-								targetRec,
-								remaining[0].direction,
-								remaining[0].fieldName,
-							);
+							createAssociation(srcRec, targetRec, remaining[0].direction, remaining[0].fieldName);
 							return;
 						}
 
-						showFieldPicker(
-							clientX,
-							clientY,
-							remaining,
-							srcRec,
-							targetRec,
-							(opt) => {
-								createAssociation(
-									srcRec,
-									targetRec,
-									opt.direction,
-									opt.fieldName,
-								);
-							},
-						);
+						showFieldPicker(clientX, clientY, remaining, srcRec, targetRec, (opt) => {
+							createAssociation(srcRec, targetRec, opt.direction, opt.fieldName);
+						});
 					})
 					.catch((err) => {
-						showBulkToast(
-							'Failed to resolve relationship: ' + err.message,
-							'error',
-						);
+						showBulkToast('Failed to resolve relationship: ' + err.message, 'error');
 						renderBulkView();
 					});
 			}
@@ -236,12 +187,8 @@
 					clrField = null,
 					clrVal;
 				if (killed) {
-					const holderRec = canvasState.bulkRecords.find(
-						(r) => r.id === killed.fromId,
-					);
-					const targetRec = canvasState.bulkRecords.find(
-						(r) => r.id === killed.toId,
-					);
+					const holderRec = canvasState.bulkRecords.find((r) => r.id === killed.fromId);
+					const targetRec = canvasState.bulkRecords.find((r) => r.id === killed.toId);
 					const tgtLoaded = targetRec && targetRec.loadedFromId;
 					if (
 						holderRec &&
@@ -249,8 +196,7 @@
 						holderRec.values &&
 						holderRec.values[killed.fieldName] != null &&
 						tgtLoaded &&
-						String(holderRec.values[killed.fieldName]).slice(0, 15) ===
-							String(tgtLoaded).slice(0, 15)
+						String(holderRec.values[killed.fieldName]).slice(0, 15) === String(tgtLoaded).slice(0, 15)
 					) {
 						clrId = holderRec.id;
 						clrField = killed.fieldName;
@@ -260,9 +206,7 @@
 					pushUndo('Restore deleted connection', () => {
 						canvasState.bulkAssociations.push(killed);
 						if (clrId != null) {
-							const hr = canvasState.bulkRecords.find(
-								(r) => r.id === clrId,
-							);
+							const hr = canvasState.bulkRecords.find((r) => r.id === clrId);
 							if (hr) {
 								hr.values = hr.values || {};
 								hr.values[clrField] = clrVal;
@@ -275,9 +219,7 @@
 						showBulkToast('Restored connection.');
 					});
 				}
-				canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
-					(a) => a.id !== id,
-				);
+				canvasState.bulkAssociations = canvasState.bulkAssociations.filter((a) => a.id !== id);
 				if (canvasState.bulkSelectedEdgeId === id) {
 					canvasState.bulkSelectedEdgeId = null;
 				}
@@ -301,11 +243,7 @@
 				});
 				delete rec.values[fieldName];
 				const sde = getSelectedDerivedEdge();
-				if (
-					sde &&
-					sde.recId === recId &&
-					sde.fieldName === fieldName
-				) {
+				if (sde && sde.recId === recId && sde.fieldName === fieldName) {
 					setSelectedDerivedEdge(null);
 				}
 				renderBulkView();
@@ -318,10 +256,7 @@
 				let added = 0;
 				const ensureAssoc = (fromId, toId, fieldName) => {
 					const exists = canvasState.bulkAssociations.some(
-						(a) =>
-							a.fromId === fromId &&
-							a.toId === toId &&
-							a.fieldName === fieldName,
+						(a) => a.fromId === fromId && a.toId === toId && a.fieldName === fieldName,
 					);
 					if (!exists) {
 						canvasState.bulkAssociations.push({
@@ -357,11 +292,7 @@
 						return;
 					}
 					canvasState.bulkRecords.forEach((r) => {
-						if (
-							r.isTypeNode ||
-							r.objectName !== c.object ||
-							r.id === newRec.id
-						) {
+						if (r.isTypeNode || r.objectName !== c.object || r.id === newRec.id) {
 							return;
 						}
 						const ref = r.values && r.values[c.field];

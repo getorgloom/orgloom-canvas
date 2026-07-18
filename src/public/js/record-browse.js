@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Browses Salesforce records using describe-approved fields, filters, and pagination.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -9,8 +9,8 @@
 	const PICKLIST_TYPES = new Set(['picklist', 'combobox']);
 	function _operatorsFor(field) {
 		if (!field) {
-return [{ op: 'equals', label: 'equals' }];
-}
+			return [{ op: 'equals', label: 'equals' }];
+		}
 		const t = field.type;
 		if (STRING_TYPES.has(t)) {
 			return [
@@ -74,13 +74,17 @@ return [{ op: 'equals', label: 'equals' }];
 	window.OrgLoom.recordBrowse = {
 		mount: function mount(deps) {
 			const required = [
-				'canvasState', 'csrfFetch', 'escapeHtml',
-				'ensureDescribe', 'showBulkToast',
-				'runAndCommitSoql', 'canvasCapCheck',
+				'canvasState',
+				'csrfFetch',
+				'escapeHtml',
+				'ensureDescribe',
+				'showBulkToast',
+				'runAndCommitSoql',
+				'canvasCapCheck',
 			];
 			if (!deps) {
-throw new Error('record-browse.mount: missing deps object');
-}
+				throw new Error('record-browse.mount: missing deps object');
+			}
 			for (const k of required) {
 				if (deps[k] === undefined || deps[k] === null) {
 					throw new Error('record-browse.mount: missing dep ' + k);
@@ -93,25 +97,24 @@ throw new Error('record-browse.mount: missing deps object');
 			const showBulkToast = deps.showBulkToast;
 			const runAndCommitSoql = deps.runAndCommitSoql;
 			const canvasCapCheck = deps.canvasCapCheck;
-			const captureUndoSnapshot = typeof deps.captureUndoSnapshot === 'function'
-				? deps.captureUndoSnapshot : null;
-			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
-				? deps.showBulkToastWithAction : null;
-			const pingAuditEvent = typeof deps.pingAuditEvent === 'function'
-				? deps.pingAuditEvent : null;
+			const captureUndoSnapshot =
+				typeof deps.captureUndoSnapshot === 'function' ? deps.captureUndoSnapshot : null;
+			const showBulkToastWithAction =
+				typeof deps.showBulkToastWithAction === 'function' ? deps.showBulkToastWithAction : null;
+			const pingAuditEvent = typeof deps.pingAuditEvent === 'function' ? deps.pingAuditEvent : null;
 			const _shared = window.OrgLoom.importShared;
 
 			let _objectsCache = null;
 			async function _loadObjects() {
 				if (_objectsCache) {
-return _objectsCache;
-}
+					return _objectsCache;
+				}
 				const r = await csrfFetch('/api/objects', { credentials: 'same-origin' });
 				const data = await r.json().catch(() => null);
 				if (!r.ok) {
-throw new Error((data && data.error) || 'HTTP ' + r.status);
-}
-				const list = Array.isArray(data) ? data : (data && Array.isArray(data.objects) ? data.objects : []);
+					throw new Error((data && data.error) || 'HTTP ' + r.status);
+				}
+				const list = Array.isArray(data) ? data : data && Array.isArray(data.objects) ? data.objects : [];
 				_objectsCache = list.filter((o) => o && o.queryable !== false);
 				return _objectsCache;
 			}
@@ -165,10 +168,11 @@ throw new Error((data && data.error) || 'HTTP ' + r.status);
 			}
 
 			function _availableFilterFields(objectName) {
+				// Never offer a WHERE field Salesforce describe marks as non-filterable.
 				const desc = canvasState.describeCache[objectName];
 				if (!desc || !Array.isArray(desc.fields)) {
-return [];
-}
+					return [];
+				}
 				const UNUSABLE_TYPES = new Set(['base64', 'address', 'location', 'anyType', 'complexvalue']);
 				return desc.fields
 					.filter((f) => f && f.name && f.type && f.filterable === true && !UNUSABLE_TYPES.has(f.type))
@@ -178,8 +182,8 @@ return [];
 			function _fieldByName(objectName, fieldName) {
 				const desc = canvasState.describeCache[objectName];
 				if (!desc || !Array.isArray(desc.fields)) {
-return null;
-}
+					return null;
+				}
 				return desc.fields.find((f) => f && f.name === fieldName) || null;
 			}
 
@@ -189,63 +193,171 @@ return null;
 					return '<span class="rb-filter-value-disabled" id="' + id + '" data-no-value>(no value)</span>';
 				}
 				const v = filter.value;
-				if (field && (field.type === 'picklist' || field.type === 'combobox')
-					&& Array.isArray(field.picklistValues) && filter.op !== 'in') {
+				if (
+					field &&
+					(field.type === 'picklist' || field.type === 'combobox') &&
+					Array.isArray(field.picklistValues) &&
+					filter.op !== 'in'
+				) {
 					const opts = field.picklistValues
 						.filter((p) => p && p.active !== false)
-						.map((p) => '<option value="' + escapeHtml(p.value) + '"' + (String(v) === p.value ? ' selected' : '') + '>' + escapeHtml(p.label || p.value) + '</option>')
+						.map(
+							(p) =>
+								'<option value="' +
+								escapeHtml(p.value) +
+								'"' +
+								(String(v) === p.value ? ' selected' : '') +
+								'>' +
+								escapeHtml(p.label || p.value) +
+								'</option>',
+						)
 						.join('');
-					return '<select class="rb-filter-value" id="' + id + '" data-filter-id="' + filter.id + '">' +
-						'<option value="">(pick)</option>' + opts +
-					'</select>';
+					return (
+						'<select class="rb-filter-value" id="' +
+						id +
+						'" data-filter-id="' +
+						filter.id +
+						'">' +
+						'<option value="">(pick)</option>' +
+						opts +
+						'</select>'
+					);
 				}
 				if (field && (field.type === 'picklist' || field.type === 'combobox') && filter.op === 'in') {
 					const selected = Array.isArray(v) ? new Set(v) : new Set();
 					const opts = (field.picklistValues || [])
 						.filter((p) => p && p.active !== false)
-						.map((p) => '<option value="' + escapeHtml(p.value) + '"' + (selected.has(p.value) ? ' selected' : '') + '>' + escapeHtml(p.label || p.value) + '</option>')
+						.map(
+							(p) =>
+								'<option value="' +
+								escapeHtml(p.value) +
+								'"' +
+								(selected.has(p.value) ? ' selected' : '') +
+								'>' +
+								escapeHtml(p.label || p.value) +
+								'</option>',
+						)
 						.join('');
-					return '<select multiple class="rb-filter-value rb-filter-value-multi" id="' + id + '" data-filter-id="' + filter.id + '" size="4">' +
+					return (
+						'<select multiple class="rb-filter-value rb-filter-value-multi" id="' +
+						id +
+						'" data-filter-id="' +
+						filter.id +
+						'" size="4">' +
 						opts +
-					'</select>';
+						'</select>'
+					);
 				}
 				if (field && field.type === 'boolean') {
-					return '<select class="rb-filter-value" id="' + id + '" data-filter-id="' + filter.id + '">' +
+					return (
+						'<select class="rb-filter-value" id="' +
+						id +
+						'" data-filter-id="' +
+						filter.id +
+						'">' +
 						'<option value="">(pick)</option>' +
-						'<option value="true"' + (String(v) === 'true' ? ' selected' : '') + '>Yes</option>' +
-						'<option value="false"' + (String(v) === 'false' ? ' selected' : '') + '>No</option>' +
-					'</select>';
+						'<option value="true"' +
+						(String(v) === 'true' ? ' selected' : '') +
+						'>Yes</option>' +
+						'<option value="false"' +
+						(String(v) === 'false' ? ' selected' : '') +
+						'>No</option>' +
+						'</select>'
+					);
 				}
 				if (field && field.type === 'date') {
-					return '<input type="date" class="rb-filter-value" id="' + id + '" data-filter-id="' + filter.id + '" value="' + escapeHtml(v || '') + '">';
+					return (
+						'<input type="date" class="rb-filter-value" id="' +
+						id +
+						'" data-filter-id="' +
+						filter.id +
+						'" value="' +
+						escapeHtml(v || '') +
+						'">'
+					);
 				}
 				if (field && field.type === 'datetime') {
-					return '<input type="datetime-local" class="rb-filter-value" id="' + id + '" data-filter-id="' + filter.id + '" value="' + escapeHtml(v || '') + '">';
+					return (
+						'<input type="datetime-local" class="rb-filter-value" id="' +
+						id +
+						'" data-filter-id="' +
+						filter.id +
+						'" value="' +
+						escapeHtml(v || '') +
+						'">'
+					);
 				}
 				if (field && NUMERIC_TYPES.has(field.type)) {
-					return '<input type="number" class="rb-filter-value" id="' + id + '" data-filter-id="' + filter.id + '" value="' + escapeHtml(v == null ? '' : String(v)) + '" placeholder="0">';
+					return (
+						'<input type="number" class="rb-filter-value" id="' +
+						id +
+						'" data-filter-id="' +
+						filter.id +
+						'" value="' +
+						escapeHtml(v == null ? '' : String(v)) +
+						'" placeholder="0">'
+					);
 				}
-				return '<input type="text" class="rb-filter-value" id="' + id + '" data-filter-id="' + filter.id + '" value="' + escapeHtml(v == null ? '' : String(v)) + '" placeholder="value">';
+				return (
+					'<input type="text" class="rb-filter-value" id="' +
+					id +
+					'" data-filter-id="' +
+					filter.id +
+					'" value="' +
+					escapeHtml(v == null ? '' : String(v)) +
+					'" placeholder="value">'
+				);
 			}
 
 			function _renderFilterChip(filter) {
 				const fields = _availableFilterFields(_state.objectName);
-				const fieldOptions = fields.map((f) =>
-					'<option value="' + escapeHtml(f.name) + '"' + (filter.field === f.name ? ' selected' : '') + '>' + escapeHtml(f.label || f.name) + '</option>'
-				).join('');
+				const fieldOptions = fields
+					.map(
+						(f) =>
+							'<option value="' +
+							escapeHtml(f.name) +
+							'"' +
+							(filter.field === f.name ? ' selected' : '') +
+							'>' +
+							escapeHtml(f.label || f.name) +
+							'</option>',
+					)
+					.join('');
 				const fieldDef = filter.field ? _fieldByName(_state.objectName, filter.field) : null;
 				const ops = _operatorsFor(fieldDef);
-				const opOptions = ops.map((o) =>
-					'<option value="' + escapeHtml(o.op) + '"' + (filter.op === o.op ? ' selected' : '') + '>' + escapeHtml(o.label) + '</option>'
-				).join('');
-				return '<div class="rb-filter-chip" data-filter-id="' + filter.id + '">' +
-					'<select class="rb-filter-field" data-filter-id="' + filter.id + '">' +
-						'<option value="">(field)</option>' + fieldOptions +
+				const opOptions = ops
+					.map(
+						(o) =>
+							'<option value="' +
+							escapeHtml(o.op) +
+							'"' +
+							(filter.op === o.op ? ' selected' : '') +
+							'>' +
+							escapeHtml(o.label) +
+							'</option>',
+					)
+					.join('');
+				return (
+					'<div class="rb-filter-chip" data-filter-id="' +
+					filter.id +
+					'">' +
+					'<select class="rb-filter-field" data-filter-id="' +
+					filter.id +
+					'">' +
+					'<option value="">(field)</option>' +
+					fieldOptions +
 					'</select>' +
-					'<select class="rb-filter-op" data-filter-id="' + filter.id + '">' + opOptions + '</select>' +
+					'<select class="rb-filter-op" data-filter-id="' +
+					filter.id +
+					'">' +
+					opOptions +
+					'</select>' +
 					_renderValueInput(filter, fieldDef) +
-					'<button type="button" class="rb-filter-remove" data-filter-remove="' + filter.id + '" title="Remove this filter">×</button>' +
-				'</div>';
+					'<button type="button" class="rb-filter-remove" data-filter-remove="' +
+					filter.id +
+					'" title="Remove this filter">×</button>' +
+					'</div>'
+				);
 			}
 
 			function _onCanvasIds() {
@@ -270,55 +382,90 @@ return null;
 				const sel = _currentSel();
 				const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
 				const _desc = canvasState.describeCache[_state.objectName];
-				const _nameField = _desc && Array.isArray(_desc.fields)
-					? (_desc.fields.find((fl) => fl && fl.nameField) || null) : null;
-				const linkField = (_nameField && _nameField.name && fields.indexOf(_nameField.name) !== -1)
-					? _nameField.name : 'Id';
+				const _nameField =
+					_desc && Array.isArray(_desc.fields) ? _desc.fields.find((fl) => fl && fl.nameField) || null : null;
+				const linkField =
+					_nameField && _nameField.name && fields.indexOf(_nameField.name) !== -1 ? _nameField.name : 'Id';
 				const selectablePageIds = pageIds.filter((id) => !onCanvas.has(id));
 				const allPageSelected = selectablePageIds.length > 0 && selectablePageIds.every((id) => sel.has(id));
 				const head =
 					'<tr>' +
-						'<th class="rb-th-select">' +
-							'<input type="checkbox" class="rb-select-all" data-rb-select-page' +
-							(allPageSelected ? ' checked' : '') + ' title="Select all records on this page">' +
-						'</th>' +
-						fields.map((f) => '<th>' + escapeHtml(f) + '</th>').join('') +
+					'<th class="rb-th-select">' +
+					'<input type="checkbox" class="rb-select-all" data-rb-select-page' +
+					(allPageSelected ? ' checked' : '') +
+					' title="Select all records on this page">' +
+					'</th>' +
+					fields.map((f) => '<th>' + escapeHtml(f) + '</th>').join('') +
 					'</tr>';
-				const rows = pageRecords.map((rec) => {
-					const isOnCanvas = rec.Id && onCanvas.has(rec.Id);
-					const checked = isOnCanvas || (rec.Id && sel.has(rec.Id)) ? ' checked' : '';
-					const idAttr = rec.Id ? ' data-rb-row-id="' + escapeHtml(rec.Id) + '"' : '';
-					const cells = fields.map((f) => {
-						const v = rec[f];
-						const s = v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
-						if (f === linkField && s && rec.Id && sfBase) {
-							const url = sfBase + '/lightning/r/' + encodeURIComponent(_state.objectName) + '/' + encodeURIComponent(rec.Id) + '/view';
-							return '<td><a class="rb-id-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener" title="Open in Salesforce">' + escapeHtml(s) + '</a></td>';
-						}
-						return '<td>' + escapeHtml(s) + '</td>';
-					}).join('');
-					return '<tr' + idAttr + (isOnCanvas ? ' class="rb-row--on-canvas"' : '') + '>' +
-						'<td class="rb-td-select">' +
+				const rows = pageRecords
+					.map((rec) => {
+						const isOnCanvas = rec.Id && onCanvas.has(rec.Id);
+						const checked = isOnCanvas || (rec.Id && sel.has(rec.Id)) ? ' checked' : '';
+						const idAttr = rec.Id ? ' data-rb-row-id="' + escapeHtml(rec.Id) + '"' : '';
+						const cells = fields
+							.map((f) => {
+								const v = rec[f];
+								const s = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+								if (f === linkField && s && rec.Id && sfBase) {
+									const url =
+										sfBase +
+										'/lightning/r/' +
+										encodeURIComponent(_state.objectName) +
+										'/' +
+										encodeURIComponent(rec.Id) +
+										'/view';
+									return (
+										'<td><a class="rb-id-link" href="' +
+										escapeHtml(url) +
+										'" target="_blank" rel="noopener" title="Open in Salesforce">' +
+										escapeHtml(s) +
+										'</a></td>'
+									);
+								}
+								return '<td>' + escapeHtml(s) + '</td>';
+							})
+							.join('');
+						return (
+							'<tr' +
+							idAttr +
+							(isOnCanvas ? ' class="rb-row--on-canvas"' : '') +
+							'>' +
+							'<td class="rb-td-select">' +
 							(rec.Id
-								? '<input type="checkbox" class="rb-row-select" data-rb-row-checkbox="' + escapeHtml(rec.Id) + '"' + checked
-									+ (isOnCanvas ? ' disabled title="Already on the canvas"' : '') + '>'
+								? '<input type="checkbox" class="rb-row-select" data-rb-row-checkbox="' +
+									escapeHtml(rec.Id) +
+									'"' +
+									checked +
+									(isOnCanvas ? ' disabled title="Already on the canvas"' : '') +
+									'>'
 								: '') +
-						'</td>' +
-						cells +
-					'</tr>';
-				}).join('');
-				return '<table class="rb-preview-table">' +
-					'<thead>' + head + '</thead>' +
-					'<tbody>' + rows + '</tbody>' +
-				'</table>';
+							'</td>' +
+							cells +
+							'</tr>'
+						);
+					})
+					.join('');
+				return (
+					'<table class="rb-preview-table">' +
+					'<thead>' +
+					head +
+					'</thead>' +
+					'<tbody>' +
+					rows +
+					'</tbody>' +
+					'</table>'
+				);
 			}
 
 			async function _fetchResults(content) {
-				const validFilters = _state.filters.filter((f) =>
-					f.field && f.op && (!_opTakesValue(f.op)
-						? true
-						: (f.value != null && f.value !== '' && !(Array.isArray(f.value) && f.value.length === 0))
-					)
+				// Sequence each request so a slower, older response cannot replace newer filter results.
+				const validFilters = _state.filters.filter(
+					(f) =>
+						f.field &&
+						f.op &&
+						(!_opTakesValue(f.op)
+							? true
+							: f.value != null && f.value !== '' && !(Array.isArray(f.value) && f.value.length === 0)),
 				);
 				const statusEl = content.querySelector('.rb-count');
 				statusEl.textContent = 'Counting…';
@@ -343,14 +490,18 @@ return null;
 						return;
 					}
 					if (!r.ok) {
-throw new Error((body && (body.message || body.error)) || 'HTTP ' + r.status);
-}
+						throw new Error((body && (body.message || body.error)) || 'HTTP ' + r.status);
+					}
 					_state.lastResult = body;
 					const count = body.count || 0;
 					const loadable = typeof body.loadableCount === 'number' ? body.loadableCount : count;
 					const onCanvasInMatch = Math.max(0, count - loadable);
-					statusEl.textContent = count + ' record' + (count === 1 ? '' : 's') + ' match'
-						+ (onCanvasInMatch > 0 ? ' · ' + onCanvasInMatch + ' already on canvas' : '');
+					statusEl.textContent =
+						count +
+						' record' +
+						(count === 1 ? '' : 's') +
+						' match' +
+						(onCanvasInMatch > 0 ? ' · ' + onCanvasInMatch + ' already on canvas' : '');
 					content.querySelector('.rb-preview').innerHTML = _renderPreviewTable(body);
 					_renderSelectionSummary(content);
 					_updateLoadButton(content);
@@ -358,9 +509,20 @@ throw new Error((body && (body.message || body.error)) || 'HTTP ' + r.status);
 					if (body.count > _state.limit) {
 						const start = _state.offset + 1;
 						const end = _state.offset + (body.records || []).length;
-						pageInfo.innerHTML = 'Showing ' + start + '–' + end + ' of ' + body.count + ' · ' +
-							'<button type="button" class="rb-page-btn" data-rb-prev' + (_state.offset === 0 ? ' disabled' : '') + '>Prev</button> ' +
-							'<button type="button" class="rb-page-btn" data-rb-next' + (!body.hasMore ? ' disabled' : '') + '>Next</button>';
+						pageInfo.innerHTML =
+							'Showing ' +
+							start +
+							'–' +
+							end +
+							' of ' +
+							body.count +
+							' · ' +
+							'<button type="button" class="rb-page-btn" data-rb-prev' +
+							(_state.offset === 0 ? ' disabled' : '') +
+							'>Prev</button> ' +
+							'<button type="button" class="rb-page-btn" data-rb-next' +
+							(!body.hasMore ? ' disabled' : '') +
+							'>Next</button>';
 					} else {
 						pageInfo.innerHTML = '';
 					}
@@ -380,8 +542,8 @@ throw new Error((body && (body.message || body.error)) || 'HTTP ' + r.status);
 
 			function _scheduleFetch(content) {
 				if (_fetchTimer) {
-clearTimeout(_fetchTimer);
-}
+					clearTimeout(_fetchTimer);
+				}
 				_fetchSeq += 1;
 				_state.lastResult = null;
 				_updateLoadButton(content);
@@ -392,19 +554,22 @@ clearTimeout(_fetchTimer);
 				const overlay = content.closest('.record-browse-modal');
 				const loadBtn = overlay && overlay.querySelector('.rb-load-btn');
 				if (!loadBtn) {
-return;
-}
+					return;
+				}
 				const count = (_state.lastResult && _state.lastResult.count) || 0;
-				const loadable = _state.lastResult && typeof _state.lastResult.loadableCount === 'number'
-					? _state.lastResult.loadableCount : count;
+				const loadable =
+					_state.lastResult && typeof _state.lastResult.loadableCount === 'number'
+						? _state.lastResult.loadableCount
+						: count;
 				const basketTotal = _basketTotal();
 				const basketObjects = _basketEntries().length;
 				const hasBasket = basketTotal > 0;
-				loadBtn.disabled = hasBasket ? false : (!_state.objectName || loadable === 0);
+				loadBtn.disabled = hasBasket ? false : !_state.objectName || loadable === 0;
 				if (hasBasket) {
-					loadBtn.textContent = basketObjects > 1
-						? 'Load ' + basketTotal + ' selected (' + basketObjects + ' objects) to canvas'
-						: 'Load ' + basketTotal + ' selected to canvas';
+					loadBtn.textContent =
+						basketObjects > 1
+							? 'Load ' + basketTotal + ' selected (' + basketObjects + ' objects) to canvas'
+							: 'Load ' + basketTotal + ' selected to canvas';
 				} else if (loadable > 0) {
 					loadBtn.textContent = 'Load all ' + loadable + ' to canvas';
 				} else if (count > 0) {
@@ -417,45 +582,65 @@ return;
 			function _renderSelectionSummary(content) {
 				const summary = content.querySelector('.rb-selection-summary');
 				if (!summary) {
-return;
-}
+					return;
+				}
 				const n = _basketTotal();
 				const entries = _basketEntries();
 				if (n === 0) {
- summary.innerHTML = ''; return; 
-}
-				const items = entries.map((e) =>
-					'<li class="rb-basket-item' + (e.objectName === _state.objectName ? ' rb-basket-item--current' : '') + '">' +
-						'<button type="button" class="rb-basket-goto" data-rb-goto-object="' + escapeHtml(e.objectName) + '" title="Show this object">' +
+					summary.innerHTML = '';
+					return;
+				}
+				const items = entries
+					.map(
+						(e) =>
+							'<li class="rb-basket-item' +
+							(e.objectName === _state.objectName ? ' rb-basket-item--current' : '') +
+							'">' +
+							'<button type="button" class="rb-basket-goto" data-rb-goto-object="' +
+							escapeHtml(e.objectName) +
+							'" title="Show this object">' +
 							escapeHtml(_objectLabel(e.objectName)) +
-						'</button>' +
-						'<span class="rb-basket-count">' + e.count + '</span>' +
-						'<button type="button" class="rb-basket-drop" data-rb-clear-object="' + escapeHtml(e.objectName) + '" title="Remove these from the basket">&times;</button>' +
-					'</li>'
-				).join('');
+							'</button>' +
+							'<span class="rb-basket-count">' +
+							e.count +
+							'</span>' +
+							'<button type="button" class="rb-basket-drop" data-rb-clear-object="' +
+							escapeHtml(e.objectName) +
+							'" title="Remove these from the basket">&times;</button>' +
+							'</li>',
+					)
+					.join('');
 				summary.innerHTML =
 					'<div class="rb-basket">' +
-						'<div class="rb-basket-head">' +
-							'<span class="rb-basket-total">' + n + ' selected' +
-								(entries.length > 1 ? ' across ' + entries.length + ' objects' : '') + '</span>' +
-							'<button type="button" class="rb-clear-selection" data-rb-clear-all>Clear all</button>' +
-						'</div>' +
-						'<ul class="rb-basket-list">' + items + '</ul>' +
+					'<div class="rb-basket-head">' +
+					'<span class="rb-basket-total">' +
+					n +
+					' selected' +
+					(entries.length > 1 ? ' across ' + entries.length + ' objects' : '') +
+					'</span>' +
+					'<button type="button" class="rb-clear-selection" data-rb-clear-all>Clear all</button>' +
+					'</div>' +
+					'<ul class="rb-basket-list">' +
+					items +
+					'</ul>' +
 					'</div>';
 			}
 
 			function _renderNoConnection(content) {
 				content.innerHTML =
 					'<div class="rb-empty-state">' +
-						'<p class="rb-empty-title">No Salesforce org connected</p>' +
-						'<p class="tag">Connect a Salesforce org to browse and load its records onto the canvas.</p>' +
-						'<button type="button" class="button rb-connect-btn">Connect a Salesforce org</button>' +
+					'<p class="rb-empty-title">No Salesforce org connected</p>' +
+					'<p class="tag">Connect a Salesforce org to browse and load its records onto the canvas.</p>' +
+					'<button type="button" class="button rb-connect-btn">Connect a Salesforce org</button>' +
 					'</div>';
 				const btn = content.querySelector('.rb-connect-btn');
 				if (btn) {
 					btn.addEventListener('click', () => {
-						if (window.Orgloom && window.Orgloom.sfConnectionsModal
-							&& typeof window.Orgloom.sfConnectionsModal.open === 'function') {
+						if (
+							window.Orgloom &&
+							window.Orgloom.sfConnectionsModal &&
+							typeof window.Orgloom.sfConnectionsModal.open === 'function'
+						) {
 							window.Orgloom.sfConnectionsModal.open();
 						} else {
 							window.location.assign('/connect');
@@ -468,22 +653,36 @@ return;
 				const objectPicker = content.querySelector('.rb-object-picker');
 				const filterArea = content.querySelector('.rb-filters');
 				if (!objectPicker.dataset.populated) {
-					_loadObjects().then((objs) => {
-						const opts = objs.map((o) =>
-							'<option value="' + escapeHtml(o.name) + '"' + (_state.objectName === o.name ? ' selected' : '') + '>' + escapeHtml(o.label || o.name) + ' (' + escapeHtml(o.name) + ')</option>'
-						).join('');
-						objectPicker.innerHTML = '<option value="">(pick an object)</option>' + opts;
-						objectPicker.dataset.populated = '1';
-					}).catch((e) => {
-						const msg = (e && e.message) || String(e);
-						if (/no-active-connection|not-connected/i.test(msg)) {
-							_renderNoConnection(content);
-							return;
-						}
-						objectPicker.innerHTML = '<option value="">' + escapeHtml('Error: ' + msg) + '</option>';
-					});
+					_loadObjects()
+						.then((objs) => {
+							const opts = objs
+								.map(
+									(o) =>
+										'<option value="' +
+										escapeHtml(o.name) +
+										'"' +
+										(_state.objectName === o.name ? ' selected' : '') +
+										'>' +
+										escapeHtml(o.label || o.name) +
+										' (' +
+										escapeHtml(o.name) +
+										')</option>',
+								)
+								.join('');
+							objectPicker.innerHTML = '<option value="">(pick an object)</option>' + opts;
+							objectPicker.dataset.populated = '1';
+						})
+						.catch((e) => {
+							const msg = (e && e.message) || String(e);
+							if (/no-active-connection|not-connected/i.test(msg)) {
+								_renderNoConnection(content);
+								return;
+							}
+							objectPicker.innerHTML = '<option value="">' + escapeHtml('Error: ' + msg) + '</option>';
+						});
 				}
-				filterArea.innerHTML = _state.filters.map(_renderFilterChip).join('') +
+				filterArea.innerHTML =
+					_state.filters.map(_renderFilterChip).join('') +
 					(_state.objectName
 						? '<button type="button" class="rb-add-filter" data-rb-add-filter>+ Add filter</button>'
 						: '<p class="tag">Pick an object above to start filtering.</p>');
@@ -513,7 +712,8 @@ return;
 					try {
 						await ensureDescribe(name);
 					} catch (e) {
-						content.querySelector('.rb-count').textContent = 'Describe load failed: ' + (e.message || String(e));
+						content.querySelector('.rb-count').textContent =
+							'Describe load failed: ' + (e.message || String(e));
 						return;
 					}
 					_renderBody(content);
@@ -524,13 +724,13 @@ return;
 				content.querySelector('.rb-filters').addEventListener('input', (ev) => {
 					const t = ev.target;
 					if (!t || !t.dataset || !t.dataset.filterId) {
-return;
-}
+						return;
+					}
 					const filterId = Number(t.dataset.filterId);
 					const filt = _state.filters.find((f) => f.id === filterId);
 					if (!filt) {
-return;
-}
+						return;
+					}
 					if (t.classList.contains('rb-filter-value-multi')) {
 						filt.value = Array.from(t.selectedOptions).map((o) => o.value);
 					} else {
@@ -542,20 +742,20 @@ return;
 				content.querySelector('.rb-filters').addEventListener('change', (ev) => {
 					const t = ev.target;
 					if (!t || !t.dataset || !t.dataset.filterId) {
-return;
-}
+						return;
+					}
 					const filterId = Number(t.dataset.filterId);
 					const filt = _state.filters.find((f) => f.id === filterId);
 					if (!filt) {
-return;
-}
+						return;
+					}
 					if (t.classList.contains('rb-filter-field')) {
 						filt.field = t.value;
 						const fieldDef = _fieldByName(_state.objectName, filt.field);
 						const ops = _operatorsFor(fieldDef);
 						if (!ops.find((o) => o.op === filt.op)) {
-filt.op = ops[0] ? ops[0].op : 'equals';
-}
+							filt.op = ops[0] ? ops[0].op : 'equals';
+						}
 						filt.value = '';
 						_renderBody(content);
 						_state.offset = 0;
@@ -563,8 +763,8 @@ filt.op = ops[0] ? ops[0].op : 'equals';
 					} else if (t.classList.contains('rb-filter-op')) {
 						filt.op = t.value;
 						if (!_opTakesValue(filt.op)) {
-filt.value = '';
-}
+							filt.value = '';
+						}
 						_renderBody(content);
 						_state.offset = 0;
 						_scheduleFetch(content);
@@ -594,8 +794,8 @@ filt.value = '';
 
 				content.querySelector('.rb-page-info').addEventListener('click', (ev) => {
 					if (ev.target.disabled) {
-return;
-}
+						return;
+					}
 					if (ev.target.dataset && ev.target.dataset.rbPrev !== undefined) {
 						_state.offset = Math.max(0, _state.offset - _state.limit);
 						_fetchResults(content);
@@ -608,8 +808,8 @@ return;
 				content.querySelector('.rb-preview').addEventListener('change', (ev) => {
 					const t = ev.target;
 					if (!t || t.type !== 'checkbox') {
-return;
-}
+						return;
+					}
 					const _capNotice = (msg) => {
 						const statusEl = content.querySelector('.rb-count');
 						if (statusEl) {
@@ -623,7 +823,11 @@ return;
 						if (t.checked) {
 							if (_basketTotal() >= SELECTION_CAP) {
 								t.checked = false;
-								_capNotice('Selection cap is ' + SELECTION_CAP + ' records. Load these first, then come back to pick more.');
+								_capNotice(
+									'Selection cap is ' +
+										SELECTION_CAP +
+										' records. Load these first, then come back to pick more.',
+								);
 								return;
 							}
 							sel.add(id);
@@ -646,15 +850,19 @@ return;
 						if (t.checked) {
 							for (const id of pageIds) {
 								if (_basketTotal() >= SELECTION_CAP) {
-									_capNotice('Selection cap is ' + SELECTION_CAP + ' records. Some rows on this page were not added.');
+									_capNotice(
+										'Selection cap is ' +
+											SELECTION_CAP +
+											' records. Some rows on this page were not added.',
+									);
 									break;
 								}
 								sel.add(id);
 							}
 						} else {
 							for (const id of pageIds) {
-sel.delete(id);
-}
+								sel.delete(id);
+							}
 						}
 						content.querySelector('.rb-preview').innerHTML = _renderPreviewTable(_state.lastResult);
 						_renderSelectionSummary(content);
@@ -701,20 +909,29 @@ sel.delete(id);
 							jobs = entries.map((e) => ({
 								objectName: e.objectName,
 								count: e.count,
-								soql: 'SELECT Id FROM ' + e.objectName + ' WHERE Id IN (' +
-									Array.from(e.ids).map((id) => "'" + String(id).replace(/'/g, "\\'") + "'").join(', ') + ')',
+								soql:
+									'SELECT Id FROM ' +
+									e.objectName +
+									' WHERE Id IN (' +
+									Array.from(e.ids)
+										.map((id) => "'" + String(id).replace(/'/g, "\\'") + "'")
+										.join(', ') +
+									')',
 							}));
 						} else {
 							if (!_state.lastResult || !_state.lastResult.loadSoql) {
 								return;
 							}
-							jobs = [{
-								objectName: _state.objectName,
-								count: (typeof _state.lastResult.loadableCount === 'number'
-									? _state.lastResult.loadableCount
-									: (_state.lastResult.count || 0)),
-								soql: _state.lastResult.loadSoql,
-							}];
+							jobs = [
+								{
+									objectName: _state.objectName,
+									count:
+										typeof _state.lastResult.loadableCount === 'number'
+											? _state.lastResult.loadableCount
+											: _state.lastResult.count || 0,
+									soql: _state.lastResult.loadSoql,
+								},
+							];
 						}
 						const originalLabel = loadBtn.textContent;
 						const statusEl = content.querySelector('.rb-count');
@@ -747,9 +964,15 @@ sel.delete(id);
 										_undo();
 									}
 									const reason = summary.capReason || 'Canvas is at the record limit.';
-									const msg = reason + (rolledBack
-										? ' (rolled back the ' + added + ' record' + (added === 1 ? '' : 's') + ' already added; nothing changed).'
-										: '');
+									const msg =
+										reason +
+										(rolledBack
+											? ' (rolled back the ' +
+												added +
+												' record' +
+												(added === 1 ? '' : 's') +
+												' already added; nothing changed).'
+											: '');
 									showErr(msg);
 									showBulkToast(msg, 'error');
 									return;
@@ -762,8 +985,16 @@ sel.delete(id);
 							if (rolledBack) {
 								_undo();
 							}
-							const _msg = 'Load failed: ' + (err.message || String(err)) +
-								(rolledBack ? ' (rolled back the ' + added + ' record' + (added === 1 ? '' : 's') + ' already added; nothing changed).' : '');
+							const _msg =
+								'Load failed: ' +
+								(err.message || String(err)) +
+								(rolledBack
+									? ' (rolled back the ' +
+										added +
+										' record' +
+										(added === 1 ? '' : 's') +
+										' already added; nothing changed).'
+									: '');
 							_shared.captureImportFailure('browse', 'load', err.message || String(err));
 							showErr(_msg);
 							showBulkToast(_msg, 'error');
@@ -784,11 +1015,24 @@ sel.delete(id);
 						const acrossNote = objCount > 1 ? ' across ' + objCount + ' objects' : '';
 						const skippedNote = skipped > 0 ? ' · ' + skipped + ' already on canvas (skipped)' : '';
 						if (added === 0 && skipped > 0) {
-							showBulkToast('All ' + skipped + ' record' + (skipped === 1 ? '' : 's') + ' from your selection are already on the canvas.');
+							showBulkToast(
+								'All ' +
+									skipped +
+									' record' +
+									(skipped === 1 ? '' : 's') +
+									' from your selection are already on the canvas.',
+							);
 						} else if (added === 0) {
 							showBulkToast('Nothing to add.');
 						} else {
-							const _msg = 'Added ' + added + ' record' + (added === 1 ? '' : 's') + acrossNote + ' from Browse.' + skippedNote;
+							const _msg =
+								'Added ' +
+								added +
+								' record' +
+								(added === 1 ? '' : 's') +
+								acrossNote +
+								' from Browse.' +
+								skippedNote;
 							if (_undo && showBulkToastWithAction) {
 								showBulkToastWithAction(_msg, 'Undo', _undo);
 							} else {
@@ -809,46 +1053,47 @@ sel.delete(id);
 				overlay.innerHTML =
 					'<div class="modal-overlay" data-rb-close></div>' +
 					'<div class="modal-body" style="max-width:880px">' +
-						'<div class="modal-header">' +
-							'<h3>Browse records</h3>' +
-							'<button class="modal-close" data-rb-close>&times;</button>' +
-						'</div>' +
-						'<div class="modal-content rb-content">' +
-							'<p class="tag">Filter records by field values. The count updates live as you build. Load matching records onto the canvas when you’re ready.</p>' +
-							'<div class="rb-toolbar">' +
-								'<label class="rb-label">Object</label>' +
-								'<select class="rb-object-picker"><option value="">Loading objects…</option></select>' +
-							'</div>' +
-							'<div class="rb-section-head">Filters</div>' +
-							'<div class="rb-filters"></div>' +
-							'<div class="rb-results-head">' +
-								'<span class="rb-count"></span>' +
-								'<span class="rb-page-info"></span>' +
-							'</div>' +
-							'<div class="rb-selection-summary"></div>' +
-							'<div class="rb-preview"></div>' +
-						'</div>' +
-						'<div class="modal-footer">' +
-							'<button class="button secondary" data-rb-close>Cancel</button>' +
-							'<button class="button rb-load-btn" disabled>Load to canvas</button>' +
-						'</div>' +
+					'<div class="modal-header">' +
+					'<h3>Browse records</h3>' +
+					'<button class="modal-close" data-rb-close>&times;</button>' +
+					'</div>' +
+					'<div class="modal-content rb-content">' +
+					'<p class="tag">Filter records by field values. The count updates live as you build. Load matching records onto the canvas when you’re ready.</p>' +
+					'<div class="rb-toolbar">' +
+					'<label class="rb-label">Object</label>' +
+					'<select class="rb-object-picker"><option value="">Loading objects…</option></select>' +
+					'</div>' +
+					'<div class="rb-section-head">Filters</div>' +
+					'<div class="rb-filters"></div>' +
+					'<div class="rb-results-head">' +
+					'<span class="rb-count"></span>' +
+					'<span class="rb-page-info"></span>' +
+					'</div>' +
+					'<div class="rb-selection-summary"></div>' +
+					'<div class="rb-preview"></div>' +
+					'</div>' +
+					'<div class="modal-footer">' +
+					'<button class="button secondary" data-rb-close>Cancel</button>' +
+					'<button class="button rb-load-btn" disabled>Load to canvas</button>' +
+					'</div>' +
 					'</div>';
 				document.body.appendChild(overlay);
 				const content = overlay.querySelector('.rb-content');
 				const cleanup = () => {
 					document.removeEventListener('keydown', onEsc, true);
 					if (_fetchTimer) {
- clearTimeout(_fetchTimer); _fetchTimer = null; 
-}
+						clearTimeout(_fetchTimer);
+						_fetchTimer = null;
+					}
 					if (overlay.parentNode) {
-overlay.remove();
-}
+						overlay.remove();
+					}
 				};
 				const onEsc = (e) => {
- if (e.key === 'Escape') {
-cleanup();
-} 
-};
+					if (e.key === 'Escape') {
+						cleanup();
+					}
+				};
 				document.addEventListener('keydown', onEsc, true);
 				overlay.querySelectorAll('[data-rb-close]').forEach((el) => el.addEventListener('click', cleanup));
 
@@ -856,10 +1101,12 @@ cleanup();
 				_wireBodyHandlers(content);
 
 				if (initialObjectName) {
-					ensureDescribe(initialObjectName).then(() => {
-						_renderBody(content);
-						_scheduleFetch(content);
-					}).catch(() => {});
+					ensureDescribe(initialObjectName)
+						.then(() => {
+							_renderBody(content);
+							_scheduleFetch(content);
+						})
+						.catch(() => {});
 				}
 			}
 

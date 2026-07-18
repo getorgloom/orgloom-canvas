@@ -1,28 +1,37 @@
-
 (function () {
 	'use strict';
+	// Imports query results through the server's read-only SOQL validation boundary.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	window.OrgLoom.soqlImport = {
 		mount: function mount(deps) {
-			if (!deps || !deps.canvasState || !deps.showBulkToast || !deps.escapeHtml
-				|| !deps.csrfFetch || !deps.addToSelection || !deps.renderBulkView
-				|| !deps.getGraph || !deps.clearBulkUserDeleted
-				|| !deps.relayoutNewRecords
-				|| !deps.setSkipNextCyAutoPan
-				|| !deps.clearEmptyStarterCard) {
+			if (
+				!deps ||
+				!deps.canvasState ||
+				!deps.showBulkToast ||
+				!deps.escapeHtml ||
+				!deps.csrfFetch ||
+				!deps.addToSelection ||
+				!deps.renderBulkView ||
+				!deps.getGraph ||
+				!deps.clearBulkUserDeleted ||
+				!deps.relayoutNewRecords ||
+				!deps.setSkipNextCyAutoPan ||
+				!deps.clearEmptyStarterCard
+			) {
 				throw new Error('soql-import.mount: missing required deps');
 			}
 			const canvasState = deps.canvasState;
 			const showBulkToast = deps.showBulkToast;
 			const escapeHtml = deps.escapeHtml;
 			const csrfFetch = deps.csrfFetch;
-			const canvasCapCheck = typeof deps.canvasCapCheck === 'function'
-				? deps.canvasCapCheck
-				: function () {
- return { ok: true, blocked: false, reason: null }; 
-};
+			const canvasCapCheck =
+				typeof deps.canvasCapCheck === 'function'
+					? deps.canvasCapCheck
+					: function () {
+							return { ok: true, blocked: false, reason: null };
+						};
 			const addToSelection = deps.addToSelection;
 			const renderBulkView = deps.renderBulkView;
 			const getGraph = deps.getGraph;
@@ -30,10 +39,10 @@
 			const relayoutNewRecords = deps.relayoutNewRecords;
 			const setSkipNextCyAutoPan = deps.setSkipNextCyAutoPan;
 			const clearEmptyStarterCard = deps.clearEmptyStarterCard;
-			const captureUndoSnapshot = typeof deps.captureUndoSnapshot === 'function'
-				? deps.captureUndoSnapshot : null;
-			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
-				? deps.showBulkToastWithAction : null;
+			const captureUndoSnapshot =
+				typeof deps.captureUndoSnapshot === 'function' ? deps.captureUndoSnapshot : null;
+			const showBulkToastWithAction =
+				typeof deps.showBulkToastWithAction === 'function' ? deps.showBulkToastWithAction : null;
 			const _shared = window.OrgLoom.importShared;
 
 			function formatQueryError(body, status) {
@@ -43,442 +52,553 @@
 					return '<strong>' + escapeHtml(code) + '</strong> &middot; ' + escapeHtml(msg);
 				}
 				if (msg) {
-return escapeHtml(msg);
-}
+					return escapeHtml(msg);
+				}
 				if (code) {
-return escapeHtml(code);
-}
+					return escapeHtml(code);
+				}
 				return 'HTTP ' + status;
 			}
 
-
-
-				const PLAYGROUND_PRESET_SOQL =
-					"SELECT Id, Name, Industry, Phone, Type,\n" +
-					"       (SELECT Id, FirstName, LastName, Email, Title FROM Contacts)\n" +
-					"FROM Account\n" +
-					"WHERE Industry = 'Technology'\n" +
-					"LIMIT 5";
-				function openSoqlImportModal(opts) {
-					opts = opts || {};
-					document.querySelectorAll('.soql-import-modal').forEach((el) => el.remove());
-					const isPlayground = !!window.ORGLOOM_MOCK;
-					const presetSoql = typeof opts.presetSoql === 'string' && opts.presetSoql.trim()
-						? opts.presetSoql.trim()
-						: null;
-					const modal = document.createElement('div');
-					modal.className = 'modal soql-import-modal';
-					const headerCopy = isPlayground && !presetSoql
+			const PLAYGROUND_PRESET_SOQL =
+				'SELECT Id, Name, Industry, Phone, Type,\n' +
+				'       (SELECT Id, FirstName, LastName, Email, Title FROM Contacts)\n' +
+				'FROM Account\n' +
+				"WHERE Industry = 'Technology'\n" +
+				'LIMIT 5';
+			function openSoqlImportModal(opts) {
+				opts = opts || {};
+				document.querySelectorAll('.soql-import-modal').forEach((el) => el.remove());
+				const isPlayground = !!window.ORGLOOM_MOCK;
+				const presetSoql =
+					typeof opts.presetSoql === 'string' && opts.presetSoql.trim() ? opts.presetSoql.trim() : null;
+				const modal = document.createElement('div');
+				modal.className = 'modal soql-import-modal';
+				const headerCopy =
+					isPlayground && !presetSoql
 						? '<p class="tag"><strong>Imports are capped at 500 records.</strong> Demo mode &middot; the query below is preset for the playground. Sign up to write your own SOQL against your real org.</p>'
 						: '<p class="tag"><strong>Up to 500 records per import.</strong> Read-only SELECT, must include <code>Id</code>. Subqueries on child relationships are supported (e.g. <code>SELECT Id, Name, (SELECT Id, FirstName FROM Contacts) FROM Account</code>).</p>';
-					const textareaAttrs = isPlayground && !presetSoql
+				const textareaAttrs =
+					isPlayground && !presetSoql
 						? ' readonly aria-readonly="true" style="width:100%;font-family:monospace;font-size:13px;background:var(--bg-elev);color:var(--ink-soft);cursor:not-allowed;"'
 						: ' autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="SELECT Id, Name FROM Account WHERE CreatedDate = LAST_N_DAYS:30 LIMIT 50" style="width:100%;font-family:monospace;font-size:13px;"';
-					const textareaValue = presetSoql || (isPlayground ? PLAYGROUND_PRESET_SOQL : '');
-					modal.innerHTML =
-						'<div class="modal-overlay" data-soql-close></div>' +
-						'<div class="modal-body" style="max-width:720px">' +
-							'<div class="modal-header">' +
-								'<h3>Import via SOQL query</h3>' +
-								'<button class="modal-close" data-soql-close>&times;</button>' +
-							'</div>' +
-							'<div class="modal-content">' +
-								headerCopy +
-								'<textarea id="soql-query" rows="8"' + textareaAttrs + '>' + escapeHtml(textareaValue) + '</textarea>' +
-								'<label class="soql-full-fields-toggle" style="display:flex;align-items:center;gap:0.5em;margin-top:0.6em;font-size:0.88rem;color:var(--ink-soft)' + (isPlayground ? ';opacity:0.7;cursor:not-allowed' : '') + '">' +
-									'<input type="checkbox" id="soql-full-fields" checked' + (isPlayground ? ' disabled aria-disabled="true"' : '') + '>' +
-									'<span><strong>Load all fields</strong> &middot; refetch each record with every field you can read in Salesforce, not just the ones in your SELECT. Uncheck for a compact view of only the fields you queried.</span>' +
-								'</label>' +
-								'<div id="soql-preview" class="soql-preview"></div>' +
-							'</div>' +
-							'<div class="modal-footer">' +
-								'<button class="button secondary" data-soql-close>Cancel</button>' +
-								'<button class="button secondary" id="soql-preview-btn">Run preview</button>' +
-								'<button class="button" id="soql-commit-btn">Add to canvas</button>' +
-							'</div>' +
-						'</div>';
-					document.body.appendChild(modal);
-					const close = () => {
-						modal.remove();
-						document.removeEventListener('keydown', onEsc);
-					};
-					const onEsc = (e) => {
- if (e.key === 'Escape') {
-close();
-} 
-};
-					document.addEventListener('keydown', onEsc);
-					modal.querySelectorAll('[data-soql-close]').forEach((el) => el.addEventListener('click', close));
-
-					const textarea = modal.querySelector('#soql-query');
-					const previewPane = modal.querySelector('#soql-preview');
-					const previewBtn = modal.querySelector('#soql-preview-btn');
-					const commitBtn = modal.querySelector('#soql-commit-btn');
-					const fullFieldsCb = modal.querySelector('#soql-full-fields');
-					let lastResult = null;
-					setTimeout(() => textarea.focus(), 0);
-
-					let lastResultSoql = null;
-					let lastResultFullFields = null;
-
-					async function runQuery(soql) {
-						const fullFields = !!(fullFieldsCb && fullFieldsCb.checked);
-						const r = await csrfFetch('/api/query', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							credentials: 'same-origin',
-							body: JSON.stringify({ soql, fullFields }),
-						});
-						const body = await r.json().catch(() => ({}));
-						return { ok: r.ok, status: r.status, body, fullFields };
+				const textareaValue = presetSoql || (isPlayground ? PLAYGROUND_PRESET_SOQL : '');
+				modal.innerHTML =
+					'<div class="modal-overlay" data-soql-close></div>' +
+					'<div class="modal-body" style="max-width:720px">' +
+					'<div class="modal-header">' +
+					'<h3>Import via SOQL query</h3>' +
+					'<button class="modal-close" data-soql-close>&times;</button>' +
+					'</div>' +
+					'<div class="modal-content">' +
+					headerCopy +
+					'<textarea id="soql-query" rows="8"' +
+					textareaAttrs +
+					'>' +
+					escapeHtml(textareaValue) +
+					'</textarea>' +
+					'<label class="soql-full-fields-toggle" style="display:flex;align-items:center;gap:0.5em;margin-top:0.6em;font-size:0.88rem;color:var(--ink-soft)' +
+					(isPlayground ? ';opacity:0.7;cursor:not-allowed' : '') +
+					'">' +
+					'<input type="checkbox" id="soql-full-fields" checked' +
+					(isPlayground ? ' disabled aria-disabled="true"' : '') +
+					'>' +
+					'<span><strong>Load all fields</strong> &middot; refetch each record with every field you can read in Salesforce, not just the ones in your SELECT. Uncheck for a compact view of only the fields you queried.</span>' +
+					'</label>' +
+					'<div id="soql-preview" class="soql-preview"></div>' +
+					'</div>' +
+					'<div class="modal-footer">' +
+					'<button class="button secondary" data-soql-close>Cancel</button>' +
+					'<button class="button secondary" id="soql-preview-btn">Run preview</button>' +
+					'<button class="button" id="soql-commit-btn">Add to canvas</button>' +
+					'</div>' +
+					'</div>';
+				document.body.appendChild(modal);
+				const close = () => {
+					modal.remove();
+					document.removeEventListener('keydown', onEsc);
+				};
+				const onEsc = (e) => {
+					if (e.key === 'Escape') {
+						close();
 					}
+				};
+				document.addEventListener('keydown', onEsc);
+				modal.querySelectorAll('[data-soql-close]').forEach((el) => el.addEventListener('click', close));
 
-					function renderPreview(body) {
-						const byObject = {};
-						for (const rec of body.records) {
-							byObject[rec.objectName] = (byObject[rec.objectName] || 0) + 1;
-						}
-						const breakdown = Object.entries(byObject)
-							.map(([n, c]) => escapeHtml(n) + ': ' + c)
-							.join(' \u00b7 ');
-						const truncationNote = body.capped
-							? '<div class="banner">Hit the ' + (body.cap || 500) + '-record import cap; showing the first ' + body.returned + '. There may be more; add a WHERE clause or a smaller LIMIT to narrow.</div>'
-							: body.truncated
-							? '<div class="banner">Query matches ' + body.totalSize + ' records; showing the first ' + body.returned + '. Add a WHERE clause or LIMIT to narrow.</div>'
+				const textarea = modal.querySelector('#soql-query');
+				const previewPane = modal.querySelector('#soql-preview');
+				const previewBtn = modal.querySelector('#soql-preview-btn');
+				const commitBtn = modal.querySelector('#soql-commit-btn');
+				const fullFieldsCb = modal.querySelector('#soql-full-fields');
+				let lastResult = null;
+				setTimeout(() => textarea.focus(), 0);
+
+				let lastResultSoql = null;
+				let lastResultFullFields = null;
+
+				async function runQuery(soql) {
+					// The server parses and enforces the read-only SOQL subset before querying Salesforce.
+					const fullFields = !!(fullFieldsCb && fullFieldsCb.checked);
+					const r = await csrfFetch('/api/query', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						credentials: 'same-origin',
+						body: JSON.stringify({ soql, fullFields }),
+					});
+					const body = await r.json().catch(() => ({}));
+					return { ok: r.ok, status: r.status, body, fullFields };
+				}
+
+				function renderPreview(body) {
+					const byObject = {};
+					for (const rec of body.records) {
+						byObject[rec.objectName] = (byObject[rec.objectName] || 0) + 1;
+					}
+					const breakdown = Object.entries(byObject)
+						.map(([n, c]) => escapeHtml(n) + ': ' + c)
+						.join(' \u00b7 ');
+					const truncationNote = body.capped
+						? '<div class="banner">Hit the ' +
+							(body.cap || 500) +
+							'-record import cap; showing the first ' +
+							body.returned +
+							'. There may be more; add a WHERE clause or a smaller LIMIT to narrow.</div>'
+						: body.truncated
+							? '<div class="banner">Query matches ' +
+								body.totalSize +
+								' records; showing the first ' +
+								body.returned +
+								'. Add a WHERE clause or LIMIT to narrow.</div>'
 							: '';
-						const sfBase = (window.SF_INSTANCE_URL || '').replace(/[/]+$/, '');
-						const ID_PRIORITY = ['Name', 'CaseNumber', 'Subject', 'Title', 'Label', 'DeveloperName', 'Username', 'Email', 'FullName', 'LastName'];
-						function pickIdentifier(values) {
-							if (!values) {
- return null; 
-}
-							for (const k of ID_PRIORITY) {
-								const v = values[k];
-								if (v != null && typeof v !== 'object' && String(v).trim() !== '') {
- return { field: k, value: String(v) }; 
-}
-							}
-							for (const k of Object.keys(values)) {
-								if (k === 'Id' || k === 'attributes') {
- continue; 
-}
-								const v = values[k];
-								if (v != null && typeof v !== 'object' && String(v).trim() !== '') {
- return { field: k, value: String(v) }; 
-}
-							}
+					const sfBase = (window.SF_INSTANCE_URL || '').replace(/[/]+$/, '');
+					const ID_PRIORITY = [
+						'Name',
+						'CaseNumber',
+						'Subject',
+						'Title',
+						'Label',
+						'DeveloperName',
+						'Username',
+						'Email',
+						'FullName',
+						'LastName',
+					];
+					function pickIdentifier(values) {
+						if (!values) {
 							return null;
 						}
-						const MAX_PREVIEW_ROWS = 200;
-						const decorated = body.records.map((rec) => {
-							const id = rec.loadedFromId || (rec.values && rec.values.Id) || '';
-							const ident = pickIdentifier(rec.values);
-							return { rec: rec, id: id, ident: ident, sortName: ident ? ident.value : id };
-						});
-						const COLLATE = { numeric: true, sensitivity: 'base' };
-						decorated.sort((a, b) => {
-							const byObj = String(a.rec.objectName || '').localeCompare(String(b.rec.objectName || ''), undefined, COLLATE);
-							if (byObj !== 0) {
- return byObj; 
-}
-							return String(a.sortName || '').localeCompare(String(b.sortName || ''), undefined, COLLATE);
-						});
-						const shownRows = decorated.slice(0, MAX_PREVIEW_ROWS);
-						const moreCount = decorated.length - shownRows.length;
-						const rowsHtml = shownRows.map((row) => {
-							const rec = row.rec, id = row.id, ident = row.ident;
-							const identText = ident ? ident.value : (id || '—');
+						for (const k of ID_PRIORITY) {
+							const v = values[k];
+							if (v != null && typeof v !== 'object' && String(v).trim() !== '') {
+								return { field: k, value: String(v) };
+							}
+						}
+						for (const k of Object.keys(values)) {
+							if (k === 'Id' || k === 'attributes') {
+								continue;
+							}
+							const v = values[k];
+							if (v != null && typeof v !== 'object' && String(v).trim() !== '') {
+								return { field: k, value: String(v) };
+							}
+						}
+						return null;
+					}
+					const MAX_PREVIEW_ROWS = 200;
+					const decorated = body.records.map((rec) => {
+						const id = rec.loadedFromId || (rec.values && rec.values.Id) || '';
+						const ident = pickIdentifier(rec.values);
+						return { rec: rec, id: id, ident: ident, sortName: ident ? ident.value : id };
+					});
+					const COLLATE = { numeric: true, sensitivity: 'base' };
+					decorated.sort((a, b) => {
+						const byObj = String(a.rec.objectName || '').localeCompare(
+							String(b.rec.objectName || ''),
+							undefined,
+							COLLATE,
+						);
+						if (byObj !== 0) {
+							return byObj;
+						}
+						return String(a.sortName || '').localeCompare(String(b.sortName || ''), undefined, COLLATE);
+					});
+					const shownRows = decorated.slice(0, MAX_PREVIEW_ROWS);
+					const moreCount = decorated.length - shownRows.length;
+					const rowsHtml = shownRows
+						.map((row) => {
+							const rec = row.rec,
+								id = row.id,
+								ident = row.ident;
+							const identText = ident ? ident.value : id || '—';
 							let nameCell;
 							if (sfBase && id) {
-								const url = sfBase + '/lightning/r/' + encodeURIComponent(rec.objectName) + '/' + encodeURIComponent(id) + '/view';
-								nameCell = '<a class="soql-id-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener" title="Open in Salesforce">' + escapeHtml(identText) + '</a>';
+								const url =
+									sfBase +
+									'/lightning/r/' +
+									encodeURIComponent(rec.objectName) +
+									'/' +
+									encodeURIComponent(id) +
+									'/view';
+								nameCell =
+									'<a class="soql-id-link" href="' +
+									escapeHtml(url) +
+									'" target="_blank" rel="noopener" title="Open in Salesforce">' +
+									escapeHtml(identText) +
+									'</a>';
 							} else {
 								nameCell = escapeHtml(identText);
 							}
-							const fieldHint = ident && ident.field !== 'Name' ? ' <span class="soql-field-hint">' + escapeHtml(ident.field) + '</span>' : '';
-							return '<tr><td class="soql-col-obj"><span class="tag">' + escapeHtml(rec.objectName) + '</span></td>' +
-								'<td class="soql-col-id">' + escapeHtml(id) + '</td>' +
-								'<td class="soql-col-name">' + nameCell + fieldHint + '</td></tr>';
-						}).join('');
-						const moreNote = moreCount > 0
-							? '<div class="soql-more-note">…and ' + moreCount + ' more not shown · all ' + body.records.length + ' will be added.</div>'
+							const fieldHint =
+								ident && ident.field !== 'Name'
+									? ' <span class="soql-field-hint">' + escapeHtml(ident.field) + '</span>'
+									: '';
+							return (
+								'<tr><td class="soql-col-obj"><span class="tag">' +
+								escapeHtml(rec.objectName) +
+								'</span></td>' +
+								'<td class="soql-col-id">' +
+								escapeHtml(id) +
+								'</td>' +
+								'<td class="soql-col-name">' +
+								nameCell +
+								fieldHint +
+								'</td></tr>'
+							);
+						})
+						.join('');
+					const moreNote =
+						moreCount > 0
+							? '<div class="soql-more-note">…and ' +
+								moreCount +
+								' more not shown · all ' +
+								body.records.length +
+								' will be added.</div>'
 							: '';
-						const tableHtml = body.records.length
-							? '<div class="soql-preview-tablewrap"><table class="soql-preview-table">' +
-								'<thead><tr><th>Object</th><th>ID</th><th>Name</th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div>' + moreNote
+					const tableHtml = body.records.length
+						? '<div class="soql-preview-tablewrap"><table class="soql-preview-table">' +
+							'<thead><tr><th>Object</th><th>ID</th><th>Name</th></tr></thead><tbody>' +
+							rowsHtml +
+							'</tbody></table></div>' +
+							moreNote
+						: '';
+					const componentNote =
+						body.records.length > 75
+							? '<div class="banner">Heads-up: ' +
+								body.records.length +
+								' records added in one go won’t fit Composite Graph upload (cap is 75 per connected component). You can still browse / edit them; uploads will need bulk fallback.</div>'
 							: '';
-						const componentNote = body.records.length > 75
-							? '<div class="banner">Heads-up: ' + body.records.length + ' records added in one go won’t fit Composite Graph upload (cap is 75 per connected component). You can still browse / edit them; uploads will need bulk fallback.</div>'
-							: '';
-						previewPane.innerHTML =
-							truncationNote +
-							componentNote +
-							'<div class="soql-summary"><strong>' + body.records.length + ' record' + (body.records.length === 1 ? '' : 's') + '</strong> ready to add' + (breakdown ? ' (' + breakdown + ')' : '') + '. Total in SF: ' + body.totalSize + '.</div>' +
-							tableHtml;
-					}
+					previewPane.innerHTML =
+						truncationNote +
+						componentNote +
+						'<div class="soql-summary"><strong>' +
+						body.records.length +
+						' record' +
+						(body.records.length === 1 ? '' : 's') +
+						'</strong> ready to add' +
+						(breakdown ? ' (' + breakdown + ')' : '') +
+						'. Total in SF: ' +
+						body.totalSize +
+						'.</div>' +
+						tableHtml;
+				}
 
-					async function runPreview() {
-						const soql = (textarea.value || '').trim();
-						if (!soql) {
- previewPane.innerHTML = '<div class="banner">Type a SOQL query first.</div>'; return; 
-}
-						previewBtn.disabled = true;
-						commitBtn.disabled = true;
-						previewPane.innerHTML = '<p class="tag center">Running query\u2026</p>';
-						lastResult = null;
-						lastResultSoql = null;
-						lastResultFullFields = null;
-						try {
+				async function runPreview() {
+					const soql = (textarea.value || '').trim();
+					if (!soql) {
+						previewPane.innerHTML = '<div class="banner">Type a SOQL query first.</div>';
+						return;
+					}
+					previewBtn.disabled = true;
+					commitBtn.disabled = true;
+					previewPane.innerHTML = '<p class="tag center">Running query\u2026</p>';
+					lastResult = null;
+					lastResultSoql = null;
+					lastResultFullFields = null;
+					try {
+						const { ok, status, body, fullFields } = await runQuery(soql);
+						if (!ok) {
+							previewPane.innerHTML =
+								'<div class="banner error">' + formatQueryError(body, status) + '</div>';
+							return;
+						}
+						lastResult = body;
+						lastResultSoql = soql;
+						lastResultFullFields = fullFields;
+						renderPreview(body);
+					} catch (err) {
+						previewPane.innerHTML =
+							'<div class="banner error">' + escapeHtml(err.message || String(err)) + '</div>';
+					} finally {
+						previewBtn.disabled = false;
+						commitBtn.disabled = false;
+					}
+				}
+
+				async function commit() {
+					const soql = (textarea.value || '').trim();
+					if (!soql) {
+						previewPane.innerHTML = '<div class="banner">Type a SOQL query first.</div>';
+						return;
+					}
+					commitBtn.disabled = true;
+					previewBtn.disabled = true;
+					const originalLabel = commitBtn.textContent;
+					commitBtn.textContent = 'Adding\u2026';
+					let _undo = null;
+					try {
+						let result = lastResult;
+						const currentFullFields = !!(fullFieldsCb && fullFieldsCb.checked);
+						const cacheStale =
+							!result || lastResultSoql !== soql || lastResultFullFields !== currentFullFields;
+						if (cacheStale) {
+							previewPane.innerHTML = '<p class="tag center">Running query\u2026</p>';
 							const { ok, status, body, fullFields } = await runQuery(soql);
 							if (!ok) {
-								previewPane.innerHTML = '<div class="banner error">' + formatQueryError(body, status) + '</div>';
+								_shared.captureImportFailure(
+									'soql',
+									'query',
+									(body && (body.error || body.message)) || 'HTTP ' + status,
+								);
+								previewPane.innerHTML =
+									'<div class="banner error">' + formatQueryError(body, status) + '</div>';
 								return;
 							}
+							result = body;
 							lastResult = body;
 							lastResultSoql = soql;
 							lastResultFullFields = fullFields;
-							renderPreview(body);
-						} catch (err) {
-							previewPane.innerHTML = '<div class="banner error">' + escapeHtml(err.message || String(err)) + '</div>';
-						} finally {
-							previewBtn.disabled = false;
-							commitBtn.disabled = false;
 						}
-					}
-
-					async function commit() {
-						const soql = (textarea.value || '').trim();
-						if (!soql) {
-							previewPane.innerHTML = '<div class="banner">Type a SOQL query first.</div>';
+						if (!result.records || result.records.length === 0) {
+							previewPane.innerHTML =
+								'<div class="banner">Query returned 0 records; nothing to add.</div>';
 							return;
 						}
-						commitBtn.disabled = true;
-						previewBtn.disabled = true;
-						const originalLabel = commitBtn.textContent;
-						commitBtn.textContent = 'Adding\u2026';
-						let _undo = null;
-						try {
-							let result = lastResult;
-							const currentFullFields = !!(fullFieldsCb && fullFieldsCb.checked);
-							const cacheStale = !result
-								|| lastResultSoql !== soql
-								|| lastResultFullFields !== currentFullFields;
-							if (cacheStale) {
-								previewPane.innerHTML = '<p class="tag center">Running query\u2026</p>';
-								const { ok, status, body, fullFields } = await runQuery(soql);
-								if (!ok) {
-									_shared.captureImportFailure('soql', 'query', (body && (body.error || body.message)) || ('HTTP ' + status));
-									previewPane.innerHTML = '<div class="banner error">' + formatQueryError(body, status) + '</div>';
-									return;
-								}
-								result = body;
-								lastResult = body;
-								lastResultSoql = soql;
-								lastResultFullFields = fullFields;
-							}
-							if (!result.records || result.records.length === 0) {
-								previewPane.innerHTML = '<div class="banner">Query returned 0 records; nothing to add.</div>';
-								return;
-							}
-							_undo = captureUndoSnapshot ? captureUndoSnapshot() : null;
-							const summary = await soqlImportCommitToCanvas(result);
-							if (summary.blocked) {
-								previewPane.innerHTML = '<div class="banner error">' + escapeHtml(summary.capReason || 'Canvas is at the record limit.') + '</div>';
-								return;
-							}
-							const addedNote = summary.added + ' record' + (summary.added === 1 ? '' : 's');
-							const skippedNote = summary.skipped > 0
-								? ' \u00b7 ' + summary.skipped + ' already on canvas (skipped)'
-								: '';
-							if (summary.added === 0) {
-								previewPane.innerHTML = '<div class="banner">All ' + summary.skipped + ' record' + (summary.skipped === 1 ? '' : 's') + ' from this query are already on the canvas; nothing new to add.</div>';
-								return;
-							}
-							const fkNote = summary.associationsSkippedFk > 0
-								? ' · ' + summary.associationsSkippedFk + ' link' + (summary.associationsSkippedFk === 1 ? '' : 's') + ' skipped (lookup already set)'
-								: '';
-							const _msg = 'Added ' + addedNote + ' from SOQL.' + skippedNote + fkNote;
-							if (_undo && showBulkToastWithAction) {
-								showBulkToastWithAction(_msg, 'Undo', _undo);
-							} else {
-								showBulkToast(_msg);
-							}
-							close();
-						} catch (err) {
-							if (_undo) {
-								_undo();
-							}
-							_shared.captureImportFailure('soql', 'commit', err.message || String(err));
-							previewPane.innerHTML = '<div class="banner error">Could not add to canvas: ' + escapeHtml(err.message || String(err)) + (_undo ? ' The canvas was restored; nothing changed.' : '') + '</div>';
-						} finally {
-							commitBtn.disabled = false;
-							previewBtn.disabled = false;
-							commitBtn.textContent = originalLabel;
+						_undo = captureUndoSnapshot ? captureUndoSnapshot() : null;
+						const summary = await soqlImportCommitToCanvas(result);
+						if (summary.blocked) {
+							previewPane.innerHTML =
+								'<div class="banner error">' +
+								escapeHtml(summary.capReason || 'Canvas is at the record limit.') +
+								'</div>';
+							return;
 						}
-					}
-
-					previewBtn.addEventListener('click', runPreview);
-					commitBtn.addEventListener('click', commit);
-					if (fullFieldsCb) {
-						fullFieldsCb.addEventListener('change', () => {
-							lastResult = null;
-							lastResultSoql = null;
-							lastResultFullFields = null;
-						});
-					}
-					textarea.addEventListener('keydown', (e) => {
-						if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-							e.preventDefault();
-							runPreview();
+						const addedNote = summary.added + ' record' + (summary.added === 1 ? '' : 's');
+						const skippedNote =
+							summary.skipped > 0 ? ' \u00b7 ' + summary.skipped + ' already on canvas (skipped)' : '';
+						if (summary.added === 0) {
+							previewPane.innerHTML =
+								'<div class="banner">All ' +
+								summary.skipped +
+								' record' +
+								(summary.skipped === 1 ? '' : 's') +
+								' from this query are already on the canvas; nothing new to add.</div>';
+							return;
 						}
-					});
+						const fkNote =
+							summary.associationsSkippedFk > 0
+								? ' · ' +
+									summary.associationsSkippedFk +
+									' link' +
+									(summary.associationsSkippedFk === 1 ? '' : 's') +
+									' skipped (lookup already set)'
+								: '';
+						const _msg = 'Added ' + addedNote + ' from SOQL.' + skippedNote + fkNote;
+						if (_undo && showBulkToastWithAction) {
+							showBulkToastWithAction(_msg, 'Undo', _undo);
+						} else {
+							showBulkToast(_msg);
+						}
+						close();
+					} catch (err) {
+						if (_undo) {
+							_undo();
+						}
+						_shared.captureImportFailure('soql', 'commit', err.message || String(err));
+						previewPane.innerHTML =
+							'<div class="banner error">Could not add to canvas: ' +
+							escapeHtml(err.message || String(err)) +
+							(_undo ? ' The canvas was restored; nothing changed.' : '') +
+							'</div>';
+					} finally {
+						commitBtn.disabled = false;
+						previewBtn.disabled = false;
+						commitBtn.textContent = originalLabel;
+					}
 				}
 
-				async function soqlImportCommitToCanvas(result, opts) {
-					const records = Array.isArray(result.records) ? result.records : [];
-					const associations = Array.isArray(result.associations) ? result.associations : [];
-					if (records.length === 0) {
-return { added: 0, skipped: 0 };
-}
-
-					const existingByKey = new Map();
-					canvasState.bulkRecords.forEach((br) => {
-						if (br.isTypeNode || !br.loadedFromId) {
-return;
-}
-						existingByKey.set(br.objectName + '::' + br.loadedFromId, br.id);
+				previewBtn.addEventListener('click', runPreview);
+				commitBtn.addEventListener('click', commit);
+				if (fullFieldsCb) {
+					fullFieldsCb.addEventListener('change', () => {
+						lastResult = null;
+						lastResultSoql = null;
+						lastResultFullFields = null;
 					});
-
-					const dupTempIds = new Set();
-					const newRecords = [];
-					records.forEach((rec) => {
-						const key = rec.objectName + '::' + rec.loadedFromId;
-						if (existingByKey.has(key)) {
-dupTempIds.add(rec.tempId);
-} else {
-newRecords.push(rec);
-}
-					});
-
-					const knownTotal = opts && typeof opts.knownTotal === 'number' ? opts.knownTotal : 0;
-					const reportedTotal = typeof result.totalSize === 'number' ? result.totalSize : records.length;
-					const totalMatch = Math.max(knownTotal, reportedTotal, records.length);
-					const capAttempt = totalMatch > records.length ? totalMatch : newRecords.length;
-					const _cap = canvasCapCheck(capAttempt);
-					if (_cap.blocked) {
-						return { added: 0, skipped: dupTempIds.size, blocked: true, capReason: _cap.reason };
+				}
+				textarea.addEventListener('keydown', (e) => {
+					if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+						e.preventDefault();
+						runPreview();
 					}
+				});
+			}
 
-					const orderedObjectNames = [];
-					const seenObjects = new Set();
-					if (result.objectName && newRecords.some((r) => r.objectName === result.objectName)) {
-						orderedObjectNames.push(result.objectName);
-						seenObjects.add(result.objectName);
-					}
-					for (const rec of newRecords) {
-						if (!seenObjects.has(rec.objectName)) {
-							orderedObjectNames.push(rec.objectName);
-							seenObjects.add(rec.objectName);
-						}
-					}
-					const selByName = {};
-					for (const objName of orderedObjectNames) {
-						let sel = canvasState.selectedObjects.find((s) => s.name === objName);
-						if (!sel) {
-							const parentSel = selByName[result.objectName] || null;
-							sel = await addToSelection(
-								objName,
-								parentSel && parentSel.name !== objName ? parentSel.id : null,
-								null,
-								null,
-							);
-						}
-						selByName[objName] = sel;
-					}
-
-					clearEmptyStarterCard();
-					const canvasEl = getGraph().querySelector("#bulk-canvas");
-					const startX = (canvasEl ? canvasEl.clientWidth / 2 : 600) - 220;
-					const existingMaxY = canvasState.bulkRecords.reduce((m, r) => Math.max(m, r.y || 0), 0);
-					const startY = (canvasState.bulkRecords.length === 0 ? 120 : existingMaxY + 220);
-					const colStep = 240;
-					const rowStep = 180;
-					const cols = 4;
-
-					const clientIdByTempId = {};
-					records.forEach((rec) => {
-						const key = rec.objectName + '::' + rec.loadedFromId;
-						const existingId = existingByKey.get(key);
-						if (existingId != null) {
-clientIdByTempId[rec.tempId] = existingId;
-}
-					});
-					const isCompact = result && result.fullFields === false;
-					const newBulkIds = new Set();
-					newRecords.forEach((rec, idx) => {
-						const sel = selByName[rec.objectName];
-						const col = idx % cols;
-						const row = Math.floor(idx / cols);
-						const newRec = {
-							id: canvasState.bulkIdSeq++,
-							objectName: rec.objectName,
-							label: sel ? sel.label : rec.objectName,
-							x: startX + col * colStep,
-							y: startY + row * rowStep,
-							values: Object.assign({}, rec.values || {}),
-							loadedFromId: rec.loadedFromId,
-							loadedValues: Object.assign({}, rec.values || {}),
-							fromSelectionId: sel ? sel.id : null,
-						};
-						if (isCompact) {
-							newRec._loadedFieldNames = Object.keys(rec.values || {});
-						}
-						canvasState.bulkRecords.push(newRec);
-						clientIdByTempId[rec.tempId] = newRec.id;
-						newBulkIds.add(newRec.id);
-					});
-
-					const existingAssocKey = new Set(
-						canvasState.bulkAssociations.map((a) => a.fromId + '->' + a.toId + '::' + a.fieldName),
-					);
-					const _admitAssociation = window.OrgLoom.importShared.admitAssociation;
-					const _usedFk = new Set();
-					canvasState.bulkAssociations.forEach((a) => {
-						_usedFk.add(a.fromId + '::' + a.fieldName);
-					});
-					let assocsAdded = 0;
-					let assocsSkippedFk = 0;
-					for (const a of associations) {
-						const fromId = clientIdByTempId[a.fromTempId];
-						const toId = clientIdByTempId[a.toTempId];
-						if (fromId == null || toId == null) {
-continue;
-}
-						const key = fromId + '->' + toId + '::' + a.fieldName;
-						if (existingAssocKey.has(key)) {
-continue;
-}
-						if (!_admitAssociation(_usedFk, fromId, toId, a.fieldName)) {
-							assocsSkippedFk++;
-							continue;
-						}
-						canvasState.bulkAssociations.push({ id: canvasState.bulkIdSeq++, fromId, toId, fieldName: a.fieldName });
-						existingAssocKey.add(key);
-						assocsAdded++;
-					}
-					clearBulkUserDeleted();
-					if (newBulkIds.size > 0) {
-setSkipNextCyAutoPan(true);
-}
-					if (typeof renderBulkView === 'function') {
-renderBulkView();
-}
-					if (newBulkIds.size > 0) {
-relayoutNewRecords(newBulkIds);
-}
-					return { added: newRecords.length, skipped: dupTempIds.size, associationsAdded: assocsAdded, associationsSkippedFk: assocsSkippedFk };
+			async function soqlImportCommitToCanvas(result, opts) {
+				// De-duplicate by Salesforce object and ID before counting against the canvas cap.
+				const records = Array.isArray(result.records) ? result.records : [];
+				const associations = Array.isArray(result.associations) ? result.associations : [];
+				if (records.length === 0) {
+					return { added: 0, skipped: 0 };
 				}
 
+				const existingByKey = new Map();
+				canvasState.bulkRecords.forEach((br) => {
+					if (br.isTypeNode || !br.loadedFromId) {
+						return;
+					}
+					existingByKey.set(br.objectName + '::' + br.loadedFromId, br.id);
+				});
+
+				const dupTempIds = new Set();
+				const newRecords = [];
+				records.forEach((rec) => {
+					const key = rec.objectName + '::' + rec.loadedFromId;
+					if (existingByKey.has(key)) {
+						dupTempIds.add(rec.tempId);
+					} else {
+						newRecords.push(rec);
+					}
+				});
+
+				const knownTotal = opts && typeof opts.knownTotal === 'number' ? opts.knownTotal : 0;
+				const reportedTotal = typeof result.totalSize === 'number' ? result.totalSize : records.length;
+				const totalMatch = Math.max(knownTotal, reportedTotal, records.length);
+				const capAttempt = totalMatch > records.length ? totalMatch : newRecords.length;
+				const _cap = canvasCapCheck(capAttempt);
+				if (_cap.blocked) {
+					return { added: 0, skipped: dupTempIds.size, blocked: true, capReason: _cap.reason };
+				}
+
+				const orderedObjectNames = [];
+				const seenObjects = new Set();
+				if (result.objectName && newRecords.some((r) => r.objectName === result.objectName)) {
+					orderedObjectNames.push(result.objectName);
+					seenObjects.add(result.objectName);
+				}
+				for (const rec of newRecords) {
+					if (!seenObjects.has(rec.objectName)) {
+						orderedObjectNames.push(rec.objectName);
+						seenObjects.add(rec.objectName);
+					}
+				}
+				const selByName = {};
+				for (const objName of orderedObjectNames) {
+					let sel = canvasState.selectedObjects.find((s) => s.name === objName);
+					if (!sel) {
+						const parentSel = selByName[result.objectName] || null;
+						sel = await addToSelection(
+							objName,
+							parentSel && parentSel.name !== objName ? parentSel.id : null,
+							null,
+							null,
+						);
+					}
+					selByName[objName] = sel;
+				}
+
+				clearEmptyStarterCard();
+				const canvasEl = getGraph().querySelector('#bulk-canvas');
+				const startX = (canvasEl ? canvasEl.clientWidth / 2 : 600) - 220;
+				const existingMaxY = canvasState.bulkRecords.reduce((m, r) => Math.max(m, r.y || 0), 0);
+				const startY = canvasState.bulkRecords.length === 0 ? 120 : existingMaxY + 220;
+				const colStep = 240;
+				const rowStep = 180;
+				const cols = 4;
+
+				const clientIdByTempId = {};
+				records.forEach((rec) => {
+					const key = rec.objectName + '::' + rec.loadedFromId;
+					const existingId = existingByKey.get(key);
+					if (existingId != null) {
+						clientIdByTempId[rec.tempId] = existingId;
+					}
+				});
+				const isCompact = result && result.fullFields === false;
+				const newBulkIds = new Set();
+				newRecords.forEach((rec, idx) => {
+					const sel = selByName[rec.objectName];
+					const col = idx % cols;
+					const row = Math.floor(idx / cols);
+					const newRec = {
+						id: canvasState.bulkIdSeq++,
+						objectName: rec.objectName,
+						label: sel ? sel.label : rec.objectName,
+						x: startX + col * colStep,
+						y: startY + row * rowStep,
+						values: Object.assign({}, rec.values || {}),
+						loadedFromId: rec.loadedFromId,
+						loadedValues: Object.assign({}, rec.values || {}),
+						fromSelectionId: sel ? sel.id : null,
+					};
+					if (isCompact) {
+						newRec._loadedFieldNames = Object.keys(rec.values || {});
+					}
+					canvasState.bulkRecords.push(newRec);
+					clientIdByTempId[rec.tempId] = newRec.id;
+					newBulkIds.add(newRec.id);
+				});
+
+				const existingAssocKey = new Set(
+					canvasState.bulkAssociations.map((a) => a.fromId + '->' + a.toId + '::' + a.fieldName),
+				);
+				const _admitAssociation = window.OrgLoom.importShared.admitAssociation;
+				const _usedFk = new Set();
+				canvasState.bulkAssociations.forEach((a) => {
+					_usedFk.add(a.fromId + '::' + a.fieldName);
+				});
+				let assocsAdded = 0;
+				let assocsSkippedFk = 0;
+				for (const a of associations) {
+					const fromId = clientIdByTempId[a.fromTempId];
+					const toId = clientIdByTempId[a.toTempId];
+					if (fromId == null || toId == null) {
+						continue;
+					}
+					const key = fromId + '->' + toId + '::' + a.fieldName;
+					if (existingAssocKey.has(key)) {
+						continue;
+					}
+					if (!_admitAssociation(_usedFk, fromId, toId, a.fieldName)) {
+						assocsSkippedFk++;
+						continue;
+					}
+					canvasState.bulkAssociations.push({
+						id: canvasState.bulkIdSeq++,
+						fromId,
+						toId,
+						fieldName: a.fieldName,
+					});
+					existingAssocKey.add(key);
+					assocsAdded++;
+				}
+				clearBulkUserDeleted();
+				if (newBulkIds.size > 0) {
+					setSkipNextCyAutoPan(true);
+				}
+				if (typeof renderBulkView === 'function') {
+					renderBulkView();
+				}
+				if (newBulkIds.size > 0) {
+					relayoutNewRecords(newBulkIds);
+				}
+				return {
+					added: newRecords.length,
+					skipped: dupTempIds.size,
+					associationsAdded: assocsAdded,
+					associationsSkippedFk: assocsSkippedFk,
+				};
+			}
 
 			async function runAndCommitSoql(soql, opts) {
 				opts = opts || {};
@@ -491,7 +611,7 @@ relayoutNewRecords(newBulkIds);
 				});
 				const body = await r.json().catch(() => ({}));
 				if (!r.ok) {
-					const err = new Error((body && body.message) || (body && body.error) || ('HTTP ' + r.status));
+					const err = new Error((body && body.message) || (body && body.error) || 'HTTP ' + r.status);
 					err.body = body;
 					err.status = r.status;
 					throw err;

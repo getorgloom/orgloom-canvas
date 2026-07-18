@@ -1,4 +1,4 @@
-// Standalone canvas uses these defaults; SaaS replaces them at boot.
+// Dependency registry shared by standalone and hosted modes; SaaS replaces these safe defaults at boot.
 
 import express from 'express';
 import { CAPABILITIES } from './capabilities.js';
@@ -40,7 +40,9 @@ const _defaults = {
 					where: 'extensions.auditWrite/default',
 					action: event && event.action,
 				});
-			} catch (_) { /* never throw out of the default audit sink */ }
+			} catch (_) {
+				/* never throw out of the default audit sink */
+			}
 			return null;
 		}
 	},
@@ -54,7 +56,9 @@ const _defaults = {
 		try {
 			const msg = (err && (err.stack || err.message)) || String(err);
 			console.warn('[canvas] captureException (no provider registered):', msg);
-		} catch (_) { /* logger itself failed; nothing more to do */ }
+		} catch (_) {
+			/* logger itself failed; nothing more to do */
+		}
 	},
 
 	async getActiveWorkspace(_req) {
@@ -68,16 +72,16 @@ const _defaults = {
 	getDb() {
 		throw new Error(
 			'No database provider registered. The canvas package does not ship a DB ' +
-			'initializer; mount the saas layer (which registers one at boot) or ' +
-			'self-host by constructing a Kysely instance yourself and calling ' +
-			'ext.registerDbProvider(() => yourDb) before importing canvas routes.',
+				'initializer; mount the saas layer (which registers one at boot) or ' +
+				'self-host by constructing a Kysely instance yourself and calling ' +
+				'ext.registerDbProvider(() => yourDb) before importing canvas routes.',
 		);
 	},
 
 	getRawClient() {
 		throw new Error(
 			'No raw-client provider registered. Call ext.registerRawClientProvider() ' +
-			'with a function that returns { dialect, client }.',
+				'with a function that returns { dialect, client }.',
 		);
 	},
 };
@@ -85,12 +89,12 @@ const _defaults = {
 // Registrations are queued until boot calls flush().
 
 const _queues = {
-	routeMounts: [],     // [(app, ext) => void]
-	migrationsDirs: [],  // absolute paths
-	staticDirs: [],      // [{ prefix, dir }]
-	viewDirs: [],        // absolute paths
+	routeMounts: [], // [(app, ext) => void]
+	migrationsDirs: [], // absolute paths
+	staticDirs: [], // [{ prefix, dir }]
+	viewDirs: [], // absolute paths
 	partialOverrides: {}, // { name: path }
-	navLinks: [],        // [{ label, href, position?, visibleWhen? }]
+	navLinks: [], // [{ label, href, position?, visibleWhen? }]
 };
 
 let _flushed = false;
@@ -98,31 +102,32 @@ let _flushed = false;
 // The exported registry
 
 export const ext = {
+	// Registration is allowed only before flush, preventing runtime policy changes after routes mount.
 	getCurrentAccount: _defaults.getCurrentAccount,
-	getCapability:     _defaults.getCapability,
-	getQuota:          _defaults.getQuota,
-	chargeQuota:       _defaults.chargeQuota,
-	auditWrite:        _defaults.auditWrite,
+	getCapability: _defaults.getCapability,
+	getQuota: _defaults.getQuota,
+	chargeQuota: _defaults.chargeQuota,
+	auditWrite: _defaults.auditWrite,
 	auditRetentionDays: _defaults.auditRetentionDays,
-	captureException:  _defaults.captureException,
+	captureException: _defaults.captureException,
 	getActiveWorkspace: _defaults.getActiveWorkspace,
-	getPlanInfo:       _defaults.getPlanInfo,
-	getDb:             _defaults.getDb,
-	getRawClient:      _defaults.getRawClient,
+	getPlanInfo: _defaults.getPlanInfo,
+	getDb: _defaults.getDb,
+	getRawClient: _defaults.getRawClient,
 
 	// Controls whether multi-tenant UI is shown.
 	saasMounted: false,
 
 	registerAuthProvider(fn) {
 		if (typeof fn !== 'function') {
-throw new TypeError('registerAuthProvider expects a function');
-}
+			throw new TypeError('registerAuthProvider expects a function');
+		}
 		this.getCurrentAccount = fn;
 	},
 	registerCapabilityResolver(fn) {
 		if (typeof fn !== 'function') {
-throw new TypeError('registerCapabilityResolver expects a function');
-}
+			throw new TypeError('registerCapabilityResolver expects a function');
+		}
 		this.getCapability = fn;
 	},
 	registerQuotaProvider(provider) {
@@ -130,70 +135,70 @@ throw new TypeError('registerCapabilityResolver expects a function');
 			throw new TypeError('registerQuotaProvider expects { getQuota, chargeQuota }');
 		}
 		if (typeof provider.getQuota === 'function') {
-this.getQuota = provider.getQuota;
-}
+			this.getQuota = provider.getQuota;
+		}
 		if (typeof provider.chargeQuota === 'function') {
-this.chargeQuota = provider.chargeQuota;
-}
+			this.chargeQuota = provider.chargeQuota;
+		}
 	},
 	registerAuditSink(fn) {
 		if (typeof fn !== 'function') {
-throw new TypeError('registerAuditSink expects a function');
-}
+			throw new TypeError('registerAuditSink expects a function');
+		}
 		this.auditWrite = fn;
 	},
 	registerAuditRetentionPolicy(fn) {
 		if (typeof fn !== 'function') {
-throw new TypeError('registerAuditRetentionPolicy expects a function');
-}
+			throw new TypeError('registerAuditRetentionPolicy expects a function');
+		}
 		this.auditRetentionDays = fn;
 	},
 	registerCaptureException(fn) {
 		if (typeof fn !== 'function') {
-throw new TypeError('registerCaptureException expects a function');
-}
+			throw new TypeError('registerCaptureException expects a function');
+		}
 		this.captureException = fn;
 	},
 	registerActiveWorkspaceProvider(fn) {
 		if (typeof fn !== 'function') {
-throw new TypeError('registerActiveWorkspaceProvider expects a function');
-}
+			throw new TypeError('registerActiveWorkspaceProvider expects a function');
+		}
 		this.getActiveWorkspace = fn;
 	},
 	registerPlanInfoProvider(fn) {
 		if (typeof fn !== 'function') {
-throw new TypeError('registerPlanInfoProvider expects a function');
-}
+			throw new TypeError('registerPlanInfoProvider expects a function');
+		}
 		this.getPlanInfo = fn;
 	},
 	registerDbProvider(fn) {
 		if (typeof fn !== 'function') {
-throw new TypeError('registerDbProvider expects a function');
-}
+			throw new TypeError('registerDbProvider expects a function');
+		}
 		this.getDb = fn;
 	},
 	registerRawClientProvider(fn) {
 		if (typeof fn !== 'function') {
-throw new TypeError('registerRawClientProvider expects a function');
-}
+			throw new TypeError('registerRawClientProvider expects a function');
+		}
 		this.getRawClient = fn;
 	},
 
 	registerRoutes(mountFn) {
 		if (_flushed) {
-throw new Error('registerRoutes called after flush()');
-}
+			throw new Error('registerRoutes called after flush()');
+		}
 		if (typeof mountFn !== 'function') {
-throw new TypeError('registerRoutes expects a function');
-}
+			throw new TypeError('registerRoutes expects a function');
+		}
 		_queues.routeMounts.push(mountFn);
 	},
 
 	// Registered migration directories retain insertion order.
 	registerMigrationsDir(absoluteDir) {
 		if (_flushed) {
-throw new Error('registerMigrationsDir called after flush()');
-}
+			throw new Error('registerMigrationsDir called after flush()');
+		}
 		if (typeof absoluteDir !== 'string' || !absoluteDir) {
 			throw new TypeError('registerMigrationsDir expects an absolute path string');
 		}
@@ -202,18 +207,18 @@ throw new Error('registerMigrationsDir called after flush()');
 
 	registerStaticDir(prefix, dir) {
 		if (_flushed) {
-throw new Error('registerStaticDir called after flush()');
-}
+			throw new Error('registerStaticDir called after flush()');
+		}
 		if (!prefix || !dir) {
-throw new TypeError('registerStaticDir expects (prefix, dir)');
-}
+			throw new TypeError('registerStaticDir expects (prefix, dir)');
+		}
 		_queues.staticDirs.push({ prefix, dir });
 	},
 
 	registerViewDir(absoluteDir) {
 		if (_flushed) {
-throw new Error('registerViewDir called after flush()');
-}
+			throw new Error('registerViewDir called after flush()');
+		}
 		if (typeof absoluteDir !== 'string' || !absoluteDir) {
 			throw new TypeError('registerViewDir expects an absolute path string');
 		}
@@ -222,18 +227,18 @@ throw new Error('registerViewDir called after flush()');
 
 	registerPartialOverride(name, absolutePath) {
 		if (_flushed) {
-throw new Error('registerPartialOverride called after flush()');
-}
+			throw new Error('registerPartialOverride called after flush()');
+		}
 		if (!name || !absolutePath) {
-throw new TypeError('registerPartialOverride expects (name, path)');
-}
+			throw new TypeError('registerPartialOverride expects (name, path)');
+		}
 		_queues.partialOverrides[name] = absolutePath;
 	},
 
 	registerNavLink(spec) {
 		if (_flushed) {
-throw new Error('registerNavLink called after flush()');
-}
+			throw new Error('registerNavLink called after flush()');
+		}
 		if (!spec || !spec.label || !spec.href) {
 			throw new TypeError('registerNavLink expects { label, href, position?, visibleWhen? }');
 		}
@@ -255,28 +260,26 @@ throw new Error('registerNavLink called after flush()');
 	// Apply static, view, and route registrations in that order.
 	flush(app) {
 		if (_flushed) {
-throw new Error('ext.flush() called more than once');
-}
+			throw new Error('ext.flush() called more than once');
+		}
 		if (!app) {
-throw new TypeError('ext.flush(app) expects the Express app');
-}
+			throw new TypeError('ext.flush(app) expects the Express app');
+		}
 
 		for (const { prefix, dir } of _queues.staticDirs) {
 			app.use(prefix, _staticMiddleware(dir));
 		}
 
 		const existingViews = app.get('views');
-		const viewsArr = Array.isArray(existingViews)
-			? existingViews.slice()
-			: (existingViews ? [existingViews] : []);
+		const viewsArr = Array.isArray(existingViews) ? existingViews.slice() : existingViews ? [existingViews] : [];
 		for (const v of _queues.viewDirs) {
 			if (!viewsArr.includes(v)) {
-viewsArr.push(v);
-}
+				viewsArr.push(v);
+			}
 		}
 		if (viewsArr.length) {
-app.set('views', viewsArr);
-}
+			app.set('views', viewsArr);
+		}
 
 		for (const mountFn of _queues.routeMounts) {
 			mountFn(app, ext);

@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Hosts record-card actions, relationship field choices, and contributor slot configuration.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -57,32 +57,20 @@
 			const attachSfUserPicker = deps.attachSfUserPicker;
 			const _fillSlotWithSfRecord = deps._fillSlotWithSfRecord;
 
-			function showFieldPicker(
-				clientX,
-				clientY,
-				options,
-				srcRec,
-				targetRec,
-				onPick,
-			) {
+			function showFieldPicker(clientX, clientY, options, srcRec, targetRec, onPick) {
 				document.querySelectorAll('.field-picker').forEach((el) => el.remove());
 				const pop = document.createElement('div');
 				pop.className = 'field-picker';
 				const x = Math.min(clientX, window.innerWidth - 260);
-				const y = Math.min(
-					clientY,
-					window.innerHeight - (options.length * 36 + 80),
-				);
+				const y = Math.min(clientY, window.innerHeight - (options.length * 36 + 80));
 				pop.style.left = Math.max(8, x) + 'px';
 				pop.style.top = Math.max(8, y) + 'px';
 				pop.innerHTML =
 					'<div class="field-picker-header">Pick reference field</div>' +
 					options
 						.map((o, i) => {
-							const holderRec =
-								o.direction === 'fwd' ? srcRec : targetRec;
-							const holderLabel =
-								'#' + recordOrdinal(holderRec) + ' ' + holderRec.label;
+							const holderRec = o.direction === 'fwd' ? srcRec : targetRec;
+							const holderLabel = '#' + recordOrdinal(holderRec) + ' ' + holderRec.label;
 							return (
 								'<button type="button" data-idx="' +
 								i +
@@ -133,15 +121,12 @@
 			}
 
 			function showCardMoreMenu(triggerEl, rec) {
-				document
-					.querySelectorAll('.card-more-popup')
-					.forEach((el) => el.remove());
+				document.querySelectorAll('.card-more-popup').forEach((el) => el.remove());
 				const pop = document.createElement('div');
 				pop.className = 'find-object-popup card-more-popup';
 				pop.style.width = '280px';
 				const r = triggerEl.getBoundingClientRect();
-				pop.style.left =
-					Math.max(8, Math.min(r.left, window.innerWidth - 288)) + 'px';
+				pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 288)) + 'px';
 				pop.style.top = r.bottom + 6 + 'px';
 				const isSlot = !!(rec.slot && rec.slot.slotId != null);
 				const isLoaded = !!rec.loadedFromId;
@@ -383,19 +368,13 @@
 					};
 					overlay
 						.querySelectorAll('[data-cancel]')
-						.forEach((el) =>
-							el.addEventListener('click', () => close(null)),
+						.forEach((el) => el.addEventListener('click', () => close(null)));
+					overlay.querySelector('[data-submit]').addEventListener('click', () => {
+						const checked = Array.from(overlay.querySelectorAll('input[type="checkbox"]:checked')).map(
+							(cb) => cb.dataset.fname,
 						);
-					overlay
-						.querySelector('[data-submit]')
-						.addEventListener('click', () => {
-							const checked = Array.from(
-								overlay.querySelectorAll(
-									'input[type="checkbox"]:checked',
-								),
-							).map((cb) => cb.dataset.fname);
-							close(checked);
-						});
+						close(checked);
+					});
 				});
 			}
 
@@ -404,9 +383,7 @@
 				const initial = opts && opts.initial;
 				const safeTitle = title || 'Slot configuration';
 				return new Promise((resolve) => {
-					document
-						.querySelectorAll('.slot-meta-modal')
-						.forEach((el) => el.remove());
+					document.querySelectorAll('.slot-meta-modal').forEach((el) => el.remove());
 					const overlay = document.createElement('div');
 					overlay.className = 'modal slot-meta-modal';
 					overlay.innerHTML =
@@ -465,27 +442,23 @@
 					document.addEventListener('keydown', onKey);
 					overlay
 						.querySelectorAll('[data-sm-close]')
-						.forEach((el) =>
-							el.addEventListener('click', () => cleanup(null)),
-						);
-					overlay
-						.querySelector('[data-sm-save]')
-						.addEventListener('click', () => {
-							const label = (labelInput.value || '').trim();
-							if (!label) {
-								labelInput.focus();
-								return;
-							}
-							const description = (descInput.value || '').trim() || null;
-							const assignee = picker.getPicked();
-							cleanup({
-								label,
-								description,
-								assigneeSfUserId: assignee ? assignee.id : null,
-								assigneeName: assignee ? assignee.name : null,
-								assigneeEmail: assignee ? assignee.email : null,
-							});
+						.forEach((el) => el.addEventListener('click', () => cleanup(null)));
+					overlay.querySelector('[data-sm-save]').addEventListener('click', () => {
+						const label = (labelInput.value || '').trim();
+						if (!label) {
+							labelInput.focus();
+							return;
+						}
+						const description = (descInput.value || '').trim() || null;
+						const assignee = picker.getPicked();
+						cleanup({
+							label,
+							description,
+							assigneeSfUserId: assignee ? assignee.id : null,
+							assigneeName: assignee ? assignee.name : null,
+							assigneeEmail: assignee ? assignee.email : null,
 						});
+					});
 					labelInput.addEventListener('keydown', (e) => {
 						if (e.key === 'Enter') {
 							e.preventDefault();
@@ -497,27 +470,21 @@
 
 			function _openSlotRecordPicker(rec, anchorEl) {
 				document
-					.querySelectorAll(
-						'.find-object-popup, .free-tn-picker, .slot-picker',
-					)
+					.querySelectorAll('.find-object-popup, .free-tn-picker, .slot-picker')
 					.forEach((el) => el.remove());
 				const pop = document.createElement('div');
 				pop.className = 'find-object-popup slot-picker';
 				pop.style.width = '320px';
 				if (anchorEl && typeof anchorEl.getBoundingClientRect === 'function') {
 					const r = anchorEl.getBoundingClientRect();
-					pop.style.left =
-						Math.max(8, Math.min(r.left, window.innerWidth - 328)) + 'px';
+					pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 328)) + 'px';
 					pop.style.top = r.bottom + 6 + 'px';
 				} else {
 					pop.style.left = '50%';
 					pop.style.top = '20%';
 					pop.style.transform = 'translateX(-50%)';
 				}
-				const slotLabel =
-					rec.slot && rec.slot.label
-						? rec.slot.label
-						: rec.label || rec.objectName;
+				const slotLabel = rec.slot && rec.slot.label ? rec.slot.label : rec.label || rec.objectName;
 				pop.innerHTML =
 					'<div class="fop-header">Fill slot: ' +
 					escapeHtml(slotLabel) +
@@ -549,14 +516,10 @@
 					}
 				};
 				const fetchById = async (id) => {
-					list.innerHTML =
-						'<div class="fop-empty">Loading record…</div>';
+					list.innerHTML = '<div class="fop-empty">Loading record…</div>';
 					try {
 						const resp = await csrfFetch(
-							'/api/objects/' +
-								encodeURIComponent(rec.objectName) +
-								'/records/' +
-								encodeURIComponent(id),
+							'/api/objects/' + encodeURIComponent(rec.objectName) + '/records/' + encodeURIComponent(id),
 							{ credentials: 'same-origin' },
 						);
 						if (!resp.ok) {
@@ -583,10 +546,7 @@
 					list.innerHTML = '<div class="fop-empty">Searching…</div>';
 					try {
 						const resp = await csrfFetch(
-							'/api/objects/' +
-								encodeURIComponent(rec.objectName) +
-								'/search?q=' +
-								encodeURIComponent(q),
+							'/api/objects/' + encodeURIComponent(rec.objectName) + '/search?q=' + encodeURIComponent(q),
 							{ credentials: 'same-origin' },
 						);
 						if (!resp.ok) {
@@ -622,9 +582,7 @@
 									'" data-pick-id="' +
 									escapeHtml(r.id) +
 									'"' +
-									(already
-										? ' disabled title="Already on the canvas"'
-										: '') +
+									(already ? ' disabled title="Already on the canvas"' : '') +
 									'>' +
 									'<span class="fop-label">' +
 									escapeHtml(r.name || '(no name)') +
@@ -642,9 +600,7 @@
 							return;
 						}
 						list.innerHTML =
-							'<div class="fop-empty">Search failed: ' +
-							escapeHtml(e.message || String(e)) +
-							'</div>';
+							'<div class="fop-empty">Search failed: ' + escapeHtml(e.message || String(e)) + '</div>';
 					}
 				};
 				let timer;

@@ -1,19 +1,24 @@
-
 (function () {
 	'use strict';
+	// Imports related Salesforce records and preserves lookup direction on the canvas.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	window.OrgLoom.relatedRecords = {
 		mount: function mount(deps) {
 			const required = [
-				'canvasState', 'escapeHtml', 'showBulkToast',
-				'renderBulkView', 'openTypeNode',
-				'fetchRelatedCountsBatch', '_countCacheKey', '_relatedCountCache',
+				'canvasState',
+				'escapeHtml',
+				'showBulkToast',
+				'renderBulkView',
+				'openTypeNode',
+				'fetchRelatedCountsBatch',
+				'_countCacheKey',
+				'_relatedCountCache',
 			];
 			if (!deps) {
-throw new Error('related-records.mount: missing deps object');
-}
+				throw new Error('related-records.mount: missing deps object');
+			}
 			for (const k of required) {
 				if (deps[k] === undefined || deps[k] === null) {
 					throw new Error('related-records.mount: missing dep ' + k);
@@ -29,48 +34,67 @@ throw new Error('related-records.mount: missing deps object');
 			const _relatedCountCache = deps._relatedCountCache;
 
 			const _chipProbeState = new Map();
-			
+
 			const _RELCHIP_SYSTEM_CHILD_NAMES = new Set([
-				'ContentDocumentLink', 'AttachedContentDocument',
-				'AttachedContentNote', 'CombinedAttachment',
-				'EntitySubscription', 'TopicAssignment',
-				'CollaborationGroupRecord', 'RecordAction',
+				'ContentDocumentLink',
+				'AttachedContentDocument',
+				'AttachedContentNote',
+				'CombinedAttachment',
+				'EntitySubscription',
+				'TopicAssignment',
+				'CollaborationGroupRecord',
+				'RecordAction',
 				'EmailMessageRelation',
-				'ProcessInstance', 'ProcessInstanceHistory',
-				'ProcessInstanceStep', 'ProcessInstanceWorkitem',
-				'AccountCleanInfo', 'LeadCleanInfo',
-				'DuplicateRecordItem', 'DuplicateRecordSet',
-				'AIInsightValue', 'AIRecordInsight', 'AIInsightAction',
-				'AIInsightReason', 'AIInsightFeedback',
-				'ContactPointAddress', 'ContactPointEmail',
-				'ContactPointPhone', 'ContactPointTypeConsent',
-				'AuthorizationFormConsent', 'AuthorizationFormDataUse',
-				'CommSubscriptionConsent', 'PartyConsent',
+				'ProcessInstance',
+				'ProcessInstanceHistory',
+				'ProcessInstanceStep',
+				'ProcessInstanceWorkitem',
+				'AccountCleanInfo',
+				'LeadCleanInfo',
+				'DuplicateRecordItem',
+				'DuplicateRecordSet',
+				'AIInsightValue',
+				'AIRecordInsight',
+				'AIInsightAction',
+				'AIInsightReason',
+				'AIInsightFeedback',
+				'ContactPointAddress',
+				'ContactPointEmail',
+				'ContactPointPhone',
+				'ContactPointTypeConsent',
+				'AuthorizationFormConsent',
+				'AuthorizationFormDataUse',
+				'CommSubscriptionConsent',
+				'PartyConsent',
 				'IndividualHistory',
-				'AssociatedLocation', 'ServiceAppointment',
-				'MessagingEndUser', 'MessagingSession',
-				'CartCoupon', 'CartValidationOutput', 'CartTax',
+				'AssociatedLocation',
+				'ServiceAppointment',
+				'MessagingEndUser',
+				'MessagingSession',
+				'CartCoupon',
+				'CartValidationOutput',
+				'CartTax',
 			]);
 			const _RELCHIP_SYSTEM_CHILD_SUFFIXES = [
-				'History',     // <Object>History: read-only audit trail
-				'Feed',        // <Object>Feed: Chatter posts
-				'Share',       // <Object>Share: sharing rows
+				'History', // <Object>History: read-only audit trail
+				'Feed', // <Object>Feed: Chatter posts
+				'Share', // <Object>Share: sharing rows
 				'ChangeEvent', // <Object>ChangeEvent: CDC stream events
-				'Tag',         // <Object>Tag: folksonomy tags (legacy)
+				'Tag', // <Object>Tag: folksonomy tags (legacy)
 			];
 			function _isSystemChildRelationship(objName) {
 				if (!objName) {
-return false;
-}
+					return false;
+				}
 				if (objName.endsWith('__c')) {
-return false;
-}
+					return false;
+				}
 				if (_RELCHIP_SYSTEM_CHILD_NAMES.has(objName)) {
-return true;
-}
+					return true;
+				}
 				return _RELCHIP_SYSTEM_CHILD_SUFFIXES.some((suf) => objName.endsWith(suf));
 			}
-			
+
 			const _RELCHIP_SYSTEM_PARENT_FIELDS = new Set([
 				'CreatedById',
 				'LastModifiedById',
@@ -80,25 +104,25 @@ return true;
 			]);
 			function _isSystemParentField(fieldName) {
 				if (!fieldName) {
-return false;
-}
+					return false;
+				}
 				if (fieldName.endsWith('__c')) {
-return false;
-}
+					return false;
+				}
 				return _RELCHIP_SYSTEM_PARENT_FIELDS.has(fieldName);
 			}
-			
+
 			function _ensureChipProbed(rec) {
 				if (!rec || !rec.loadedFromId || !rec.fromSelectionId) {
-return;
-}
+					return;
+				}
 				if (_chipProbeState.has(rec.id)) {
-return;
-}
+					return;
+				}
 				const sel = canvasState.selectedObjects.find((s) => s.id === rec.fromSelectionId);
 				if (!sel || !sel.data) {
-return;
-}
+					return;
+				}
 				const children = (sel.data.children || [])
 					.filter((c) => c && c.field && c.object)
 					.filter((c) => !_isSystemChildRelationship(c.object));
@@ -117,36 +141,36 @@ return;
 					renderBulkView();
 				});
 			}
-			
+
 			function _sfIdValue(x) {
 				if (typeof x === 'string') {
-return x;
-}
+					return x;
+				}
 				if (x && typeof x === 'object' && typeof x.Id === 'string') {
-return x.Id;
-}
+					return x.Id;
+				}
 				return null;
 			}
 			function _sfIdMatch(a, b) {
 				const aId = _sfIdValue(a);
 				const bId = _sfIdValue(b);
 				if (!aId || !bId) {
-return false;
-}
+					return false;
+				}
 				if (aId === bId) {
-return true;
-}
+					return true;
+				}
 				return aId.slice(0, 15) === bId.slice(0, 15);
 			}
-			
+
 			function _relInfoForRec(rec) {
 				if (!rec || !rec.fromSelectionId) {
-return null;
-}
+					return null;
+				}
 				const sel = canvasState.selectedObjects.find((s) => s.id === rec.fromSelectionId);
 				if (!sel || !sel.data) {
-return null;
-}
+					return null;
+				}
 				const allParents = (sel.data.parents || [])
 					.filter((p) => p && p.field && p.object)
 					.filter((p) => !_isSystemParentField(p.field));
@@ -157,13 +181,14 @@ return null;
 				allParents.forEach((p) => {
 					const v = rec.values && rec.values[p.field];
 					if (!_sfIdValue(v)) {
-return;
-}
-					const onCanvas = canvasState.bulkRecords.some((r) =>
-						!r.isTypeNode && r.objectName === p.object && _sfIdMatch(r.loadedFromId, v));
+						return;
+					}
+					const onCanvas = canvasState.bulkRecords.some(
+						(r) => !r.isTypeNode && r.objectName === p.object && _sfIdMatch(r.loadedFromId, v),
+					);
 					if (onCanvas) {
-return;
-}
+						return;
+					}
 					parents.push(p);
 				});
 				const children = [];
@@ -177,20 +202,26 @@ return;
 						}
 						const sfCount = _relatedCountCache.get(k);
 						if (sfCount <= 0) {
-return;
-}
-						const onCanvasCount = canvasState.bulkRecords.filter((r) =>
-							!r.isTypeNode && r.objectName === c.object &&
-							r.values && _sfIdMatch(r.values[c.field], rec.loadedFromId)).length;
+							return;
+						}
+						const onCanvasCount = canvasState.bulkRecords.filter(
+							(r) =>
+								!r.isTypeNode &&
+								r.objectName === c.object &&
+								r.values &&
+								_sfIdMatch(r.values[c.field], rec.loadedFromId),
+						).length;
 						const remaining = sfCount - onCanvasCount;
 						if (remaining <= 0) {
-return;
-}
-						children.push(Object.assign({}, c, {
-							count: remaining,
-							sfCount,
-							onCanvasCount,
-						}));
+							return;
+						}
+						children.push(
+							Object.assign({}, c, {
+								count: remaining,
+								sfCount,
+								onCanvasCount,
+							}),
+						);
 					});
 				}
 				return {
@@ -201,14 +232,14 @@ return;
 					probing: _chipProbeState.get(rec.id) === 'probing',
 				};
 			}
-			
+
 			function showRelatedPopover(triggerEl, hostRec) {
 				const sel = hostRec.fromSelectionId
 					? canvasState.selectedObjects.find((s) => s.id === hostRec.fromSelectionId)
 					: null;
 				if (!sel || !sel.data) {
-return;
-}
+					return;
+				}
 				const parents = [];
 				(sel.data.parents || [])
 					.filter((p) => p && p.field && p.object)
@@ -216,72 +247,92 @@ return;
 					.forEach((p) => {
 						const v = hostRec.values && hostRec.values[p.field];
 						if (!_sfIdValue(v)) {
-return;
-}
-						const onCanvas = canvasState.bulkRecords.some((r) =>
-							!r.isTypeNode && r.objectName === p.object && _sfIdMatch(r.loadedFromId, v));
+							return;
+						}
+						const onCanvas = canvasState.bulkRecords.some(
+							(r) => !r.isTypeNode && r.objectName === p.object && _sfIdMatch(r.loadedFromId, v),
+						);
 						if (onCanvas) {
-return;
-}
+							return;
+						}
 						parents.push(p);
 					});
 				const children = (sel.data.children || [])
 					.filter((c) => c && c.field && c.object)
 					.filter((c) => !_isSystemChildRelationship(c.object));
 				if (parents.length === 0 && children.length === 0) {
-return;
-}
+					return;
+				}
 				document.querySelectorAll('.related-pop').forEach((el) => el.remove());
 				const pop = document.createElement('div');
 				pop.className = 'find-object-popup related-pop';
 				pop.style.width = '320px';
 				const rect = triggerEl.getBoundingClientRect();
 				pop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 328)) + 'px';
-				pop.style.top = (rect.bottom + 6) + 'px';
+				pop.style.top = rect.bottom + 6 + 'px';
 				const labelFor = (n) => {
-					const fromAll = Array.isArray(canvasState.allObjects) && canvasState.allObjects.find((o) => o.name === n);
+					const fromAll =
+						Array.isArray(canvasState.allObjects) && canvasState.allObjects.find((o) => o.name === n);
 					return (fromAll && fromAll.label) || n;
 				};
 				const rowFor = (entry, direction) => {
 					const objLabel = labelFor(entry.object);
-					return '<button type="button" class="fop-item" ' +
-						'data-rel-direction="' + direction + '" ' +
-						'data-rel-object="' + escapeHtml(entry.object) + '" ' +
-						'data-rel-field="' + escapeHtml(entry.field) + '" ' +
+					return (
+						'<button type="button" class="fop-item" ' +
+						'data-rel-direction="' +
+						direction +
+						'" ' +
+						'data-rel-object="' +
+						escapeHtml(entry.object) +
+						'" ' +
+						'data-rel-field="' +
+						escapeHtml(entry.field) +
+						'" ' +
 						(entry.relationshipName ? 'data-rel-rship="' + escapeHtml(entry.relationshipName) + '" ' : '') +
 						'>' +
-						'<span class="fop-label">' + escapeHtml(objLabel) + '</span>' +
-						'<span class="fop-name">' + (direction === 'parent' ? '\u2191 parent via ' : '\u2193 child via ') + escapeHtml(entry.field) + '</span>' +
-					'</button>';
+						'<span class="fop-label">' +
+						escapeHtml(objLabel) +
+						'</span>' +
+						'<span class="fop-name">' +
+						(direction === 'parent' ? '\u2191 parent via ' : '\u2193 child via ') +
+						escapeHtml(entry.field) +
+						'</span>' +
+						'</button>'
+					);
 				};
 				const parentRows = parents.map((p) => rowFor(p, 'parent')).join('');
 				const childRows = children.map((c) => rowFor(c, 'child')).join('');
-				const subText = 'For ' + (hostRec.label || hostRec.objectName) + '. Pick a relationship to load; we\'ll fetch the records when you click.';
+				const subText =
+					'For ' +
+					(hostRec.label || hostRec.objectName) +
+					". Pick a relationship to load; we'll fetch the records when you click.";
 				pop.innerHTML =
 					'<div class="fop-header">Load related records</div>' +
-					'<div class="fop-sub">' + escapeHtml(subText) + '</div>' +
+					'<div class="fop-sub">' +
+					escapeHtml(subText) +
+					'</div>' +
 					'<div class="fop-list">' +
-						(parentRows || '') +
-						(childRows || '') +
+					(parentRows || '') +
+					(childRows || '') +
 					'</div>';
 				document.body.appendChild(pop);
 				const cleanup = () => {
 					if (pop.parentNode) {
-pop.remove();
-}
+						pop.remove();
+					}
 					document.removeEventListener('mousedown', outside, true);
 					document.removeEventListener('keydown', onEsc, true);
 				};
 				const outside = (ev) => {
- if (!pop.contains(ev.target)) {
-cleanup();
-} 
-};
+					if (!pop.contains(ev.target)) {
+						cleanup();
+					}
+				};
 				const onEsc = (ev) => {
- if (ev.key === 'Escape') {
-cleanup();
-} 
-};
+					if (ev.key === 'Escape') {
+						cleanup();
+					}
+				};
 				setTimeout(() => {
 					document.addEventListener('mousedown', outside, true);
 					document.addEventListener('keydown', onEsc, true);
@@ -289,8 +340,8 @@ cleanup();
 				pop.addEventListener('click', (ev) => {
 					const btn = ev.target.closest('[data-rel-direction]');
 					if (!btn) {
-return;
-}
+						return;
+					}
 					const direction = btn.dataset.relDirection;
 					const objectName = btn.dataset.relObject;
 					const fieldName = btn.dataset.relField;
@@ -299,13 +350,15 @@ return;
 					loadRelatedFromChip(hostRec, { direction, objectName, fieldName, relationshipName });
 				});
 			}
-			
+
 			async function loadRelatedFromChip(hostRec, rel) {
+				// Encode lookup direction on the temporary node so import recreates the correct FK edge.
 				if (!hostRec || !rel) {
-return;
-}
+					return;
+				}
 				const labelFor = (n) => {
-					const fromAll = Array.isArray(canvasState.allObjects) && canvasState.allObjects.find((o) => o.name === n);
+					const fromAll =
+						Array.isArray(canvasState.allObjects) && canvasState.allObjects.find((o) => o.name === n);
 					return (fromAll && fromAll.label) || n;
 				};
 				const tn = {
@@ -332,54 +385,59 @@ return;
 				}
 				canvasState.bulkRecords.push(tn);
 				try {
- await openTypeNode(tn); 
-} catch (e) {
+					await openTypeNode(tn);
+				} catch (e) {
 					const i = canvasState.bulkRecords.findIndex((b) => b.id === tn.id);
 					if (i !== -1) {
-canvasState.bulkRecords.splice(i, 1);
-}
+						canvasState.bulkRecords.splice(i, 1);
+					}
 					renderBulkView();
 					showBulkToast('Load failed: ' + (e.message || e), 'error');
 				}
 			}
-			
+
 			async function seedEditModeTypeNodes(hostRec, hostSel, opts) {
+				// This legacy eager-expansion path is intentionally disabled; related records load on demand.
 				if (!hostSel || !hostSel.data || !hostRec.loadedFromId) {
-return;
-}
+					return;
+				}
 				opts = opts || {};
 				return;
 				const labelFor = (n) => {
-					const fromAll = Array.isArray(canvasState.allObjects) && canvasState.allObjects.find(o => o.name === n);
+					const fromAll =
+						Array.isArray(canvasState.allObjects) && canvasState.allObjects.find((o) => o.name === n);
 					return (fromAll && fromAll.label) || n;
 				};
 				const existingTypeKeys = new Set(
-					canvasState.bulkRecords.filter(r => r.isTypeNode && r.hostRecordId === hostRec.id)
-						.map(r => r.objectName + '|' + r.direction + '|' + (r.fieldOnOther || r.fieldOnThis || ''))
+					canvasState.bulkRecords
+						.filter((r) => r.isTypeNode && r.hostRecordId === hostRec.id)
+						.map((r) => r.objectName + '|' + r.direction + '|' + (r.fieldOnOther || r.fieldOnThis || '')),
 				);
 				const auditOnly = !!opts.auditOnly;
 				const includeAudit = !!auditOnly;
-				const queryableNames = new Set((canvasState.allObjects || []).filter((o) => o && o.queryable).map((o) => o.name));
+				const queryableNames = new Set(
+					(canvasState.allObjects || []).filter((o) => o && o.queryable).map((o) => o.name),
+				);
 				const isQueryable = (name) => queryableNames.size === 0 || queryableNames.has(name);
 				const childCandidates = [];
 				(hostSel.data.children || []).forEach((c) => {
 					if (!c.field || !c.object) {
-return;
-}
+						return;
+					}
 					if (!isQueryable(c.object)) {
-return;
-}
+						return;
+					}
 					const isAudit = AUDIT_FK_FIELDS.has(c.field);
 					if (auditOnly && !isAudit) {
-return;
-}
+						return;
+					}
 					if (!includeAudit && isAudit) {
-return;
-}
+						return;
+					}
 					const key = c.object + '|child|' + c.field;
 					if (existingTypeKeys.has(key)) {
-return;
-}
+						return;
+					}
 					childCandidates.push({
 						direction: 'child',
 						objectName: c.object,
@@ -389,36 +447,39 @@ return;
 					});
 				});
 				const _ensureAssoc = (fromId, toId, fieldName) => {
-					const exists = canvasState.bulkAssociations.some((a) => a.fromId === fromId && a.toId === toId && a.fieldName === fieldName);
+					const exists = canvasState.bulkAssociations.some(
+						(a) => a.fromId === fromId && a.toId === toId && a.fieldName === fieldName,
+					);
 					if (!exists) {
-canvasState.bulkAssociations.push({ id: canvasState.bulkIdSeq++, fromId, toId, fieldName });
-}
+						canvasState.bulkAssociations.push({ id: canvasState.bulkIdSeq++, fromId, toId, fieldName });
+					}
 				};
 				const parentNodes = [];
 				(hostSel.data.parents || []).forEach((p) => {
 					if (!p.field || !p.object) {
-return;
-}
+						return;
+					}
 					if (!isQueryable(p.object)) {
-return;
-}
+						return;
+					}
 					const isAudit = AUDIT_FK_FIELDS.has(p.field);
 					if (auditOnly && !isAudit) {
-return;
-}
+						return;
+					}
 					if (!includeAudit && isAudit) {
-return;
-}
+						return;
+					}
 					const parentId = hostRec.values && hostRec.values[p.field];
 					if (!parentId || typeof parentId !== 'string') {
-return;
-}
+						return;
+					}
 					const key = p.object + '|parent|' + p.field;
 					if (existingTypeKeys.has(key)) {
-return;
-}
-					const onCanvas = canvasState.bulkRecords.find(r =>
-						!r.isTypeNode && r.objectName === p.object && r.loadedFromId === parentId);
+						return;
+					}
+					const onCanvas = canvasState.bulkRecords.find(
+						(r) => !r.isTypeNode && r.objectName === p.object && r.loadedFromId === parentId,
+					);
 					if (onCanvas) {
 						_ensureAssoc(hostRec.id, onCanvas.id, p.field);
 						return;
@@ -441,11 +502,15 @@ return;
 					const key = _countCacheKey(n.objectName, n.fieldOnOther, hostRec.loadedFromId);
 					const sfCount = counts.get(key) || 0;
 					if (sfCount === 0) {
-return false;
-}
-					const canvasMatches = canvasState.bulkRecords.filter((r) =>
-						!r.isTypeNode && r.objectName === n.objectName &&
-						r.values && r.values[n.fieldOnOther] === hostRec.loadedFromId);
+						return false;
+					}
+					const canvasMatches = canvasState.bulkRecords.filter(
+						(r) =>
+							!r.isTypeNode &&
+							r.objectName === n.objectName &&
+							r.values &&
+							r.values[n.fieldOnOther] === hostRec.loadedFromId,
+					);
 					if (canvasMatches.length >= sfCount) {
 						canvasMatches.forEach((m) => _ensureAssoc(m.id, hostRec.id, n.fieldOnOther));
 						return false;
@@ -489,22 +554,22 @@ return false;
 								for (let k = 0; k < canvasState.bulkRecords.length; k++) {
 									const other = canvasState.bulkRecords[k];
 									if (other.id === hostRec.id) {
-continue;
-}
+										continue;
+									}
 									const dx = px - other.x;
 									const dy = py - other.y;
 									const d = Math.hypot(dx, dy);
 									if (d < minDist) {
-minDist = d;
-}
+										minDist = d;
+									}
 								}
 								if (minDist === Infinity) {
-minDist = probeR;
-}
+									minDist = probeR;
+								}
 								sumMin += minDist;
 							}
 							const align = Math.cos(cand - parentBased);
-							const score = (sumMin / offsets.length) + align * 30;
+							const score = sumMin / offsets.length + align * 30;
 							if (score > bestScore) {
 								bestScore = score;
 								bestAngle = cand;
@@ -516,16 +581,10 @@ minDist = probeR;
 				}
 				const n = nodes.length;
 				const _MIN_SEP = 120;
-				const angularStep = isBase
-					? (n > 1 ? span / n : 0)
-					: (n > 1 ? span / (n - 1) : 0);
-				const intraRingMin = angularStep > 0
-					? _MIN_SEP / (2 * Math.sin(angularStep / 2))
-					: 0;
+				const angularStep = isBase ? (n > 1 ? span / n : 0) : n > 1 ? span / (n - 1) : 0;
+				const intraRingMin = angularStep > 0 ? _MIN_SEP / (2 * Math.sin(angularStep / 2)) : 0;
 				const ring = Math.max(baseRing, intraRingMin);
-				const _halfExtents = (rec) => rec.isTypeNode
-					? { hw: 65, hh: 65 }
-					: { hw: 120, hh: 90 };
+				const _halfExtents = (rec) => (rec.isTypeNode ? { hw: 65, hh: 65 } : { hw: 120, hh: 90 });
 				const _bbox = (rec) => {
 					const { hw, hh } = _halfExtents(rec);
 					return { l: rec.x - hw, r: rec.x + hw, t: rec.y - hh, b: rec.y + hh };
@@ -534,11 +593,11 @@ minDist = probeR;
 				const radiusForIndex = (i) => {
 					const cycle = i % 3;
 					if (cycle === 1) {
-return ring * 1.32;
-}
+						return ring * 1.32;
+					}
 					if (cycle === 2) {
-return ring * 1.14;
-}
+						return ring * 1.14;
+					}
 					return ring;
 				};
 				const PUSH_STEP = 30;
@@ -546,9 +605,7 @@ return ring * 1.14;
 				const placedThisPass = [];
 				nodes.forEach((node, i) => {
 					const t = n === 1 ? 0.5 : i / (n - 1);
-					const angle = isBase
-						? baseAngle + span * (i / n)
-						: baseAngle - span / 2 + span * t;
+					const angle = isBase ? baseAngle + span * (i / n) : baseAngle - span / 2 + span * t;
 					const ux = Math.cos(angle);
 					const uy = Math.sin(angle);
 					const probe = { isTypeNode: true, x: 0, y: 0 };
@@ -561,22 +618,24 @@ return ring * 1.14;
 						for (let k = 0; k < canvasState.bulkRecords.length; k++) {
 							const other = canvasState.bulkRecords[k];
 							if (other.id === hostRec.id) {
-continue;
-}
+								continue;
+							}
 							if (_hits(bb, _bbox(other))) {
- collides = true; break; 
-}
+								collides = true;
+								break;
+							}
 						}
 						if (!collides) {
 							for (let k = 0; k < placedThisPass.length; k++) {
 								if (_hits(bb, _bbox(placedThisPass[k]))) {
- collides = true; break; 
-}
+									collides = true;
+									break;
+								}
 							}
 						}
 						if (!collides) {
-break;
-}
+							break;
+						}
 						radius += PUSH_STEP;
 					}
 					const placed = {

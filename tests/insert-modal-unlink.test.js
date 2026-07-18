@@ -56,9 +56,18 @@ test('unlink impact separates existing incoming relationships from draft incomin
 	const { state, target } = fixture();
 	const impact = unlinkRelationshipImpact(state, target);
 
-	assert.deepEqual(Array.from(impact.incoming, (association) => association.id), [10, 11]);
-	assert.deepEqual(Array.from(impact.existingIncoming, (association) => association.id), [10]);
-	assert.deepEqual(Array.from(impact.draftIncoming, (association) => association.id), [11]);
+	assert.deepEqual(
+		Array.from(impact.incoming, (association) => association.id),
+		[10, 11],
+	);
+	assert.deepEqual(
+		Array.from(impact.existingIncoming, (association) => association.id),
+		[10],
+	);
+	assert.deepEqual(
+		Array.from(impact.draftIncoming, (association) => association.id),
+		[11],
+	);
 });
 
 test('safe unlink detaches existing children without clearing their original Salesforce lookup', () => {
@@ -68,7 +77,10 @@ test('safe unlink detaches existing children without clearing their original Sal
 	const result = applyLoadedRecordUnlink(state, target, 'keep');
 
 	assert.equal(target.loadedFromId, null);
-	assert.deepEqual(Array.from(state.bulkAssociations, (association) => association.id), [11, 12, 13]);
+	assert.deepEqual(
+		Array.from(state.bulkAssociations, (association) => association.id),
+		[11, 12, 13],
+	);
 	assert.equal(existingChild.values.AccountId, '001ORIGINAL');
 	assert.deepEqual({ ...result }, { detachedExisting: 1, retainedDraft: 1 });
 });
@@ -80,7 +92,10 @@ test('explicit move keeps existing and draft children connected to the new draft
 	const result = applyLoadedRecordUnlink(state, target, 'move');
 
 	assert.equal(target.loadedFromId, null);
-	assert.deepEqual(Array.from(state.bulkAssociations, (association) => association.id), [10, 11, 12, 13]);
+	assert.deepEqual(
+		Array.from(state.bulkAssociations, (association) => association.id),
+		[10, 11, 12, 13],
+	);
 	assert.equal(existingChild.values.AccountId, '001ORIGINAL');
 	assert.deepEqual({ ...result }, { detachedExisting: 0, retainedDraft: 1 });
 });

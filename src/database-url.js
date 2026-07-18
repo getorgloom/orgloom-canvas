@@ -1,4 +1,3 @@
-
 export function isPostgresDatabaseUrl(url) {
 	return /^postgres(?:ql)?:\/\//.test(String(url || ''));
 }

@@ -1,4 +1,3 @@
-
 import { test, describe, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -20,12 +19,12 @@ const ORG_ID = '00DTEST00000001';
 let _stub;
 before(initTestDb);
 before(() => {
- _stub = installSfFetchStub(); 
+	_stub = installSfFetchStub();
 });
 after(() => {
- if (_stub) {
- _stub.restore(); 
-} 
+	if (_stub) {
+		_stub.restore();
+	}
 });
 beforeEach(clearTestDb);
 
@@ -48,8 +47,8 @@ function mockConn(initial = {}) {
 		async query(soql) {
 			calls.queries.push(soql);
 			if (queryQueue.length === 0) {
-return { records: [], totalSize: 0 };
-}
+				return { records: [], totalSize: 0 };
+			}
 			return queryQueue.shift();
 		},
 		sobject(name) {
@@ -57,23 +56,23 @@ return { records: [], totalSize: 0 };
 				async create(payload) {
 					calls.sobjectCreates.push({ name, payload });
 					if (createQueue.length === 0) {
-return { success: false, errors: ['no-create-queued'] };
-}
+						return { success: false, errors: ['no-create-queued'] };
+					}
 					return createQueue.shift();
 				},
 				async retrieve(id) {
 					calls.sobjectRetrieves.push({ name, id });
 					if (retrieveQueue.length === 0) {
-return null;
-}
+						return null;
+					}
 					return retrieveQueue.shift();
 				},
 				async destroy() {
- return { success: true };
-},
+					return { success: true };
+				},
 				async update() {
- return { success: true };
-},
+					return { success: true };
+				},
 				async upsert(payload, extIdField) {
 					calls.sobjectUpserts.push({ name, payload, extIdField });
 					return { success: true };
@@ -94,34 +93,49 @@ async function decryptSavedBlob(versionDataB64, canvasId) {
 const F = (n) => 'orgloom__' + n;
 
 function hybridMetaRow(canvasId, extra = {}) {
-	return Object.assign({
-		Id: 'a0' + canvasId,
-		[F('Canvas_Id__c')]: canvasId,
-		[F('Body_Document_Id__c')]: canvasId,
-		[F('Schema_Version__c')]: 1,
-		[F('Encryption_Key_Version__c')]: 'v1',
-	}, extra);
+	return Object.assign(
+		{
+			Id: 'a0' + canvasId,
+			[F('Canvas_Id__c')]: canvasId,
+			[F('Body_Document_Id__c')]: canvasId,
+			[F('Schema_Version__c')]: 1,
+			[F('Encryption_Key_Version__c')]: 'v1',
+		},
+		extra,
+	);
 }
 
 describe('canvas store: list / ownedByMe', () => {
 	test('owner sees ownedByMe=true; non-owner sees false', async () => {
 		const conn = mockConn({
-			queries: [{
-				records: [
-					{
-						Id: 'a0c1', [F('Canvas_Id__c')]: '069A1', [F('Body_Document_Id__c')]: '069A1',
-						Name: 'mine', OwnerId: '005MINE', [F('Record_Count__c')]: 5,
-						[F('Last_Edited_At__c')]: '2026-05-02T00:00:00Z',
-						CreatedDate: '2026-05-01T00:00:00Z', LastModifiedDate: '2026-05-02T00:00:00Z',
-					},
-					{
-						Id: 'a0c2', [F('Canvas_Id__c')]: '069A2', [F('Body_Document_Id__c')]: '069A2',
-						Name: 'theirs', OwnerId: '005OTHER', [F('Record_Count__c')]: 3,
-						[F('Last_Edited_At__c')]: '2026-05-02T00:00:00Z',
-						CreatedDate: '2026-05-01T00:00:00Z', LastModifiedDate: '2026-05-02T00:00:00Z',
-					},
-				],
-			}],
+			queries: [
+				{
+					records: [
+						{
+							Id: 'a0c1',
+							[F('Canvas_Id__c')]: '069A1',
+							[F('Body_Document_Id__c')]: '069A1',
+							Name: 'mine',
+							OwnerId: '005MINE',
+							[F('Record_Count__c')]: 5,
+							[F('Last_Edited_At__c')]: '2026-05-02T00:00:00Z',
+							CreatedDate: '2026-05-01T00:00:00Z',
+							LastModifiedDate: '2026-05-02T00:00:00Z',
+						},
+						{
+							Id: 'a0c2',
+							[F('Canvas_Id__c')]: '069A2',
+							[F('Body_Document_Id__c')]: '069A2',
+							Name: 'theirs',
+							OwnerId: '005OTHER',
+							[F('Record_Count__c')]: 3,
+							[F('Last_Edited_At__c')]: '2026-05-02T00:00:00Z',
+							CreatedDate: '2026-05-01T00:00:00Z',
+							LastModifiedDate: '2026-05-02T00:00:00Z',
+						},
+					],
+				},
+			],
 		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
 		const result = await store.list();
@@ -136,14 +150,23 @@ describe('canvas store: list / ownedByMe', () => {
 
 	test('caller with no sfUserId never sees ownedByMe=true', async () => {
 		const conn = mockConn({
-			queries: [{
-				records: [{
-					Id: 'a0c1', [F('Canvas_Id__c')]: '069A1', [F('Body_Document_Id__c')]: '069A1',
-					Name: 'x', OwnerId: '005ANY', [F('Record_Count__c')]: 0,
-					[F('Last_Edited_At__c')]: '2026-05-01T00:00:00Z',
-					CreatedDate: '2026-05-01T00:00:00Z', LastModifiedDate: '2026-05-01T00:00:00Z',
-				}],
-			}],
+			queries: [
+				{
+					records: [
+						{
+							Id: 'a0c1',
+							[F('Canvas_Id__c')]: '069A1',
+							[F('Body_Document_Id__c')]: '069A1',
+							Name: 'x',
+							OwnerId: '005ANY',
+							[F('Record_Count__c')]: 0,
+							[F('Last_Edited_At__c')]: '2026-05-01T00:00:00Z',
+							CreatedDate: '2026-05-01T00:00:00Z',
+							LastModifiedDate: '2026-05-01T00:00:00Z',
+						},
+					],
+				},
+			],
 		});
 		const store = await canvasStoreFromSfConnection(conn, null, ORG_ID);
 		const result = await store.list();
@@ -154,21 +177,25 @@ describe('canvas store: list / ownedByMe', () => {
 describe('canvas store: save (encrypt + key persistence + metadata)', () => {
 	test('emits OLE2 envelope, persists key, writes Canvas__c row, drafts pass through', async () => {
 		const conn = mockConn({
-			creates: [{ success: true, id: '068NEW' }, { success: true, id: 'cdl1' }],
-			retrieves: [{ ContentDocumentId: '069NEW' }],
-			queries: [
-				{ records: [{ Id: 'a0Canvas1' }] },
-				{ records: [] },
+			creates: [
+				{ success: true, id: '068NEW' },
+				{ success: true, id: 'cdl1' },
 			],
+			retrieves: [{ ContentDocumentId: '069NEW' }],
+			queries: [{ records: [{ Id: 'a0Canvas1' }] }, { records: [] }],
 		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
 		const payload = {
 			drafts: [
-				{ tempId: 1, objectName: 'Account', x: 10, y: 20, values: { Name: 'IN-FLIGHT-DRAFT', Industry: 'Tech' } },
+				{
+					tempId: 1,
+					objectName: 'Account',
+					x: 10,
+					y: 20,
+					values: { Name: 'IN-FLIGHT-DRAFT', Industry: 'Tech' },
+				},
 			],
-			loadedRecords: [
-				{ tempId: 2, objectName: 'Contact', loadedFromId: '003ABC', values: { LastName: 'kept' } },
-			],
+			loadedRecords: [{ tempId: 2, objectName: 'Contact', loadedFromId: '003ABC', values: { LastName: 'kept' } }],
 		};
 		const res = await store.save({ name: 'My Canvas', payload });
 		assert.equal(res.id, '069NEW');
@@ -215,7 +242,7 @@ describe('canvas store: get (probe + decrypt + legacy plaintext)', () => {
 		const conn = mockConn({
 			queries: [
 				{ records: [hybridMetaRow('069MISSING')] }, // probe → found
-				{ records: [] },                             // ContentDocument → missing
+				{ records: [] }, // ContentDocument → missing
 			],
 		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
@@ -240,7 +267,17 @@ describe('canvas store: get (probe + decrypt + legacy plaintext)', () => {
 		const conn = mockConn({
 			queries: [
 				{ records: [hybridMetaRow('069X')] }, // probe
-				{ records: [{ Id: '069X', Title: 'random.pdf', OwnerId: '005A', CreatedDate: '2026-05-01T00:00:00Z', LastModifiedDate: '2026-05-01T00:00:00Z' }] },
+				{
+					records: [
+						{
+							Id: '069X',
+							Title: 'random.pdf',
+							OwnerId: '005A',
+							CreatedDate: '2026-05-01T00:00:00Z',
+							LastModifiedDate: '2026-05-01T00:00:00Z',
+						},
+					],
+				},
 				{ records: [{ Id: '068X', VersionData: 'eyJ4Ijoxfg==', PathOnClient: 'random.pdf' }] },
 			],
 		});
@@ -261,7 +298,10 @@ describe('canvas store: get (probe + decrypt + legacy plaintext)', () => {
 			loadedRecords: [{ tempId: 2, objectName: 'Contact', values: { LastName: 'B' } }],
 		};
 		const writeConn = mockConn({
-			creates: [{ success: true, id: '068ROUND' }, { success: true, id: 'cdlR' }],
+			creates: [
+				{ success: true, id: '068ROUND' },
+				{ success: true, id: 'cdlR' },
+			],
 			retrieves: [{ ContentDocumentId: '069ROUND' }],
 			queries: [{ records: [{ Id: 'a0Round' }] }, { records: [] }],
 		});
@@ -274,7 +314,17 @@ describe('canvas store: get (probe + decrypt + legacy plaintext)', () => {
 		const readConn = mockConn({
 			queries: [
 				{ records: [hybridMetaRow('069ROUND', { [F('Body_Sha256__c')]: bodySha })] }, // probe
-				{ records: [{ Id: '069ROUND', Title: 'round-trip', OwnerId: '005MINE', CreatedDate: '2026-05-01T00:00:00Z', LastModifiedDate: '2026-05-02T00:00:00Z' }] },
+				{
+					records: [
+						{
+							Id: '069ROUND',
+							Title: 'round-trip',
+							OwnerId: '005MINE',
+							CreatedDate: '2026-05-01T00:00:00Z',
+							LastModifiedDate: '2026-05-02T00:00:00Z',
+						},
+					],
+				},
 				{ records: [{ Id: '068ROUND', VersionData: versionData, PathOnClient: 'round-trip' + CANVAS_EXT }] },
 			],
 		});
@@ -290,12 +340,26 @@ describe('canvas store: get (probe + decrypt + legacy plaintext)', () => {
 		const conn = mockConn({
 			queries: [
 				{ records: [hybridMetaRow('069LEGACY')] }, // probe → found (metadata exists)
-				{ records: [{ Id: '069LEGACY', Title: 'old', OwnerId: '005MINE', CreatedDate: '2026-05-01T00:00:00Z', LastModifiedDate: '2026-05-02T00:00:00Z' }] },
-				{ records: [{
-					Id: '068LEGACY',
-					VersionData: Buffer.from(JSON.stringify(fakePayload), 'utf8').toString('base64'),
-					PathOnClient: 'old' + CANVAS_EXT,
-				}] },
+				{
+					records: [
+						{
+							Id: '069LEGACY',
+							Title: 'old',
+							OwnerId: '005MINE',
+							CreatedDate: '2026-05-01T00:00:00Z',
+							LastModifiedDate: '2026-05-02T00:00:00Z',
+						},
+					],
+				},
+				{
+					records: [
+						{
+							Id: '068LEGACY',
+							VersionData: Buffer.from(JSON.stringify(fakePayload), 'utf8').toString('base64'),
+							PathOnClient: 'old' + CANVAS_EXT,
+						},
+					],
+				},
 			],
 		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
@@ -310,8 +374,26 @@ describe('canvas store: get (probe + decrypt + legacy plaintext)', () => {
 		const conn = mockConn({
 			queries: [
 				{ records: [hybridMetaRow('069ORPHAN')] }, // probe
-				{ records: [{ Id: '069ORPHAN', Title: 'orphan', OwnerId: '005MINE', CreatedDate: '2026-05-01T00:00:00Z', LastModifiedDate: '2026-05-02T00:00:00Z' }] },
-				{ records: [{ Id: '068ORPHAN', VersionData: envelope.toString('base64'), PathOnClient: 'orphan' + CANVAS_EXT }] },
+				{
+					records: [
+						{
+							Id: '069ORPHAN',
+							Title: 'orphan',
+							OwnerId: '005MINE',
+							CreatedDate: '2026-05-01T00:00:00Z',
+							LastModifiedDate: '2026-05-02T00:00:00Z',
+						},
+					],
+				},
+				{
+					records: [
+						{
+							Id: '068ORPHAN',
+							VersionData: envelope.toString('base64'),
+							PathOnClient: 'orphan' + CANVAS_EXT,
+						},
+					],
+				},
 			],
 		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
@@ -328,10 +410,7 @@ describe('canvas store: get (probe + decrypt + legacy plaintext)', () => {
 describe('canvas store: update / optimistic lock', () => {
 	test('stale expectedVersionId throws 409 with currentVersionId', async () => {
 		const conn = mockConn({
-			queries: [
-				{ records: [{ Id: '069A', Title: 'mine' }] },
-				{ records: [{ Id: '068LATEST' }] },
-			],
+			queries: [{ records: [{ Id: '069A', Title: 'mine' }] }, { records: [{ Id: '068LATEST' }] }],
 		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
 		await assert.rejects(
@@ -348,10 +427,10 @@ describe('canvas store: update / optimistic lock', () => {
 	test('matching expectedVersionId proceeds to write (encrypted)', async () => {
 		const conn = mockConn({
 			queries: [
-				{ records: [{ Id: '069A', Title: 'mine' }] },   // ContentDocument
-				{ records: [{ Id: '068LATEST' }] },             // latest ContentVersion (optimistic-lock check)
-				{ records: [{ Id: 'a0069A' }] },                // Canvas__c Id lookup after the hybrid upsert
-				{ records: [{ Id: 'cdl069A' }] },               // existing CDL → skip the inferred-share insert
+				{ records: [{ Id: '069A', Title: 'mine' }] }, // ContentDocument
+				{ records: [{ Id: '068LATEST' }] }, // latest ContentVersion (optimistic-lock check)
+				{ records: [{ Id: 'a0069A' }] }, // Canvas__c Id lookup after the hybrid upsert
+				{ records: [{ Id: 'cdl069A' }] }, // existing CDL → skip the inferred-share insert
 			],
 			creates: [{ success: true, id: '068NEW' }],
 		});
@@ -382,10 +461,10 @@ describe('canvas store: update / optimistic lock', () => {
 	test('update preserves draft values in the encrypted payload', async () => {
 		const conn = mockConn({
 			queries: [
-				{ records: [{ Id: '069A', Title: 'mine' }] },   // ContentDocument
-				{ records: [{ Id: '068LATEST' }] },             // latest ContentVersion (optimistic-lock check)
-				{ records: [{ Id: 'a0069A' }] },                // Canvas__c Id lookup after the hybrid upsert
-				{ records: [{ Id: 'cdl069A' }] },               // existing CDL → skip the inferred-share insert
+				{ records: [{ Id: '069A', Title: 'mine' }] }, // ContentDocument
+				{ records: [{ Id: '068LATEST' }] }, // latest ContentVersion (optimistic-lock check)
+				{ records: [{ Id: 'a0069A' }] }, // Canvas__c Id lookup after the hybrid upsert
+				{ records: [{ Id: 'cdl069A' }] }, // existing CDL → skip the inferred-share insert
 			],
 			creates: [{ success: true, id: '068NEW' }],
 		});
@@ -407,8 +486,8 @@ describe('canvas store: update / optimistic lock', () => {
 			queries: [
 				{ records: [{ Id: '069A', Title: 'mine' }] },
 				{ records: [{ Id: '068V1' }] },
-				{ records: [{ Id: 'a0069A' }] },   // Canvas__c Id lookup after upsert
-				{ records: [{ Id: 'cdl069A' }] },  // existing CDL → skip insert
+				{ records: [{ Id: 'a0069A' }] }, // Canvas__c Id lookup after upsert
+				{ records: [{ Id: 'cdl069A' }] }, // existing CDL → skip insert
 			],
 			creates: [{ success: true, id: '068V2' }],
 		});
@@ -420,8 +499,8 @@ describe('canvas store: update / optimistic lock', () => {
 			queries: [
 				{ records: [{ Id: '069A', Title: 'mine' }] },
 				{ records: [{ Id: '068V2' }] },
-				{ records: [{ Id: 'a0069A' }] },   // Canvas__c Id lookup after upsert
-				{ records: [{ Id: 'cdl069A' }] },  // existing CDL → skip insert
+				{ records: [{ Id: 'a0069A' }] }, // Canvas__c Id lookup after upsert
+				{ records: [{ Id: 'cdl069A' }] }, // existing CDL → skip insert
 			],
 			creates: [{ success: true, id: '068V3' }],
 		});
@@ -460,7 +539,12 @@ describe('canvas store: countOwned', () => {
 
 describe('canvas store: remove', () => {
 	test('deletes the canvas_keys row alongside the SF ContentDocument', async () => {
-		await canvasKeys.persist({ sfOrgId: ORG_ID, canvasId: '069DEL', dataKey: generateDataKey(), kekProvider: TEST_KEK });
+		await canvasKeys.persist({
+			sfOrgId: ORG_ID,
+			canvasId: '069DEL',
+			dataKey: generateDataKey(),
+			kekProvider: TEST_KEK,
+		});
 		const before = await canvasKeys.get({ sfOrgId: ORG_ID, canvasId: '069DEL', kekProvider: TEST_KEK });
 		assert.ok(before, 'precondition: key should exist before remove');
 		const conn = mockConn({});

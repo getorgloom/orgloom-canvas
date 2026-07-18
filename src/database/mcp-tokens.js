@@ -1,60 +1,62 @@
-import crypto from "node:crypto";
-import { ext } from "../extensions.js";
+// Workspace-scoped MCP credentials. Plaintext is returned once and only its SHA-256 digest is stored.
+import crypto from 'node:crypto';
+import { ext } from '../extensions.js';
 
-const TOKEN_PREFIX = "ol_mcp_";
+const TOKEN_PREFIX = 'ol_mcp_';
 export const MAX_ACTIVE_TOKENS_PER_ACCOUNT_WORKSPACE = 10;
 const TOKEN_RANDOM_BYTES = 32; // 256 bits → 64 hex chars
 
 function _hashToken(plaintext) {
-	return crypto.createHash("sha256").update(String(plaintext)).digest("hex");
+	return crypto.createHash('sha256').update(String(plaintext)).digest('hex');
 }
 
 function _generatePlaintext() {
-	return (
-		TOKEN_PREFIX + crypto.randomBytes(TOKEN_RANDOM_BYTES).toString("hex")
-	);
+	return TOKEN_PREFIX + crypto.randomBytes(TOKEN_RANDOM_BYTES).toString('hex');
 }
 
 export async function issue({ accountId, workspaceId, name, ttlMs = null }) {
 	if (!accountId) {
-		throw new Error("accountId required");
+		throw new Error('accountId required');
 	}
 	if (!workspaceId) {
-		throw new Error("workspaceId required");
+		throw new Error('workspaceId required');
 	}
-	const trimmedName = String(name || "")
+	const trimmedName = String(name || '')
 		.trim()
 		.slice(0, 80);
 	if (!trimmedName) {
-		throw new Error("name required");
+		throw new Error('name required');
 	}
 	const db = ext.getDb();
 	const now = Date.now();
-	const active = await db.selectFrom("mcp_tokens").select("id")
-		.where("account_id", "=", accountId).where("revoked_at", "is", null)
-		.where("workspace_id", "=", workspaceId)
-		.where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", now)]))
+	const active = await db
+		.selectFrom('mcp_tokens')
+		.select('id')
+		.where('account_id', '=', accountId)
+		.where('revoked_at', 'is', null)
+		.where('workspace_id', '=', workspaceId)
+		.where((eb) => eb.or([eb('expires_at', 'is', null), eb('expires_at', '>', now)]))
 		.execute();
 	if (active.length >= MAX_ACTIVE_TOKENS_PER_ACCOUNT_WORKSPACE) {
-		const err = new Error("mcp-token-cap-reached");
-		err.code = "mcp-token-cap-reached";
+		const err = new Error('mcp-token-cap-reached');
+		err.code = 'mcp-token-cap-reached';
 		throw err;
 	}
 	for (let attempt = 0; attempt < 5; attempt++) {
 		const plaintext = _generatePlaintext();
 		const tokenHash = _hashToken(plaintext);
 		const collision = await db
-			.selectFrom("mcp_tokens")
-			.select("id")
-			.where("token_hash", "=", tokenHash)
+			.selectFrom('mcp_tokens')
+			.select('id')
+			.where('token_hash', '=', tokenHash)
 			.executeTakeFirst();
 		if (collision) {
 			continue;
 		}
-		const id = "mcp_" + crypto.randomUUID();
+		const id = 'mcp_' + crypto.randomUUID();
 		const expiresAt = ttlMs ? now + ttlMs : null;
 		await db
-			.insertInto("mcp_tokens")
+			.insertInto('mcp_tokens')
 			.values({
 				id,
 				account_id: accountId,
@@ -69,11 +71,12 @@ export async function issue({ accountId, workspaceId, name, ttlMs = null }) {
 			.execute();
 		return { id, plaintext, name: trimmedName, workspaceId, createdAt: now, expiresAt };
 	}
-	throw new Error("Could not allocate token");
+	throw new Error('Could not allocate token');
 }
 
 export async function authenticate(plaintext) {
-	if (!plaintext || typeof plaintext !== "string") {
+	// Authentication also rejects revoked, expired, deleted-account, and inaccessible-workspace tokens.
+	if (!plaintext || typeof plaintext !== 'string') {
 		return null;
 	}
 	if (!plaintext.startsWith(TOKEN_PREFIX)) {
@@ -81,11 +84,7 @@ export async function authenticate(plaintext) {
 	}
 	const tokenHash = _hashToken(plaintext);
 	const db = ext.getDb();
-	const row = await db
-		.selectFrom("mcp_tokens")
-		.selectAll()
-		.where("token_hash", "=", tokenHash)
-		.executeTakeFirst();
+	const row = await db.selectFrom('mcp_tokens').selectAll().where('token_hash', '=', tokenHash).executeTakeFirst();
 	if (!row) {
 		return null;
 	}
@@ -99,9 +98,9 @@ export async function authenticate(plaintext) {
 		return null;
 	}
 
-	db.updateTable("mcp_tokens")
+	db.updateTable('mcp_tokens')
 		.set({ last_used_at: Date.now() })
-		.where("id", "=", row.id)
+		.where('id', '=', row.id)
 		.execute()
 		.catch(() => {});
 	return row;
@@ -113,25 +112,25 @@ export async function listForWorkspace(accountId, workspaceId, { includeAllOwner
 	}
 	const db = ext.getDb();
 	let query = db
-		.selectFrom("mcp_tokens")
-		.leftJoin("accounts", "accounts.id", "mcp_tokens.account_id")
+		.selectFrom('mcp_tokens')
+		.leftJoin('accounts', 'accounts.id', 'mcp_tokens.account_id')
 		.select([
-			"mcp_tokens.id as id",
-			"mcp_tokens.account_id as account_id",
-			"mcp_tokens.name as name",
-			"mcp_tokens.workspace_id as workspace_id",
-			"mcp_tokens.created_at as created_at",
-			"mcp_tokens.last_used_at as last_used_at",
-			"mcp_tokens.expires_at as expires_at",
-			"accounts.display_name as owner_display_name",
-			"accounts.email as owner_email",
+			'mcp_tokens.id as id',
+			'mcp_tokens.account_id as account_id',
+			'mcp_tokens.name as name',
+			'mcp_tokens.workspace_id as workspace_id',
+			'mcp_tokens.created_at as created_at',
+			'mcp_tokens.last_used_at as last_used_at',
+			'mcp_tokens.expires_at as expires_at',
+			'accounts.display_name as owner_display_name',
+			'accounts.email as owner_email',
 		])
-		.where("mcp_tokens.workspace_id", "=", workspaceId)
-		.where("mcp_tokens.revoked_at", "is", null);
+		.where('mcp_tokens.workspace_id', '=', workspaceId)
+		.where('mcp_tokens.revoked_at', 'is', null);
 	if (!includeAllOwners) {
-		query = query.where("mcp_tokens.account_id", "=", accountId);
+		query = query.where('mcp_tokens.account_id', '=', accountId);
 	}
-	const rows = await query.orderBy("mcp_tokens.created_at", "desc").execute();
+	const rows = await query.orderBy('mcp_tokens.created_at', 'desc').execute();
 	return rows.map((r) => ({
 		id: r.id,
 		accountId: r.account_id,
@@ -148,20 +147,20 @@ export async function listForWorkspace(accountId, workspaceId, { includeAllOwner
 
 export async function revoke(tokenId, accountId, workspaceId = null) {
 	if (!tokenId) {
-		throw new Error("tokenId required");
+		throw new Error('tokenId required');
 	}
 	const db = ext.getDb();
 	let q = db
-		.updateTable("mcp_tokens")
+		.updateTable('mcp_tokens')
 		.set({ revoked_at: Date.now() })
-		.where("id", "=", tokenId)
-		.where("revoked_at", "is", null);
+		.where('id', '=', tokenId)
+		.where('revoked_at', 'is', null);
 
 	if (accountId) {
-		q = q.where("account_id", "=", accountId);
+		q = q.where('account_id', '=', accountId);
 	}
 	if (workspaceId) {
-		q = q.where("workspace_id", "=", workspaceId);
+		q = q.where('workspace_id', '=', workspaceId);
 	}
 	const result = await q.execute();
 	return Number(result?.[0]?.numUpdatedRows || 0) > 0;
@@ -171,12 +170,13 @@ export async function revokeForAccountWorkspace(accountId, workspaceId) {
 	if (!accountId || !workspaceId) {
 		return 0;
 	}
-	const result = await ext.getDb()
-		.updateTable("mcp_tokens")
+	const result = await ext
+		.getDb()
+		.updateTable('mcp_tokens')
 		.set({ revoked_at: Date.now() })
-		.where("account_id", "=", accountId)
-		.where("workspace_id", "=", workspaceId)
-		.where("revoked_at", "is", null)
+		.where('account_id', '=', accountId)
+		.where('workspace_id', '=', workspaceId)
+		.where('revoked_at', 'is', null)
 		.execute();
 	return Number(result?.[0]?.numUpdatedRows || 0);
 }

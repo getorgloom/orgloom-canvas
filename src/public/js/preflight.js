@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Renders server-side upload validation without changing the canvas or Salesforce.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -14,35 +14,37 @@
 			const recordOrdinal = deps.recordOrdinal;
 
 			function validateBulkRecords() {
+				// Validate only records that would write; unchanged existing records are out of scope.
 				const issues = [];
 				const byRecordId = new Map();
 				const missingDescribes = new Set();
-			
+
 				const assocByFrom = new Map();
 				(canvasState.bulkAssociations || []).forEach((a) => {
 					if (!a || a.fromId == null || !a.fieldName) {
-return;
-}
+						return;
+					}
 					let s = assocByFrom.get(a.fromId);
 					if (!s) {
- s = new Set(); assocByFrom.set(a.fromId, s); 
-}
+						s = new Set();
+						assocByFrom.set(a.fromId, s);
+					}
 					s.add(a.fieldName);
 				});
-			
+
 				(canvasState.bulkRecords || []).forEach((rec) => {
 					if (!rec || !rec.objectName) {
-return;
-}
+						return;
+					}
 					if (rec.isTypeNode) {
-return;
-}
+						return;
+					}
 					if (rec.pendingDelete && rec.loadedFromId) {
-return;
-}
+						return;
+					}
 					if (rec.loadedFromId && !isRecordModified(rec)) {
-return;
-}
+						return;
+					}
 					const describe = canvasState.describeCache[rec.objectName];
 					if (!describe || !Array.isArray(describe.fields)) {
 						missingDescribes.add(rec.objectName);
@@ -51,55 +53,78 @@ return;
 					const recordLabel = (rec.label || rec.objectName) + ' #' + recordOrdinal(rec);
 					const values = rec.values || {};
 					const linkedFields = assocByFrom.get(rec.id) || new Set();
-					const partialFieldSet = (Array.isArray(rec._loadedFieldNames) && rec.loadedFromId)
-						? new Set(rec._loadedFieldNames)
-						: null;
-			
+					// A partial query cannot prove omitted fields are empty on an existing record.
+					const partialFieldSet =
+						Array.isArray(rec._loadedFieldNames) && rec.loadedFromId
+							? new Set(rec._loadedFieldNames)
+							: null;
+
 					describe.fields.forEach((f) => {
 						if (!f || !f.name) {
-return;
-}
+							return;
+						}
 						if (!f.createable) {
-return;
-}
-			
+							return;
+						}
+
 						const raw = values[f.name];
 						const hasValue = raw !== undefined && raw !== null && !(typeof raw === 'string' && raw === '');
 						const hasFkLink = f.type === 'reference' && linkedFields.has(f.name);
-			
+
 						if (f.required && !hasValue && !hasFkLink && !f.defaultedOnCreate) {
 							if (partialFieldSet && !partialFieldSet.has(f.name)) {
-return;
-}
+								return;
+							}
 							addIssue(rec, f, 'error', 'Required field is empty.');
 							return; // no point checking further on an empty field
 						}
 						if (!hasValue) {
-return;
-}
-			
-						if ((f.type === 'picklist' || f.type === 'combobox') && Array.isArray(f.picklistValues) && f.picklistValues.length > 0) {
+							return;
+						}
+
+						if (
+							(f.type === 'picklist' || f.type === 'combobox') &&
+							Array.isArray(f.picklistValues) &&
+							f.picklistValues.length > 0
+						) {
 							const ok = f.picklistValues.some((p) => p && p.active !== false && p.value === raw);
 							if (!ok) {
-addIssue(rec, f, 'error', 'Value "' + raw + '" is not an active picklist option.');
-}
+								addIssue(rec, f, 'error', 'Value "' + raw + '" is not an active picklist option.');
+							}
 						} else if (f.type === 'multipicklist' && Array.isArray(f.picklistValues)) {
-							const parts = String(raw).split(';').map((s) => s.trim()).filter(Boolean);
-							const allowed = new Set(f.picklistValues.filter((p) => p && p.active !== false).map((p) => p.value));
+							const parts = String(raw)
+								.split(';')
+								.map((s) => s.trim())
+								.filter(Boolean);
+							const allowed = new Set(
+								f.picklistValues.filter((p) => p && p.active !== false).map((p) => p.value),
+							);
 							parts.forEach((p) => {
 								if (!allowed.has(p)) {
-addIssue(rec, f, 'error', 'Value "' + p + '" is not an active picklist option.');
-}
+									addIssue(rec, f, 'error', 'Value "' + p + '" is not an active picklist option.');
+								}
 							});
 						}
-			
+
 						if (typeof raw === 'string' && f.length && f.length > 0) {
-							const stringTypes = new Set(['string', 'textarea', 'phone', 'url', 'email', 'encryptedstring']);
+							const stringTypes = new Set([
+								'string',
+								'textarea',
+								'phone',
+								'url',
+								'email',
+								'encryptedstring',
+							]);
 							if (stringTypes.has(f.type) && raw.length > f.length) {
-								addIssue(rec, f, 'error', 'Value is ' + raw.length + ' chars, max is ' + f.length + '.');
+								addIssue(
+									rec,
+									f,
+									'error',
+									'Value is ' + raw.length + ' chars, max is ' + f.length + '.',
+								);
 							}
 						}
-			
+
 						const numericTypes = new Set(['int', 'double', 'currency', 'percent']);
 						if (numericTypes.has(f.type)) {
 							const n = Number(raw);
@@ -109,30 +134,40 @@ addIssue(rec, f, 'error', 'Value "' + p + '" is not an active picklist option.')
 								addIssue(rec, f, 'error', 'Value must be an integer.');
 							}
 						}
-			
+
 						if (f.type === 'date' && typeof raw === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
 							addIssue(rec, f, 'error', 'Date must be YYYY-MM-DD.');
 						}
 						if (f.type === 'datetime' && typeof raw === 'string') {
 							const looksOk = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) || !isNaN(Date.parse(raw));
 							if (!looksOk) {
-addIssue(rec, f, 'error', 'Datetime is unparseable.');
-}
+								addIssue(rec, f, 'error', 'Datetime is unparseable.');
+							}
 						}
-			
+
 						if (f.type === 'email' && typeof raw === 'string' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
 							addIssue(rec, f, 'error', 'Doesn\u2019t look like a valid email address.');
 						}
-						if (f.type === 'url' && typeof raw === 'string' && raw.length > 0 && !/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+						if (
+							f.type === 'url' &&
+							typeof raw === 'string' &&
+							raw.length > 0 &&
+							!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)
+						) {
 							addIssue(rec, f, 'warning', 'URL is missing a scheme (e.g. https://).');
 						}
-			
-						if (f.type === 'reference' && typeof raw === 'string' && raw.length > 0 && !/^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(raw)) {
+
+						if (
+							f.type === 'reference' &&
+							typeof raw === 'string' &&
+							raw.length > 0 &&
+							!/^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(raw)
+						) {
 							addIssue(rec, f, 'error', 'Lookup value isn\u2019t a Salesforce ID and no FK link is set.');
 						}
 					});
 				});
-			
+
 				function addIssue(rec, field, severity, message) {
 					const issue = {
 						recordId: rec.id,
@@ -146,29 +181,30 @@ addIssue(rec, f, 'error', 'Datetime is unparseable.');
 					issues.push(issue);
 					let bucket = byRecordId.get(rec.id);
 					if (!bucket) {
- bucket = []; byRecordId.set(rec.id, bucket); 
-}
+						bucket = [];
+						byRecordId.set(rec.id, bucket);
+					}
 					bucket.push(issue);
 				}
 
 				const recordById = new Map();
 				canvasState.bulkRecords.forEach((r) => {
- if (r && r.id != null) {
-recordById.set(r.id, r);
-} 
-});
+					if (r && r.id != null) {
+						recordById.set(r.id, r);
+					}
+				});
 				const childrenOf = new Map(); // parentId -> [{ child, fieldName }]
 				(canvasState.bulkAssociations || []).forEach((a) => {
 					if (!a || a.fromId == null || a.toId == null) {
-return;
-}
+						return;
+					}
 					const child = recordById.get(a.fromId);
 					if (!child || child.isTypeNode) {
-return;
-}
+						return;
+					}
 					if (!childrenOf.has(a.toId)) {
-childrenOf.set(a.toId, []);
-}
+						childrenOf.set(a.toId, []);
+					}
 					childrenOf.get(a.toId).push({ child, fieldName: a.fieldName });
 				});
 				function pushCascadeIssue(parentRec, severity, fieldLabel, message) {
@@ -184,21 +220,22 @@ childrenOf.set(a.toId, []);
 					issues.push(issue);
 					let bucket = byRecordId.get(parentRec.id);
 					if (!bucket) {
- bucket = []; byRecordId.set(parentRec.id, bucket); 
-}
+						bucket = [];
+						byRecordId.set(parentRec.id, bucket);
+					}
 					bucket.push(issue);
 				}
 				canvasState.bulkRecords.forEach((rec) => {
 					if (!rec || rec.isTypeNode) {
-return;
-}
+						return;
+					}
 					if (!rec.loadedFromId || !rec.pendingDelete) {
-return;
-}
+						return;
+					}
 					const kids = childrenOf.get(rec.id) || [];
 					if (kids.length === 0) {
-return;
-}
+						return;
+					}
 					const orphanedLoaded = kids.filter((k) => k.child.loadedFromId && !k.child.pendingDelete);
 					const draftChildren = kids.filter((k) => !k.child.loadedFromId);
 					if (orphanedLoaded.length > 0) {
@@ -206,7 +243,11 @@ return;
 							rec,
 							'warning',
 							'Cascade',
-							'Deleting this record may cascade-delete ' + orphanedLoaded.length + ' loaded child record' + (orphanedLoaded.length === 1 ? '' : 's') + ' in Salesforce, or be refused if the relationship is a lookup. Mark them for delete too if cascade is the intent, or unmark this delete.'
+							'Deleting this record may cascade-delete ' +
+								orphanedLoaded.length +
+								' loaded child record' +
+								(orphanedLoaded.length === 1 ? '' : 's') +
+								' in Salesforce, or be refused if the relationship is a lookup. Mark them for delete too if cascade is the intent, or unmark this delete.',
 						);
 					}
 					if (draftChildren.length > 0) {
@@ -214,66 +255,71 @@ return;
 							rec,
 							'error',
 							'Draft FK',
-							draftChildren.length + ' draft record' + (draftChildren.length === 1 ? '' : 's') + ' on this canvas reference this record via FK. Deleting it would leave those FKs unresolvable at upload time. Remove the drafts or unmark this delete.'
+							draftChildren.length +
+								' draft record' +
+								(draftChildren.length === 1 ? '' : 's') +
+								' on this canvas reference this record via FK. Deleting it would leave those FKs unresolvable at upload time. Remove the drafts or unmark this delete.',
 						);
 					}
 				});
 
 				return { issues, byRecordId, missingDescribes };
 			}
-			
+
 			function computeUploadOrder(unchangedSet, inScopeSet, deleteSet) {
+				// Draft parents precede children; deletes later reverse this dependency on the server.
 				const skip = unchangedSet || new Set();
 				const deletes = deleteSet || new Set();
 				const recordsById = new Map();
 				canvasState.bulkRecords.forEach((r) => {
 					if (!r || r.id == null) {
-return;
-}
+						return;
+					}
 					if (r.isTypeNode) {
-return;
-}
+						return;
+					}
 					if (inScopeSet && !inScopeSet.has(r.id)) {
-return;
-}
+						return;
+					}
 					recordsById.set(r.id, r);
 				});
 				const deps = new Map();
 				recordsById.forEach((_, id) => deps.set(id, new Set()));
 				canvasState.bulkAssociations.forEach((a) => {
 					if (!a || !deps.has(a.fromId)) {
-return;
-}
+						return;
+					}
 					const parent = recordsById.get(a.toId);
 					if (!parent) {
-return;
-}
+						return;
+					}
 					if (parent.loadedFromId) {
-return;
-} // resolved up-front, no level cost
+						return;
+					} // resolved up-front, no level cost
 					deps.get(a.fromId).add(a.toId);
 				});
 				const levelById = new Map();
 				const cycleIds = new Set();
 				function lvl(id, stack, stackArr) {
 					if (levelById.has(id)) {
-return levelById.get(id);
-}
+						return levelById.get(id);
+					}
 					if (stack.has(id)) {
+						// Record cycle members so preflight can block relationships Salesforce cannot resolve.
 						const start = stackArr.indexOf(id);
 						for (let i = Math.max(0, start); i < stackArr.length; i++) {
-cycleIds.add(stackArr[i]);
-}
+							cycleIds.add(stackArr[i]);
+						}
 						return 0;
-} // cycle short-circuit
+					} // cycle short-circuit
 					stack.add(id);
 					stackArr.push(id);
 					let m = 0;
-					for (const p of (deps.get(id) || [])) {
+					for (const p of deps.get(id) || []) {
 						const v = lvl(p, stack, stackArr) + 1;
 						if (v > m) {
-m = v;
-}
+							m = v;
+						}
 					}
 					stack.delete(id);
 					stackArr.pop();
@@ -285,7 +331,7 @@ m = v;
 				const deleteBuckets = new Map();
 				recordsById.forEach((rec, id) => {
 					const level = levelById.get(id) || 0;
-					const sel = canvasState.selectedObjects.find(s => s.name === rec.objectName);
+					const sel = canvasState.selectedObjects.find((s) => s.name === rec.objectName);
 					const label = (sel && sel.label) || rec.label || rec.objectName;
 					if (deletes.has(id)) {
 						const dkey = level + '|' + rec.objectName;
@@ -310,21 +356,21 @@ m = v;
 						buckets.set(key, b);
 					}
 					if (skip.has(id)) {
-b.unchanged++;
-} else {
-b.upload++;
-}
+						b.unchanged++;
+					} else {
+						b.upload++;
+					}
 				});
 				const creates = Array.from(buckets.values()).sort((a, b) => {
 					if (a.level !== b.level) {
-return a.level - b.level;
-}
+						return a.level - b.level;
+					}
 					return a.label.localeCompare(b.label);
 				});
 				const deletesLane = Array.from(deleteBuckets.values()).sort((a, b) => {
 					if (a.level !== b.level) {
-return b.level - a.level;
-}
+						return b.level - a.level;
+					}
 					return a.label.localeCompare(b.label);
 				});
 				return { creates, deletes: deletesLane, cycleIds };

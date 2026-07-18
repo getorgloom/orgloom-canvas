@@ -27,10 +27,24 @@ function mount(describeCache, selectedObjects = []) {
 
 test('read-only describe references are never offered as FK candidates', () => {
 	const api = mount({
-		Lead: { fields: [
-			{ name: 'ConvertedAccountId', type: 'reference', referenceTo: ['Account'], createable: false, updateable: false },
-			{ name: 'Writable_Account__c', type: 'reference', referenceTo: ['Account'], createable: true, updateable: true },
-		] },
+		Lead: {
+			fields: [
+				{
+					name: 'ConvertedAccountId',
+					type: 'reference',
+					referenceTo: ['Account'],
+					createable: false,
+					updateable: false,
+				},
+				{
+					name: 'Writable_Account__c',
+					type: 'reference',
+					referenceTo: ['Account'],
+					createable: true,
+					updateable: true,
+				},
+			],
+		},
 		Account: { fields: [] },
 	});
 	assert.deepEqual(
@@ -42,10 +56,18 @@ test('read-only describe references are never offered as FK candidates', () => {
 test('reverse read-only references are filtered and legacy metadata remains compatible', () => {
 	const api = mount({
 		Account: { fields: [] },
-		Child__c: { fields: [
-			{ name: 'Read_Only_Parent__c', type: 'reference', referenceTo: ['Account'], createable: false, updateable: false },
-			{ name: 'Legacy_Parent__c', type: 'reference', referenceTo: ['Account'] },
-		] },
+		Child__c: {
+			fields: [
+				{
+					name: 'Read_Only_Parent__c',
+					type: 'reference',
+					referenceTo: ['Account'],
+					createable: false,
+					updateable: false,
+				},
+				{ name: 'Legacy_Parent__c', type: 'reference', referenceTo: ['Account'] },
+			],
+		},
 	});
 	assert.deepEqual(
 		Array.from(api.inferAllReferences('Account', 'Child__c'), (candidate) => ({ ...candidate })),

@@ -1,13 +1,13 @@
-
 (function () {
 	'use strict';
+	// Wraps same-origin fetch to add CSRF protection and surface expired Salesforce connections once.
 
 	if (typeof window === 'undefined' || !window.fetch) {
-return;
-}
+		return;
+	}
 	if (window.__sfFetchInstalled) {
-return;
-}
+		return;
+	}
 	window.__sfFetchInstalled = true;
 
 	const REAUTH_URL = '/auth/login';
@@ -35,33 +35,34 @@ return;
 	const _csrfToken = _csrfMeta ? _csrfMeta.getAttribute('content') || '' : '';
 
 	function _shouldStampCsrf(input, init) {
+		// Never attach the app CSRF token to cross-origin requests.
 		if (!_csrfToken) {
-return false;
-}
+			return false;
+		}
 		const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
 		if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-return false;
-}
+			return false;
+		}
 		let url;
 		try {
 			const raw = typeof input === 'string' ? input : (input && input.url) || '';
 			url = new URL(raw, window.location.origin);
 		} catch (_) {
- return false; 
-}
+			return false;
+		}
 		return url.origin === window.location.origin;
 	}
 
 	function _handleReauthNeeded() {
 		if (window.__sfReauthPromptOpen) {
-return;
-}
+			return;
+		}
 		if (window.__sfOfflineMode) {
-return;
-}
+			return;
+		}
 		try {
- window.__sfReauthPromptOpen = true;
-} catch (_) {}
+			window.__sfReauthPromptOpen = true;
+		} catch (_) {}
 		if (document.readyState === 'loading') {
 			document.addEventListener('DOMContentLoaded', _showReauthPromptModal, { once: true });
 			return;
@@ -71,8 +72,8 @@ return;
 
 	function _showReauthPromptModal() {
 		try {
- window.__sfReauthPromptOpen = true; 
-} catch (_) {}
+			window.__sfReauthPromptOpen = true;
+		} catch (_) {}
 		const ret = encodeURIComponent(window.location.pathname + window.location.search);
 		const signInUrl = REAUTH_URL + '?return=' + ret;
 		const overlay = document.createElement('div');
@@ -80,78 +81,83 @@ return;
 		overlay.innerHTML =
 			'<div class="modal-overlay"></div>' +
 			'<div class="modal-body" style="max-width:520px">' +
-				'<div class="modal-header">' +
-					'<h3>Your Salesforce session ended</h3>' +
-				'</div>' +
-				'<div class="modal-content">' +
-					'<p>Your access token expired. Pick how to continue: the canvas itself stays usable in every option.</p>' +
-					'<div class="sf-reauth-options">' +
-						'<button type="button" class="sf-reauth-card sf-reauth-card--primary" data-rap-action="signin">' +
-							'<span class="sf-reauth-card-title">Sign in again</span>' +
-							'<span class="sf-reauth-card-desc">Reconnect to your current Salesforce org and resume what you were doing.</span>' +
-						'</button>' +
-						'<button type="button" class="sf-reauth-card" data-rap-action="switch">' +
-							'<span class="sf-reauth-card-title">Sign in to a different org</span>' +
-							'<span class="sf-reauth-card-desc">Switch to a different Salesforce connection.</span>' +
-						'</button>' +
-						'<button type="button" class="sf-reauth-card" data-rap-action="offline">' +
-							'<span class="sf-reauth-card-title">Keep working offline</span>' +
-							'<span class="sf-reauth-card-desc">Keep editing the canvas without reconnecting. Salesforce-touching actions (Browse, Upload, etc.) will prompt you when you try them.</span>' +
-						'</button>' +
-					'</div>' +
-				'</div>' +
+			'<div class="modal-header">' +
+			'<h3>Your Salesforce session ended</h3>' +
+			'</div>' +
+			'<div class="modal-content">' +
+			'<p>Your access token expired. Pick how to continue: the canvas itself stays usable in every option.</p>' +
+			'<div class="sf-reauth-options">' +
+			'<button type="button" class="sf-reauth-card sf-reauth-card--primary" data-rap-action="signin">' +
+			'<span class="sf-reauth-card-title">Sign in again</span>' +
+			'<span class="sf-reauth-card-desc">Reconnect to your current Salesforce org and resume what you were doing.</span>' +
+			'</button>' +
+			'<button type="button" class="sf-reauth-card" data-rap-action="switch">' +
+			'<span class="sf-reauth-card-title">Sign in to a different org</span>' +
+			'<span class="sf-reauth-card-desc">Switch to a different Salesforce connection.</span>' +
+			'</button>' +
+			'<button type="button" class="sf-reauth-card" data-rap-action="offline">' +
+			'<span class="sf-reauth-card-title">Keep working offline</span>' +
+			'<span class="sf-reauth-card-desc">Keep editing the canvas without reconnecting. Salesforce-touching actions (Browse, Upload, etc.) will prompt you when you try them.</span>' +
+			'</button>' +
+			'</div>' +
+			'</div>' +
 			'</div>';
 		document.body.appendChild(overlay);
 		const cleanup = () => {
 			try {
- overlay.remove(); 
-} catch (_) {}
+				overlay.remove();
+			} catch (_) {}
 			try {
- window.__sfReauthPromptOpen = false; 
-} catch (_) {}
+				window.__sfReauthPromptOpen = false;
+			} catch (_) {}
 		};
 		overlay.querySelector('[data-rap-action="signin"]').addEventListener('click', () => {
 			cleanup();
 			_clearOfflinePersistence();
 			try {
- window.__sfRedirectingToReauth = true; 
-} catch (_) {}
+				window.__sfRedirectingToReauth = true;
+			} catch (_) {}
 			window.location.assign(signInUrl);
 		});
 		overlay.querySelector('[data-rap-action="switch"]').addEventListener('click', () => {
 			cleanup();
 			_clearOfflinePersistence();
-			if (window.Orgloom && window.Orgloom.sfConnectionsModal && typeof window.Orgloom.sfConnectionsModal.open === 'function') {
+			if (
+				window.Orgloom &&
+				window.Orgloom.sfConnectionsModal &&
+				typeof window.Orgloom.sfConnectionsModal.open === 'function'
+			) {
 				try {
- window.Orgloom.sfConnectionsModal.open(); return; 
-} catch (_) {}
+					window.Orgloom.sfConnectionsModal.open();
+					return;
+				} catch (_) {}
 			}
 			try {
- window.__sfRedirectingToReauth = true; 
-} catch (_) {}
+				window.__sfRedirectingToReauth = true;
+			} catch (_) {}
 			window.location.assign(REAUTH_URL);
 		});
 		overlay.querySelector('[data-rap-action="offline"]').addEventListener('click', () => {
 			cleanup();
 			try {
- window.__sfOfflineMode = true; 
-} catch (_) {}
+				window.__sfOfflineMode = true;
+			} catch (_) {}
 			_persistOffline();
 			try {
- document.dispatchEvent(new CustomEvent('orgloom:sf-offline'));
-} catch (_) {}
+				document.dispatchEvent(new CustomEvent('orgloom:sf-offline'));
+			} catch (_) {}
 			_markChipOffline();
 		});
 	}
 
 	async function _isExpiredSfResponse(res) {
 		if (!res || res.status !== 401) {
-return false;
-}
+			return false;
+		}
 		const ct = res.headers && res.headers.get && res.headers.get('content-type');
 		if (!ct || ct.indexOf('application/json') === -1) {
-return false;
-}
+			return false;
+		}
 		try {
 			const clone = res.clone();
 			const data = await clone.json();
@@ -163,12 +169,12 @@ return false;
 
 	async function _isMissingConnectionResponse(res) {
 		if (!res || res.status !== 409) {
-return false;
-}
+			return false;
+		}
 		const ct = res.headers && res.headers.get && res.headers.get('content-type');
 		if (!ct || ct.indexOf('application/json') === -1) {
-return false;
-}
+			return false;
+		}
 		try {
 			const clone = res.clone();
 			const data = await clone.json();
@@ -198,8 +204,8 @@ return false;
 		const next = { ...(init || {}) };
 		const h = new Headers(next.headers || {});
 		if (!h.has('x-csrf-token')) {
-h.set('x-csrf-token', _csrfToken);
-}
+			h.set('x-csrf-token', _csrfToken);
+		}
 		next.headers = h;
 		return next;
 	}
@@ -220,25 +226,29 @@ h.set('x-csrf-token', _csrfToken);
 		} catch (_) {}
 	}
 
-	document.addEventListener('click', function (e) {
-		if (!window.__sfOfflineMode) {
-			return;
-		}
-		const chip = (e.target && e.target.closest) ? e.target.closest('#app-sf-chip') : null;
-		if (!chip) {
-			return;
-		}
-		e.preventDefault();
-		e.stopPropagation();
-		if (e.stopImmediatePropagation) {
-			e.stopImmediatePropagation();
-		}
-		try {
-			window.__sfOfflineMode = false;
-		} catch (_) {}
-		_clearOfflinePersistence();
-		_handleReauthNeeded();
-	}, true);
+	document.addEventListener(
+		'click',
+		function (e) {
+			if (!window.__sfOfflineMode) {
+				return;
+			}
+			const chip = e.target && e.target.closest ? e.target.closest('#app-sf-chip') : null;
+			if (!chip) {
+				return;
+			}
+			e.preventDefault();
+			e.stopPropagation();
+			if (e.stopImmediatePropagation) {
+				e.stopImmediatePropagation();
+			}
+			try {
+				window.__sfOfflineMode = false;
+			} catch (_) {}
+			_clearOfflinePersistence();
+			_handleReauthNeeded();
+		},
+		true,
+	);
 
 	if (window.__sfOfflineMode) {
 		if (document.readyState === 'loading') {
@@ -259,22 +269,22 @@ h.set('x-csrf-token', _csrfToken);
 			return res;
 		}
 		if (window.__sfOfflineMode) {
-return res;
-}
+			return res;
+		}
 		if (await _isMissingConnectionResponse(res)) {
 			if (window.ORGLOOM_SF_CONNECTED === false) {
-return res;
-}
+				return res;
+			}
 			_handleReauthNeeded();
 			return res;
 		}
 		if (!(await _isExpiredSfResponse(res))) {
-return res;
-}
+			return res;
+		}
 
 		if (window.ORGLOOM_SF_CONNECTED === false) {
-return res;
-}
+			return res;
+		}
 
 		_handleReauthNeeded();
 		return res;

@@ -1,25 +1,12 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const _src = readFileSync(
-	new URL('../src/public/js/migrate-annotate.js', import.meta.url),
-	'utf8',
-);
-const _recordsCanvasSrc = readFileSync(
-	new URL('../src/public/js/records-canvas.js', import.meta.url),
-	'utf8',
-);
-const _insertModalSrc = readFileSync(
-	new URL('../src/public/js/insert-modal.js', import.meta.url),
-	'utf8',
-);
-const _appSrc = readFileSync(
-	new URL('../src/public/js/app.js', import.meta.url),
-	'utf8',
-);
+const _src = readFileSync(new URL('../src/public/js/migrate-annotate.js', import.meta.url), 'utf8');
+const _recordsCanvasSrc = readFileSync(new URL('../src/public/js/records-canvas.js', import.meta.url), 'utf8');
+const _insertModalSrc = readFileSync(new URL('../src/public/js/insert-modal.js', import.meta.url), 'utf8');
+const _appSrc = readFileSync(new URL('../src/public/js/app.js', import.meta.url), 'utf8');
 const _sandbox = { window: {} };
 vm.createContext(_sandbox);
 vm.runInContext(_src, _sandbox);
@@ -112,9 +99,7 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('picklist value not in target -> warning', () => {
-		const d = describe_([
-			field('Stage', { type: 'picklist', picklistValues: [pv('Open'), pv('Closed')] }),
-		]);
+		const d = describe_([field('Stage', { type: 'picklist', picklistValues: [pv('Open'), pv('Closed')] })]);
 		const rec = { objectName: 'Opp', values: { Stage: 'Frozen' } };
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.equal(res.status, 'warning');
@@ -123,27 +108,20 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('multipicklist flags only the invalid members', () => {
-		const d = describe_([
-			field('Tags', { type: 'multipicklist', picklistValues: [pv('A'), pv('B')] }),
-		]);
+		const d = describe_([field('Tags', { type: 'multipicklist', picklistValues: [pv('A'), pv('B')] })]);
 		const rec = { objectName: 'X', values: { Tags: 'A;Z;B' } };
 		const res = annotate.computeMigrationStatus(rec, d);
 		assert.deepEqual(Array.from(res.issues[0].invalidValues), ['Z']);
 	});
 
 	test('value dropped from target picklist (e.g. inactive) is invalid', () => {
-		const d = describe_([
-			field('Stage', { type: 'picklist', picklistValues: [pv('Open')] }),
-		]);
+		const d = describe_([field('Stage', { type: 'picklist', picklistValues: [pv('Open')] })]);
 		const rec = { objectName: 'Opp', values: { Stage: 'Old' } };
 		assert.equal(annotate.computeMigrationStatus(rec, d).status, 'warning');
 	});
 
 	test('record type resolves by DeveloperName -> ready + resolvedRecordTypeId', () => {
-		const d = describe_(
-			[field('Name', { required: true })],
-			[{ developerName: 'Business', id: '012TARGET001' }],
-		);
+		const d = describe_([field('Name', { required: true })], [{ developerName: 'Business', id: '012TARGET001' }]);
 		const rec = {
 			objectName: 'Account',
 			values: { Name: 'Acme' },
@@ -155,10 +133,7 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('record type with no target match -> blocked', () => {
-		const d = describe_(
-			[field('Name', { required: true })],
-			[{ developerName: 'Other', id: '012X' }],
-		);
+		const d = describe_([field('Name', { required: true })], [{ developerName: 'Other', id: '012X' }]);
 		const rec = {
 			objectName: 'Account',
 			values: { Name: 'Acme' },
@@ -188,10 +163,7 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('_migrateRecordTypeId override resolves an otherwise-blocked record type', () => {
-		const d = describe_(
-			[field('Name', { required: true })],
-			[{ developerName: 'Other', id: '012X' }],
-		);
+		const d = describe_([field('Name', { required: true })], [{ developerName: 'Other', id: '012X' }]);
 		const rec = {
 			objectName: 'Account',
 			values: { Name: 'Acme' },
@@ -229,9 +201,7 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('_migratePicklistRemap resolves an invalid picklist value (no warning)', () => {
-		const d = describe_([
-			field('Stage', { type: 'picklist', picklistValues: [pv('Open'), pv('Closed')] }),
-		]);
+		const d = describe_([field('Stage', { type: 'picklist', picklistValues: [pv('Open'), pv('Closed')] })]);
 		const rec = {
 			objectName: 'Opp',
 			values: { Stage: 'Frozen' },
@@ -241,9 +211,7 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('_migratePicklistRemap to drop ("") also resolves', () => {
-		const d = describe_([
-			field('Stage', { type: 'picklist', picklistValues: [pv('Open')] }),
-		]);
+		const d = describe_([field('Stage', { type: 'picklist', picklistValues: [pv('Open')] })]);
 		const rec = {
 			objectName: 'Opp',
 			values: { Stage: 'Old' },
@@ -253,9 +221,7 @@ describe('computeMigrationStatus', () => {
 	});
 
 	test('partial multipicklist remap still flags the unmapped member', () => {
-		const d = describe_([
-			field('Tags', { type: 'multipicklist', picklistValues: [pv('A')] }),
-		]);
+		const d = describe_([field('Tags', { type: 'multipicklist', picklistValues: [pv('A')] })]);
 		const rec = {
 			objectName: 'X',
 			values: { Tags: 'A;Y;Z' },
@@ -351,19 +317,13 @@ describe('badgeSummary: one contextual card badge', () => {
 	test('mixed warnings use a single generic issue count', () => {
 		const badge = annotate.badgeSummary({
 			status: 'warning',
-			issues: [
-				{ kind: 'missing-field' },
-				{ kind: 'picklist-mismatch', invalidValues: ['Old'] },
-			],
+			issues: [{ kind: 'missing-field' }, { kind: 'picklist-mismatch', invalidValues: ['Old'] }],
 		});
 		assert.equal(badge.label, '2 migration issues');
 	});
 
 	test('pending records use a neutral checking label', () => {
-		assert.equal(
-			annotate.badgeSummary({ status: 'pending', issues: [] }).label,
-			'checking...',
-		);
+		assert.equal(annotate.badgeSummary({ status: 'pending', issues: [] }).label, 'checking...');
 	});
 
 	test('migration issue details are not rendered as competing canvas-card badges', () => {
@@ -390,8 +350,15 @@ describe('prepareMigrationValues: destination-safe upload payload', () => {
 
 	test('drops only unresolved invalid multipicklist members', () => {
 		const record = { values: { Tags__c: 'Valid;SourceOnly;AlsoValid' } };
-		const ann = { issues: [{ kind: 'picklist-mismatch', severity: 'warning', field: 'Tags__c', invalidValues: ['SourceOnly'] }] };
-		assert.equal(JSON.stringify(annotate.prepareMigrationValues(record, ann)), JSON.stringify({ Tags__c: 'Valid;AlsoValid' }));
+		const ann = {
+			issues: [
+				{ kind: 'picklist-mismatch', severity: 'warning', field: 'Tags__c', invalidValues: ['SourceOnly'] },
+			],
+		};
+		assert.equal(
+			JSON.stringify(annotate.prepareMigrationValues(record, ann)),
+			JSON.stringify({ Tags__c: 'Valid;AlsoValid' }),
+		);
 	});
 
 	test('applies explicit remaps and target record type without mutating canvas values', () => {
@@ -400,7 +367,10 @@ describe('prepareMigrationValues: destination-safe upload payload', () => {
 			_migratePicklistRemap: { Stage__c: { Source: 'Target' } },
 		};
 		const result = annotate.prepareMigrationValues(record, { issues: [], resolvedRecordTypeId: '012TARGET' });
-		assert.equal(JSON.stringify(result), JSON.stringify({ Stage__c: 'Target', Keep__c: 'same', RecordTypeId: '012TARGET' }));
+		assert.equal(
+			JSON.stringify(result),
+			JSON.stringify({ Stage__c: 'Target', Keep__c: 'same', RecordTypeId: '012TARGET' }),
+		);
 		assert.equal(record.values.Stage__c, 'Source');
 	});
 });

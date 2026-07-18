@@ -1,4 +1,5 @@
-import crypto from "node:crypto";
+// In-process bridge between MCP tool calls and the browser that owns an open canvas.
+import crypto from 'node:crypto';
 
 const connections = new Map();
 const canvasIndex = new Map();
@@ -16,11 +17,10 @@ function _ensureWorkspace(workspaceId) {
 function _writeSseEvent(res, event, data) {
 	try {
 		if (event) {
-			res.write("event: " + event + "\n");
+			res.write('event: ' + event + '\n');
 		}
-		res.write("data: " + JSON.stringify(data) + "\n\n");
-	} catch (e) {
-	}
+		res.write('data: ' + JSON.stringify(data) + '\n\n');
+	} catch (e) {}
 }
 
 export function registerConnection({ accountId, workspaceId, sseRes }) {
@@ -33,7 +33,7 @@ export function registerConnection({ accountId, workspaceId, sseRes }) {
 		openedAt: Date.now(),
 	});
 
-	_writeSseEvent(sseRes, "ready", { connectionId });
+	_writeSseEvent(sseRes, 'ready', { connectionId });
 
 	const keepalive = setInterval(() => {
 		try {
@@ -42,17 +42,17 @@ export function registerConnection({ accountId, workspaceId, sseRes }) {
 				unregisterConnection(connectionId);
 				return;
 			}
-			sseRes.write(": keepalive\n\n");
+			sseRes.write(': keepalive\n\n');
 		} catch (e) {
 			clearInterval(keepalive);
 			unregisterConnection(connectionId);
 		}
 	}, 25000);
-	sseRes.on("close", () => {
+	sseRes.on('close', () => {
 		clearInterval(keepalive);
 		unregisterConnection(connectionId);
 	});
-	sseRes.on("error", () => {
+	sseRes.on('error', () => {
 		clearInterval(keepalive);
 		unregisterConnection(connectionId);
 	});
@@ -86,7 +86,7 @@ export function unregisterConnection(connectionId) {
 	for (const [requestId, pending] of pendingRequests.entries()) {
 		if (pending.connectionId === connectionId) {
 			clearTimeout(pending.timer);
-			pending.reject(new Error("relay-connection-dropped"));
+			pending.reject(new Error('relay-connection-dropped'));
 			pendingRequests.delete(requestId);
 		}
 	}
@@ -172,28 +172,22 @@ function _pickConnectionForCanvas(workspaceId, canvasId) {
 	return last;
 }
 
-export function dispatchRequest({
-	workspaceId,
-	canvasId,
-	method,
-	params,
-	timeoutMs,
-}) {
+export function dispatchRequest({ workspaceId, canvasId, method, params, timeoutMs }) {
+	// Requests are bound to one workspace/canvas connection and fail closed when no live browser answers.
 	const connectionId = _pickConnectionForCanvas(workspaceId, canvasId);
 	if (!connectionId) {
-		return Promise.reject(new Error("no-live-browser-for-canvas"));
+		return Promise.reject(new Error('no-live-browser-for-canvas'));
 	}
 	const conn = connections.get(connectionId);
 	if (!conn) {
-		return Promise.reject(new Error("no-live-browser-for-canvas"));
+		return Promise.reject(new Error('no-live-browser-for-canvas'));
 	}
 	const requestId = crypto.randomUUID();
-	const timeout =
-		typeof timeoutMs === "number" ? timeoutMs : DEFAULT_REQUEST_TIMEOUT_MS;
+	const timeout = typeof timeoutMs === 'number' ? timeoutMs : DEFAULT_REQUEST_TIMEOUT_MS;
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => {
 			pendingRequests.delete(requestId);
-			reject(new Error("relay-request-timeout"));
+			reject(new Error('relay-request-timeout'));
 		}, timeout);
 		pendingRequests.set(requestId, {
 			resolve,
@@ -202,7 +196,7 @@ export function dispatchRequest({
 			connectionId,
 			canvasId,
 		});
-		_writeSseEvent(conn.sseRes, "request", {
+		_writeSseEvent(conn.sseRes, 'request', {
 			requestId,
 			method,
 			canvasId,
@@ -212,6 +206,7 @@ export function dispatchRequest({
 }
 
 export function recordResponse({ connectionId, requestId, result, error, accountId }) {
+	// Only the connection that received a request may resolve its pending promise.
 	const pending = pendingRequests.get(requestId);
 	if (!pending) {
 		return false;
@@ -259,7 +254,7 @@ export function purgeWorkspace(workspaceId) {
 		const conn = connections.get(pending.connectionId);
 		if (conn && conn.workspaceId === workspaceId) {
 			clearTimeout(pending.timer);
-			pending.reject(new Error("relay-workspace-purged"));
+			pending.reject(new Error('relay-workspace-purged'));
 			pendingRequests.delete(requestId);
 		}
 	}

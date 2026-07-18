@@ -1,3 +1,4 @@
+// Express session adapter for standalone SQLite deployments, with bounded expiry cleanup.
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -12,9 +13,7 @@ function expiresAt(sessionValue) {
 		}
 	}
 	const maxAge = Number(cookie?.maxAge);
-	const lifetime = Number.isFinite(maxAge) && maxAge >= 0
-		? maxAge
-		: DEFAULT_MAX_AGE_MS;
+	const lifetime = Number.isFinite(maxAge) && maxAge >= 0 ? maxAge : DEFAULT_MAX_AGE_MS;
 	return new Date(Date.now() + lifetime).toISOString();
 }
 
@@ -45,7 +44,9 @@ export function createSqliteSessionStore(Store) {
 					WHERE sid = ? AND datetime('now') < datetime(expire)
 				`),
 				destroy: client.prepare('DELETE FROM sessions WHERE sid = ?'),
-				length: client.prepare("SELECT COUNT(*) AS count FROM sessions WHERE datetime('now') < datetime(expire)"),
+				length: client.prepare(
+					"SELECT COUNT(*) AS count FROM sessions WHERE datetime('now') < datetime(expire)",
+				),
 				clear: client.prepare('DELETE FROM sessions'),
 				touch: client.prepare(`
 					UPDATE sessions SET expire = @expire
@@ -123,7 +124,10 @@ export function createSqliteSessionStore(Store) {
 
 		all(callback = noop) {
 			try {
-				callback(null, this.statements.all.all().map((row) => JSON.parse(row.sess)));
+				callback(
+					null,
+					this.statements.all.all().map((row) => JSON.parse(row.sess)),
+				);
 			} catch (error) {
 				callback(error);
 			}
@@ -137,4 +141,3 @@ export function createSqliteSessionStore(Store) {
 		}
 	};
 }
-

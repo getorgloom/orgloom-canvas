@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -24,8 +23,7 @@ describe('topoSortRecords', () => {
 		assert.equal(cycleIds.size, 0);
 		const pos = new Map(order.map((id, i) => [id, i]));
 		for (const a of associations) {
-			assert.ok(pos.get(a.toId) < pos.get(a.fromId),
-				`parent ${a.toId} must appear before child ${a.fromId}`);
+			assert.ok(pos.get(a.toId) < pos.get(a.fromId), `parent ${a.toId} must appear before child ${a.fromId}`);
 		}
 		assert.equal(order.length, 3);
 	});
@@ -89,7 +87,10 @@ describe('groupConnectedComponents', () => {
 		const submittedIds = new Set([1, 2]);
 		const components = groupConnectedComponents(submittedIds, [1, 2], []);
 		assert.equal(components.length, 2);
-		assert.deepEqual(components.map((c) => c.length), [1, 1]);
+		assert.deepEqual(
+			components.map((c) => c.length),
+			[1, 1],
+		);
 	});
 
 	test('three records, two linked + one alone → two components', () => {
@@ -106,9 +107,7 @@ describe('groupConnectedComponents', () => {
 	test('chain spanning multiple FKs forms one component', () => {
 		const submittedIds = new Set([1, 2, 3, 4]);
 		const order = [1, 2, 3, 4];
-		const components = groupConnectedComponents(submittedIds, order, [
-			fk(2, 1), fk(3, 2), fk(4, 3),
-		]);
+		const components = groupConnectedComponents(submittedIds, order, [fk(2, 1), fk(3, 2), fk(4, 3)]);
 		assert.equal(components.length, 1);
 		assert.deepEqual(components[0], [1, 2, 3, 4]);
 	});
@@ -116,19 +115,21 @@ describe('groupConnectedComponents', () => {
 	test('records preserved in submittedOrder within each component', () => {
 		const submittedIds = new Set([10, 20, 30]);
 		const order = [10, 20, 30]; // topo order
-		const components = groupConnectedComponents(submittedIds, order, [
-			fk(20, 10), fk(30, 10),
-		]);
+		const components = groupConnectedComponents(submittedIds, order, [fk(20, 10), fk(30, 10)]);
 		assert.equal(components.length, 1);
 		assert.deepEqual(components[0], [10, 20, 30]);
 	});
 
 	test('associations referencing ids not in submittedIds are ignored', () => {
 		const submittedIds = new Set([1, 2]);
-		const components = groupConnectedComponents(submittedIds, [1, 2], [
-			fk(2, 1),
-			fk(1, 99), // 99 not submitted; must NOT pull 1 into a cross-graph component
-		]);
+		const components = groupConnectedComponents(
+			submittedIds,
+			[1, 2],
+			[
+				fk(2, 1),
+				fk(1, 99), // 99 not submitted; must NOT pull 1 into a cross-graph component
+			],
+		);
 		assert.equal(components.length, 1);
 		assert.deepEqual(components[0], [1, 2]);
 	});

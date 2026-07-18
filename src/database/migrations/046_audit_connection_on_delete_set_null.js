@@ -1,8 +1,8 @@
-import { sql } from "kysely";
+import { sql } from 'kysely';
 
 export async function up(db) {
 	const tables = await db.introspection.getTables();
-	if (!tables.some((table) => typeof table.schema === "string")) {
+	if (!tables.some((table) => typeof table.schema === 'string')) {
 		return;
 	}
 
@@ -21,7 +21,7 @@ export async function up(db) {
 
 export async function down(db) {
 	const tables = await db.introspection.getTables();
-	if (!tables.some((table) => typeof table.schema === "string")) {
+	if (!tables.some((table) => typeof table.schema === 'string')) {
 		return;
 	}
 

@@ -1,4 +1,3 @@
-
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -9,12 +8,22 @@ let T; // the _test helper surface
 before(() => {
 	const src = readFileSync(new URL('../src/public/js/canvas-export-csv.js', import.meta.url), 'utf8');
 	const el = () => ({
-		className: '', innerHTML: '', style: {},
-		classList: { add() {}, remove() {}, contains() {
- return true; 
-} },
-		appendChild() {}, remove() {}, setAttribute() {}, addEventListener() {},
-		querySelector: () => el(), querySelectorAll: () => [],
+		className: '',
+		innerHTML: '',
+		style: {},
+		classList: {
+			add() {},
+			remove() {},
+			contains() {
+				return true;
+			},
+		},
+		appendChild() {},
+		remove() {},
+		setAttribute() {},
+		addEventListener() {},
+		querySelector: () => el(),
+		querySelectorAll: () => [],
 	});
 	const sandbox = {
 		window: {},
@@ -68,16 +77,13 @@ describe('csvEscape: RFC 4180 quoting', () => {
 });
 
 describe('buildCsv', () => {
-	const recs = [
-		{ values: { Name: 'Acme', Note: '=DANGER' } },
-		{ values: { Name: 'Beta, Inc', Note: 'ok' } },
-	];
+	const recs = [{ values: { Name: 'Acme', Note: '=DANGER' } }, { values: { Name: 'Beta, Inc', Note: 'ok' } }];
 	test('emits BOM, CRLF rows, header + escaped cells', () => {
 		const csv = T.buildCsv(recs, ['Name', 'Note'], []);
 		assert.ok(csv.startsWith('﻿'), 'starts with UTF-8 BOM');
 		const rows = csv.replace(/^﻿/, '').split('\r\n');
 		assert.equal(rows[0], 'Name,Note', 'header');
-		assert.equal(rows[1], 'Acme,\'=DANGER', 'formula-guarded cell');
+		assert.equal(rows[1], "Acme,'=DANGER", 'formula-guarded cell');
 		assert.equal(rows[2], '"Beta, Inc",ok', 'comma-quoted cell');
 	});
 });

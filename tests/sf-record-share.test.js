@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -143,7 +142,11 @@ describe('recordsToShareFromManifest', () => {
 	test('de-dupes by recordId: multi-slot on same record yields one share', () => {
 		const out = recordsToShareFromManifest({
 			records: [
-				{ objectName: 'Account', loadedFromId: '001A', slot: { slotId: 1, kind: 'fields', fields: ['Industry'] } },
+				{
+					objectName: 'Account',
+					loadedFromId: '001A',
+					slot: { slotId: 1, kind: 'fields', fields: ['Industry'] },
+				},
 				{ objectName: 'Account', loadedFromId: '001A', slot: { slotId: 2, kind: 'fields', fields: ['Phone'] } },
 			],
 		});
@@ -155,8 +158,8 @@ describe('recordsToShareFromManifest', () => {
 		const out = recordsToShareFromManifest({
 			records: [
 				{ objectName: 'Account', loadedFromId: '001A' },
-				{ objectName: 'Account' },                      // draft: no loadedFromId
-				{ objectName: 'Contact', loadedFromId: null },  // also a draft
+				{ objectName: 'Account' }, // draft: no loadedFromId
+				{ objectName: 'Contact', loadedFromId: null }, // also a draft
 			],
 		});
 		assert.equal(out.length, 1);
@@ -177,10 +180,7 @@ describe('recordsToShareFromManifest', () => {
 
 	test('records missing objectName excluded', () => {
 		const out = recordsToShareFromManifest({
-			records: [
-				{ loadedFromId: '001A' },
-				{ objectName: 'Account', loadedFromId: '001B' },
-			],
+			records: [{ loadedFromId: '001A' }, { objectName: 'Account', loadedFromId: '001B' }],
 		});
 		assert.equal(out.length, 1);
 		assert.equal(out[0].recordId, '001B');
@@ -198,11 +198,14 @@ describe('recordsToShareFromManifest', () => {
 			records: [
 				{ objectName: 'Account', loadedFromId: '001A' },
 				{ objectName: 'Contact', loadedFromId: '003B' },
-				{ objectName: 'Account', loadedFromId: '001A' },  // dupe, drop
+				{ objectName: 'Account', loadedFromId: '001A' }, // dupe, drop
 				{ objectName: 'Lead', loadedFromId: '00QC' },
 			],
 		});
-		assert.deepEqual(out.map((r) => r.recordId), ['001A', '003B', '00QC']);
+		assert.deepEqual(
+			out.map((r) => r.recordId),
+			['001A', '003B', '00QC'],
+		);
 	});
 });
 
@@ -215,9 +218,10 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 				return {
 					create: async (row) => {
 						calls.push({ shareTable, row });
-						const recordId = row.ParentId
-							|| Object.entries(row).find(([k]) => k.endsWith('Id') && k !== 'UserOrGroupId')?.[1]
-							|| null;
+						const recordId =
+							row.ParentId ||
+							Object.entries(row).find(([k]) => k.endsWith('Id') && k !== 'UserOrGroupId')?.[1] ||
+							null;
 						const key = shareTable + ':' + recordId;
 						const outcome = behavior[key] || 'success';
 						if (outcome === 'success') {
@@ -247,10 +251,14 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 
 	test('grants successful shares using object-specific share-row shape', async () => {
 		const conn = makeMockConn({});
-		const out = await grantRecordAccess(conn, [
-			{ objectName: 'Account', recordId: '001A' },
-			{ objectName: 'Contact', recordId: '003B' },
-		], '005me');
+		const out = await grantRecordAccess(
+			conn,
+			[
+				{ objectName: 'Account', recordId: '001A' },
+				{ objectName: 'Contact', recordId: '003B' },
+			],
+			'005me',
+		);
 		assert.equal(out.granted.length, 2);
 		assert.equal(out.failed.length, 0);
 		assert.equal(conn.calls[0].shareTable, 'AccountShare');
@@ -259,19 +267,23 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 		assert.equal(conn.calls[0].row.AccountAccessLevel, 'Edit');
 		assert.equal(conn.calls[0].row.UserOrGroupId, '005me');
 		assert.equal(conn.calls[0].row.RowCause, 'Manual');
-		assert.equal(conn.calls[0].row.ParentId, undefined,
-			'AccountShare must NOT have ParentId; that field does not exist on it');
-		assert.equal(conn.calls[0].row.AccessLevel, undefined,
-			'AccountShare must NOT have AccessLevel; uses AccountAccessLevel instead');
+		assert.equal(
+			conn.calls[0].row.ParentId,
+			undefined,
+			'AccountShare must NOT have ParentId; that field does not exist on it',
+		);
+		assert.equal(
+			conn.calls[0].row.AccessLevel,
+			undefined,
+			'AccountShare must NOT have AccessLevel; uses AccountAccessLevel instead',
+		);
 		assert.equal(conn.calls[1].row.ContactId, '003B');
 		assert.equal(conn.calls[1].row.ContactAccessLevel, 'Edit');
 	});
 
 	test('AccountShare row carries the multi-axis required AccessLevel extras', async () => {
 		const conn = makeMockConn({});
-		await grantRecordAccess(conn, [
-			{ objectName: 'Account', recordId: '001A' },
-		], '005me');
+		await grantRecordAccess(conn, [{ objectName: 'Account', recordId: '001A' }], '005me');
 		const row = conn.calls[0].row;
 		assert.equal(row.AccountAccessLevel, 'Edit', 'primary access = Edit');
 		assert.equal(row.OpportunityAccessLevel, 'None', 'extras default to None (no cascade)');
@@ -280,11 +292,15 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 
 	test('non-AccountShare rows do NOT include the AccountShare extras', async () => {
 		const conn = makeMockConn({});
-		await grantRecordAccess(conn, [
-			{ objectName: 'Contact', recordId: '003B' },
-			{ objectName: 'Lead', recordId: '00QC' },
-			{ objectName: 'orgloom__Canvas__c', recordId: 'a01D' },
-		], '005me');
+		await grantRecordAccess(
+			conn,
+			[
+				{ objectName: 'Contact', recordId: '003B' },
+				{ objectName: 'Lead', recordId: '00QC' },
+				{ objectName: 'orgloom__Canvas__c', recordId: 'a01D' },
+			],
+			'005me',
+		);
 		for (const call of conn.calls) {
 			assert.equal(call.row.OpportunityAccessLevel, undefined);
 			assert.equal(call.row.CaseAccessLevel, undefined);
@@ -294,10 +310,14 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 	test('custom-object shares still use ParentId + AccessLevel', () => {
 		return (async () => {
 			const conn = makeMockConn({});
-			await grantRecordAccess(conn, [
-				{ objectName: 'orgloom__Canvas__c', recordId: 'a01ABC' },
-				{ objectName: 'My_Cool_Object__c', recordId: 'a02DEF' },
-			], '005me');
+			await grantRecordAccess(
+				conn,
+				[
+					{ objectName: 'orgloom__Canvas__c', recordId: 'a01ABC' },
+					{ objectName: 'My_Cool_Object__c', recordId: 'a02DEF' },
+				],
+				'005me',
+			);
 			assert.equal(conn.calls[0].shareTable, 'orgloom__Canvas__Share');
 			assert.equal(conn.calls[0].row.ParentId, 'a01ABC');
 			assert.equal(conn.calls[0].row.AccessLevel, 'Edit');
@@ -311,9 +331,7 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 		const conn = makeMockConn({
 			'AccountShare:001A': 'duplicate',
 		});
-		const out = await grantRecordAccess(conn, [
-			{ objectName: 'Account', recordId: '001A' },
-		], '005me');
+		const out = await grantRecordAccess(conn, [{ objectName: 'Account', recordId: '001A' }], '005me');
 		assert.equal(out.granted.length, 1);
 		assert.equal(out.granted[0].alreadyShared, true);
 		assert.equal(out.failed.length, 0);
@@ -323,11 +341,15 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 		const conn = makeMockConn({
 			'ContactShare:003B': 'fail:INSUFFICIENT_ACCESS_OR_READONLY',
 		});
-		const out = await grantRecordAccess(conn, [
-			{ objectName: 'Account', recordId: '001A' },
-			{ objectName: 'Contact', recordId: '003B' },
-			{ objectName: 'Account', recordId: '001C' },
-		], '005me');
+		const out = await grantRecordAccess(
+			conn,
+			[
+				{ objectName: 'Account', recordId: '001A' },
+				{ objectName: 'Contact', recordId: '003B' },
+				{ objectName: 'Account', recordId: '001C' },
+			],
+			'005me',
+		);
 		assert.equal(out.granted.length, 2);
 		assert.equal(out.failed.length, 1);
 		assert.equal(out.failed[0].objectName, 'Contact');
@@ -339,9 +361,7 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 		const conn = makeMockConn({
 			'AccountShare:001A': 'throw:Network error',
 		});
-		const out = await grantRecordAccess(conn, [
-			{ objectName: 'Account', recordId: '001A' },
-		], '005me');
+		const out = await grantRecordAccess(conn, [{ objectName: 'Account', recordId: '001A' }], '005me');
 		assert.equal(out.granted.length, 0);
 		assert.equal(out.failed.length, 1);
 		assert.match(out.failed[0].error, /Network error/);
@@ -351,9 +371,7 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 		const conn = makeMockConn({
 			'AccountShare:001A': 'throw:DUPLICATE_VALUE: duplicate row',
 		});
-		const out = await grantRecordAccess(conn, [
-			{ objectName: 'Account', recordId: '001A' },
-		], '005me');
+		const out = await grantRecordAccess(conn, [{ objectName: 'Account', recordId: '001A' }], '005me');
 		assert.equal(out.granted.length, 1);
 		assert.equal(out.granted[0].alreadyShared, true);
 		assert.equal(out.failed.length, 0);
@@ -365,14 +383,18 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 				'fail:(Account, Opportunity, Case Levels, Con Levels (Edit, None, None, Edit) ' +
 				'are below organization levels (Edit, Edit, ReadEditTransfer, ControlledByParent))',
 		});
-		const out = await grantRecordAccess(conn, [
-			{ objectName: 'Account', recordId: '001A' },
-		], '005me');
+		const out = await grantRecordAccess(conn, [{ objectName: 'Account', recordId: '001A' }], '005me');
 		assert.equal(out.granted.length, 1);
-		assert.equal(out.granted[0].coveredByOWD, true,
-			'OWD-coverage rejections should report as granted (recipient HAS access)');
-		assert.equal(out.granted[0].alreadyShared, undefined,
-			'OWD-coverage is distinct from already-shared: different flag');
+		assert.equal(
+			out.granted[0].coveredByOWD,
+			true,
+			'OWD-coverage rejections should report as granted (recipient HAS access)',
+		);
+		assert.equal(
+			out.granted[0].alreadyShared,
+			undefined,
+			'OWD-coverage is distinct from already-shared: different flag',
+		);
 		assert.equal(out.failed.length, 0);
 	});
 
@@ -380,9 +402,7 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 		const conn = makeMockConn({
 			'AccountShare:001A': 'throw:Account, Opportunity Levels are below organization levels',
 		});
-		const out = await grantRecordAccess(conn, [
-			{ objectName: 'Account', recordId: '001A' },
-		], '005me');
+		const out = await grantRecordAccess(conn, [{ objectName: 'Account', recordId: '001A' }], '005me');
 		assert.equal(out.granted.length, 1);
 		assert.equal(out.granted[0].coveredByOWD, true);
 		assert.equal(out.failed.length, 0);
@@ -390,11 +410,15 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 
 	test('items missing objectName/recordId go straight to failed', async () => {
 		const conn = makeMockConn({});
-		const out = await grantRecordAccess(conn, [
-			{ recordId: '001A' },                     // no objectName
-			{ objectName: 'Account' },                // no recordId
-			{ objectName: 'Account', recordId: '001B' },
-		], '005me');
+		const out = await grantRecordAccess(
+			conn,
+			[
+				{ recordId: '001A' }, // no objectName
+				{ objectName: 'Account' }, // no recordId
+				{ objectName: 'Account', recordId: '001B' },
+			],
+			'005me',
+		);
 		assert.equal(out.granted.length, 1);
 		assert.equal(out.failed.length, 2);
 		assert.equal(conn.calls.length, 1);
@@ -417,10 +441,14 @@ describe('grantRecordAccess: connection interaction (mocked)', () => {
 
 	test('routes custom-object inserts to the namespaced share table', async () => {
 		const conn = makeMockConn({});
-		await grantRecordAccess(conn, [
-			{ objectName: 'orgloom__Canvas__c', recordId: 'a01ABC' },
-			{ objectName: 'My_Custom__c', recordId: 'a02DEF' },
-		], '005me');
+		await grantRecordAccess(
+			conn,
+			[
+				{ objectName: 'orgloom__Canvas__c', recordId: 'a01ABC' },
+				{ objectName: 'My_Custom__c', recordId: 'a02DEF' },
+			],
+			'005me',
+		);
 		assert.equal(conn.calls[0].shareTable, 'orgloom__Canvas__Share');
 		assert.equal(conn.calls[1].shareTable, 'My_Custom__Share');
 	});
@@ -433,13 +461,12 @@ describe('_classifyShareError: error-string buckets', () => {
 	});
 	test('"below organization levels" classifies as covered-by-owd', () => {
 		assert.equal(
-			_classifyShareError('Levels (Edit, None, None) are below organization levels (Edit, Edit, ReadEditTransfer)'),
+			_classifyShareError(
+				'Levels (Edit, None, None) are below organization levels (Edit, Edit, ReadEditTransfer)',
+			),
 			'covered-by-owd',
 		);
-		assert.equal(
-			_classifyShareError('AccessLevel below organization level'),
-			'covered-by-owd',
-		);
+		assert.equal(_classifyShareError('AccessLevel below organization level'), 'covered-by-owd');
 	});
 	test('INSUFFICIENT_ACCESS_OR_READONLY classifies as fatal', () => {
 		assert.equal(

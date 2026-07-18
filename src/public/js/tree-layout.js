@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Computes deterministic canvas positions for connected record components.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -15,43 +15,44 @@
 			function relayoutNewRecords(newRecIds) {
 				const _cyInstance = getCyInstance();
 				if (!_cyInstance || !newRecIds || newRecIds.size === 0) {
-return;
-}
+					return;
+				}
 
 				_cyInstance.stop(true, true);
 				_cyInstance.elements().stop(true, true);
 				_cyInstance.resize();
 
 				const newCyNodes = _cyInstance.nodes().filter((n) => newRecIds.has(n.data('recId')));
-				const newCyEdges = _cyInstance.edges().filter((e) =>
-					newRecIds.has(e.source().data('recId'))
-					&& newRecIds.has(e.target().data('recId'))
-				);
+				const newCyEdges = _cyInstance
+					.edges()
+					.filter((e) => newRecIds.has(e.source().data('recId')) && newRecIds.has(e.target().data('recId')));
 				const newEles = newCyNodes.union(newCyEdges);
 				const EXISTING_GUTTER = 80;
 				const existingCyNodes = _cyInstance.nodes().filter((n) => {
 					const recId = n.data('recId');
 					if (recId == null) {
-return false;
-}
+						return false;
+					}
 					return !newRecIds.has(recId);
 				});
-				let existingMinX = Infinity, existingMaxX = -Infinity;
-				let existingMinY = Infinity, existingMaxY = -Infinity;
+				let existingMinX = Infinity,
+					existingMaxX = -Infinity;
+				let existingMinY = Infinity,
+					existingMaxY = -Infinity;
 				existingCyNodes.forEach((n) => {
 					const bb = n.boundingBox();
 					if (bb.x1 < existingMinX) {
-existingMinX = bb.x1;
-}
+						existingMinX = bb.x1;
+					}
 					if (bb.x2 > existingMaxX) {
-existingMaxX = bb.x2;
-}
+						existingMaxX = bb.x2;
+					}
 					if (bb.y1 < existingMinY) {
-existingMinY = bb.y1;
-}
+						existingMinY = bb.y1;
+					}
 					if (bb.y2 > existingMaxY) {
-existingMaxY = bb.y2;
-}
+						existingMaxY = bb.y2;
+					}
 				});
 				const hasExisting = existingCyNodes.length > 0 && existingMaxX > -Infinity;
 				const xStart = hasExisting ? existingMaxX + EXISTING_GUTTER : 0;
@@ -95,7 +96,7 @@ existingMaxY = bb.y2;
 					let yCursor = yStart;
 					let rowMaxH = 0;
 					for (const { comp, bb } of compLaidOut) {
-						if (xCursor > xStart && (xCursor - xStart) + bb.w > targetRowWidth) {
+						if (xCursor > xStart && xCursor - xStart + bb.w > targetRowWidth) {
 							xCursor = xStart;
 							yCursor += rowMaxH + TREE_GUTTER;
 							rowMaxH = 0;
@@ -108,8 +109,8 @@ existingMaxY = bb.y2;
 						});
 						xCursor += bb.w + TREE_GUTTER;
 						if (bb.h > rowMaxH) {
-rowMaxH = bb.h;
-}
+							rowMaxH = bb.h;
+						}
 					}
 				} else {
 					const layout = newEles.layout({
@@ -150,12 +151,12 @@ rowMaxH = bb.h;
 				_cyInstance.nodes().forEach((n) => {
 					const recId = n.data('recId');
 					if (recId == null) {
-return;
-}
+						return;
+					}
 					const rec = canvasState.bulkRecords.find((r) => r.id === recId);
 					if (!rec) {
-return;
-}
+						return;
+					}
 					const p = n.position();
 					rec.x = p.x;
 					rec.y = p.y;

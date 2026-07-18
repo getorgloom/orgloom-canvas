@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeLimiter } from '../src/rate-limit.js';
@@ -21,7 +20,7 @@ describe('makeLimiter', () => {
 		assert.equal(lim.take('a'), false, 'continues to reject');
 	});
 
-	test('per-key isolation: bucket A doesn\'t affect bucket B', () => {
+	test("per-key isolation: bucket A doesn't affect bucket B", () => {
 		const lim = makeLimiter({ windowMs: 60_000, max: 2 });
 		assert.equal(lim.take('a'), true);
 		assert.equal(lim.take('a'), true);

@@ -1,4 +1,3 @@
-
 (function () {
 	'use strict';
 
@@ -9,11 +8,15 @@
 	const MOCK = window.OrgLoomMock;
 	const _realFetch = window.fetch.bind(window);
 
-	console.log('[mock-sf] Installed for /playground demo. ' +
-		MOCK.records.Account.length + ' Accounts, ' +
-		MOCK.records.Contact.length + ' Contacts, ' +
-		MOCK.records.Opportunity.length + ' Opportunities loaded.');
-
+	console.log(
+		'[mock-sf] Installed for /playground demo. ' +
+			MOCK.records.Account.length +
+			' Accounts, ' +
+			MOCK.records.Contact.length +
+			' Contacts, ' +
+			MOCK.records.Opportunity.length +
+			' Opportunities loaded.',
+	);
 
 	function jsonResponse(body, init) {
 		const status = (init && init.status) || 200;
@@ -24,30 +27,40 @@
 	}
 
 	function notImplemented(method, path) {
-		console.warn('[mock-sf] Unhandled ' + method + ' ' + path + ': returning 501. Add a handler if the canvas needs this surface.');
-		return jsonResponse({
-			error: 'mock-not-implemented',
-			message: 'This action is disabled in the demo. Sign up to use it on your real Salesforce org.',
-			method,
-			path,
-		}, { status: 501 });
+		console.warn(
+			'[mock-sf] Unhandled ' +
+				method +
+				' ' +
+				path +
+				': returning 501. Add a handler if the canvas needs this surface.',
+		);
+		return jsonResponse(
+			{
+				error: 'mock-not-implemented',
+				message: 'This action is disabled in the demo. Sign up to use it on your real Salesforce org.',
+				method,
+				path,
+			},
+			{ status: 501 },
+		);
 	}
 
 	function blocked(reason) {
-		return jsonResponse({
-			error: 'playground-blocked',
-			message: reason || 'Sign up to use this on your real Salesforce org.',
-		}, { status: 403 });
+		return jsonResponse(
+			{
+				error: 'playground-blocked',
+				message: reason || 'Sign up to use this on your real Salesforce org.',
+			},
+			{ status: 403 },
+		);
 	}
-
 
 	function idMatches(a, b) {
 		if (!a || !b) {
-return false;
-}
+			return false;
+		}
 		return String(a).slice(0, 15) === String(b).slice(0, 15);
 	}
-
 
 	const STORAGE_KEY = {
 		canvases: 'orgloom.playground.canvases',
@@ -78,9 +91,30 @@ return false;
 			},
 			schema: {
 				objects: [
-					{ idx: 0, name: 'Account', label: 'Account', addedFromIdx: null, addedVia: null, worldPos: { x: 0, y: 0 } },
-					{ idx: 1, name: 'Contact', label: 'Contact', addedFromIdx: 0, addedVia: 'children:Contacts', worldPos: { x: 0, y: 260 } },
-					{ idx: 2, name: 'Task', label: 'Task', addedFromIdx: 1, addedVia: 'children:Tasks', worldPos: { x: 0, y: 520 } },
+					{
+						idx: 0,
+						name: 'Account',
+						label: 'Account',
+						addedFromIdx: null,
+						addedVia: null,
+						worldPos: { x: 0, y: 0 },
+					},
+					{
+						idx: 1,
+						name: 'Contact',
+						label: 'Contact',
+						addedFromIdx: 0,
+						addedVia: 'children:Contacts',
+						worldPos: { x: 0, y: 260 },
+					},
+					{
+						idx: 2,
+						name: 'Task',
+						label: 'Task',
+						addedFromIdx: 1,
+						addedVia: 'children:Tasks',
+						worldPos: { x: 0, y: 520 },
+					},
 				],
 			},
 			loadedRecords: [
@@ -92,10 +126,26 @@ return false;
 			],
 			drafts: [],
 			associations: [
-				{ from: { kind: 'loaded', ref: '003000000000001AAA' }, to: { kind: 'loaded', ref: '001000000000001AAA' }, fieldName: 'AccountId' },
-				{ from: { kind: 'loaded', ref: '003000000000002AAA' }, to: { kind: 'loaded', ref: '001000000000001AAA' }, fieldName: 'AccountId' },
-				{ from: { kind: 'loaded', ref: '00T000000000001AAA' }, to: { kind: 'loaded', ref: '003000000000001AAA' }, fieldName: 'WhoId' },
-				{ from: { kind: 'loaded', ref: '00T000000000002AAA' }, to: { kind: 'loaded', ref: '003000000000002AAA' }, fieldName: 'WhoId' },
+				{
+					from: { kind: 'loaded', ref: '003000000000001AAA' },
+					to: { kind: 'loaded', ref: '001000000000001AAA' },
+					fieldName: 'AccountId',
+				},
+				{
+					from: { kind: 'loaded', ref: '003000000000002AAA' },
+					to: { kind: 'loaded', ref: '001000000000001AAA' },
+					fieldName: 'AccountId',
+				},
+				{
+					from: { kind: 'loaded', ref: '00T000000000001AAA' },
+					to: { kind: 'loaded', ref: '003000000000001AAA' },
+					fieldName: 'WhoId',
+				},
+				{
+					from: { kind: 'loaded', ref: '00T000000000002AAA' },
+					to: { kind: 'loaded', ref: '003000000000002AAA' },
+					fieldName: 'WhoId',
+				},
 			],
 		},
 	};
@@ -115,15 +165,15 @@ return false;
 
 	function preseedIsDeleted() {
 		try {
- return window.localStorage.getItem(STORAGE_KEY.preseedDeleted) === '1'; 
-} catch (_) {
- return false; 
-}
+			return window.localStorage.getItem(STORAGE_KEY.preseedDeleted) === '1';
+		} catch (_) {
+			return false;
+		}
 	}
 	function markPreseedDeleted() {
 		try {
- window.localStorage.setItem(STORAGE_KEY.preseedDeleted, '1'); 
-} catch (_) {}
+			window.localStorage.setItem(STORAGE_KEY.preseedDeleted, '1');
+		} catch (_) {}
 	}
 
 	function readStore(key) {
@@ -131,45 +181,47 @@ return false;
 			const raw = window.localStorage.getItem(key);
 			return raw ? JSON.parse(raw) : {};
 		} catch (_) {
- return {}; 
-}
+			return {};
+		}
 	}
 	function writeStore(key, value) {
 		try {
- window.localStorage.setItem(key, JSON.stringify(value)); 
-} catch (_) {}
+			window.localStorage.setItem(key, JSON.stringify(value));
+		} catch (_) {}
 	}
 
 	function _readTombstones() {
 		try {
 			const raw = window.localStorage.getItem(STORAGE_KEY.deletedSfIds);
 			if (!raw) {
-return new Set();
-}
+				return new Set();
+			}
 			const arr = JSON.parse(raw);
 			return new Set(Array.isArray(arr) ? arr : []);
 		} catch (_) {
- return new Set(); 
-}
+			return new Set();
+		}
 	}
 	function _writeTombstones(set) {
 		try {
 			window.localStorage.setItem(STORAGE_KEY.deletedSfIds, JSON.stringify(Array.from(set)));
-		} catch (_) { /* storage full / disabled */ }
+		} catch (_) {
+			/* storage full / disabled */
+		}
 	}
 	function _idKey15(id) {
- return id ? String(id).slice(0, 15) : ''; 
-}
+		return id ? String(id).slice(0, 15) : '';
+	}
 	function isTombstoned(id) {
 		if (!id) {
-return false;
-}
+			return false;
+		}
 		return _readTombstones().has(_idKey15(id));
 	}
 	function tombstone(id) {
 		if (!id) {
-return;
-}
+			return;
+		}
 		const set = _readTombstones();
 		set.add(_idKey15(id));
 		_writeTombstones(set);
@@ -183,31 +235,31 @@ return;
 		const liveCanned = canned.filter(notDeleted);
 		const liveOverlay = overlay.filter(notDeleted);
 		if (liveOverlay.length === 0) {
-return liveCanned;
-}
+			return liveCanned;
+		}
 		const overlayById = new Map();
 		for (const rec of liveOverlay) {
 			if (rec && rec.Id) {
-overlayById.set(String(rec.Id), rec);
-}
+				overlayById.set(String(rec.Id), rec);
+			}
 		}
 		const merged = liveCanned.map((rec) => {
 			if (!rec || !rec.Id) {
-return rec;
-}
+				return rec;
+			}
 			const ov = overlayById.get(String(rec.Id));
 			return ov || rec;
 		});
 		const cannedIds = new Set();
 		for (const rec of liveCanned) {
 			if (rec && rec.Id) {
-cannedIds.add(String(rec.Id));
-}
+				cannedIds.add(String(rec.Id));
+			}
 		}
 		for (const rec of liveOverlay) {
 			if (rec && rec.Id && !cannedIds.has(String(rec.Id))) {
-merged.push(rec);
-}
+				merged.push(rec);
+			}
 		}
 		return merged;
 	}
@@ -219,8 +271,8 @@ merged.push(rec);
 	function appendRecord(objectName, record) {
 		const store = readStore(STORAGE_KEY.records);
 		if (!store[objectName]) {
-store[objectName] = [];
-}
+			store[objectName] = [];
+		}
 		store[objectName].push(record);
 		writeStore(STORAGE_KEY.records, store);
 	}
@@ -256,12 +308,11 @@ store[objectName] = [];
 	function nameFieldFor(objectName) {
 		const desc = findDescribe(objectName);
 		if (!desc) {
-return 'Name';
-}
+			return 'Name';
+		}
 		const nf = (desc.fields || []).find((f) => f.nameField);
 		return (nf && nf.name) || 'Name';
 	}
-
 
 	function handleMe() {
 		return jsonResponse({
@@ -331,22 +382,27 @@ return 'Name';
 	}
 
 	function handleObjectsList() {
-		const list = MOCK.objects.map((o) => ({
-			name: o.name,
-			label: o.label,
-			labelPlural: (MOCK.describes[o.name] && MOCK.describes[o.name].labelPlural) || (o.label + 's'),
-			keyPrefix: o.keyPrefix,
-			custom: !!o.custom,
-			queryable: !!o.queryable,
-			createable: !!(MOCK.describes[o.name] && MOCK.describes[o.name].createable),
-		})).sort((a, b) => a.label.localeCompare(b.label));
+		const list = MOCK.objects
+			.map((o) => ({
+				name: o.name,
+				label: o.label,
+				labelPlural: (MOCK.describes[o.name] && MOCK.describes[o.name].labelPlural) || o.label + 's',
+				keyPrefix: o.keyPrefix,
+				custom: !!o.custom,
+				queryable: !!o.queryable,
+				createable: !!(MOCK.describes[o.name] && MOCK.describes[o.name].createable),
+			}))
+			.sort((a, b) => a.label.localeCompare(b.label));
 		return jsonResponse(list);
 	}
 
 	function handleDescribe(objectName) {
 		const desc = findDescribe(objectName);
 		if (!desc) {
-			return jsonResponse({ error: 'unknown-object', message: 'No describe for ' + objectName + ' in the demo dataset.' }, { status: 404 });
+			return jsonResponse(
+				{ error: 'unknown-object', message: 'No describe for ' + objectName + ' in the demo dataset.' },
+				{ status: 404 },
+			);
 		}
 		return jsonResponse(desc);
 	}
@@ -355,16 +411,20 @@ return 'Name';
 		const layout = MOCK.layouts && MOCK.layouts[objectName];
 		const desc = (MOCK.describes && MOCK.describes[objectName]) || null;
 		if (!layout) {
-			return jsonResponse({ sections: [], available: false, reason: 'No layout for ' + objectName + ' in the demo dataset.' });
+			return jsonResponse({
+				sections: [],
+				available: false,
+				reason: 'No layout for ' + objectName + ' in the demo dataset.',
+			});
 		}
-		const recordId = (params && params.get) ? params.get('recordId') : null;
-		const recordTypeId = (params && params.get) ? params.get('recordTypeId') : null;
+		const recordId = params && params.get ? params.get('recordId') : null;
+		const recordTypeId = params && params.get ? params.get('recordTypeId') : null;
 		const picklistValues = {};
 		if (desc && Array.isArray(desc.fields)) {
 			desc.fields.forEach((f) => {
 				if (f.type !== 'picklist' || !Array.isArray(f.picklistValues) || f.picklistValues.length === 0) {
-return;
-}
+					return;
+				}
 				picklistValues[f.name] = {
 					controllerValues: null,
 					defaultValue: (f.picklistValues.find((v) => v.defaultValue) || {}).value || null,
@@ -382,14 +442,18 @@ return;
 			if (rec) {
 				Object.keys(rec).forEach((k) => {
 					if (rec[k] !== null && rec[k] !== undefined) {
-defaults[k] = rec[k];
-}
+						defaults[k] = rec[k];
+					}
 				});
 			}
 		}
-		const resolvedRecordTypeId = recordTypeId
-			|| (desc && Array.isArray(desc.recordTypeInfos) && desc.recordTypeInfos[0] && desc.recordTypeInfos[0].recordTypeId)
-			|| null;
+		const resolvedRecordTypeId =
+			recordTypeId ||
+			(desc &&
+				Array.isArray(desc.recordTypeInfos) &&
+				desc.recordTypeInfos[0] &&
+				desc.recordTypeInfos[0].recordTypeId) ||
+			null;
 		return jsonResponse({
 			sections: layout.sections,
 			available: true,
@@ -404,23 +468,26 @@ defaults[k] = rec[k];
 	function handleGraph(objectName) {
 		const desc = findDescribe(objectName);
 		if (!desc) {
-			return jsonResponse({ error: 'unknown-object', message: 'No describe for ' + objectName + ' in the demo dataset.' }, { status: 404 });
+			return jsonResponse(
+				{ error: 'unknown-object', message: 'No describe for ' + objectName + ' in the demo dataset.' },
+				{ status: 404 },
+			);
 		}
 		const parents = [];
 		const parentSeen = new Set();
 		for (const f of desc.fields || []) {
 			if (f.type !== 'reference' || !Array.isArray(f.referenceTo)) {
-continue;
-}
+				continue;
+			}
 			for (const target of f.referenceTo) {
 				const key = target + '|' + f.name;
 				if (parentSeen.has(key)) {
-continue;
-}
+					continue;
+				}
 				parentSeen.add(key);
 				if (!MOCK.describes[target]) {
-continue;
-}
+					continue;
+				}
 				parents.push({
 					object: target,
 					field: f.name,
@@ -435,12 +502,12 @@ continue;
 		const childSeen = new Set();
 		for (const cr of desc.childRelationships || []) {
 			if (!cr.childSObject || !MOCK.describes[cr.childSObject]) {
-continue;
-}
+				continue;
+			}
 			const key = cr.childSObject + '|' + (cr.field || '');
 			if (childSeen.has(key)) {
-continue;
-}
+				continue;
+			}
 			childSeen.add(key);
 			children.push({
 				object: cr.childSObject,
@@ -459,12 +526,16 @@ continue;
 	function handleSearch(objectName, query) {
 		const list = recordsFor(objectName);
 		if (!list.length) {
-return jsonResponse({ records: [], nameField: 'Name' });
-}
+			return jsonResponse({ records: [], nameField: 'Name' });
+		}
 		const nameField = nameFieldFor(objectName);
 		const q = (query || '').toLowerCase().trim();
 		const matched = q
-			? list.filter((r) => String(r[nameField] || '').toLowerCase().includes(q))
+			? list.filter((r) =>
+					String(r[nameField] || '')
+						.toLowerCase()
+						.includes(q),
+				)
 			: list.slice(0, 20);
 		return jsonResponse({
 			nameField,
@@ -479,8 +550,8 @@ return jsonResponse({ records: [], nameField: 'Name' });
 
 		const sourceDesc = findDescribe(objectName);
 		if (!sourceDesc) {
-return jsonResponse({ records: [], available: false });
-}
+			return jsonResponse({ records: [], available: false });
+		}
 		const fieldMeta = (sourceDesc.fields || []).find((f) => f.name === fieldName);
 		if (!fieldMeta || !fieldMeta.referenceTo || !fieldMeta.referenceTo[0]) {
 			return jsonResponse({ records: [], available: true, source: 'mock' });
@@ -489,7 +560,11 @@ return jsonResponse({ records: [], available: false });
 		const list = recordsFor(targetObject);
 		const nameField = nameFieldFor(targetObject);
 		let matched = q
-			? list.filter((r) => String(r[nameField] || '').toLowerCase().includes(q))
+			? list.filter((r) =>
+					String(r[nameField] || '')
+						.toLowerCase()
+						.includes(q),
+				)
 			: list.slice(0, 25);
 		if (sourceRecordId) {
 			matched = matched.filter((r) => !idMatches(r.Id, sourceRecordId));
@@ -510,8 +585,8 @@ return jsonResponse({ records: [], available: false });
 	function handleRecord(objectName, id) {
 		const rec = findRecord(objectName, id);
 		if (!rec) {
-return jsonResponse({ error: 'not-found' }, { status: 404 });
-}
+			return jsonResponse({ error: 'not-found' }, { status: 404 });
+		}
 		return jsonResponse(rec);
 	}
 
@@ -559,17 +634,28 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		});
 	}
 
-
 	function handleSfUsersSearch(params) {
 		const q = (params && params.get && params.get('q')) || '';
 		const demoUsers = [
 			{ id: '005DEMO000000001', name: 'Alex Chen', email: 'alex@example.com', username: 'alex.chen@example.com' },
-			{ id: '005DEMO000000002', name: 'Priya Patel', email: 'priya@example.com', username: 'priya.patel@example.com' },
-			{ id: '005DEMO000000003', name: 'Sam Rivera', email: 'sam@example.com', username: 'sam.rivera@example.com' },
+			{
+				id: '005DEMO000000002',
+				name: 'Priya Patel',
+				email: 'priya@example.com',
+				username: 'priya.patel@example.com',
+			},
+			{
+				id: '005DEMO000000003',
+				name: 'Sam Rivera',
+				email: 'sam@example.com',
+				username: 'sam.rivera@example.com',
+			},
 		];
 		const ql = q.toLowerCase().trim();
 		const users = ql
-			? demoUsers.filter((u) => u.name.toLowerCase().includes(ql) || u.email.includes(ql) || u.username.includes(ql))
+			? demoUsers.filter(
+					(u) => u.name.toLowerCase().includes(ql) || u.email.includes(ql) || u.username.includes(ql),
+				)
 			: demoUsers;
 		return jsonResponse({ users });
 	}
@@ -577,7 +663,6 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 	function handleCanvasShareLinks() {
 		return jsonResponse({ shares: [], directShares: [] });
 	}
-
 
 	function handleCanvasList() {
 		const store = readStore(STORAGE_KEY.canvases);
@@ -596,8 +681,8 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		const userHasPreseed = !!store[PRESEED_CANVAS.id];
 		const items = userItems.slice();
 		if (!userHasPreseed && !preseedIsDeleted()) {
-items.push(preseedSummary());
-}
+			items.push(preseedSummary());
+		}
 		return jsonResponse({ items });
 	}
 
@@ -605,8 +690,8 @@ items.push(preseedSummary());
 		const body = await req.json().catch(() => ({}));
 		const name = String(body.name || '').trim();
 		if (!name) {
-return jsonResponse({ error: 'name-required' }, { status: 400 });
-}
+			return jsonResponse({ error: 'name-required' }, { status: 400 });
+		}
 		if (!body.payload || typeof body.payload !== 'object') {
 			return jsonResponse({ error: 'payload-required' }, { status: 400 });
 		}
@@ -615,9 +700,13 @@ return jsonResponse({ error: 'name-required' }, { status: 400 });
 		const now = Date.now();
 		const store = readStore(STORAGE_KEY.canvases);
 		store[id] = {
-			id, versionId, title: name,
-			ownerId: MOCK.demoUserId, ownedByMe: true,
-			createdAt: now, updatedAt: now,
+			id,
+			versionId,
+			title: name,
+			ownerId: MOCK.demoUserId,
+			ownedByMe: true,
+			createdAt: now,
+			updatedAt: now,
 			payload: body.payload,
 		};
 		writeStore(STORAGE_KEY.canvases, store);
@@ -641,8 +730,8 @@ return jsonResponse({ error: 'name-required' }, { status: 400 });
 			};
 		}
 		if (!existing) {
-return jsonResponse({ error: 'not-found' }, { status: 404 });
-}
+			return jsonResponse({ error: 'not-found' }, { status: 404 });
+		}
 		if (!body.payload || typeof body.payload !== 'object') {
 			return jsonResponse({ error: 'payload-required' }, { status: 400 });
 		}
@@ -659,8 +748,8 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		const store = readStore(STORAGE_KEY.canvases);
 		const c = store[canvasId] || (canvasId === PRESEED_CANVAS.id && !preseedIsDeleted() ? PRESEED_CANVAS : null);
 		if (!c) {
-return jsonResponse({ error: 'not-found' }, { status: 404 });
-}
+			return jsonResponse({ error: 'not-found' }, { status: 404 });
+		}
 		return jsonResponse({
 			id: c.id,
 			versionId: c.versionId,
@@ -694,18 +783,17 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		const inStore = !!store[canvasId];
 		const isPreseed = canvasId === PRESEED_CANVAS.id;
 		if (!inStore && !isPreseed) {
-return jsonResponse({ error: 'not-found' }, { status: 404 });
-}
+			return jsonResponse({ error: 'not-found' }, { status: 404 });
+		}
 		if (inStore) {
 			delete store[canvasId];
 			writeStore(STORAGE_KEY.canvases, store);
 		}
 		if (isPreseed) {
-markPreseedDeleted();
-}
+			markPreseedDeleted();
+		}
 		return jsonResponse({ ok: true });
 	}
-
 
 	function processUploadedRecord(rec, idMap) {
 		if (!rec || !rec.objectName) {
@@ -779,14 +867,15 @@ markPreseedDeleted();
 				objectName: d.objectName || null,
 			}));
 		if (insertedIds.length === 0 && deletedIds.length === 0) {
-return null;
-}
+			return null;
+		}
 		const batchId = 'ub_' + Date.now() + '_' + nextUploadIdSuffix();
 		const externalId = '00B' + String(nextUploadIdSuffix()).padStart(12, '0') + 'AAA';
 		const now = Date.now();
 		const store = readStore(STORAGE_KEY.uploads);
 		store[batchId] = {
-			id: batchId, externalId,
+			id: batchId,
+			externalId,
 			source: source || 'canvas',
 			recordCount: insertedIds.length + deletedIds.length,
 			note: note || null,
@@ -798,7 +887,9 @@ return null;
 			insertedIds,
 			deletedIds,
 			associations: (associations || []).map((a) => ({
-				fromTempId: a.fromId, toTempId: a.toId, fieldName: a.fieldName,
+				fromTempId: a.fromId,
+				toTempId: a.toId,
+				fieldName: a.fieldName,
 			})),
 		};
 		writeStore(STORAGE_KEY.uploads, store);
@@ -814,7 +905,13 @@ return null;
 		const idMap = {};
 		const results = records.map((rec) => processUploadedRecord(rec, idMap));
 		const deleteResults = deletes.map(processDelete);
-		const batchId = recordBatch(results, associations, directUpload ? 'csv-direct' : 'canvas', body.note, deleteResults);
+		const batchId = recordBatch(
+			results,
+			associations,
+			directUpload ? 'csv-direct' : 'canvas',
+			body.note,
+			deleteResults,
+		);
 		return jsonResponse({
 			results,
 			deletes: deleteResults,
@@ -832,7 +929,13 @@ return null;
 		const idMap = {};
 		const results = records.map((rec) => processUploadedRecord(rec, idMap));
 		const deleteResults = deletes.map(processDelete);
-		const batchId = recordBatch(results, associations, directUpload ? 'csv-direct' : 'canvas-graph', body.note, deleteResults);
+		const batchId = recordBatch(
+			results,
+			associations,
+			directUpload ? 'csv-direct' : 'canvas-graph',
+			body.note,
+			deleteResults,
+		);
 		return jsonResponse({
 			results,
 			deletes: deleteResults,
@@ -871,16 +974,20 @@ return null;
 		});
 	}
 
-
 	function handleBatchesList() {
 		const store = readStore(STORAGE_KEY.uploads);
 		const batches = Object.values(store)
 			.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
 			.map((b) => ({
-				id: b.id, externalId: b.externalId,
-				createdAt: b.createdAt, status: b.status, source: b.source,
-				recordCount: b.recordCount, note: b.note,
-				recalledAt: b.recalledAt, sfOrgId: b.sfOrgId,
+				id: b.id,
+				externalId: b.externalId,
+				createdAt: b.createdAt,
+				status: b.status,
+				source: b.source,
+				recordCount: b.recordCount,
+				note: b.note,
+				recalledAt: b.recalledAt,
+				sfOrgId: b.sfOrgId,
 				insertedCount: Array.isArray(b.insertedIds) ? b.insertedIds.length : 0,
 				deletedCount: Array.isArray(b.deletedIds) ? b.deletedIds.length : 0,
 			}));
@@ -891,8 +998,8 @@ return null;
 		const store = readStore(STORAGE_KEY.uploads);
 		const b = store[batchId];
 		if (!b) {
-return jsonResponse({ error: 'not-found' }, { status: 404 });
-}
+			return jsonResponse({ error: 'not-found' }, { status: 404 });
+		}
 		return jsonResponse({ batch: b });
 	}
 
@@ -900,8 +1007,8 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		const store = readStore(STORAGE_KEY.uploads);
 		const b = store[batchId];
 		if (!b) {
-return jsonResponse({ error: 'not-found' }, { status: 404 });
-}
+			return jsonResponse({ error: 'not-found' }, { status: 404 });
+		}
 		return jsonResponse({
 			clean: b.insertedIds,
 			drifted: [],
@@ -917,14 +1024,14 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 		const store = readStore(STORAGE_KEY.uploads);
 		const b = store[batchId];
 		if (!b) {
-return jsonResponse({ error: 'not-found' }, { status: 404 });
-}
+			return jsonResponse({ error: 'not-found' }, { status: 404 });
+		}
 		if (b.recalledAt) {
-return jsonResponse({ error: 'already-recalled' }, { status: 409 });
-}
+			return jsonResponse({ error: 'already-recalled' }, { status: 409 });
+		}
 		const results = [];
 		let succeeded = 0;
-		for (const ins of (b.insertedIds || [])) {
+		for (const ins of b.insertedIds || []) {
 			const removed = removeUserRecord(ins.objectName, ins.sfId);
 			if (removed) {
 				results.push({
@@ -952,7 +1059,8 @@ return jsonResponse({ error: 'already-recalled' }, { status: 409 });
 		b.recallResult = { succeeded, alreadyDeleted: alreadyDeletedCount, failed: 0, results };
 		writeStore(STORAGE_KEY.uploads, store);
 		return jsonResponse({
-			ok: true, status: 'recalled',
+			ok: true,
+			status: 'recalled',
 			successCount: succeeded,
 			alreadyDeletedCount,
 			failureCount: 0,
@@ -964,13 +1072,12 @@ return jsonResponse({ error: 'already-recalled' }, { status: 409 });
 	function handleBatchDelete(batchId) {
 		const store = readStore(STORAGE_KEY.uploads);
 		if (!store[batchId]) {
-return jsonResponse({ error: 'not-found' }, { status: 404 });
-}
+			return jsonResponse({ error: 'not-found' }, { status: 404 });
+		}
 		delete store[batchId];
 		writeStore(STORAGE_KEY.uploads, store);
 		return jsonResponse({ ok: true });
 	}
-
 
 	async function handleAiPlan(req) {
 		const body = await req.json().catch(() => ({}));
@@ -988,32 +1095,32 @@ return jsonResponse({ error: 'not-found' }, { status: 404 });
 			for (let i = 0; i < count; i++) {
 				const template = templates[(i + Math.floor(Math.random() * templates.length)) % templates.length];
 				if (!template) {
-continue;
-}
+					continue;
+				}
 				const tempId = tempCounter.n++;
 				const values = {};
 				Object.keys(template).forEach((k) => {
 					if (k === 'Id' || k === 'CreatedDate' || k === 'LastModifiedDate' || k === 'SystemModstamp') {
-return;
-}
+						return;
+					}
 					if (k === 'OwnerId' || k === 'CreatedById' || k === 'LastModifiedById') {
-return;
-}
+						return;
+					}
 					if (k === 'AccountId' || k === 'ParentId') {
-return;
-} // handled by associations
+						return;
+					} // handled by associations
 					values[k] = template[k];
 				});
 				const tag = '-G' + String(Math.floor(Math.random() * 9000) + 1000);
 				if (values.Name) {
-values.Name = values.Name + tag;
-}
+					values.Name = values.Name + tag;
+				}
 				if (values.LastName) {
-values.LastName = values.LastName + tag;
-}
+					values.LastName = values.LastName + tag;
+				}
 				if (values.Company) {
-values.Company = values.Company + tag;
-}
+					values.Company = values.Company + tag;
+				}
 				records.push({ tempId, objectName, values });
 				tempIdsByObject[objectName].push(tempId);
 			}
@@ -1031,12 +1138,12 @@ values.Company = values.Company + tag;
 		}
 
 		return jsonResponse({
-			records, associations,
+			records,
+			associations,
 			warnings: [],
 			usage: { tokens: 0, costCents: 0, creditMode: false },
 		});
 	}
-
 
 	async function handleQuery(req) {
 		const body = await req.json().catch(() => ({}));
@@ -1046,9 +1153,7 @@ values.Company = values.Company + tag;
 		const fromMatch = soql.match(/FROM\s+([A-Za-z][A-Za-z0-9_]*)/i);
 		const queryObject = fromMatch ? fromMatch[1] : 'Account';
 		const inMatch = soql.match(/WHERE\s+Id\s+IN\s*\(([^)]*)\)/i);
-		const explicitIds = inMatch
-			? Array.from(inMatch[1].matchAll(/'([^']+)'/g)).map((m) => m[1])
-			: null;
+		const explicitIds = inMatch ? Array.from(inMatch[1].matchAll(/'([^']+)'/g)).map((m) => m[1]) : null;
 		const hasContactsSubquery = /\(\s*SELECT[\s\S]*FROM\s+Contacts\s*\)/i.test(soql);
 
 		function projectValues(source, fieldList) {
@@ -1056,20 +1161,20 @@ values.Company = values.Company + tag;
 				const v = {};
 				Object.keys(source).forEach((k) => {
 					if (k === 'attributes') {
-return;
-}
+						return;
+					}
 					if (source[k] !== null && source[k] !== undefined) {
-v[k] = source[k];
-}
+						v[k] = source[k];
+					}
 				});
 				return v;
 			}
 			const v = { Id: source.Id };
 			(fieldList || []).forEach((f) => {
- if (source[f] !== undefined) {
-v[f] = source[f];
-} 
-});
+				if (source[f] !== undefined) {
+					v[f] = source[f];
+				}
+			});
 			return v;
 		}
 
@@ -1104,9 +1209,7 @@ v[f] = source[f];
 			const PARENT_LIMIT = 5;
 			const CHILDREN_PER_PARENT = 3;
 			const allParents = recordsFor(PARENT_OBJECT);
-			const techParents = allParents
-				.filter((a) => a && a.Industry === 'Technology')
-				.slice(0, PARENT_LIMIT);
+			const techParents = allParents.filter((a) => a && a.Industry === 'Technology').slice(0, PARENT_LIMIT);
 			const allChildren = recordsFor(CHILD_OBJECT);
 			const tempCounter = { n: 1 };
 			const records = [];
@@ -1180,84 +1283,102 @@ v[f] = source[f];
 		const allRecords = recordsFor(objectName);
 		function _matches(rec, filt) {
 			if (!filt || !filt.field) {
-return true;
-}
+				return true;
+			}
 			const val = rec[filt.field];
 			const v = filt.value;
 			const has = val !== null && val !== undefined && val !== '';
 			switch (filt.op) {
-				case 'isNull': return !has;
-				case 'isNotNull': return has;
-				case 'equals': return String(val) === String(v);
-				case 'notEquals': return String(val) !== String(v);
-				case 'contains': return has && String(val).toLowerCase().includes(String(v).toLowerCase());
-				case 'startsWith': return has && String(val).toLowerCase().startsWith(String(v).toLowerCase());
-				case 'in': return Array.isArray(v) && v.some((x) => String(x) === String(val));
-				case 'gt': return has && Number(val) > Number(v);
-				case 'gte': return has && Number(val) >= Number(v);
-				case 'lt': return has && Number(val) < Number(v);
-				case 'lte': return has && Number(val) <= Number(v);
-				case 'before': return has && new Date(val) < new Date(v);
-				case 'after': return has && new Date(val) > new Date(v);
-				case 'between': return has && Array.isArray(v) && v.length === 2 &&
-					new Date(val) >= new Date(v[0]) && new Date(val) <= new Date(v[1]);
-				default: return true;
+				case 'isNull':
+					return !has;
+				case 'isNotNull':
+					return has;
+				case 'equals':
+					return String(val) === String(v);
+				case 'notEquals':
+					return String(val) !== String(v);
+				case 'contains':
+					return has && String(val).toLowerCase().includes(String(v).toLowerCase());
+				case 'startsWith':
+					return has && String(val).toLowerCase().startsWith(String(v).toLowerCase());
+				case 'in':
+					return Array.isArray(v) && v.some((x) => String(x) === String(val));
+				case 'gt':
+					return has && Number(val) > Number(v);
+				case 'gte':
+					return has && Number(val) >= Number(v);
+				case 'lt':
+					return has && Number(val) < Number(v);
+				case 'lte':
+					return has && Number(val) <= Number(v);
+				case 'before':
+					return has && new Date(val) < new Date(v);
+				case 'after':
+					return has && new Date(val) > new Date(v);
+				case 'between':
+					return (
+						has &&
+						Array.isArray(v) &&
+						v.length === 2 &&
+						new Date(val) >= new Date(v[0]) &&
+						new Date(val) <= new Date(v[1])
+					);
+				default:
+					return true;
 			}
 		}
 		let matching = allRecords.filter((rec) => filters.every((f) => _matches(rec, f)));
 		if (sort && sort.field) {
 			const dir = sort.direction === 'desc' ? -1 : 1;
 			matching = matching.slice().sort((a, b) => {
-				const av = a[sort.field], bv = b[sort.field];
+				const av = a[sort.field],
+					bv = b[sort.field];
 				if (av == null && bv == null) {
-return 0;
-}
+					return 0;
+				}
 				if (av == null) {
-return 1;
-} // nulls last regardless of direction
+					return 1;
+				} // nulls last regardless of direction
 				if (bv == null) {
-return -1;
-}
+					return -1;
+				}
 				if (typeof av === 'number' && typeof bv === 'number') {
-return dir * (av - bv);
-}
+					return dir * (av - bv);
+				}
 				return dir * String(av).localeCompare(String(bv));
 			});
 		}
 		const count = matching.length;
 		const onCanvasSet = new Set(Array.isArray(body.onCanvasIds) ? body.onCanvasIds : []);
-		const loadableCount = onCanvasSet.size
-			? matching.filter((rec) => !onCanvasSet.has(rec.Id)).length
-			: count;
+		const loadableCount = onCanvasSet.size ? matching.filter((rec) => !onCanvasSet.has(rec.Id)).length : count;
 		const page = matching.slice(offset, offset + limit);
 
 		const previewFields = ['Id'];
 		const sample = page[0] || matching[0] || {};
 		const nameCandidate = ['Name', 'Subject', 'Title', 'CaseNumber'].find((n) => sample[n] !== undefined);
 		if (nameCandidate) {
-previewFields.push(nameCandidate);
-}
+			previewFields.push(nameCandidate);
+		}
 		for (const f of filters) {
 			if (f && f.field && sample[f.field] !== undefined && !previewFields.includes(f.field)) {
 				previewFields.push(f.field);
 				if (previewFields.length >= 6) {
-break;
-}
+					break;
+				}
 			}
 		}
 		const projected = page.map((rec) => {
 			const out = {};
 			previewFields.forEach((fn) => {
- if (rec[fn] !== undefined) {
-out[fn] = rec[fn];
-} 
-});
+				if (rec[fn] !== undefined) {
+					out[fn] = rec[fn];
+				}
+			});
 			return out;
 		});
 
-		const orderClause = sort && sort.field
-			? ' ORDER BY ' + sort.field + ' ' + (sort.direction === 'desc' ? 'DESC' : 'ASC')
-			: '';
+		const orderClause =
+			sort && sort.field ? ' ORDER BY ' + sort.field + ' ' + (sort.direction === 'desc' ? 'DESC' : 'ASC') : '';
 		const loadSoql = 'SELECT Id FROM ' + objectName + orderClause;
 		const previewSoql = loadSoql + ' LIMIT ' + limit + ' OFFSET ' + offset;
 		return jsonResponse({
@@ -1271,7 +1392,6 @@ out[fn] = rec[fn];
 		});
 	}
 
-
 	const ROUTES = [
 		{ method: 'GET', match: (u) => u.pathname === '/api/me' && handleMe() },
 
@@ -1279,45 +1399,69 @@ out[fn] = rec[fn];
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/objects' && handleObjectsList() },
 
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/describe$/);
-			return m && handleDescribe(decodeURIComponent(m[1]));
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/describe$/);
+				return m && handleDescribe(decodeURIComponent(m[1]));
+			},
+		},
 
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/graph$/);
-			return m && handleGraph(decodeURIComponent(m[1]));
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/graph$/);
+				return m && handleGraph(decodeURIComponent(m[1]));
+			},
+		},
 
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/layout$/);
-			return m && handleLayout(decodeURIComponent(m[1]), u.searchParams);
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/layout$/);
+				return m && handleLayout(decodeURIComponent(m[1]), u.searchParams);
+			},
+		},
 
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/search$/);
-			return m && handleSearch(decodeURIComponent(m[1]), u.searchParams.get('q'));
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/search$/);
+				return m && handleSearch(decodeURIComponent(m[1]), u.searchParams.get('q'));
+			},
+		},
 
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/lookup$/);
-			return m && handleLookup(decodeURIComponent(m[1]), u.searchParams);
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/lookup$/);
+				return m && handleLookup(decodeURIComponent(m[1]), u.searchParams);
+			},
+		},
 
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/records\/([^/]+)$/);
-			return m && handleRecord(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/records\/([^/]+)$/);
+				return m && handleRecord(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+			},
+		},
 
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/by-ref$/);
-			return m && handleByRef(decodeURIComponent(m[1]), u.searchParams);
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/by-ref$/);
+				return m && handleByRef(decodeURIComponent(m[1]), u.searchParams);
+			},
+		},
 
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/related-count$/);
-			return m && handleRelatedCount(decodeURIComponent(m[1]), u.searchParams);
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/objects\/([^/]+)\/related-count$/);
+				return m && handleRelatedCount(decodeURIComponent(m[1]), u.searchParams);
+			},
+		},
 
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/related-counts' && handleRelatedCountsPost(req) },
 
@@ -1326,34 +1470,52 @@ out[fn] = rec[fn];
 		{ method: 'GET', match: (u) => u.pathname === '/api/ai/status' && handleAiStatus() },
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/sf/users/search' && handleSfUsersSearch(u.searchParams) },
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/canvas\/[^/]+\/share-links$/);
-			return m && handleCanvasShareLinks();
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/canvas\/[^/]+\/share-links$/);
+				return m && handleCanvasShareLinks();
+			},
+		},
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/canvas' && handleCanvasList() },
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/canvas' && handleCanvasCreate(req) },
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/canvas\/([^/]+)$/);
-			return m && handleCanvasGet(decodeURIComponent(m[1]));
-		}},
-		{ method: 'PUT', match: (u, req) => {
-			const m = u.pathname.match(/^\/api\/canvas\/([^/]+)$/);
-			return m && handleCanvasUpdate(req, decodeURIComponent(m[1]));
-		}},
-		{ method: 'DELETE', match: (u) => {
-			const m = u.pathname.match(/^\/api\/canvas\/([^/]+)$/);
-			return m && handleCanvasDelete(decodeURIComponent(m[1]));
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/canvas\/([^/]+)$/);
+				return m && handleCanvasGet(decodeURIComponent(m[1]));
+			},
+		},
+		{
+			method: 'PUT',
+			match: (u, req) => {
+				const m = u.pathname.match(/^\/api\/canvas\/([^/]+)$/);
+				return m && handleCanvasUpdate(req, decodeURIComponent(m[1]));
+			},
+		},
+		{
+			method: 'DELETE',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/canvas\/([^/]+)$/);
+				return m && handleCanvasDelete(decodeURIComponent(m[1]));
+			},
+		},
 
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/canvas\/[^/]+\/clarifications$/);
-			return m && handleCanvasClarifications();
-		}},
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/canvas\/[^/]+\/proposals$/);
-			return m && handleCanvasProposals();
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/canvas\/[^/]+\/clarifications$/);
+				return m && handleCanvasClarifications();
+			},
+		},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/canvas\/[^/]+\/proposals$/);
+				return m && handleCanvasProposals();
+			},
+		},
 		{ method: 'POST', match: (u) => u.pathname === '/api/audit-event' && handleAuditEvent() },
 		{ method: 'POST', match: (u) => u.pathname === '/api/mcp/relay/register' && handleMcpRelay() },
 		{ method: 'POST', match: (u) => u.pathname === '/api/mcp/relay/unregister' && handleMcpRelay() },
@@ -1364,22 +1526,34 @@ out[fn] = rec[fn];
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/upload/preflight' && handleUploadPreflight(req) },
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/upload-batches' && handleBatchesList() },
-		{ method: 'GET', match: (u) => {
-			const m = u.pathname.match(/^\/api\/upload-batches\/([^/]+)$/);
-			return m && handleBatchGet(decodeURIComponent(m[1]));
-		}},
-		{ method: 'POST', match: (u) => {
-			const m = u.pathname.match(/^\/api\/upload-batches\/([^/]+)\/recall-preflight$/);
-			return m && handleBatchRecallPreflight(decodeURIComponent(m[1]));
-		}},
-		{ method: 'POST', match: (u) => {
-			const m = u.pathname.match(/^\/api\/upload-batches\/([^/]+)\/recall$/);
-			return m && handleBatchRecall(decodeURIComponent(m[1]));
-		}},
-		{ method: 'DELETE', match: (u) => {
-			const m = u.pathname.match(/^\/api\/upload-batches\/([^/]+)$/);
-			return m && handleBatchDelete(decodeURIComponent(m[1]));
-		}},
+		{
+			method: 'GET',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/upload-batches\/([^/]+)$/);
+				return m && handleBatchGet(decodeURIComponent(m[1]));
+			},
+		},
+		{
+			method: 'POST',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/upload-batches\/([^/]+)\/recall-preflight$/);
+				return m && handleBatchRecallPreflight(decodeURIComponent(m[1]));
+			},
+		},
+		{
+			method: 'POST',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/upload-batches\/([^/]+)\/recall$/);
+				return m && handleBatchRecall(decodeURIComponent(m[1]));
+			},
+		},
+		{
+			method: 'DELETE',
+			match: (u) => {
+				const m = u.pathname.match(/^\/api\/upload-batches\/([^/]+)$/);
+				return m && handleBatchDelete(decodeURIComponent(m[1]));
+			},
+		},
 
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/ai/plan' && handleAiPlan(req) },
 
@@ -1387,7 +1561,6 @@ out[fn] = rec[fn];
 
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/browse' && handleBrowse(req) },
 	];
-
 
 	window.fetch = function mockFetch(input, init) {
 		const method = ((init && init.method) || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
@@ -1405,8 +1578,8 @@ out[fn] = rec[fn];
 
 		for (const route of ROUTES) {
 			if (route.method !== method) {
-continue;
-}
+				continue;
+			}
 			let result;
 			try {
 				result = route.match(url, typeof input === 'object' ? input : new Request(urlStr, init));
@@ -1415,8 +1588,8 @@ continue;
 				continue;
 			}
 			if (result) {
-return Promise.resolve(result);
-}
+				return Promise.resolve(result);
+			}
 		}
 
 		return Promise.resolve(notImplemented(method, url.pathname));

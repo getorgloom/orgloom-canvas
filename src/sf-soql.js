@@ -1,12 +1,13 @@
-
+// Safe SOQL value formatting and field eligibility checks for every generated WHERE clause.
 export function escapeSoqlLiteral(value) {
 	if (value == null) {
-return '';
-}
+		return '';
+	}
 	return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 export function validateSoqlFilterField(describe, fieldName, options = {}) {
+	// Identifier syntax is necessary but not sufficient; Salesforce must also mark the field filterable.
 	const name = String(fieldName == null ? '' : fieldName).trim();
 	if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
 		return {
@@ -15,9 +16,10 @@ export function validateSoqlFilterField(describe, fieldName, options = {}) {
 			message: 'Invalid Salesforce field name.',
 		};
 	}
-	const field = describe && Array.isArray(describe.fields)
-		? describe.fields.find((candidate) => candidate && candidate.name === name)
-		: null;
+	const field =
+		describe && Array.isArray(describe.fields)
+			? describe.fields.find((candidate) => candidate && candidate.name === name)
+			: null;
 	if (!field) {
 		return {
 			ok: false,
@@ -52,9 +54,7 @@ export function validateSoqlFilterField(describe, fieldName, options = {}) {
 	return { ok: true, field };
 }
 
-const SOQL_NUMERIC_FIELD_TYPES = new Set([
-	'int', 'long', 'double', 'currency', 'percent',
-]);
+const SOQL_NUMERIC_FIELD_TYPES = new Set(['int', 'long', 'double', 'currency', 'percent']);
 
 function canonicalDecimal(value, integerOnly) {
 	const raw = String(value == null ? '' : value).trim();
@@ -95,6 +95,7 @@ function canonicalDecimal(value, integerOnly) {
 }
 
 export function formatSoqlFieldLiteral(value, fieldType) {
+	// Numeric and boolean literals must remain unquoted or Salesforce rejects otherwise-valid filters.
 	const type = String(fieldType || '').toLowerCase();
 	if (SOQL_NUMERIC_FIELD_TYPES.has(type)) {
 		return canonicalDecimal(value, type === 'int' || type === 'long');

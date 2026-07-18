@@ -1,4 +1,3 @@
-
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -20,8 +19,9 @@ before(async () => {
 	app = express();
 	app.use(express.json());
 	app.use((req, _res, next) => {
- req.session = {}; next(); 
-});
+		req.session = {};
+		next();
+	});
 
 	const { mountCanvasRoutes } = await import('../src/canvas-routes.js');
 	mountCanvasRoutes(app);
@@ -36,8 +36,8 @@ before(async () => {
 
 after(async () => {
 	if (server) {
-await new Promise((r) => server.close(r));
-}
+		await new Promise((r) => server.close(r));
+	}
 });
 
 describe('canvas-only routes mount and respond', () => {

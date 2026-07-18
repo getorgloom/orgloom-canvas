@@ -1,11 +1,18 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { transformToolingRecords } from '../src/validation-rules.js';
 
-function row({ id = '03dxxx', fullName = 'Account.Rule', name, active = true,
-	description = null, errorMessage = null, errorDisplayField = null,
-	formula = null, metadataNull = false } = {}) {
+function row({
+	id = '03dxxx',
+	fullName = 'Account.Rule',
+	name,
+	active = true,
+	description = null,
+	errorMessage = null,
+	errorDisplayField = null,
+	formula = null,
+	metadataNull = false,
+} = {}) {
 	if (metadataNull) {
 		return { Id: id, FullName: fullName, Metadata: null };
 	}
@@ -35,10 +42,7 @@ describe('transformToolingRecords: input shapes', () => {
 	});
 
 	test('drops rows whose Metadata is null', () => {
-		const out = transformToolingRecords([
-			row({ name: 'real_rule' }),
-			row({ metadataNull: true }),
-		]);
+		const out = transformToolingRecords([row({ name: 'real_rule' }), row({ metadataNull: true })]);
 		assert.equal(out.length, 1);
 		assert.equal(out[0].name, 'real_rule');
 	});
@@ -52,9 +56,7 @@ describe('transformToolingRecords: input shapes', () => {
 
 describe('transformToolingRecords: active filter', () => {
 	test('keeps active=true rules', () => {
-		const out = transformToolingRecords([
-			row({ name: 'a', active: true }),
-		]);
+		const out = transformToolingRecords([row({ name: 'a', active: true })]);
 		assert.equal(out.length, 1);
 	});
 
@@ -95,30 +97,35 @@ describe('transformToolingRecords: field mapping', () => {
 				formula: 'LEN(SSN__c) <> 9',
 			}),
 		]);
-		assert.deepEqual(out, [{
-			id: '03d001',
-			name: 'MyRule',
-			active: true,
-			description: 'a description',
-			errorMessage: 'an error',
-			errorDisplayField: 'SSN__c',
-			formula: 'LEN(SSN__c) <> 9',
-		}]);
+		assert.deepEqual(out, [
+			{
+				id: '03d001',
+				name: 'MyRule',
+				active: true,
+				description: 'a description',
+				errorMessage: 'an error',
+				errorDisplayField: 'SSN__c',
+				formula: 'LEN(SSN__c) <> 9',
+			},
+		]);
 	});
 
 	test('renames errorConditionFormula → formula', () => {
-		const out = transformToolingRecords([
-			row({ name: 'r', formula: 'TRUE' }),
-		]);
+		const out = transformToolingRecords([row({ name: 'r', formula: 'TRUE' })]);
 		assert.equal(out[0].formula, 'TRUE');
 		assert.equal('errorConditionFormula' in out[0], false);
 	});
 
 	test('preserves null/undefined fields without throwing', () => {
 		const out = transformToolingRecords([
-			row({ name: 'minimal', active: true,
-				description: null, errorMessage: null,
-				errorDisplayField: null, formula: null }),
+			row({
+				name: 'minimal',
+				active: true,
+				description: null,
+				errorMessage: null,
+				errorDisplayField: null,
+				formula: null,
+			}),
 		]);
 		assert.equal(out[0].description, null);
 		assert.equal(out[0].errorMessage, null);
@@ -127,23 +134,17 @@ describe('transformToolingRecords: field mapping', () => {
 	});
 
 	test('falls back to FullName-derived name when Metadata.name is missing', () => {
-		const out = transformToolingRecords([
-			row({ name: undefined, fullName: 'Account.SSN_Validation' }),
-		]);
+		const out = transformToolingRecords([row({ name: undefined, fullName: 'Account.SSN_Validation' })]);
 		assert.equal(out[0].name, 'SSN_Validation');
 	});
 
 	test('handles multi-dot FullName by joining everything after the first segment', () => {
-		const out = transformToolingRecords([
-			row({ name: undefined, fullName: 'Account.Sub.Rule' }),
-		]);
+		const out = transformToolingRecords([row({ name: undefined, fullName: 'Account.Sub.Rule' })]);
 		assert.equal(out[0].name, 'Sub.Rule');
 	});
 
 	test('returns name as null when both Metadata.name and FullName are missing', () => {
-		const out = transformToolingRecords([
-			row({ name: undefined, fullName: null }),
-		]);
+		const out = transformToolingRecords([row({ name: undefined, fullName: null })]);
 		assert.equal(out[0].name, null);
 	});
 });
@@ -155,7 +156,10 @@ describe('transformToolingRecords: sorting', () => {
 			row({ name: 'alpha_rule' }),
 			row({ name: 'mu_rule' }),
 		]);
-		assert.deepEqual(out.map((r) => r.name), ['alpha_rule', 'mu_rule', 'zeta_rule']);
+		assert.deepEqual(
+			out.map((r) => r.name),
+			['alpha_rule', 'mu_rule', 'zeta_rule'],
+		);
 	});
 
 	test('rules with null names sort before everything else', () => {
@@ -176,7 +180,10 @@ describe('transformToolingRecords: sorting', () => {
 			row({ name: 'beta', active: false }),
 			row({ name: 'delta', active: true }),
 		]);
-		assert.deepEqual(out.map((r) => r.name), ['alpha', 'delta']);
+		assert.deepEqual(
+			out.map((r) => r.name),
+			['alpha', 'delta'],
+		);
 	});
 });
 
@@ -221,10 +228,13 @@ describe('transformToolingRecords: realistic Tooling-API responses', () => {
 			},
 		]);
 		assert.equal(out.length, 2);
-		assert.deepEqual(out.map((r) => r.name), [
-			'Annual_Revenue_Cap',
-			'Description_Required',
-		]);
-		assert.equal(out.every((r) => r.formula !== 'TRUE'), true);
+		assert.deepEqual(
+			out.map((r) => r.name),
+			['Annual_Revenue_Cap', 'Description_Required'],
+		);
+		assert.equal(
+			out.every((r) => r.formula !== 'TRUE'),
+			true,
+		);
 	});
 });

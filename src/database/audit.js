@@ -1,48 +1,51 @@
-import crypto from "node:crypto";
-import { sql } from "kysely";
-import { ext } from "../extensions.js";
+// Minimized operational history. Payloads may contain identifiers and counts, never record values or secrets.
+import crypto from 'node:crypto';
+import { sql } from 'kysely';
+import { ext } from '../extensions.js';
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 const EXPORT_MAX = 50_000;
 export const LIST_EXPORT_MAX = EXPORT_MAX;
 
 const _chainLocks = new Map(); // workspace key -> tail promise
+// Serialize chained writes per workspace so concurrent events cannot fork the hash chain.
 async function _acquireChainLock(key) {
 	const prev = _chainLocks.get(key) || Promise.resolve();
 	let release;
 	const gate = new Promise((res) => {
 		release = res;
 	});
-	_chainLocks.set(key, prev.then(() => gate));
+	_chainLocks.set(
+		key,
+		prev.then(() => gate),
+	);
 	await prev.catch(() => {});
 	return release;
 }
 
 async function _getAnchor(db, workspaceId) {
 	return db
-		.selectFrom("audit_chain_anchors")
-		.select(["anchor_hash", "purged_count"])
-		.where("workspace_id", "=", workspaceId || "")
+		.selectFrom('audit_chain_anchors')
+		.select(['anchor_hash', 'purged_count'])
+		.where('workspace_id', '=', workspaceId || '')
 		.executeTakeFirst();
 }
 
 export async function record(opts = {}) {
-	const { req, action, targetObject, targetId, targetSfOrgId, payload } =
-		opts;
+	const { req, action, targetObject, targetId, targetSfOrgId, payload } = opts;
 	if (!action) {
-		throw new Error("action is required");
+		throw new Error('action is required');
 	}
 
 	let workspaceId = opts.workspaceId;
 	let actorAccountId = opts.actorAccountId;
 	let actorConnectionId = opts.actorConnectionId;
-	const actorKind = opts.actorKind || "web";
+	const actorKind = opts.actorKind || 'web';
 	const mcpTokenId = opts.mcpTokenId || null;
-	const status = opts.status || "ok";
+	const status = opts.status || 'ok';
 	const rawErrorCode = opts.errorCode == null ? null : String(opts.errorCode);
-	const errorCode = rawErrorCode == null
-		? null
-		: (/^[A-Za-z0-9_.:-]{1,100}$/.test(rawErrorCode) ? rawErrorCode : "error");
+	const errorCode =
+		rawErrorCode == null ? null : /^[A-Za-z0-9_.:-]{1,100}$/.test(rawErrorCode) ? rawErrorCode : 'error';
 	const requestId = opts.requestId || null;
 
 	if (req && req.session) {
@@ -56,7 +59,7 @@ export async function record(opts = {}) {
 
 	const db = ext.getDb();
 	let now = Date.now();
-	const id = "audit_" + crypto.randomUUID();
+	const id = 'audit_' + crypto.randomUUID();
 
 	let expiresAt = opts.expiresAt != null ? opts.expiresAt : null;
 	if (expiresAt == null && workspaceId) {
@@ -68,39 +71,39 @@ export async function record(opts = {}) {
 		} catch (err) {
 			try {
 				ext.captureException(err, {
-					where: "audit.record/retentionLookup",
+					where: 'audit.record/retentionLookup',
 					workspaceId,
 					action,
 				});
-			} catch (_) {
-			}
+			} catch (_) {}
 		}
 	}
 
+	// Chaining is opt-in; ordinary activity history does not claim compliance-grade durability.
 	const chained = opts.chained === true;
 	const payloadJson = payload ? JSON.stringify(payload) : null;
 
-	const release = chained ? await _acquireChainLock(workspaceId || "") : null;
+	const release = chained ? await _acquireChainLock(workspaceId || '') : null;
 	try {
 		let chainHash = null;
 		let contentHash = null;
 		if (chained) {
 			const prevRow = await db
-				.selectFrom("audit_log")
-				.select(["chain_hash", "created_at"])
-				.where("workspace_id", workspaceId ? "=" : "is", workspaceId || null)
-				.where("chain_hash", "is not", null)
-				.orderBy("created_at", "desc")
-				.orderBy("id", "desc")
+				.selectFrom('audit_log')
+				.select(['chain_hash', 'created_at'])
+				.where('workspace_id', workspaceId ? '=' : 'is', workspaceId || null)
+				.where('chain_hash', 'is not', null)
+				.orderBy('created_at', 'desc')
+				.orderBy('id', 'desc')
 				.limit(1)
 				.executeTakeFirst();
 			if (prevRow && prevRow.created_at != null && prevRow.created_at >= now) {
 				now = prevRow.created_at + 1;
 			}
-			let prev = (prevRow && prevRow.chain_hash) || "";
+			let prev = (prevRow && prevRow.chain_hash) || '';
 			if (!prev) {
 				const anchor = await _getAnchor(db, workspaceId);
-				prev = (anchor && anchor.anchor_hash) || "";
+				prev = (anchor && anchor.anchor_hash) || '';
 			}
 			const rowForHash = {
 				id,
@@ -124,7 +127,7 @@ export async function record(opts = {}) {
 		}
 
 		await db
-			.insertInto("audit_log")
+			.insertInto('audit_log')
 			.values({
 				id,
 				workspace_id: workspaceId || null,
@@ -156,52 +159,39 @@ export async function record(opts = {}) {
 }
 
 export function newRequestId() {
-	return "req_" + crypto.randomUUID();
+	return 'req_' + crypto.randomUUID();
 }
 
 export async function recordFailure(req, action, err, extras = {}) {
 	try {
-		const candidateCode =
-			extras.errorCode ||
-			(err && (err.errorCode || err.name)) ||
-			"error";
-		const safeErrorCode = /^[A-Za-z0-9_.:-]{1,100}$/.test(String(candidateCode))
-			? String(candidateCode)
-			: "error";
+		const candidateCode = extras.errorCode || (err && (err.errorCode || err.name)) || 'error';
+		const safeErrorCode = /^[A-Za-z0-9_.:-]{1,100}$/.test(String(candidateCode)) ? String(candidateCode) : 'error';
 		await record({
 			req,
 			action,
 			...extras,
-			status: "failed",
+			status: 'failed',
 			errorCode: safeErrorCode,
 			payload: extras.payload || null,
 		});
-	} catch (_eAudit) {
-	}
+	} catch (_eAudit) {}
 }
 
 export async function recordFirstTime(
 	req,
-	{
-		actorAccountId,
-		action,
-		payload,
-		workspaceId,
-		targetObject,
-		targetId,
-	} = {},
+	{ actorAccountId, action, payload, workspaceId, targetObject, targetId } = {},
 ) {
 	if (!actorAccountId || !action) {
 		return false;
 	}
 	try {
-		const { ext } = await import("../extensions.js");
+		const { ext } = await import('../extensions.js');
 		const db = ext.getDb();
 		const existing = await db
-			.selectFrom("audit_log")
-			.select("id")
-			.where("actor_account_id", "=", actorAccountId)
-			.where("action", "=", action)
+			.selectFrom('audit_log')
+			.select('id')
+			.where('actor_account_id', '=', actorAccountId)
+			.where('action', '=', action)
 			.limit(1)
 			.executeTakeFirst();
 		if (existing) {
@@ -219,65 +209,54 @@ export async function recordFirstTime(
 		return true;
 	} catch (e) {
 		try {
-			console.warn(
-				"[audit] recordFirstTime failed:",
-				action,
-				e.message || e,
-			);
+			console.warn('[audit] recordFirstTime failed:', action, e.message || e);
 		} catch (_) {}
 		return false;
 	}
 }
 
-export async function list({
-	workspaceId,
-	action,
-	limit = 100,
-	offset = 0,
-	since = null,
-	until = null,
-} = {}) {
+export async function list({ workspaceId, action, limit = 100, offset = 0, since = null, until = null } = {}) {
 	if (!workspaceId) {
 		return [];
 	}
 	const db = ext.getDb();
 	let q = db
-		.selectFrom("audit_log")
-		.leftJoin("accounts", "accounts.id", "audit_log.actor_account_id")
-		.leftJoin("mcp_tokens", "mcp_tokens.id", "audit_log.mcp_token_id")
+		.selectFrom('audit_log')
+		.leftJoin('accounts', 'accounts.id', 'audit_log.actor_account_id')
+		.leftJoin('mcp_tokens', 'mcp_tokens.id', 'audit_log.mcp_token_id')
 		.select([
-			"audit_log.id",
-			"audit_log.workspace_id",
-			"audit_log.actor_account_id",
-			"audit_log.actor_connection_id",
-			"audit_log.actor_kind",
-			"audit_log.mcp_token_id",
-			"audit_log.action",
-			"audit_log.target_object",
-			"audit_log.target_id",
-			"audit_log.target_sf_org_id",
-			"audit_log.payload_json",
-			"audit_log.status",
-			"audit_log.error_code",
-			"audit_log.request_id",
-			"audit_log.created_at",
-			"audit_log.redacted_at",
-			"accounts.email as actor_email",
-			"accounts.display_name as actor_display_name",
-			"mcp_tokens.name as mcp_token_name",
+			'audit_log.id',
+			'audit_log.workspace_id',
+			'audit_log.actor_account_id',
+			'audit_log.actor_connection_id',
+			'audit_log.actor_kind',
+			'audit_log.mcp_token_id',
+			'audit_log.action',
+			'audit_log.target_object',
+			'audit_log.target_id',
+			'audit_log.target_sf_org_id',
+			'audit_log.payload_json',
+			'audit_log.status',
+			'audit_log.error_code',
+			'audit_log.request_id',
+			'audit_log.created_at',
+			'audit_log.redacted_at',
+			'accounts.email as actor_email',
+			'accounts.display_name as actor_display_name',
+			'mcp_tokens.name as mcp_token_name',
 		])
-		.where("audit_log.workspace_id", "=", workspaceId)
-		.orderBy("audit_log.created_at", "desc")
+		.where('audit_log.workspace_id', '=', workspaceId)
+		.orderBy('audit_log.created_at', 'desc')
 		.limit(Math.min(EXPORT_MAX, Math.max(1, limit)))
 		.offset(Math.max(0, offset));
 	if (action) {
-		q = q.where("audit_log.action", "=", action);
+		q = q.where('audit_log.action', '=', action);
 	}
 	if (since != null) {
-		q = q.where("audit_log.created_at", ">=", since);
+		q = q.where('audit_log.created_at', '>=', since);
 	}
 	if (until != null) {
-		q = q.where("audit_log.created_at", "<=", until);
+		q = q.where('audit_log.created_at', '<=', until);
 	}
 	const rows = await q.execute();
 	return rows.map((r) => ({
@@ -285,7 +264,7 @@ export async function list({
 		workspaceId: r.workspace_id,
 		actorAccountId: r.actor_account_id,
 		actorConnectionId: r.actor_connection_id,
-		actorKind: r.actor_kind || "web",
+		actorKind: r.actor_kind || 'web',
 		mcpTokenId: r.mcp_token_id,
 		mcpTokenName: r.mcp_token_name,
 		actorEmail: r.actor_email,
@@ -295,7 +274,7 @@ export async function list({
 		targetId: r.target_id,
 		targetSfOrgId: r.target_sf_org_id,
 		payload: r.payload_json ? JSON.parse(r.payload_json) : null,
-		status: r.status || "ok",
+		status: r.status || 'ok',
 		errorCode: r.error_code,
 		requestId: r.request_id,
 		createdAt: r.created_at,
@@ -309,12 +288,12 @@ export async function findLatestByTarget({ workspaceId, action, targetId }) {
 	}
 	const db = ext.getDb();
 	const row = await db
-		.selectFrom("audit_log")
-		.select(["payload_json", "status", "error_code", "created_at"])
-		.where("workspace_id", "=", workspaceId)
-		.where("action", "=", action)
-		.where("target_id", "=", targetId)
-		.orderBy("created_at", "desc")
+		.selectFrom('audit_log')
+		.select(['payload_json', 'status', 'error_code', 'created_at'])
+		.where('workspace_id', '=', workspaceId)
+		.where('action', '=', action)
+		.where('target_id', '=', targetId)
+		.orderBy('created_at', 'desc')
 		.limit(1)
 		.executeTakeFirst();
 	if (!row) {
@@ -328,34 +307,34 @@ export async function findLatestByTarget({ workspaceId, action, targetId }) {
 					} catch (err) {
 						try {
 							ext.captureException(err, {
-								where: "audit.findLatestByTarget/parsePayload",
+								where: 'audit.findLatestByTarget/parsePayload',
 							});
-						} catch (_) {
-						}
+						} catch (_) {}
 						return null;
 					}
 				})()
 			: null,
-		status: row.status || "ok",
+		status: row.status || 'ok',
 		errorCode: row.error_code,
 		createdAt: row.created_at,
 	};
 }
 
 function _canonicalForHash(row) {
+	// Keep this field order stable: historical chain verification depends on it.
 	return JSON.stringify([
 		row.id,
 		row.workspace_id || null,
 		row.actor_account_id || null,
 		row.actor_connection_id || null,
-		row.actor_kind || "web",
+		row.actor_kind || 'web',
 		row.mcp_token_id || null,
 		row.action,
 		row.target_object || null,
 		row.target_id || null,
 		row.target_sf_org_id || null,
 		row.payload_json || null,
-		row.status || "ok",
+		row.status || 'ok',
 		row.error_code || null,
 		row.request_id || null,
 		row.created_at,
@@ -363,37 +342,33 @@ function _canonicalForHash(row) {
 }
 
 function _contentHash(row) {
-	return crypto.createHash("sha256").update(_canonicalForHash(row)).digest("hex");
+	return crypto.createHash('sha256').update(_canonicalForHash(row)).digest('hex');
 }
 
 function _computeChainHash(prevHash, contentHash) {
-	const h = crypto.createHash("sha256");
-	h.update(prevHash || "");
-	h.update("|");
+	const h = crypto.createHash('sha256');
+	h.update(prevHash || '');
+	h.update('|');
 	h.update(contentHash);
-	return h.digest("hex");
+	return h.digest('hex');
 }
 
 export async function verifyChain({ workspaceId } = {}) {
+	// Purge anchors let verification continue after retention removes an old chain prefix.
 	const db = ext.getDb();
 	let q = db
-		.selectFrom("audit_log")
+		.selectFrom('audit_log')
 		.selectAll()
-		.where("chain_hash", "is not", null)
-		.orderBy("created_at", "asc")
-		.orderBy("id", "asc");
+		.where('chain_hash', 'is not', null)
+		.orderBy('created_at', 'asc')
+		.orderBy('id', 'asc');
 	if (workspaceId !== undefined) {
-		q = q.where(
-			"workspace_id",
-			workspaceId === null ? "is" : "=",
-			workspaceId,
-		);
+		q = q.where('workspace_id', workspaceId === null ? 'is' : '=', workspaceId);
 	}
 	const rows = await q.execute();
-	const anchor =
-		workspaceId !== undefined ? await _getAnchor(db, workspaceId) : null;
+	const anchor = workspaceId !== undefined ? await _getAnchor(db, workspaceId) : null;
 	let purgedBefore = 0;
-	let prev = "";
+	let prev = '';
 	if (anchor && anchor.anchor_hash) {
 		prev = anchor.anchor_hash;
 		purgedBefore = anchor.purged_count || 0;
@@ -414,7 +389,7 @@ export async function verifyChain({ workspaceId } = {}) {
 				action: r.action,
 				reason,
 				expected,
-				actual: reason === "content" ? r.content_hash : r.chain_hash,
+				actual: reason === 'content' ? r.content_hash : r.chain_hash,
 			},
 		});
 		if (r.redacted_at != null) {
@@ -422,12 +397,12 @@ export async function verifyChain({ workspaceId } = {}) {
 		} else {
 			const expectedContent = _contentHash(r);
 			if (r.content_hash !== expectedContent) {
-				return _break("content", expectedContent);
+				return _break('content', expectedContent);
 			}
 		}
 		const expectedChain = _computeChainHash(prev, r.content_hash);
 		if (r.chain_hash !== expectedChain) {
-			return _break("chain", expectedChain);
+			return _break('chain', expectedChain);
 		}
 		prev = r.chain_hash;
 	}
@@ -435,7 +410,8 @@ export async function verifyChain({ workspaceId } = {}) {
 }
 
 export async function redactPayloadByEmail(email, { now = Date.now() } = {}) {
-	if (!email || typeof email !== "string") {
+	// Redact matching string leaves without changing row identity or chain fields.
+	if (!email || typeof email !== 'string') {
 		return 0;
 	}
 	const needle = email.trim().toLowerCase();
@@ -444,10 +420,10 @@ export async function redactPayloadByEmail(email, { now = Date.now() } = {}) {
 	}
 	const db = ext.getDb();
 	const rows = await db
-		.selectFrom("audit_log")
-		.select(["id", "payload_json"])
-		.where("payload_json", "is not", null)
-		.where(sql`lower(audit_log.payload_json) like ${"%" + needle + "%"}`)
+		.selectFrom('audit_log')
+		.select(['id', 'payload_json'])
+		.where('payload_json', 'is not', null)
+		.where(sql`lower(audit_log.payload_json) like ${'%' + needle + '%'}`)
 		.execute();
 	let count = 0;
 	for (const r of rows) {
@@ -462,9 +438,9 @@ export async function redactPayloadByEmail(email, { now = Date.now() } = {}) {
 			continue; // LIKE matched but no actual email leaf (over-match)
 		}
 		await db
-			.updateTable("audit_log")
+			.updateTable('audit_log')
 			.set({ payload_json: JSON.stringify(value), redacted_at: now })
-			.where("id", "=", r.id)
+			.where('id', '=', r.id)
 			.execute();
 		count++;
 	}
@@ -472,15 +448,12 @@ export async function redactPayloadByEmail(email, { now = Date.now() } = {}) {
 }
 
 function _deepRedactEmail(node, needle) {
-	if (typeof node === "string") {
+	if (typeof node === 'string') {
 		if (!node.toLowerCase().includes(needle)) {
 			return { changed: false, value: node };
 		}
-		const re = new RegExp(
-			needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-			"gi",
-		);
-		return { changed: true, value: node.replace(re, "[redacted]") };
+		const re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+		return { changed: true, value: node.replace(re, '[redacted]') };
 	}
 	if (Array.isArray(node)) {
 		let changed = false;
@@ -491,7 +464,7 @@ function _deepRedactEmail(node, needle) {
 		});
 		return { changed, value: out };
 	}
-	if (node && typeof node === "object") {
+	if (node && typeof node === 'object') {
 		let changed = false;
 		const out = {};
 		for (const k of Object.keys(node)) {
@@ -505,33 +478,34 @@ function _deepRedactEmail(node, needle) {
 }
 
 export async function purgeExpired(now = Date.now()) {
+	// Chained rows are purged per workspace so the surviving prefix anchor stays valid.
 	const db = ext.getDb();
 
 	const unchainedResult = await db
-		.deleteFrom("audit_log")
-		.where("chain_hash", "is", null)
-		.where("expires_at", "is not", null)
-		.where("expires_at", "<", now)
+		.deleteFrom('audit_log')
+		.where('chain_hash', 'is', null)
+		.where('expires_at', 'is not', null)
+		.where('expires_at', '<', now)
 		.execute();
 	let deleted = Number(unchainedResult?.[0]?.numDeletedRows || 0);
 
 	const wsRows = await db
-		.selectFrom("audit_log")
-		.select("workspace_id")
+		.selectFrom('audit_log')
+		.select('workspace_id')
 		.distinct()
-		.where("chain_hash", "is not", null)
-		.where("expires_at", "is not", null)
-		.where("expires_at", "<", now)
+		.where('chain_hash', 'is not', null)
+		.where('expires_at', 'is not', null)
+		.where('expires_at', '<', now)
 		.execute();
 
 	for (const { workspace_id: workspaceId } of wsRows) {
 		const chainedRows = await db
-			.selectFrom("audit_log")
-			.select(["id", "chain_hash", "expires_at"])
-			.where("workspace_id", workspaceId ? "=" : "is", workspaceId || null)
-			.where("chain_hash", "is not", null)
-			.orderBy("created_at", "asc")
-			.orderBy("id", "asc")
+			.selectFrom('audit_log')
+			.select(['id', 'chain_hash', 'expires_at'])
+			.where('workspace_id', workspaceId ? '=' : 'is', workspaceId || null)
+			.where('chain_hash', 'is not', null)
+			.orderBy('created_at', 'asc')
+			.orderBy('id', 'asc')
 			.execute();
 
 		const prefixIds = [];
@@ -548,29 +522,30 @@ export async function purgeExpired(now = Date.now()) {
 			continue;
 		}
 
-		const anchorKey = workspaceId || "";
+		const anchorKey = workspaceId || '';
 		const existing = await _getAnchor(db, workspaceId);
-		const purgedCount =
-			(existing ? existing.purged_count || 0 : 0) + prefixIds.length;
+		const purgedCount = (existing ? existing.purged_count || 0 : 0) + prefixIds.length;
 		if (existing) {
 			await db
-				.updateTable("audit_chain_anchors")
+				.updateTable('audit_chain_anchors')
 				.set({ anchor_hash: anchorHash, purged_count: purgedCount, updated_at: now })
-				.where("workspace_id", "=", anchorKey)
+				.where('workspace_id', '=', anchorKey)
 				.execute();
 		} else {
 			await db
-				.insertInto("audit_chain_anchors")
-				.values({ workspace_id: anchorKey, anchor_hash: anchorHash, purged_count: purgedCount, updated_at: now })
+				.insertInto('audit_chain_anchors')
+				.values({
+					workspace_id: anchorKey,
+					anchor_hash: anchorHash,
+					purged_count: purgedCount,
+					updated_at: now,
+				})
 				.execute();
 		}
 
 		for (let i = 0; i < prefixIds.length; i += 500) {
 			const slice = prefixIds.slice(i, i + 500);
-			const r = await db
-				.deleteFrom("audit_log")
-				.where("id", "in", slice)
-				.execute();
+			const r = await db.deleteFrom('audit_log').where('id', 'in', slice).execute();
 			deleted += Number(r?.[0]?.numDeletedRows || 0);
 		}
 	}

@@ -1,4 +1,3 @@
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -17,16 +16,25 @@ async function makeWorkspace(ownerAccountId, name = 'W') {
 	const db = ext.getDb();
 	const id = 'ws_' + crypto.randomUUID();
 	const now = Date.now();
-	await db.insertInto('workspaces').values({
-		id, name, owner_account_id: ownerAccountId,
-		created_at: now, updated_at: now,
-	}).execute();
-	await db.insertInto('workspace_members').values({
-		workspace_id: id,
-		account_id: ownerAccountId,
-		role: 'admin',
-		joined_at: now,
-	}).execute();
+	await db
+		.insertInto('workspaces')
+		.values({
+			id,
+			name,
+			owner_account_id: ownerAccountId,
+			created_at: now,
+			updated_at: now,
+		})
+		.execute();
+	await db
+		.insertInto('workspace_members')
+		.values({
+			workspace_id: id,
+			account_id: ownerAccountId,
+			role: 'admin',
+			joined_at: now,
+		})
+		.execute();
 	return { id };
 }
 
@@ -64,7 +72,9 @@ describe('viewStateDb', () => {
 		const a = await makeAccount();
 		const workspaceId = await makeWorkspaceReference(a.id);
 		const { connection } = await connections.upsertFromOauth({
-			accountId: a.id, sfUserId: 's1', sfOrgId: '00D1',
+			accountId: a.id,
+			sfUserId: 's1',
+			sfOrgId: '00D1',
 			instanceUrl: 'https://x.salesforce.com',
 		});
 		await viewState.set(a.id, { currentWorkspaceId: workspaceId });

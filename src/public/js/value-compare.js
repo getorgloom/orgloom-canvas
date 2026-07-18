@@ -1,43 +1,43 @@
-
 (function () {
 	'use strict';
+	// Normalizes Salesforce value shapes for dirty checks, migration, diffing, and undo guards.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	function valuesEquivalent(a, b) {
 		if (a === b) {
-return true;
-}
-		const sa = (a == null) ? '' : String(a).trim();
-		const sb = (b == null) ? '' : String(b).trim();
+			return true;
+		}
+		const sa = a == null ? '' : String(a).trim();
+		const sb = b == null ? '' : String(b).trim();
 		if (sa === sb) {
-return true;
-}
+			return true;
+		}
 		if (sa === '' || sb === '') {
-return false;
-}
+			return false;
+		}
 		const na = Number(sa);
 		const nb = Number(sb);
 		if (!isNaN(na) && !isNaN(nb) && na === nb) {
-return true;
-}
+			return true;
+		}
 		const lowA = sa.toLowerCase();
 		const lowB = sb.toLowerCase();
 		if ((lowA === 'true' || lowA === 'false') && (lowB === 'true' || lowB === 'false') && lowA === lowB) {
-return true;
-}
+			return true;
+		}
 		if ((a === true || a === false) && (lowB === 'true' || lowB === 'false') && lowB === String(a)) {
-return true;
-}
+			return true;
+		}
 		if ((b === true || b === false) && (lowA === 'true' || lowA === 'false') && lowA === String(b)) {
-return true;
-}
+			return true;
+		}
 		if (/\d{4}-\d{2}-\d{2}/.test(sa) && /\d{4}-\d{2}-\d{2}/.test(sb)) {
 			const ta = Date.parse(sa);
 			const tb = Date.parse(sb);
 			if (!isNaN(ta) && !isNaN(tb) && ta === tb) {
-return true;
-}
+				return true;
+			}
 		}
 		return false;
 	}
@@ -46,8 +46,8 @@ return true;
 		const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
 		for (const k of keys) {
 			if (!valuesEquivalent((a || {})[k], (b || {})[k])) {
-return true;
-}
+				return true;
+			}
 		}
 		return false;
 	}
@@ -57,51 +57,51 @@ return true;
 		const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
 		for (const k of keys) {
 			if (!valuesEquivalent((a || {})[k], (b || {})[k])) {
-out.push(k);
-}
+				out.push(k);
+			}
 		}
 		return out;
 	}
 
 	function isRecordModified(rec) {
 		if (!rec || !rec.loadedFromId) {
-return false;
-}
+			return false;
+		}
 		if (rec._migrateMatchedId) {
 			return true;
 		}
 		if (rec._inaccessible) {
-return false;
-}
+			return false;
+		}
 		if (!rec.loadedValues) {
-return false;
-}
+			return false;
+		}
 		return valuesDiffer(rec.values || {}, rec.loadedValues || {});
 	}
 
 	function isRecordPendingDelete(rec) {
 		if (!rec) {
-return false;
-}
+			return false;
+		}
 		if (!rec.loadedFromId) {
-return false;
-}
+			return false;
+		}
 		if (rec._inaccessible) {
-return false;
-}
+			return false;
+		}
 		if (rec.isTypeNode) {
-return false;
-}
+			return false;
+		}
 		return !!rec.pendingDelete;
 	}
 
 	function isRecordPendingCreate(rec) {
 		if (!rec) {
-return false;
-}
+			return false;
+		}
 		if (rec.isTypeNode) {
-return false;
-}
+			return false;
+		}
 		return !rec.loadedFromId;
 	}
 
@@ -111,11 +111,11 @@ return false;
 
 	function _hasMeaningfulValue(v) {
 		if (v == null) {
-return false;
-}
+			return false;
+		}
 		if (typeof v === 'string' && v.trim() === '') {
-return false;
-}
+			return false;
+		}
 		return true;
 	}
 	function computeRecordDiff(recA, recB) {
@@ -133,19 +133,21 @@ return false;
 			const aHas = _hasMeaningfulValue(a[k]);
 			const bHas = _hasMeaningfulValue(b[k]);
 			if (!aHas && !bHas) {
-continue;
-} // ignore "both empty"
+				continue;
+			} // ignore "both empty"
 			if (aHas && !bHas) {
- aOnly.push(k); continue; 
-}
+				aOnly.push(k);
+				continue;
+			}
 			if (!aHas && bHas) {
- bOnly.push(k); continue; 
-}
+				bOnly.push(k);
+				continue;
+			}
 			if (valuesEquivalent(a[k], b[k])) {
-shared.push(k);
-} else {
-differing.push(k);
-}
+				shared.push(k);
+			} else {
+				differing.push(k);
+			}
 		}
 		const sort = (arr) => arr.sort((x, y) => x.localeCompare(y));
 		return {

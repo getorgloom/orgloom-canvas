@@ -41,10 +41,7 @@ test('stores, replaces, lists, counts, and destroys sessions', async (t) => {
 
 	assert.equal((await call(store, 'get', 'one')).accountId, 'acct-updated');
 	assert.equal(await call(store, 'length'), 2);
-	assert.deepEqual(
-		(await call(store, 'all')).map((value) => value.accountId).sort(),
-		['acct-2', 'acct-updated'],
-	);
+	assert.deepEqual((await call(store, 'all')).map((value) => value.accountId).sort(), ['acct-2', 'acct-updated']);
 
 	await call(store, 'destroy', 'one');
 	assert.equal(await call(store, 'get', 'one'), null);
@@ -61,13 +58,19 @@ test('ignores expired rows and clears them without counting them', async (t) => 
 		db.close();
 	});
 
-	db.prepare('INSERT INTO sessions (sid, sess, expire) VALUES (?, ?, ?)')
-		.run('expired', JSON.stringify({ accountId: 'old' }), '2000-01-01T00:00:00.000Z');
+	db.prepare('INSERT INTO sessions (sid, sess, expire) VALUES (?, ?, ?)').run(
+		'expired',
+		JSON.stringify({ accountId: 'old' }),
+		'2000-01-01T00:00:00.000Z',
+	);
 	await call(store, 'set', 'active', { accountId: 'current', cookie: { maxAge: 60_000 } });
 
 	assert.equal(await call(store, 'get', 'expired'), null);
 	assert.equal(await call(store, 'length'), 1);
-	assert.deepEqual((await call(store, 'all')).map((value) => value.accountId), ['current']);
+	assert.deepEqual(
+		(await call(store, 'all')).map((value) => value.accountId),
+		['current'],
+	);
 
 	store.statements.clearExpired.run();
 	assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions').get().count, 1);
@@ -80,8 +83,11 @@ test('touch updates expiry and existing table rows remain readable', async (t) =
 		db.close();
 	});
 
-	db.prepare('INSERT INTO sessions (sid, sess, expire) VALUES (?, ?, ?)')
-		.run('legacy', JSON.stringify({ accountId: 'legacy-account' }), '2099-01-01T00:00:00.000Z');
+	db.prepare('INSERT INTO sessions (sid, sess, expire) VALUES (?, ?, ?)').run(
+		'legacy',
+		JSON.stringify({ accountId: 'legacy-account' }),
+		'2099-01-01T00:00:00.000Z',
+	);
 	assert.equal((await call(store, 'get', 'legacy')).accountId, 'legacy-account');
 
 	await call(store, 'touch', 'legacy', { cookie: { expires: '2099-02-01T00:00:00.000Z' } });
@@ -97,8 +103,11 @@ test('reports corrupt stored JSON through the callback', async (t) => {
 		store.close();
 		db.close();
 	});
-	db.prepare('INSERT INTO sessions (sid, sess, expire) VALUES (?, ?, ?)')
-		.run('corrupt', '{not-json', '2099-01-01T00:00:00.000Z');
+	db.prepare('INSERT INTO sessions (sid, sess, expire) VALUES (?, ?, ?)').run(
+		'corrupt',
+		'{not-json',
+		'2099-01-01T00:00:00.000Z',
+	);
 
 	await assert.rejects(call(store, 'get', 'corrupt'), SyntaxError);
 });

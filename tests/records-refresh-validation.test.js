@@ -1,4 +1,3 @@
-
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -136,9 +135,7 @@ describe('POST /api/records/refresh (validation)', () => {
 
 	test('per-record invalid-id error surfaces in results', async () => {
 		const r = await post({
-			records: [
-				{ objectName: 'Account', sfId: 'not-a-real-id' },
-			],
+			records: [{ objectName: 'Account', sfId: 'not-a-real-id' }],
 		});
 		assert.equal(r.status, 200);
 		const data = await r.json();

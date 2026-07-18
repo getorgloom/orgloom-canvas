@@ -5,10 +5,7 @@ import vm from 'node:vm';
 
 const sandbox = { window: { OrgLoom: {} } };
 vm.createContext(sandbox);
-vm.runInContext(
-	readFileSync(new URL('../src/public/js/record-diff-modal.js', import.meta.url), 'utf8'),
-	sandbox,
-);
+vm.runInContext(readFileSync(new URL('../src/public/js/record-diff-modal.js', import.meta.url), 'utf8'), sandbox);
 
 const { filterComparableDiff } = sandbox.window.OrgLoom.recordDiffModal;
 

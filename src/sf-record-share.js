@@ -1,4 +1,4 @@
-
+// Salesforce manual-share helpers used only when a workflow explicitly grants record access.
 export function shareSchemaFor(objectName) {
 	if (typeof objectName !== 'string' || !objectName) {
 		throw new Error('shareSchemaFor: objectName is required');
@@ -36,24 +36,25 @@ export function shareTableFor(objectName) {
 
 export function _classifyShareError(msg) {
 	if (!msg) {
-return 'fatal';
-}
+		return 'fatal';
+	}
 	const s = String(msg);
 	if (/duplicate|already.*shared|DUPLICATE_VALUE/i.test(s)) {
-return 'duplicate';
-}
+		return 'duplicate';
+	}
 	if (/below organization level/i.test(s)) {
-return 'covered-by-owd';
-}
+		return 'covered-by-owd';
+	}
 	return 'fatal';
 }
 
 export async function grantRecordAccess(conn, items, recipientSfUserId) {
+	// Canvas sharing itself never calls this; Salesforce record access remains an explicit separate action.
 	const granted = [];
 	const failed = [];
 	if (!Array.isArray(items) || items.length === 0) {
-return { granted, failed };
-}
+		return { granted, failed };
+	}
 	if (typeof recipientSfUserId !== 'string' || !recipientSfUserId) {
 		throw new Error('grantRecordAccess: recipientSfUserId is required');
 	}
@@ -121,25 +122,25 @@ export function recordsToShareFromManifest(payload) {
 	const seen = new Set();
 	const sources = [];
 	if (payload && Array.isArray(payload.loadedRecords)) {
-sources.push(payload.loadedRecords);
-}
+		sources.push(payload.loadedRecords);
+	}
 	if (payload && Array.isArray(payload.drafts)) {
-sources.push(payload.drafts);
-}
+		sources.push(payload.drafts);
+	}
 	if (payload && Array.isArray(payload.records)) {
-sources.push(payload.records);
-}
+		sources.push(payload.records);
+	}
 	for (const list of sources) {
 		for (const rec of list) {
 			if (!rec || rec.isTypeNode || rec.isPending) {
-continue;
-}
+				continue;
+			}
 			if (!rec.loadedFromId || !rec.objectName) {
-continue;
-}
+				continue;
+			}
 			if (seen.has(rec.loadedFromId)) {
-continue;
-}
+				continue;
+			}
 			seen.add(rec.loadedFromId);
 			out.push({ objectName: rec.objectName, recordId: rec.loadedFromId });
 		}

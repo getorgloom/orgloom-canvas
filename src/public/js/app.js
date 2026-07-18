@@ -1,15 +1,18 @@
+// Coordinates the canvas modules and owns shared client state. Feature-specific
+// behavior stays in the smaller modules under this directory.
 function csrfFetch(url, options) {
 	options = options || {};
-	const method = (options.method || "GET").toUpperCase();
-	if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+	const method = (options.method || 'GET').toUpperCase();
+	if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+		// The server renders this token into the page; mutating requests fail closed without it.
 		const meta = document.querySelector('meta[name="csrf-token"]');
-		const token = meta ? meta.getAttribute("content") : "";
+		const token = meta ? meta.getAttribute('content') : '';
 		options.headers = Object.assign({}, options.headers || {}, {
-			"x-csrf-token": token,
+			'x-csrf-token': token,
 		});
 	}
-	if (!("credentials" in options)) {
-		options.credentials = "same-origin";
+	if (!('credentials' in options)) {
+		options.credentials = 'same-origin';
 	}
 	return globalThis.fetch(url, options);
 }
@@ -39,12 +42,12 @@ function csrfFetch(url, options) {
 		_renderedRecIds: new Set(),
 		_prefetchedTypeNodeKeys: new Set(),
 		hiddenObjects: new Set(),
-		graphView: "schema",
+		graphView: 'schema',
 		graphZoom: 1,
 		currentCanvas: null, // { id, title, ownedByMe }
 		_draftCanvasId: null,
-		graphFilterText: "",
-		graphRelFilter: "parent", // 'both' | 'parent' | 'child'
+		graphFilterText: '',
+		graphRelFilter: 'parent', // 'both' | 'parent' | 'child'
 		_suppressNextViewTransition: false,
 		_userZoomOverride: false,
 		_lastZoomSig: null,
@@ -71,14 +74,11 @@ function csrfFetch(url, options) {
 	};
 
 	const _canvasGuideScope =
-		typeof window.ORGLOOM_ACCOUNT_ID_HASH === "string" &&
-		window.ORGLOOM_ACCOUNT_ID_HASH
+		typeof window.ORGLOOM_ACCOUNT_ID_HASH === 'string' && window.ORGLOOM_ACCOUNT_ID_HASH
 			? window.ORGLOOM_ACCOUNT_ID_HASH
-			: "anonymous";
-	const _canvasGuideDismissKey =
-		"orgloom:emptyCardDismissed:" + _canvasGuideScope;
-	const _canvasGuideCompleteKey =
-		"orgloom:canvasGuideCompleted:" + _canvasGuideScope;
+			: 'anonymous';
+	const _canvasGuideDismissKey = 'orgloom:emptyCardDismissed:' + _canvasGuideScope;
+	const _canvasGuideCompleteKey = 'orgloom:canvasGuideCompleted:' + _canvasGuideScope;
 	let _canvasGuideDismissedThisPage = false;
 	let _canvasGuideCompletedThisPage = false;
 
@@ -87,7 +87,7 @@ function csrfFetch(url, options) {
 			return true;
 		}
 		try {
-			return localStorage.getItem(key) === "1";
+			return localStorage.getItem(key) === '1';
 		} catch (_) {
 			return false;
 		}
@@ -96,15 +96,19 @@ function csrfFetch(url, options) {
 	function _dismissCanvasGuide() {
 		_canvasGuideDismissedThisPage = true;
 		try {
-			localStorage.setItem(_canvasGuideDismissKey, "1");
-		} catch (_) { /* private mode: runtime flag still hides it */ }
+			localStorage.setItem(_canvasGuideDismissKey, '1');
+		} catch (_) {
+			/* private mode: runtime flag still hides it */
+		}
 	}
 
 	function _completeCanvasGuide() {
 		_canvasGuideCompletedThisPage = true;
 		try {
-			localStorage.setItem(_canvasGuideCompleteKey, "1");
-		} catch (_) { /* private mode: runtime flag still hides it */ }
+			localStorage.setItem(_canvasGuideCompleteKey, '1');
+		} catch (_) {
+			/* private mode: runtime flag still hides it */
+		}
 	}
 
 	const _autosave = window.OrgLoom.canvasAutosave.mount({
@@ -127,7 +131,7 @@ function csrfFetch(url, options) {
 	const showBulkToast = _uif.showBulkToast;
 	const _rawToastWithAction = _uif.showBulkToastWithAction;
 	const showBulkToastWithAction = (message, actionLabel, action, variant) => {
-		if (typeof action === "function" && /undo/i.test(String(actionLabel || ""))) {
+		if (typeof action === 'function' && /undo/i.test(String(actionLabel || ''))) {
 			let spent = false;
 			const once = () => {
 				if (spent) {
@@ -137,7 +141,7 @@ function csrfFetch(url, options) {
 				action();
 				return true;
 			};
-			if (typeof pushUndo === "function") {
+			if (typeof pushUndo === 'function') {
 				pushUndo(actionLabel, once);
 			}
 			return _rawToastWithAction(message, actionLabel, once, variant);
@@ -179,9 +183,7 @@ function csrfFetch(url, options) {
 		const isEmptyDraft =
 			!r.loadedFromId &&
 			Object.keys(r.values || {}).length === 0 &&
-			!canvasState.bulkAssociations.some(
-				(a) => a.fromId === r.id || a.toId === r.id,
-			);
+			!canvasState.bulkAssociations.some((a) => a.fromId === r.id || a.toId === r.id);
 		if (!r.isTypeNode && !isEmptyDraft) {
 			return;
 		}
@@ -213,48 +215,43 @@ function csrfFetch(url, options) {
 	const csvAutoMapHeaders = _csvi.csvAutoMapHeaders;
 	const pingAuditEvent = _csvi.pingAuditEvent;
 
-
 	let basePickerFilter = {
-		text: "",
-		type: "all",
+		text: '',
+		type: 'all',
 	};
 	(function showUpgradeStatus() {
 		function run() {
-			const params = new URLSearchParams(window.location.search || "");
-			const upgrade = params.get("upgrade");
+			const params = new URLSearchParams(window.location.search || '');
+			const upgrade = params.get('upgrade');
 			if (!upgrade) {
 				return;
 			}
-			window.history.replaceState(
-				{},
-				"",
-				window.location.pathname + window.location.hash,
-			);
-			if (upgrade === "success") {
+			window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+			if (upgrade === 'success') {
 				return;
 			}
-			if (upgrade === "pending") {
-				const bar = document.createElement("div");
-				bar.className = "upgrade-status-banner";
-				bar.setAttribute("role", "status");
+			if (upgrade === 'pending') {
+				const bar = document.createElement('div');
+				bar.className = 'upgrade-status-banner';
+				bar.setAttribute('role', 'status');
 				bar.style.cssText =
-					"position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--warn,#d29a00);color:#1a1a1a;padding:0.6em 1em;font-size:0.9em;display:flex;align-items:center;justify-content:center;gap:0.75em;box-shadow:0 1px 4px rgba(0,0,0,0.25)";
-				const m = document.createElement("span");
+					'position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--warn,#d29a00);color:#1a1a1a;padding:0.6em 1em;font-size:0.9em;display:flex;align-items:center;justify-content:center;gap:0.75em;box-shadow:0 1px 4px rgba(0,0,0,0.25)';
+				const m = document.createElement('span');
 				m.innerHTML =
-					"<strong>Payment processing.</strong> We’ll upgrade your workspace once your bank confirms (usually 3–5 business days). You can keep using Org Loom on your current plan in the meantime.";
-				const x = document.createElement("button");
-				x.type = "button";
-				x.textContent = "✕";
-				x.setAttribute("aria-label", "Dismiss");
+					'<strong>Payment processing.</strong> We’ll upgrade your workspace once your bank confirms (usually 3–5 business days). You can keep using Org Loom on your current plan in the meantime.';
+				const x = document.createElement('button');
+				x.type = 'button';
+				x.textContent = '✕';
+				x.setAttribute('aria-label', 'Dismiss');
 				x.style.cssText =
-					"background:none;border:none;color:#1a1a1a;font-size:1.1em;cursor:pointer;line-height:1";
+					'background:none;border:none;color:#1a1a1a;font-size:1.1em;cursor:pointer;line-height:1';
 				const dismiss = () => {
 					if (bar.parentNode) {
 						bar.remove();
 					}
 				};
 				const timer = setTimeout(dismiss, 12000);
-				x.addEventListener("click", () => {
+				x.addEventListener('click', () => {
 					clearTimeout(timer);
 					dismiss();
 				});
@@ -264,31 +261,25 @@ function csrfFetch(url, options) {
 				return;
 			}
 			const errs = {
-				"apply-failed":
-					"We couldn’t finish applying your upgrade. If you were charged, contact support.",
-				"session-mismatch":
-					"That checkout link was for a different account.",
-				"session-lookup-failed":
-					"We couldn’t verify your checkout session. If you were charged, contact support.",
+				'apply-failed': 'We couldn’t finish applying your upgrade. If you were charged, contact support.',
+				'session-mismatch': 'That checkout link was for a different account.',
+				'session-lookup-failed':
+					'We couldn’t verify your checkout session. If you were charged, contact support.',
 			};
-			if (errs[upgrade] && typeof showBulkToast === "function") {
-				showBulkToast(errs[upgrade], "error");
+			if (errs[upgrade] && typeof showBulkToast === 'function') {
+				showBulkToast(errs[upgrade], 'error');
 			}
 		}
 		if (document.body) {
 			run();
 		} else {
-			document.addEventListener("DOMContentLoaded", run);
+			document.addEventListener('DOMContentLoaded', run);
 		}
 	})();
 
 	let _cyInstance = null;
 	let _cySchemaInstance = null;
-	const SCHEMA_SYSTEM_FK_FIELDS = new Set([
-		"CreatedById",
-		"LastModifiedById",
-		"OwnerId",
-	]);
+	const SCHEMA_SYSTEM_FK_FIELDS = new Set(['CreatedById', 'LastModifiedById', 'OwnerId']);
 	let _skipNextCyAutoPan = false;
 	let _cyPendingEdge = null;
 
@@ -299,44 +290,34 @@ function csrfFetch(url, options) {
 	let _canvasMiddleMousePanning = false;
 
 	function _canvasZoomBy(factor) {
-		if (canvasState.graphView === "bulk" && _cyInstance) {
+		if (canvasState.graphView === 'bulk' && _cyInstance) {
 			const container = _cyInstance.container && _cyInstance.container();
 			if (!container) {
 				return;
 			}
 			const rect = container.getBoundingClientRect();
-			const next = Math.max(
-				0.1,
-				Math.min(5, _cyInstance.zoom() * factor),
-			);
+			const next = Math.max(0.1, Math.min(5, _cyInstance.zoom() * factor));
 			_cyInstance.zoom({
 				level: next,
 				renderedPosition: { x: rect.width / 2, y: rect.height / 2 },
 			});
 			return;
 		}
-		if (canvasState.graphView === "schema" && _cySchemaInstance) {
-			const container =
-				_cySchemaInstance.container && _cySchemaInstance.container();
+		if (canvasState.graphView === 'schema' && _cySchemaInstance) {
+			const container = _cySchemaInstance.container && _cySchemaInstance.container();
 			if (!container) {
 				return;
 			}
 			const rect = container.getBoundingClientRect();
-			const next = Math.max(
-				0.1,
-				Math.min(5, _cySchemaInstance.zoom() * factor),
-			);
+			const next = Math.max(0.1, Math.min(5, _cySchemaInstance.zoom() * factor));
 			_cySchemaInstance.zoom({
 				level: next,
 				renderedPosition: { x: rect.width / 2, y: rect.height / 2 },
 			});
 			return;
 		}
-		if (canvasState.graphView === "schema") {
-			const next = Math.max(
-				GRAPH_ZOOM_MIN,
-				Math.min(GRAPH_ZOOM_MAX, canvasState.graphZoom * factor),
-			);
+		if (canvasState.graphView === 'schema') {
+			const next = Math.max(GRAPH_ZOOM_MIN, Math.min(GRAPH_ZOOM_MAX, canvasState.graphZoom * factor));
 			if (next === canvasState.graphZoom) {
 				return;
 			}
@@ -352,8 +333,7 @@ function csrfFetch(url, options) {
 		_cyInstance.panBy({ x: dx, y: dy });
 	}
 
-	const _allObjectsAbort =
-		typeof AbortController === "function" ? new AbortController() : null;
+	const _allObjectsAbort = typeof AbortController === 'function' ? new AbortController() : null;
 	const _allObjectsTimer = _allObjectsAbort
 		? setTimeout(() => {
 				try {
@@ -371,12 +351,7 @@ function csrfFetch(url, options) {
 					canvasState._allObjectsError = null;
 					return Promise.resolve();
 				})()
-			: csrfFetch(
-					"/api/objects",
-					_allObjectsAbort
-						? { signal: _allObjectsAbort.signal }
-						: undefined,
-				)
+			: csrfFetch('/api/objects', _allObjectsAbort ? { signal: _allObjectsAbort.signal } : undefined)
 					.then(async (r) => {
 						if (_allObjectsTimer) {
 							clearTimeout(_allObjectsTimer);
@@ -384,18 +359,13 @@ function csrfFetch(url, options) {
 						if (!r.ok) {
 							let bodyErr = null;
 							try {
-								const ct = r.headers.get("content-type") || "";
-								if (ct.indexOf("application/json") !== -1) {
+								const ct = r.headers.get('content-type') || '';
+								if (ct.indexOf('application/json') !== -1) {
 									const body = await r.clone().json();
 									bodyErr = body && body.error;
 								}
-							} catch (_) {
-							}
-							const e = new Error(
-								"HTTP " +
-									r.status +
-									(bodyErr ? " (" + bodyErr + ")" : ""),
-							);
+							} catch (_) {}
+							const e = new Error('HTTP ' + r.status + (bodyErr ? ' (' + bodyErr + ')' : ''));
 							e.status = r.status;
 							e.bodyError = bodyErr;
 							throw e;
@@ -403,9 +373,7 @@ function csrfFetch(url, options) {
 						return r.json();
 					})
 					.then((data) => {
-						canvasState.allObjects = Array.isArray(data)
-							? data
-							: [];
+						canvasState.allObjects = Array.isArray(data) ? data : [];
 						canvasState._allObjectsError = null;
 					})
 					.catch((err) => {
@@ -426,35 +394,29 @@ function csrfFetch(url, options) {
 						if (window.ORGLOOM_SF_CONNECTED === false) {
 							return;
 						}
-						const isAborted =
-							err &&
-							(err.name === "AbortError" || err.code === 20);
-						console.warn(
-							"Failed to load /api/objects:",
-							isAborted ? "aborted (timeout)" : err.message,
-						);
-						if (typeof window.olToast === "function") {
+						const isAborted = err && (err.name === 'AbortError' || err.code === 20);
+						console.warn('Failed to load /api/objects:', isAborted ? 'aborted (timeout)' : err.message);
+						if (typeof window.olToast === 'function') {
 							var msg = isAborted
-								? "Salesforce is taking too long to respond. Check the SF chip in the top strip and refresh once your connection looks healthy."
-								: err.status === 409 ||
-									  err.bodyError === "no-active-connection"
-									? "Salesforce session lost. Click the SF chip in the top strip to reconnect."
+								? 'Salesforce is taking too long to respond. Check the SF chip in the top strip and refresh once your connection looks healthy.'
+								: err.status === 409 || err.bodyError === 'no-active-connection'
+									? 'Salesforce session lost. Click the SF chip in the top strip to reconnect.'
 									: err.status === 403
-										? "Salesforce schema is blocked by workspace policy. Ask an admin to approve this org."
-										: "Couldn’t load Salesforce schema (" +
-											(err.message || "unknown error") +
-											"). Try refreshing the page.";
+										? 'Salesforce schema is blocked by workspace policy. Ask an admin to approve this org.'
+										: 'Couldn’t load Salesforce schema (' +
+											(err.message || 'unknown error') +
+											'). Try refreshing the page.';
 							try {
-								window.olToast(msg, "error");
+								window.olToast(msg, 'error');
 							} catch (_) {}
 						}
 					});
 
 	_aiGen.checkStatus(false).then(() => {
 		if (
-			typeof canvasState.graphView !== "undefined" &&
-			canvasState.graphView === "bulk" &&
-			typeof renderBulkView === "function"
+			typeof canvasState.graphView !== 'undefined' &&
+			canvasState.graphView === 'bulk' &&
+			typeof renderBulkView === 'function'
 		) {
 			renderBulkView();
 		}
@@ -580,7 +542,7 @@ function csrfFetch(url, options) {
 	const renderBulkSelectionChip = _bt.renderBulkSelectionChip;
 
 	function _loadCaps() {
-		return csrfFetch("/api/me/capabilities", { credentials: "same-origin" })
+		return csrfFetch('/api/me/capabilities', { credentials: 'same-origin' })
 			.then((r) => (r.ok ? r.json() : null))
 			.then((data) => {
 				setCaps((data && data.capabilities) || {});
@@ -592,12 +554,11 @@ function csrfFetch(url, options) {
 			});
 	}
 	_loadCaps();
-	document.addEventListener("visibilitychange", () => {
-		if (document.visibilityState === "visible") {
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState === 'visible') {
 			_loadCaps();
 		}
 	});
-
 
 	let _canvasShareCanvasId = null;
 	let _canvasShareRecipientHasAccount = false;
@@ -614,37 +575,24 @@ function csrfFetch(url, options) {
 		}
 		if (!_shareCountFetching.has(canvasId)) {
 			_shareCountFetching.add(canvasId);
-			csrfFetch(
-				"/api/canvas/" + encodeURIComponent(canvasId) + "/share-links",
-				{ credentials: "same-origin" },
-			)
+			csrfFetch('/api/canvas/' + encodeURIComponent(canvasId) + '/share-links', { credentials: 'same-origin' })
 				.then((r) => (r.ok ? r.json() : null))
 				.then((data) => {
-					const linkCount =
-						data && Array.isArray(data.shares)
-							? data.shares.length
-							: 0;
-					const directCount =
-						data && Array.isArray(data.directShares)
-							? data.directShares.length
-							: 0;
+					const linkCount = data && Array.isArray(data.shares) ? data.shares.length : 0;
+					const directCount = data && Array.isArray(data.directShares) ? data.directShares.length : 0;
 					const count = linkCount + directCount;
 					_shareCountByCanvasId.set(canvasId, count);
 					_shareCountFetching.delete(canvasId);
 					if (
-						typeof canvasState.graphView !== "undefined" &&
-						canvasState.graphView === "bulk" &&
-						typeof renderBulkToolbar === "function"
+						typeof canvasState.graphView !== 'undefined' &&
+						canvasState.graphView === 'bulk' &&
+						typeof renderBulkToolbar === 'function'
 					) {
 						renderBulkToolbar();
 					}
 				})
 				.catch((err) => {
-					console.warn(
-						"[share-count] fetch failed for",
-						canvasId,
-						err.message || err,
-					);
+					console.warn('[share-count] fetch failed for', canvasId, err.message || err);
 					_shareCountFetching.delete(canvasId);
 					_shareCountByCanvasId.set(canvasId, 0);
 				});
@@ -653,34 +601,27 @@ function csrfFetch(url, options) {
 	}
 
 	(function autoOpenSharedCanvas() {
-		const params = new URLSearchParams(window.location.search || "");
-		const shareCanvasId = params.get("share");
+		const params = new URLSearchParams(window.location.search || '');
+		const shareCanvasId = params.get('share');
 		if (!shareCanvasId || !/^[a-zA-Z0-9]{15,18}$/.test(shareCanvasId)) {
 			return;
 		}
-		document.body.classList.add("canvas-share-banner-active");
-		document.body.classList.add("canvas-recipient-mode");
+		document.body.classList.add('canvas-share-banner-active');
+		document.body.classList.add('canvas-recipient-mode');
 		_allObjectsReady.then(async () => {
 			try {
-				const r = await csrfFetch(
-					"/api/canvas/" + encodeURIComponent(shareCanvasId),
-					{ credentials: "same-origin" },
-				);
+				const r = await csrfFetch('/api/canvas/' + encodeURIComponent(shareCanvasId), {
+					credentials: 'same-origin',
+				});
 				const data = await r.json().catch(() => null);
 				if (!r.ok) {
 					if (r.status === 401) {
-						showBulkToast(
-							"Session expired. Reload the share link from your email.",
-							"error",
-						);
+						showBulkToast('Session expired. Reload the share link from your email.', 'error');
 						return;
 					}
 					showBulkToast(
-						(data && data.error) ||
-							"Could not open the shared canvas (HTTP " +
-								r.status +
-								").",
-						"error",
+						(data && data.error) || 'Could not open the shared canvas (HTTP ' + r.status + ').',
+						'error',
 					);
 					return;
 				}
@@ -691,51 +632,41 @@ function csrfFetch(url, options) {
 				_setStaleRefsFromLoad(data.staleRefs);
 				canvasState.currentCanvas = {
 					id: shareCanvasId,
-					title: data.title || "",
+					title: data.title || '',
 					ownedByMe: !!data.ownedByMe,
 					versionId: data.versionId || null,
 				};
 				_watchProposalsForCurrentCanvas();
 				_canvasShareCanvasId = shareCanvasId;
 				_canvasShareRecipientHasAccount = !!data.recipientHasAccount;
-				_canvasShareRole = data.recipientRole || "contributor";
+				_canvasShareRole = data.recipientRole || 'contributor';
 				renderShareRecipientBanner();
-				const cleanUrl =
-					window.location.pathname + window.location.hash;
-				window.history.replaceState({}, "", cleanUrl);
+				const cleanUrl = window.location.pathname + window.location.hash;
+				window.history.replaceState({}, '', cleanUrl);
 			} catch (err) {
-				console.warn("[canvas-share] auto-open failed:", err);
-				showBulkToast(
-					"Could not open the shared canvas: " + (err.message || err),
-					"error",
-				);
+				console.warn('[canvas-share] auto-open failed:', err);
+				showBulkToast('Could not open the shared canvas: ' + (err.message || err), 'error');
 			}
 		});
 	})();
 
 	(function autoOpenLinkedCanvas() {
-		const params = new URLSearchParams(window.location.search || "");
-		const openId = params.get("openCanvas");
+		const params = new URLSearchParams(window.location.search || '');
+		const openId = params.get('openCanvas');
 		if (!openId || !/^[a-zA-Z0-9]{15,18}$/.test(openId)) {
 			return;
 		}
-		if (params.get("share")) {
+		if (params.get('share')) {
 			return;
 		} // share flow takes precedence
 		_allObjectsReady.then(async () => {
 			try {
-				const r = await csrfFetch(
-					"/api/canvas/" + encodeURIComponent(openId),
-					{ credentials: "same-origin" },
-				);
+				const r = await csrfFetch('/api/canvas/' + encodeURIComponent(openId), { credentials: 'same-origin' });
 				const data = await r.json().catch(() => null);
 				if (!r.ok) {
 					showBulkToast(
-						(data && (data.message || data.error)) ||
-							"Could not open the canvas (HTTP " +
-								r.status +
-								").",
-						"error",
+						(data && (data.message || data.error)) || 'Could not open the canvas (HTTP ' + r.status + ').',
+						'error',
 					);
 					return;
 				}
@@ -746,7 +677,7 @@ function csrfFetch(url, options) {
 				_setStaleRefsFromLoad(data.staleRefs);
 				canvasState.currentCanvas = {
 					id: openId,
-					title: data.title || "",
+					title: data.title || '',
 					ownedByMe: !!data.ownedByMe,
 					versionId: data.versionId || null,
 				};
@@ -758,26 +689,21 @@ function csrfFetch(url, options) {
 				} catch (err) {
 					window.ORGLOOM_capture &&
 						window.ORGLOOM_capture(err, {
-							where: "app.js/loadCanvas/rehydrateSession",
+							where: 'app.js/loadCanvas/rehydrateSession',
 						});
 				}
 				_watchProposalsForCurrentCanvas();
 				if (!data.ownedByMe && data.recipientRole) {
 					_canvasShareCanvasId = openId;
-					_canvasShareRecipientHasAccount =
-						!!data.recipientHasAccount;
+					_canvasShareRecipientHasAccount = !!data.recipientHasAccount;
 					_canvasShareRole = data.recipientRole;
 					renderShareRecipientBanner();
 				}
-				const cleanUrl =
-					window.location.pathname + window.location.hash;
-				window.history.replaceState({}, "", cleanUrl);
+				const cleanUrl = window.location.pathname + window.location.hash;
+				window.history.replaceState({}, '', cleanUrl);
 			} catch (err) {
-				console.warn("[canvas open-deep-link] failed:", err);
-				showBulkToast(
-					"Could not open the canvas: " + (err.message || err),
-					"error",
-				);
+				console.warn('[canvas open-deep-link] failed:', err);
+				showBulkToast('Could not open the canvas: ' + (err.message || err), 'error');
 			}
 		});
 	})();
@@ -786,64 +712,64 @@ function csrfFetch(url, options) {
 		if (!_canvasShareCanvasId) {
 			return;
 		}
-		const isEditor = _canvasShareRole === "editor";
-		const isViewer = _canvasShareRole === "viewer";
-		document.body.classList.add("canvas-share-banner-active");
+		const isEditor = _canvasShareRole === 'editor';
+		const isViewer = _canvasShareRole === 'viewer';
+		document.body.classList.add('canvas-share-banner-active');
 		if (isEditor) {
-			document.body.classList.remove("canvas-recipient-mode");
+			document.body.classList.remove('canvas-recipient-mode');
 		} else {
-			document.body.classList.add("canvas-recipient-mode");
+			document.body.classList.add('canvas-recipient-mode');
 		}
-		let host = document.getElementById("share-recipient-banner");
+		let host = document.getElementById('share-recipient-banner');
 		if (!host) {
-			host = document.createElement("div");
-			host.id = "share-recipient-banner";
+			host = document.createElement('div');
+			host.id = 'share-recipient-banner';
 			document.body.appendChild(host);
 		}
 		host.className = isEditor
-			? "share-recipient-banner share-recipient-banner--editor"
+			? 'share-recipient-banner share-recipient-banner--editor'
 			: isViewer
-				? "share-recipient-banner share-recipient-banner--viewer"
-				: "share-recipient-banner";
+				? 'share-recipient-banner share-recipient-banner--viewer'
+				: 'share-recipient-banner';
 		const backLinkHtml = _canvasShareRecipientHasAccount
 			? '<a href="/" class="share-recipient-back" data-share-back title="Leave this shared canvas and open your own Org Loom workspace">' +
-				"← Your workspace" +
-				"</a>"
-			: "";
+				'← Your workspace' +
+				'</a>'
+			: '';
 		if (isEditor) {
 			host.innerHTML =
 				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
-				"<strong>Editor mode.</strong> " +
-				"You’re co-authoring a canvas owned by someone else. Saves go directly to the canvas - no Submit step needed." +
-				"</span>";
+				'<strong>Editor mode.</strong> ' +
+				'You’re co-authoring a canvas owned by someone else. Saves go directly to the canvas - no Submit step needed.' +
+				'</span>';
 		} else if (isViewer) {
 			host.innerHTML =
 				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
-				"<strong>View only.</strong> " +
-				"You can explore this shared canvas, but you can’t make changes. Ask the owner for contributor access if you need to fill slots." +
-				"</span>";
+				'<strong>View only.</strong> ' +
+				'You can explore this shared canvas, but you can’t make changes. Ask the owner for contributor access if you need to fill slots.' +
+				'</span>';
 		} else {
 			host.innerHTML =
 				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
-				"You’re filling in a canvas shared with you. " +
-				"Update the highlighted slots, then submit your changes back to the sender." +
-				"</span>" +
+				'You’re filling in a canvas shared with you. ' +
+				'Update the highlighted slots, then submit your changes back to the sender.' +
+				'</span>' +
 				'<button type="button" class="button share-recipient-submit" id="share-recipient-submit">' +
-				"Submit changes" +
-				"</button>";
-			const btn = host.querySelector("#share-recipient-submit");
+				'Submit changes' +
+				'</button>';
+			const btn = host.querySelector('#share-recipient-submit');
 			if (btn) {
-				btn.addEventListener("click", submitShareRecipientFills);
+				btn.addEventListener('click', submitShareRecipientFills);
 			}
 		}
 	}
 
 	async function submitShareRecipientFills() {
 		if (!_canvasShareCanvasId) {
-			showBulkToast("No active share session to submit to.", "error");
+			showBulkToast('No active share session to submit to.', 'error');
 			return;
 		}
 		const fills = [];
@@ -854,48 +780,39 @@ function csrfFetch(url, options) {
 			if (!r.slot || r.slot.slotId == null) {
 				continue;
 			}
-			const values =
-				r.values && typeof r.values === "object" ? r.values : {};
+			const values = r.values && typeof r.values === 'object' ? r.values : {};
 			fills.push({ slotId: r.slot.slotId, values });
 		}
 		if (fills.length === 0) {
-			showBulkToast(
-				"No slot records to submit. Fill in the highlighted slots first.",
-				"error",
-			);
+			showBulkToast('No slot records to submit. Fill in the highlighted slots first.', 'error');
 			return;
 		}
-		const btn = document.getElementById("share-recipient-submit");
+		const btn = document.getElementById('share-recipient-submit');
 		if (btn) {
 			btn.disabled = true;
 		}
 		try {
-			const resp = await csrfFetch(
-				"/api/canvas/" +
-					encodeURIComponent(_canvasShareCanvasId) +
-					"/slot-fill",
-				{
-					method: "POST",
-					credentials: "same-origin",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ fills }),
-				},
-			);
+			const resp = await csrfFetch('/api/canvas/' + encodeURIComponent(_canvasShareCanvasId) + '/slot-fill', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ fills }),
+			});
 			const data = await resp.json().catch(() => null);
 			if (!resp.ok) {
-				const msg = (data && data.error) || "HTTP " + resp.status;
-				showBulkToast("Submit failed: " + msg, "error");
+				const msg = (data && data.error) || 'HTTP ' + resp.status;
+				showBulkToast('Submit failed: ' + msg, 'error');
 				return;
 			}
 			showBulkToast(
-				"Submitted " +
+				'Submitted ' +
 					(data.appliedCount || fills.length) +
-					" slot" +
-					((data.appliedCount || fills.length) === 1 ? "" : "s") +
-					" back to the sender.",
+					' slot' +
+					((data.appliedCount || fills.length) === 1 ? '' : 's') +
+					' back to the sender.',
 			);
 		} catch (err) {
-			showBulkToast("Submit failed: " + (err.message || err), "error");
+			showBulkToast('Submit failed: ' + (err.message || err), 'error');
 		} finally {
 			if (btn) {
 				btn.disabled = false;
@@ -906,10 +823,10 @@ function csrfFetch(url, options) {
 	let _currentTeam = null;
 	function refreshCurrentTeam() {
 		return Promise.all([
-			csrfFetch("/api/me", { credentials: "same-origin" })
+			csrfFetch('/api/me', { credentials: 'same-origin' })
 				.then((r) => (r.ok ? r.json() : null))
 				.catch(() => null),
-			csrfFetch("/api/workspaces", { credentials: "same-origin" })
+			csrfFetch('/api/workspaces', { credentials: 'same-origin' })
 				.then((r) => (r.ok ? r.json() : null))
 				.catch(() => null),
 		]).then(([me, list]) => {
@@ -917,12 +834,9 @@ function csrfFetch(url, options) {
 				_currentTeam = {
 					id: me.workspace.id,
 					name: me.workspace.name,
-					role: me.workspace.role || "member",
-					plan: me.workspace.plan || "free",
-					teams:
-						list && Array.isArray(list.workspaces)
-							? list.workspaces
-							: [],
+					role: me.workspace.role || 'member',
+					plan: me.workspace.plan || 'free',
+					teams: list && Array.isArray(list.workspaces) ? list.workspaces : [],
 					members: [],
 					settings: Object.assign({}, DEFAULT_TEAM_SETTINGS),
 				};
@@ -942,25 +856,16 @@ function csrfFetch(url, options) {
 		allowed_email_domains: null,
 		email_domain_restriction_enabled: 0,
 	});
-	const isTeamAdmin = () => !!(_currentTeam && _currentTeam.role === "admin");
-	const _isOnPaidPlan = () =>
-		!!(
-			_currentTeam &&
-			(_currentTeam.plan === "pro" || _currentTeam.plan === "team")
-		);
-	const teamFlag = (name) =>
-		!!(
-			_currentTeam &&
-			_currentTeam.settings &&
-			_currentTeam.settings[name]
-		);
+	const isTeamAdmin = () => !!(_currentTeam && _currentTeam.role === 'admin');
+	const _isOnPaidPlan = () => !!(_currentTeam && (_currentTeam.plan === 'pro' || _currentTeam.plan === 'team'));
+	const teamFlag = (name) => !!(_currentTeam && _currentTeam.settings && _currentTeam.settings[name]);
 	let _readOnlyMode = false;
 	function readOnlyKey() {
-		return "sf-loader-readonly:" + (window.SF_ORG_ID || "anon");
+		return 'sf-loader-readonly:' + (window.SF_ORG_ID || 'anon');
 	}
 	function loadReadOnlyState() {
 		try {
-			return localStorage.getItem(readOnlyKey()) === "1";
+			return localStorage.getItem(readOnlyKey()) === '1';
 		} catch (e) {
 			return false;
 		}
@@ -968,32 +873,27 @@ function csrfFetch(url, options) {
 	function saveReadOnlyState(v) {
 		try {
 			if (v) {
-				localStorage.setItem(readOnlyKey(), "1");
+				localStorage.setItem(readOnlyKey(), '1');
 			} else {
 				localStorage.removeItem(readOnlyKey());
 			}
-		} catch (e) {
-		}
+		} catch (e) {}
 	}
 
-	csrfFetch("/api/me", { credentials: "same-origin" })
+	csrfFetch('/api/me', { credentials: 'same-origin' })
 		.then((r) => (r.ok ? r.json() : null))
 		.then(async (me) => {
 			if (!me) {
 				return;
 			}
 			_meInfo = me;
-			const orgType = me.orgType || "unknown";
+			const orgType = me.orgType || 'unknown';
 
 			if (me.workspace && me.workspace.id) {
 				try {
-					const r = await csrfFetch(
-						"/api/workspaces/" +
-							encodeURIComponent(me.workspace.id),
-						{
-							credentials: "same-origin",
-						},
-					);
+					const r = await csrfFetch('/api/workspaces/' + encodeURIComponent(me.workspace.id), {
+						credentials: 'same-origin',
+					});
 					if (r.ok) {
 						const data = await r.json();
 						_currentTeam = Object.assign({}, _currentTeam || {}, {
@@ -1001,21 +901,13 @@ function csrfFetch(url, options) {
 							name: data.workspace.name,
 							role: data.role,
 							members: data.members || [],
-							settings: Object.assign(
-								{},
-								DEFAULT_TEAM_SETTINGS,
-								data.settings || {},
-							),
+							settings: Object.assign({}, DEFAULT_TEAM_SETTINGS, data.settings || {}),
 						});
 					}
-				} catch (_) {
-				}
+				} catch (_) {}
 			}
 
-			if (
-				typeof renderBulkView === "function" &&
-				canvasState.graphView === "bulk"
-			) {
+			if (typeof renderBulkView === 'function' && canvasState.graphView === 'bulk') {
 				renderBulkView();
 			}
 
@@ -1026,104 +918,79 @@ function csrfFetch(url, options) {
 					return null;
 				}
 			})();
-			if (stored === null && orgType === "production") {
+			if (stored === null && orgType === 'production') {
 				_readOnlyMode = true;
 				saveReadOnlyState(true);
 			} else {
-				_readOnlyMode = stored === "1";
+				_readOnlyMode = stored === '1';
 			}
 			renderOrgBanner();
-			if (
-				typeof renderBulkView === "function" &&
-				canvasState.graphView === "bulk"
-			) {
+			if (typeof renderBulkView === 'function' && canvasState.graphView === 'bulk') {
 				renderBulkView();
 			}
 		})
-		.catch(() => {
-		});
+		.catch(() => {});
 
 	function renderOrgBanner() {
-		const banner = graph.querySelector("#org-banner");
+		const banner = graph.querySelector('#org-banner');
 		if (!banner || !_meInfo) {
 			return;
 		}
 		const approval = _meInfo.orgApproval || {
 			required: false,
-			status: "na",
+			status: 'na',
 		};
-		const blocked =
-			approval.required &&
-			(approval.status === "pending" || approval.status === "rejected");
-		if (_meInfo.orgType !== "production" && !_readOnlyMode && !blocked) {
-			banner.classList.add("hidden");
-			banner.innerHTML = "";
+		const blocked = approval.required && (approval.status === 'pending' || approval.status === 'rejected');
+		if (_meInfo.orgType !== 'production' && !_readOnlyMode && !blocked) {
+			banner.classList.add('hidden');
+			banner.innerHTML = '';
 			return;
 		}
-		banner.classList.remove("hidden");
-		banner.classList.toggle(
-			"org-banner--prod",
-			_meInfo.orgType === "production",
-		);
-		banner.classList.toggle(
-			"org-banner--readonly",
-			_readOnlyMode && _meInfo.orgType !== "production",
-		);
-		banner.classList.toggle("org-banner--blocked", blocked);
+		banner.classList.remove('hidden');
+		banner.classList.toggle('org-banner--prod', _meInfo.orgType === 'production');
+		banner.classList.toggle('org-banner--readonly', _readOnlyMode && _meInfo.orgType !== 'production');
+		banner.classList.toggle('org-banner--blocked', blocked);
 		let icon, headline, controls;
 		if (blocked) {
-			icon = approval.status === "rejected" ? "\u2717" : "\u23F3";
-			const orgLabel = approval.sfOrgLabel
-				? " <code>" + escapeHtml(approval.sfOrgLabel) + "</code>"
-				: "";
-			if (approval.status === "rejected") {
+			icon = approval.status === 'rejected' ? '\u2717' : '\u23F3';
+			const orgLabel = approval.sfOrgLabel ? ' <code>' + escapeHtml(approval.sfOrgLabel) + '</code>' : '';
+			if (approval.status === 'rejected') {
 				headline =
-					"Writes to this production org" +
+					'Writes to this production org' +
 					orgLabel +
-					" were <strong>rejected</strong> by your team admin." +
-					(approval.note
-						? " Reason: " + escapeHtml(approval.note)
-						: "");
+					' were <strong>rejected</strong> by your team admin.' +
+					(approval.note ? ' Reason: ' + escapeHtml(approval.note) : '');
 			} else {
 				headline =
-					"Writes to this production org" +
+					'Writes to this production org' +
 					orgLabel +
-					" are <strong>pending admin approval</strong>. " +
-					"Reads work; uploads are blocked until your team admin approves.";
+					' are <strong>pending admin approval</strong>. ' +
+					'Reads work; uploads are blocked until your team admin approves.';
 			}
-			controls = "";
+			controls = '';
 		} else {
-			icon = _meInfo.orgType === "production" ? "\u26A0" : "\uD83D\uDD12";
+			icon = _meInfo.orgType === 'production' ? '\u26A0' : '\uD83D\uDD12';
 			headline =
-				_meInfo.orgType === "production"
-					? "Connected to a <strong>production org</strong>. Uploads write to live data."
-					: "Read-only mode is on. Uploads are disabled until you turn it off.";
+				_meInfo.orgType === 'production'
+					? 'Connected to a <strong>production org</strong>. Uploads write to live data.'
+					: 'Read-only mode is on. Uploads are disabled until you turn it off.';
 			controls =
 				'<label class="ob-toggle">' +
 				'<input type="checkbox" data-readonly-toggle' +
-				(_readOnlyMode ? " checked" : "") +
-				">" +
-				"<span>Read-only mode</span>" +
-				"</label>";
+				(_readOnlyMode ? ' checked' : '') +
+				'>' +
+				'<span>Read-only mode</span>' +
+				'</label>';
 		}
 		banner.innerHTML =
-			'<span class="ob-icon">' +
-			icon +
-			"</span>" +
-			'<span class="ob-msg">' +
-			headline +
-			"</span>" +
-			controls;
-		const cb = banner.querySelector("[data-readonly-toggle]");
+			'<span class="ob-icon">' + icon + '</span>' + '<span class="ob-msg">' + headline + '</span>' + controls;
+		const cb = banner.querySelector('[data-readonly-toggle]');
 		if (cb) {
-			cb.addEventListener("change", () => {
+			cb.addEventListener('change', () => {
 				_readOnlyMode = !!cb.checked;
 				saveReadOnlyState(_readOnlyMode);
 				renderOrgBanner();
-				if (
-					typeof renderBulkView === "function" &&
-					canvasState.graphView === "bulk"
-				) {
+				if (typeof renderBulkView === 'function' && canvasState.graphView === 'bulk') {
 					renderBulkView();
 				}
 			});
@@ -1131,27 +998,27 @@ function csrfFetch(url, options) {
 	}
 
 	function escapeHtml(s) {
-		return String(s == null ? "" : s).replace(
+		return String(s == null ? '' : s).replace(
 			/[&<>"']/g,
 			(c) =>
 				({
-					"&": "&amp;",
-					"<": "&lt;",
-					">": "&gt;",
-					'"': "&quot;",
-					"'": "&#39;",
+					'&': '&amp;',
+					'<': '&lt;',
+					'>': '&gt;',
+					'"': '&quot;',
+					"'": '&#39;',
 				})[c],
 		);
 	}
 
-	const _progressBar = document.createElement("div");
-	_progressBar.className = "top-progress";
+	const _progressBar = document.createElement('div');
+	_progressBar.className = 'top-progress';
 	document.body.appendChild(_progressBar);
 	let _activeFetches = 0;
 	const _origFetch = window.fetch;
 	window.fetch = function (...args) {
 		_activeFetches++;
-		_progressBar.classList.add("active");
+		_progressBar.classList.add('active');
 		return _origFetch
 			.apply(this, args)
 			.then((res) => {
@@ -1160,11 +1027,10 @@ function csrfFetch(url, options) {
 			.finally(() => {
 				_activeFetches = Math.max(0, _activeFetches - 1);
 				if (_activeFetches === 0) {
-					_progressBar.classList.remove("active");
+					_progressBar.classList.remove('active');
 				}
 			});
 	};
-
 
 	const GRAPH_ZOOM_MIN = 0.3;
 	const GRAPH_ZOOM_MAX = 1.5;
@@ -1178,8 +1044,6 @@ function csrfFetch(url, options) {
 	const PAN_DURATION_MS = 850;
 	let _skipNextAutoFit = false;
 
-
-
 	let slotIdSeq = 1;
 	let _selectedDerivedEdge = null;
 
@@ -1189,15 +1053,15 @@ function csrfFetch(url, options) {
 
 	const _DIRECT_CSV_VALIDATED_CAP = 5000;
 
-	const graph = document.createElement("div");
-	graph.className = "graph-overlay schema-collapsed cy-mode";
+	const graph = document.createElement('div');
+	graph.className = 'graph-overlay schema-collapsed cy-mode';
 	graph.innerHTML =
 		'<div class="org-banner hidden" id="org-banner"></div>' +
-			'<div class="migrate-mode-bar hidden" id="migrate-mode-bar"></div>' +
+		'<div class="migrate-mode-bar hidden" id="migrate-mode-bar"></div>' +
 		'<div class="graph-subbar bulk-toolbar" id="graph-subbar">' +
 		'<span class="subbar-clone-mount" id="subbar-clone-btns"></span>' +
 		'<span class="subbar-records" id="subbar-records"></span>' +
-		"</div>" +
+		'</div>' +
 		'<div class="graph-split" id="graph-split">' +
 		'<div class="schema-controls-overlay" id="schema-controls-overlay">' +
 		'<button type="button" class="batch-btn schema-find-object" id="schema-find-object" title="Center the schema on any object">+ Find object</button>' +
@@ -1208,43 +1072,43 @@ function csrfFetch(url, options) {
 		'<button type="button" data-rel-filter="both">Both</button>' +
 		'<button type="button" data-rel-filter="parent" class="active">Parents</button>' +
 		'<button type="button" data-rel-filter="child">Children</button>' +
-		"</div>" +
-		"</div>" +
+		'</div>' +
+		'</div>' +
 		'<button type="button" class="batch-btn schema-system-chip" id="schema-system-fields-chip">System fields filter: \u2026</button>' +
-		"</div>" +
+		'</div>' +
 		'<div class="graph-canvas" id="graph-canvas">' +
 		'<div class="graph-content" id="graph-content">' +
 		'<svg class="graph-edges" id="graph-edges"></svg>' +
 		'<div class="graph-nodes" id="graph-nodes"></div>' +
-		"</div>" +
+		'</div>' +
 		'<div class="base-picker hidden" id="base-picker"></div>' +
 		'<div class="graph-zoom-hud" id="graph-zoom-hud" style="display:none"></div>' +
-		"</div>" +
+		'</div>' +
 		'<div class="graph-canvas-cy" id="graph-canvas-cy"></div>' +
 		'<div class="graph-split-resizer" id="graph-split-resizer" role="separator" aria-orientation="vertical" title="Drag to resize the schema canvas">' +
 		'<button type="button" class="graph-split-collapse" id="graph-split-collapse" title="Open schema explorer" aria-label="Open schema explorer"><span class="gsc-arrow" aria-hidden="true">\u276E</span></button>' +
-		"</div>" +
+		'</div>' +
 		'<div class="graph-bulk" id="graph-bulk">' +
 		'<div class="bulk-user-warning" id="bulk-user-warning" hidden>' +
 		'<span class="buw-icon" aria-hidden="true">\u26A0</span>' +
 		'<span class="buw-msg">' +
-		"<strong>User records on this canvas.</strong> " +
+		'<strong>User records on this canvas.</strong> ' +
 		"Each new User consumes a license, can't be deleted (only deactivated), and triggers a Salesforce welcome email. " +
-		"Seed sets <code>IsActive=false</code> by default to suppress the email until you review." +
-		"</span>" +
-		"</div>" +
+		'Seed sets <code>IsActive=false</code> by default to suppress the email until you review.' +
+		'</span>' +
+		'</div>' +
 		'<div class="bulk-canvas" id="bulk-canvas">' +
 		'<div class="bulk-content" id="bulk-content">' +
 		'<svg class="bulk-edges" id="bulk-edges"></svg>' +
 		'<div class="bulk-nodes" id="bulk-nodes"></div>' +
-		"</div>" +
+		'</div>' +
 		'<div class="bulk-empty" id="bulk-empty">No records yet.</div>' +
 		'<div class="bulk-first-hint" id="bulk-first-hint" style="display:none">' +
-		"<span>Double-click a card to fill its fields, or use <strong>Seed required fields</strong> to populate them all at once.</span>" +
+		'<span>Double-click a card to fill its fields, or use <strong>Seed required fields</strong> to populate them all at once.</span>' +
 		'<button type="button" data-dismiss-first-hint aria-label="Dismiss">&times;</button>' +
-		"</div>" +
+		'</div>' +
 		'<div class="graph-zoom-hud" id="bulk-zoom-hud" style="display:none"></div>' +
-		"</div>" +
+		'</div>' +
 		'<div class="bulk-canvas-cy" id="bulk-canvas-cy"></div>' +
 		(function _renderEmptyPlaceholder() {
 			var _sfOff = window.ORGLOOM_SF_CONNECTED === false;
@@ -1256,18 +1120,16 @@ function csrfFetch(url, options) {
 					'<div class="bec-step-hint">Pick an org to pull records from. Everything else unlocks once you\'re connected.</div>' +
 					'<div class="bec-step-quick-actions">' +
 					'<button type="button" class="bec-quick bec-quick--primary" data-bec-action="connect" title="Open the Salesforce connections modal">Connect Salesforce &rarr;</button>' +
-					"</div>" +
-					"</div>" +
-					"</li>"
-				: "";
-			var _step1Cls = _sfOff
-				? "bec-step bec-step--locked"
-				: "bec-step bec-step--active";
-			var _qDis = _sfOff ? ' disabled aria-disabled="true"' : "";
+					'</div>' +
+					'</div>' +
+					'</li>'
+				: '';
+			var _step1Cls = _sfOff ? 'bec-step bec-step--locked' : 'bec-step bec-step--active';
+			var _qDis = _sfOff ? ' disabled aria-disabled="true"' : '';
 			return (
 				'<div class="bulk-empty-placeholder" id="bulk-empty-placeholder" style="display:none">' +
 				'<div class="bulk-empty-card' +
-				(_sfOff ? " bulk-empty-card--with-step0" : "") +
+				(_sfOff ? ' bulk-empty-card--with-step0' : '') +
 				'">' +
 				'<button type="button" class="bec-dismiss" data-bec-dismiss title="Hide this onboarding card" aria-label="Dismiss">&times;</button>' +
 				'<h3 class="bec-title">Start building your canvas</h3>' +
@@ -1296,9 +1158,9 @@ function csrfFetch(url, options) {
 				'<button type="button" class="bec-quick" data-bec-action="ai"' +
 				_qDis +
 				' title="Describe what you want and let Claude draft records">Generate with AI</button>' +
-				"</div>" +
-				"</div>" +
-				"</li>"
+				'</div>' +
+				'</div>' +
+				'</li>'
 			);
 		})() +
 		'<li class="bec-step">' +
@@ -1306,70 +1168,70 @@ function csrfFetch(url, options) {
 		'<div class="bec-step-body">' +
 		'<div class="bec-step-title">Save your canvas <span class="bec-step-optional">(optional)</span></div>' +
 		'<div class="bec-step-hint">Come back to it later, or share it with a teammate.</div>' +
-		"</div>" +
-		"</li>" +
+		'</div>' +
+		'</li>' +
 		'<li class="bec-step">' +
 		'<div class="bec-step-num">3</div>' +
 		'<div class="bec-step-body">' +
 		'<div class="bec-step-title">Upload to Salesforce</div>' +
 		'<div class="bec-step-hint">Push some or all records in one batch when you’re ready.</div>' +
-		"</div>" +
-		"</li>" +
-		"</ol>" +
+		'</div>' +
+		'</li>' +
+		'</ol>' +
 		'<a class="bec-doclink" href="/docs/walkthroughs/quick-start" target="_blank" rel="noopener">Follow the Quick start &rarr;</a>' +
-				"</div>" + // .bulk-empty-card
-				"</div>" + // .bulk-empty-placeholder
-				'<aside class="canvas-onboarding-progress" id="canvas-onboarding-progress" hidden aria-label="Getting started">' +
-				'<button type="button" class="cog-dismiss" data-cog-dismiss title="Hide this guide" aria-label="Dismiss getting started guide">&times;</button>' +
-				'<h3 class="cog-title">Getting started</h3>' +
-				'<ol class="cog-steps">' +
-				'<li class="cog-step cog-step--done"><span class="cog-step-num" aria-hidden="true">&#10003;</span><span>Add records</span></li>' +
-				'<li class="cog-step" data-cog-save-step><span class="cog-step-num" aria-hidden="true">2</span><span>Save your canvas <small>(optional)</small></span></li>' +
-				'<li class="cog-step" data-cog-upload-step><span class="cog-step-num" aria-hidden="true">3</span><span>Upload to Salesforce</span></li>' +
-				"</ol>" +
-				'<a class="cog-doclink" href="/docs/walkthroughs/quick-start" target="_blank" rel="noopener">Quick start &rarr;</a>' +
-				"</aside>" +
-				'<div class="bulk-canvas-hint" id="bulk-canvas-hint" style="display:none">' +
+		'</div>' + // .bulk-empty-card
+		'</div>' + // .bulk-empty-placeholder
+		'<aside class="canvas-onboarding-progress" id="canvas-onboarding-progress" hidden aria-label="Getting started">' +
+		'<button type="button" class="cog-dismiss" data-cog-dismiss title="Hide this guide" aria-label="Dismiss getting started guide">&times;</button>' +
+		'<h3 class="cog-title">Getting started</h3>' +
+		'<ol class="cog-steps">' +
+		'<li class="cog-step cog-step--done"><span class="cog-step-num" aria-hidden="true">&#10003;</span><span>Add records</span></li>' +
+		'<li class="cog-step" data-cog-save-step><span class="cog-step-num" aria-hidden="true">2</span><span>Save your canvas <small>(optional)</small></span></li>' +
+		'<li class="cog-step" data-cog-upload-step><span class="cog-step-num" aria-hidden="true">3</span><span>Upload to Salesforce</span></li>' +
+		'</ol>' +
+		'<a class="cog-doclink" href="/docs/walkthroughs/quick-start" target="_blank" rel="noopener">Quick start &rarr;</a>' +
+		'</aside>' +
+		'<div class="bulk-canvas-hint" id="bulk-canvas-hint" style="display:none">' +
 		'<span class="bch-icon" aria-hidden="true">⊞</span>' +
 		'<span class="bch-text">Right-click to add a record</span>' +
-		"</div>" +
+		'</div>' +
 		'<div class="object-filter-panel" id="object-filter-panel" hidden></div>' +
 		'<div class="bulk-selection-chip" id="bulk-selection-chip" style="display:none"></div>' +
 		'<div class="canvas-status-strip" id="canvas-status-strip">' +
 		'<div class="bulk-count-chip" id="bulk-count-chip"></div>' +
-		"</div>" +
-		"</div>" +
-		"</div>" +
+		'</div>' +
+		'</div>' +
+		'</div>' +
 		'<div class="canvas-shortcut-hint" id="canvas-shortcut-hint" title="Open shortcuts reference">' +
 		'Press <kbd class="canvas-shortcut-hint-key">?</kbd> for shortcuts' +
-		"</div>";
+		'</div>';
 	document.body.appendChild(graph);
-	const _shortcutHintEl = graph.querySelector("#canvas-shortcut-hint");
+	const _shortcutHintEl = graph.querySelector('#canvas-shortcut-hint');
 	if (_shortcutHintEl) {
-		_shortcutHintEl.addEventListener("click", () => {
+		_shortcutHintEl.addEventListener('click', () => {
 			if (
 				window.Orgloom &&
 				window.Orgloom.canvasHelp &&
-				typeof window.Orgloom.canvasHelp.openShortcuts === "function"
+				typeof window.Orgloom.canvasHelp.openShortcuts === 'function'
 			) {
 				try {
 					window.Orgloom.canvasHelp.openShortcuts(_shortcutHintEl);
 				} catch (err) {
 					window.ORGLOOM_capture &&
 						window.ORGLOOM_capture(err, {
-							where: "app.js/shortcutHint/openShortcuts",
+							where: 'app.js/shortcutHint/openShortcuts',
 						});
 				}
 			}
 		});
 	}
 
-	graph.addEventListener("click", (e) => {
-		const card = e.target.closest(".record-card-pending[data-rec-id]");
+	graph.addEventListener('click', (e) => {
+		const card = e.target.closest('.record-card-pending[data-rec-id]');
 		if (!card) {
 			return;
 		}
-		const recId = parseInt(card.getAttribute("data-rec-id"), 10);
+		const recId = parseInt(card.getAttribute('data-rec-id'), 10);
 		if (!Number.isFinite(recId)) {
 			return;
 		}
@@ -1377,28 +1239,28 @@ function csrfFetch(url, options) {
 		if (!rec || !rec.isPending) {
 			return;
 		}
-		if (e.target.closest("[data-record-delete]")) {
+		if (e.target.closest('[data-record-delete]')) {
 			e.stopPropagation();
 			deleteRecord(recId);
 			return;
 		}
-		const blankBtn = e.target.closest("[data-pending-pick-blank]");
+		const blankBtn = e.target.closest('[data-pending-pick-blank]');
 		if (blankBtn) {
 			e.stopPropagation();
 			showFindObjectPopover(blankBtn, {
-				header: "Create blank record",
-				sub: "Pick the object type for this blank draft.",
+				header: 'Create blank record',
+				sub: 'Pick the object type for this blank draft.',
 				isAdded: () => false,
 				onPick: (name) => resolvePendingRecord(recId, name),
 			});
 			return;
 		}
-		const loadBtn = e.target.closest("[data-pending-pick-load]");
+		const loadBtn = e.target.closest('[data-pending-pick-load]');
 		if (loadBtn) {
 			e.stopPropagation();
 			showFindObjectPopover(loadBtn, {
-				header: "Load existing record",
-				sub: "Pick the object type, then search by name or paste a record ID.",
+				header: 'Load existing record',
+				sub: 'Pick the object type, then search by name or paste a record ID.',
 				isAdded: () => false,
 				onPick: (name) => resolvePendingRecordToLoad(recId, name),
 			});
@@ -1407,36 +1269,36 @@ function csrfFetch(url, options) {
 	});
 
 	(function wireSplitResizer() {
-		const resizer = graph.querySelector("#graph-split-resizer");
-		const split = graph.querySelector("#graph-split");
-		const canvasLegacy = graph.querySelector("#graph-canvas");
-		const canvasCy = graph.querySelector("#graph-canvas-cy");
-		const collapseBtn = graph.querySelector("#graph-split-collapse");
+		const resizer = graph.querySelector('#graph-split-resizer');
+		const split = graph.querySelector('#graph-split');
+		const canvasLegacy = graph.querySelector('#graph-canvas');
+		const canvasCy = graph.querySelector('#graph-canvas-cy');
+		const collapseBtn = graph.querySelector('#graph-split-collapse');
 		const MIN_CANVAS = 0;
 		const MIN_BULK = 0;
-		resizer.addEventListener("pointerdown", (e) => {
+		resizer.addEventListener('pointerdown', (e) => {
 			if (e.button !== 0) {
 				return;
 			}
-			if (e.target && e.target.closest(".graph-split-collapse")) {
+			if (e.target && e.target.closest('.graph-split-collapse')) {
 				return;
 			}
-			if (graph.classList.contains("schema-collapsed")) {
+			if (graph.classList.contains('schema-collapsed')) {
 				return;
 			}
 			e.preventDefault();
 			resizer.setPointerCapture(e.pointerId);
-			resizer.classList.add("dragging");
-			split.classList.add("resizing");
+			resizer.classList.add('dragging');
+			split.classList.add('resizing');
 			const splitRect = split.getBoundingClientRect();
 			const applyWidth = (w) => {
 				[canvasLegacy, canvasCy].forEach((c) => {
 					if (!c) {
 						return;
 					}
-					c.style.flex = "0 0 " + w + "px";
-					c.style.maxWidth = "none";
-					c.style.minWidth = "0";
+					c.style.flex = '0 0 ' + w + 'px';
+					c.style.maxWidth = 'none';
+					c.style.minWidth = '0';
 				});
 				if (_cySchemaInstance) {
 					_cySchemaInstance.resize();
@@ -1446,43 +1308,34 @@ function csrfFetch(url, options) {
 				}
 			};
 			const onMove = (ev) => {
-				const maxCanvas =
-					splitRect.width - MIN_BULK - resizer.offsetWidth;
-				const w = Math.max(
-					MIN_CANVAS,
-					Math.min(maxCanvas, splitRect.right - ev.clientX),
-				);
+				const maxCanvas = splitRect.width - MIN_BULK - resizer.offsetWidth;
+				const w = Math.max(MIN_CANVAS, Math.min(maxCanvas, splitRect.right - ev.clientX));
 				applyWidth(w);
 			};
 			const onUp = () => {
-				resizer.classList.remove("dragging");
-				split.classList.remove("resizing");
-				resizer.removeEventListener("pointermove", onMove);
-				resizer.removeEventListener("pointerup", onUp);
-				resizer.removeEventListener("pointercancel", onUp);
+				resizer.classList.remove('dragging');
+				split.classList.remove('resizing');
+				resizer.removeEventListener('pointermove', onMove);
+				resizer.removeEventListener('pointerup', onUp);
+				resizer.removeEventListener('pointercancel', onUp);
 			};
-			resizer.addEventListener("pointermove", onMove);
-			resizer.addEventListener("pointerup", onUp);
-			resizer.addEventListener("pointercancel", onUp);
+			resizer.addEventListener('pointermove', onMove);
+			resizer.addEventListener('pointerup', onUp);
+			resizer.addEventListener('pointercancel', onUp);
 		});
 
 		if (collapseBtn) {
-			collapseBtn.addEventListener("click", (e) => {
+			collapseBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				const collapsed = graph.classList.toggle("schema-collapsed");
-				const arrow = collapseBtn.querySelector(".gsc-arrow");
+				const collapsed = graph.classList.toggle('schema-collapsed');
+				const arrow = collapseBtn.querySelector('.gsc-arrow');
 				if (arrow) {
-					arrow.textContent = collapsed ? "\u276E" : "\u276F";
+					arrow.textContent = collapsed ? '\u276E' : '\u276F';
 				}
-				collapseBtn.title = collapsed
-					? "Open schema explorer"
-					: "Hide schema explorer";
-				collapseBtn.setAttribute(
-					"aria-label",
-					collapsed ? "Open schema explorer" : "Hide schema explorer",
-				);
+				collapseBtn.title = collapsed ? 'Open schema explorer' : 'Hide schema explorer';
+				collapseBtn.setAttribute('aria-label', collapsed ? 'Open schema explorer' : 'Hide schema explorer');
 				if (!collapsed) {
-					if (typeof renderCanvas === "function") {
+					if (typeof renderCanvas === 'function') {
 						renderCanvas();
 					}
 					_runAfterSchemaTransition(() => {
@@ -1499,8 +1352,8 @@ function csrfFetch(url, options) {
 		}
 	})();
 
-	graph.querySelector("#graph-canvas").addEventListener(
-		"wheel",
+	graph.querySelector('#graph-canvas').addEventListener(
+		'wheel',
 		(e) => {
 			if (!e.ctrlKey) {
 				return;
@@ -1509,28 +1362,23 @@ function csrfFetch(url, options) {
 				return;
 			}
 			e.preventDefault();
-			const canvas = graph.querySelector("#graph-canvas");
-			const content = graph.querySelector("#graph-content");
+			const canvas = graph.querySelector('#graph-canvas');
+			const content = graph.querySelector('#graph-content');
 			const rect = canvas.getBoundingClientRect();
 			const mx = e.clientX - rect.left + canvas.scrollLeft;
 			const my = e.clientY - rect.top + canvas.scrollTop;
 			const contentX = mx / canvasState.graphZoom;
 			const contentY = my / canvasState.graphZoom;
 			const step = e.deltaY > 0 ? 0.9 : 1.1;
-			const next = Math.max(
-				GRAPH_ZOOM_MIN,
-				Math.min(GRAPH_ZOOM_MAX, canvasState.graphZoom * step),
-			);
+			const next = Math.max(GRAPH_ZOOM_MIN, Math.min(GRAPH_ZOOM_MAX, canvasState.graphZoom * step));
 			if (next === canvasState.graphZoom) {
 				return;
 			}
 			canvasState.graphZoom = next;
 			canvasState._userZoomOverride = true;
 			applyGraphZoom();
-			canvas.scrollLeft =
-				contentX * canvasState.graphZoom - (e.clientX - rect.left);
-			canvas.scrollTop =
-				contentY * canvasState.graphZoom - (e.clientY - rect.top);
+			canvas.scrollLeft = contentX * canvasState.graphZoom - (e.clientX - rect.left);
+			canvas.scrollTop = contentY * canvasState.graphZoom - (e.clientY - rect.top);
 		},
 		{ passive: false },
 	);
@@ -1546,14 +1394,14 @@ function csrfFetch(url, options) {
 				startScrollTop: canvas.scrollTop,
 				prevCursor: canvas.style.cursor,
 			};
-			canvas.style.cursor = "grabbing";
+			canvas.style.cursor = 'grabbing';
 			e.preventDefault();
 		};
 		const onMouseDown = (e) => {
 			if (e.button !== 1) {
 				return;
 			}
-			const canvas = e.target.closest("#graph-canvas, #bulk-canvas");
+			const canvas = e.target.closest('#graph-canvas, #bulk-canvas');
 			if (!canvas) {
 				return;
 			}
@@ -1573,34 +1421,34 @@ function csrfFetch(url, options) {
 			if (!panState) {
 				return;
 			}
-			panState.canvas.style.cursor = panState.prevCursor || "";
+			panState.canvas.style.cursor = panState.prevCursor || '';
 			panState = null;
 		};
-		graph.addEventListener("mousedown", onMouseDown);
-		document.addEventListener("mousemove", onMouseMove);
-		document.addEventListener("mouseup", (e) => {
+		graph.addEventListener('mousedown', onMouseDown);
+		document.addEventListener('mousemove', onMouseMove);
+		document.addEventListener('mouseup', (e) => {
 			if (e.button === 1) {
 				endPan();
 			}
 		});
-		window.addEventListener("blur", endPan);
-		graph.addEventListener("auxclick", (e) => {
+		window.addEventListener('blur', endPan);
+		graph.addEventListener('auxclick', (e) => {
 			if (e.button !== 1) {
 				return;
 			}
-			if (e.target.closest("#graph-canvas, #bulk-canvas")) {
+			if (e.target.closest('#graph-canvas, #bulk-canvas')) {
 				e.preventDefault();
 			}
 		});
 	})();
 
 	graph.addEventListener(
-		"wheel",
+		'wheel',
 		(e) => {
-			if (canvasState.graphView !== "bulk") {
+			if (canvasState.graphView !== 'bulk') {
 				return;
 			}
-			const canvas = graph.querySelector("#bulk-canvas");
+			const canvas = graph.querySelector('#bulk-canvas');
 			if (!canvas || !canvas.contains(e.target)) {
 				return;
 			}
@@ -1614,81 +1462,65 @@ function csrfFetch(url, options) {
 			const contentX = mx / canvasState.bulkZoom;
 			const contentY = my / canvasState.bulkZoom;
 			const step = e.deltaY > 0 ? 0.9 : 1.1;
-			const next = Math.max(
-				BULK_ZOOM_MIN,
-				Math.min(BULK_ZOOM_MAX, canvasState.bulkZoom * step),
-			);
+			const next = Math.max(BULK_ZOOM_MIN, Math.min(BULK_ZOOM_MAX, canvasState.bulkZoom * step));
 			if (next === canvasState.bulkZoom) {
 				return;
 			}
 			canvasState.bulkZoom = next;
 			canvasState._bulkUserZoomOverride = true;
 			applyBulkZoom();
-			canvas.scrollLeft =
-				contentX * canvasState.bulkZoom - (e.clientX - rect.left);
-			canvas.scrollTop =
-				contentY * canvasState.bulkZoom - (e.clientY - rect.top);
+			canvas.scrollLeft = contentX * canvasState.bulkZoom - (e.clientX - rect.left);
+			canvas.scrollTop = contentY * canvasState.bulkZoom - (e.clientY - rect.top);
 		},
 		{ passive: false },
 	);
 
 	function applyGraphZoom() {
-		const content = graph.querySelector("#graph-content");
+		const content = graph.querySelector('#graph-content');
 		if (!content) {
 			return;
 		}
 		content.style.zoom = canvasState.graphZoom;
-		const hud = graph.querySelector("#graph-zoom-hud");
+		const hud = graph.querySelector('#graph-zoom-hud');
 		if (hud) {
 			if (canvasState.graphZoom !== 1) {
 				hud.textContent =
-					"Zoom " +
-					Math.round(canvasState.graphZoom * 100) +
-					"%  \u00b7  ctrl+scroll to adjust";
-				hud.style.display = "";
+					'Zoom ' + Math.round(canvasState.graphZoom * 100) + '%  \u00b7  ctrl+scroll to adjust';
+				hud.style.display = '';
 			} else {
-				hud.style.display = "none";
+				hud.style.display = 'none';
 			}
 		}
 	}
-	graph
-		.querySelector("#graph-filter-input")
-		.addEventListener("input", (e) => {
-			canvasState.graphFilterText = e.target.value.trim();
-			graph.querySelector("[data-graph-filter-clear]").style.display =
-				canvasState.graphFilterText ? "" : "none";
-			renderCanvas();
-		});
-	graph
-		.querySelector("[data-graph-filter-clear]")
-		.addEventListener("click", () => {
-			canvasState.graphFilterText = "";
-			const input = graph.querySelector("#graph-filter-input");
-			input.value = "";
-			input.focus();
-			graph.querySelector("[data-graph-filter-clear]").style.display =
-				"none";
-			renderCanvas();
-		});
-	graph.querySelectorAll("[data-rel-filter]").forEach((btn) => {
-		btn.addEventListener("click", () => {
+	graph.querySelector('#graph-filter-input').addEventListener('input', (e) => {
+		canvasState.graphFilterText = e.target.value.trim();
+		graph.querySelector('[data-graph-filter-clear]').style.display = canvasState.graphFilterText ? '' : 'none';
+		renderCanvas();
+	});
+	graph.querySelector('[data-graph-filter-clear]').addEventListener('click', () => {
+		canvasState.graphFilterText = '';
+		const input = graph.querySelector('#graph-filter-input');
+		input.value = '';
+		input.focus();
+		graph.querySelector('[data-graph-filter-clear]').style.display = 'none';
+		renderCanvas();
+	});
+	graph.querySelectorAll('[data-rel-filter]').forEach((btn) => {
+		btn.addEventListener('click', () => {
 			canvasState.graphRelFilter = btn.dataset.relFilter;
-			graph.querySelectorAll("[data-rel-filter]").forEach((b) => {
-				b.classList.toggle(
-					"active",
-					b.dataset.relFilter === canvasState.graphRelFilter,
-				);
+			graph.querySelectorAll('[data-rel-filter]').forEach((b) => {
+				b.classList.toggle('active', b.dataset.relFilter === canvasState.graphRelFilter);
 			});
 			renderCanvas();
 		});
 	});
 
-	const _schemaFindBtn = graph.querySelector("#schema-find-object");
+	const _schemaFindBtn = graph.querySelector('#schema-find-object');
 	if (_schemaFindBtn) {
-		_schemaFindBtn.addEventListener("click", () => {
+		_schemaFindBtn.addEventListener('click', () => {
 			showFindObjectPopover(_schemaFindBtn, {
-				header: "Find any object",
-				sub: "Centers the schema on the chosen object. Any current schema view is replaced; from there, click ring peers to navigate.",
+				header: 'Find any object',
+				sub: 'Centers the schema on the chosen object. Any current schema view is replaced; from there, click ring peers to navigate.',
 				isAdded: () => false,
 				onPick: (name) => {
 					const apply = () => {
@@ -1696,27 +1528,25 @@ function csrfFetch(url, options) {
 						canvasState._schemaViewPath = [];
 						canvasState._schemaViewPathEdges = [];
 						canvasState._pendingNavOriginPos = null;
-						if (typeof renderCanvas === "function") {
+						if (typeof renderCanvas === 'function') {
 							renderCanvas();
 						}
 					};
-					const cached =
-						canvasState.graphCache && canvasState.graphCache[name];
+					const cached = canvasState.graphCache && canvasState.graphCache[name];
 					if (cached) {
 						apply();
 						return;
 					}
-					if (typeof fetchGraphData === "function") {
+					if (typeof fetchGraphData === 'function') {
 						fetchGraphData(name)
 							.then(apply)
 							.catch((err) => {
 								showBulkToast(
-									"Couldn’t load schema for " +
+									'Couldn’t load schema for ' +
 										name +
-										": " +
-										((err && err.message) ||
-											"unknown error"),
-									"error",
+										': ' +
+										((err && err.message) || 'unknown error'),
+									'error',
 								);
 							});
 					} else {
@@ -1728,129 +1558,105 @@ function csrfFetch(url, options) {
 	}
 
 	function _updateSchemaSystemFieldsChip() {
-		const btn = graph.querySelector("#schema-system-fields-chip");
+		const btn = graph.querySelector('#schema-system-fields-chip');
 		if (!btn) {
 			return;
 		}
-		const fieldList = Array.from(SCHEMA_SYSTEM_FK_FIELDS).join(", ");
-		btn.textContent =
-			"System fields filter: " +
-			(canvasState._systemFieldsFilter ? "on" : "off");
+		const fieldList = Array.from(SCHEMA_SYSTEM_FK_FIELDS).join(', ');
+		btn.textContent = 'System fields filter: ' + (canvasState._systemFieldsFilter ? 'on' : 'off');
 		btn.title = canvasState._systemFieldsFilter
-			? "Hiding audit FK spokes (" + fieldList + "). Click to show them."
-			: "Showing audit FK spokes (" +
-				fieldList +
-				"). Click to hide them.";
-		btn.classList.toggle("is-on", canvasState._systemFieldsFilter);
+			? 'Hiding audit FK spokes (' + fieldList + '). Click to show them.'
+			: 'Showing audit FK spokes (' + fieldList + '). Click to hide them.';
+		btn.classList.toggle('is-on', canvasState._systemFieldsFilter);
 	}
 	_updateSchemaSystemFieldsChip();
-	const _schemaSystemFieldsChipBtn = graph.querySelector(
-		"#schema-system-fields-chip",
-	);
+	const _schemaSystemFieldsChipBtn = graph.querySelector('#schema-system-fields-chip');
 	if (_schemaSystemFieldsChipBtn) {
-		_schemaSystemFieldsChipBtn.addEventListener("click", () => {
+		_schemaSystemFieldsChipBtn.addEventListener('click', () => {
 			canvasState._systemFieldsFilter = !canvasState._systemFieldsFilter;
 			_updateSchemaSystemFieldsChip();
 			renderCanvas();
 		});
 	}
 
-	document.addEventListener("keydown", (e) => {
-		if (graph.classList.contains("hidden")) {
+	document.addEventListener('keydown', (e) => {
+		if (graph.classList.contains('hidden')) {
 			return;
 		}
-		if (e.key === "Escape") {
+		if (e.key === 'Escape') {
 			return;
 		}
 		{
 			const cmd = e.ctrlKey || e.metaKey;
 			const isInputTarget =
-				e.target &&
-				(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) ||
-					e.target.isContentEditable);
-			if (cmd && !isInputTarget && (e.key === "+" || e.key === "=")) {
+				e.target && (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable);
+			if (cmd && !isInputTarget && (e.key === '+' || e.key === '=')) {
 				_canvasZoomBy(1.2);
 				e.preventDefault();
 				return;
 			}
-			if (cmd && !isInputTarget && e.key === "-") {
+			if (cmd && !isInputTarget && e.key === '-') {
 				_canvasZoomBy(1 / 1.2);
 				e.preventDefault();
 				return;
 			}
-			if (!isInputTarget && e.key === "?") {
+			if (!isInputTarget && e.key === '?') {
 				if (
 					window.Orgloom &&
 					window.Orgloom.canvasHelp &&
-					typeof window.Orgloom.canvasHelp.openShortcuts ===
-						"function"
+					typeof window.Orgloom.canvasHelp.openShortcuts === 'function'
 				) {
 					try {
 						window.Orgloom.canvasHelp.openShortcuts();
 					} catch (err) {
 						window.ORGLOOM_capture &&
 							window.ORGLOOM_capture(err, {
-								where: "app.js/keyboard/openShortcuts",
+								where: 'app.js/keyboard/openShortcuts',
 							});
 					}
 					e.preventDefault();
 					return;
 				}
 			}
-			const recordEditorOpen = Boolean(
-				document.querySelector(".record-editor-modal:not(.hidden)"),
-			);
-			if (
-				!isInputTarget &&
-				!recordEditorOpen &&
-				cmd &&
-				(e.key === "f" || e.key === "F")
-			) {
+			const recordEditorOpen = Boolean(document.querySelector('.record-editor-modal:not(.hidden)'));
+			if (!isInputTarget && !recordEditorOpen && cmd && (e.key === 'f' || e.key === 'F')) {
 				e.preventDefault();
 				try {
 					openCanvasSearchModal();
 				} catch (err) {
 					window.ORGLOOM_capture &&
 						window.ORGLOOM_capture(err, {
-							where: "app.js/keyboard/openCanvasSearchModal",
+							where: 'app.js/keyboard/openCanvasSearchModal',
 						});
 				}
 				return;
 			}
 		}
-		if (canvasState.graphView === "bulk") {
-			if (
-				e.target &&
-				/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)
-			) {
+		if (canvasState.graphView === 'bulk') {
+			if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
 				return;
 			}
-			if (e.key === "Delete" || e.key === "Backspace") {
+			if (e.key === 'Delete' || e.key === 'Backspace') {
 				if (canvasState.bulkSelectedIds.size > 0) {
-					Array.from(canvasState.bulkSelectedIds).forEach((id) =>
-						deleteRecord(id),
-					);
+					Array.from(canvasState.bulkSelectedIds).forEach((id) => deleteRecord(id));
 					e.preventDefault();
 				} else if (canvasState.bulkSelectedEdgeId != null) {
 					deleteAssociation(canvasState.bulkSelectedEdgeId);
 					e.preventDefault();
 				} else if (_selectedDerivedEdge) {
-					deleteDerivedFkEdge(
-						_selectedDerivedEdge.recId,
-						_selectedDerivedEdge.fieldName,
-					);
+					deleteDerivedFkEdge(_selectedDerivedEdge.recId, _selectedDerivedEdge.fieldName);
 					e.preventDefault();
 				}
 				return;
 			}
 			const cmd = e.ctrlKey || e.metaKey;
-			if (cmd && (e.key === "c" || e.key === "C")) {
+			if (cmd && (e.key === 'c' || e.key === 'C')) {
 				if (copySelectionToClipboard()) {
 					e.preventDefault();
 				}
 				return;
 			}
-			if (cmd && (e.key === "v" || e.key === "V")) {
+			if (cmd && (e.key === 'v' || e.key === 'V')) {
 				if (e.shiftKey) {
 					openPasteCountPrompt();
 				} else {
@@ -1861,33 +1667,18 @@ function csrfFetch(url, options) {
 			}
 			if (
 				_canvasZHeld &&
-				(e.key === "ArrowUp" ||
-					e.key === "ArrowDown" ||
-					e.key === "ArrowLeft" ||
-					e.key === "ArrowRight")
+				(e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')
 			) {
 				const step = 50;
-				const dx =
-					e.key === "ArrowLeft"
-						? step
-						: e.key === "ArrowRight"
-							? -step
-							: 0;
-				const dy =
-					e.key === "ArrowUp"
-						? step
-						: e.key === "ArrowDown"
-							? -step
-							: 0;
+				const dx = e.key === 'ArrowLeft' ? step : e.key === 'ArrowRight' ? -step : 0;
+				const dy = e.key === 'ArrowUp' ? step : e.key === 'ArrowDown' ? -step : 0;
 				_canvasPanBy(dx, dy);
 				e.preventDefault();
 				return;
 			}
-			if (cmd && (e.key === "a" || e.key === "A")) {
+			if (cmd && (e.key === 'a' || e.key === 'A')) {
 				canvasState.bulkSelectedIds = new Set(
-					canvasState.bulkRecords
-						.filter((r) => !r.isTypeNode)
-						.map((r) => r.id),
+					canvasState.bulkRecords.filter((r) => !r.isTypeNode).map((r) => r.id),
 				);
 				canvasState.bulkSelectedEdgeId = null;
 				renderBulkView();
@@ -1918,9 +1709,7 @@ function csrfFetch(url, options) {
 
 	function _defaultWorldPosFor(parentId) {
 		if (parentId != null) {
-			const parent = canvasState.selectedObjects.find(
-				(s) => s.id === parentId,
-			);
+			const parent = canvasState.selectedObjects.find((s) => s.id === parentId);
 			if (parent && parent.worldPos) {
 				return { x: parent.worldPos.x + 240, y: parent.worldPos.y };
 			}
@@ -1928,22 +1717,14 @@ function csrfFetch(url, options) {
 		if (canvasState.selectedObjects.length === 0) {
 			return { x: 0, y: 0 };
 		}
-		const active =
-			canvasState.selectedObjects[canvasState.activeIndex] ||
-			canvasState.selectedObjects[0];
+		const active = canvasState.selectedObjects[canvasState.activeIndex] || canvasState.selectedObjects[0];
 		if (active && active.worldPos) {
 			return { x: active.worldPos.x, y: active.worldPos.y + 260 };
 		}
 		return { x: 0, y: 0 };
 	}
 
-	function addToSelectionOptimistic(
-		objectName,
-		label,
-		addedFromId,
-		addedVia,
-		worldPos,
-	) {
+	function addToSelectionOptimistic(objectName, label, addedFromId, addedVia, worldPos) {
 		const cached = canvasState.graphCache[objectName];
 		const entry = {
 			id: canvasState.selectedIdSeq++,
@@ -1973,31 +1754,16 @@ function csrfFetch(url, options) {
 				renderAll();
 			})
 			.catch((err) => {
-				console.warn("graph fetch failed for", objectName, err);
-				const i = canvasState.selectedObjects.findIndex(
-					(s) => s.id === entry.id,
-				);
+				console.warn('graph fetch failed for', objectName, err);
+				const i = canvasState.selectedObjects.findIndex((s) => s.id === entry.id);
 				if (i !== -1) {
 					canvasState.selectedObjects.splice(i, 1);
-					if (
-						canvasState.activeIndex >=
-						canvasState.selectedObjects.length
-					) {
-						canvasState.activeIndex = Math.max(
-							0,
-							canvasState.selectedObjects.length - 1,
-						);
+					if (canvasState.activeIndex >= canvasState.selectedObjects.length) {
+						canvasState.activeIndex = Math.max(0, canvasState.selectedObjects.length - 1);
 					}
 				}
 				renderAll();
-				showBulkToast &&
-					showBulkToast(
-						"Failed to load " +
-							objectName +
-							": " +
-							(err.message || err),
-						"error",
-					);
+				showBulkToast && showBulkToast('Failed to load ' + objectName + ': ' + (err.message || err), 'error');
 			});
 		return entry;
 	}
@@ -2032,8 +1798,7 @@ function csrfFetch(url, options) {
 				}
 			});
 		}
-		let orphanLevel =
-			Object.values(depths).reduce((m, d) => Math.max(m, d), 0) + 1;
+		let orphanLevel = Object.values(depths).reduce((m, d) => Math.max(m, d), 0) + 1;
 		canvasState.selectedObjects.forEach((s) => {
 			if (depths[s.id] === undefined) {
 				depths[s.id] = orphanLevel;
@@ -2063,9 +1828,7 @@ function csrfFetch(url, options) {
 			return;
 		}
 		if (removed) {
-			const stillNamed = canvasState.selectedObjects.some(
-				(s) => s.name === removed.name,
-			);
+			const stillNamed = canvasState.selectedObjects.some((s) => s.name === removed.name);
 			const removedRecIds = new Set();
 			canvasState.bulkRecords.forEach((r) => {
 				const tieToRemoved = r.fromSelectionId === removed.id;
@@ -2075,31 +1838,18 @@ function csrfFetch(url, options) {
 				}
 			});
 			if (removedRecIds.size > 0) {
-				const removedRecs = canvasState.bulkRecords.filter((r) =>
-					removedRecIds.has(r.id),
-				);
+				const removedRecs = canvasState.bulkRecords.filter((r) => removedRecIds.has(r.id));
 				const removedAssocs = canvasState.bulkAssociations.filter(
-					(a) =>
-						removedRecIds.has(a.fromId) ||
-						removedRecIds.has(a.toId),
+					(a) => removedRecIds.has(a.fromId) || removedRecIds.has(a.toId),
 				);
-				canvasState.bulkRecords = canvasState.bulkRecords.filter(
-					(r) => !removedRecIds.has(r.id),
+				canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => !removedRecIds.has(r.id));
+				canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
+					(a) => !removedRecIds.has(a.fromId) && !removedRecIds.has(a.toId),
 				);
-				canvasState.bulkAssociations =
-					canvasState.bulkAssociations.filter(
-						(a) =>
-							!removedRecIds.has(a.fromId) &&
-							!removedRecIds.has(a.toId),
-					);
-				removedRecIds.forEach((id) =>
-					canvasState.bulkSelectedIds.delete(id),
-				);
+				removedRecIds.forEach((id) => canvasState.bulkSelectedIds.delete(id));
 				if (
 					canvasState.bulkSelectedEdgeId != null &&
-					removedAssocs.some(
-						(a) => a.id === canvasState.bulkSelectedEdgeId,
-					)
+					removedAssocs.some((a) => a.id === canvasState.bulkSelectedEdgeId)
 				) {
 					canvasState.bulkSelectedEdgeId = null;
 				}
@@ -2110,37 +1860,25 @@ function csrfFetch(url, options) {
 					}
 				});
 				for (const k of [..._relatedCountCache.keys()]) {
-					const parts = k.split("|");
-					if (
-						removedHostIds.has(parts[2]) ||
-						parts[0] === removed.name
-					) {
+					const parts = k.split('|');
+					if (removedHostIds.has(parts[2]) || parts[0] === removed.name) {
 						_relatedCountCache.delete(k);
 					}
 				}
 				for (const k of [..._byRefCache.keys()]) {
-					const parts = k.split("|");
-					if (
-						removedHostIds.has(parts[2]) ||
-						parts[0] === removed.name
-					) {
+					const parts = k.split('|');
+					if (removedHostIds.has(parts[2]) || parts[0] === removed.name) {
 						_byRefCache.delete(k);
 					}
 				}
 				canvasState._prefetchedTypeNodeKeys.clear();
-				removedRecIds.forEach((id) =>
-					canvasState._renderedRecIds.delete(id),
-				);
+				removedRecIds.forEach((id) => canvasState._renderedRecIds.delete(id));
 				canvasState._bulkSeenIds = null;
 				canvasState._bulkUserDeleted = false;
-				if (typeof pushUndo === "function") {
-					pushUndo("Restore severed records", () => {
-						removedRecs.forEach((r) =>
-							canvasState.bulkRecords.push(r),
-						);
-						removedAssocs.forEach((a) =>
-							canvasState.bulkAssociations.push(a),
-						);
+				if (typeof pushUndo === 'function') {
+					pushUndo('Restore severed records', () => {
+						removedRecs.forEach((r) => canvasState.bulkRecords.push(r));
+						removedAssocs.forEach((a) => canvasState.bulkAssociations.push(a));
 						renderBulkView();
 					});
 				}
@@ -2156,10 +1894,10 @@ function csrfFetch(url, options) {
 	}
 
 	function renderAll() {
-		canvasState.graphView = "bulk";
-		const split = graph.querySelector("#graph-split");
+		canvasState.graphView = 'bulk';
+		const split = graph.querySelector('#graph-split');
 		if (split) {
-			split.classList.add("has-base");
+			split.classList.add('has-base');
 		}
 		renderChips();
 		renderBaseChip();
@@ -2168,11 +1906,7 @@ function csrfFetch(url, options) {
 			renderBulkView();
 		};
 		const isPanRender = !!canvasState._pendingPan;
-		if (
-			document.startViewTransition &&
-			!canvasState._suppressNextViewTransition &&
-			!isPanRender
-		) {
+		if (document.startViewTransition && !canvasState._suppressNextViewTransition && !isPanRender) {
 			document.startViewTransition(doRender);
 		} else {
 			canvasState._suppressNextViewTransition = false;
@@ -2184,12 +1918,8 @@ function csrfFetch(url, options) {
 			let dx = pan.dx || 0;
 			let dy = pan.dy || 0;
 			if (pan.fromClient && pan.targetSelId != null) {
-				const canvas = graph.querySelector("#graph-canvas");
-				const newEl =
-					canvas &&
-					canvas.querySelector(
-						'[data-sel-id="' + pan.targetSelId + '"]',
-					);
+				const canvas = graph.querySelector('#graph-canvas');
+				const newEl = canvas && canvas.querySelector('[data-sel-id="' + pan.targetSelId + '"]');
 				if (newEl && canvas) {
 					const newRect = newEl.getBoundingClientRect();
 					const newCx = newRect.left + newRect.width / 2;
@@ -2207,31 +1937,27 @@ function csrfFetch(url, options) {
 
 	let _currentPanAnim = null;
 	function _runPanAnimation(dx, dy) {
-		const content = graph.querySelector("#graph-content");
+		const content = graph.querySelector('#graph-content');
 		if (!content) {
 			return;
 		}
-		if (typeof content.animate !== "function") {
+		if (typeof content.animate !== 'function') {
 			return;
 		}
 		if (_currentPanAnim) {
 			try {
 				_currentPanAnim.cancel();
-			} catch (e) {
-			}
+			} catch (e) {}
 			_currentPanAnim = null;
 		}
-		content.style.transformOrigin = "0 0";
-		content.style.transform = "translate(" + dx + "px, " + dy + "px)";
+		content.style.transformOrigin = '0 0';
+		content.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
 		void content.offsetWidth; // force layout flush so the inline transform commits before any paint
 		const anim = content.animate(
-			[
-				{ transform: "translate(" + dx + "px, " + dy + "px)" },
-				{ transform: "translate(0, 0)" },
-			],
+			[{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'translate(0, 0)' }],
 			{
 				duration: PAN_DURATION_MS,
-				easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+				easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
 			},
 		);
 		_currentPanAnim = anim;
@@ -2239,8 +1965,8 @@ function csrfFetch(url, options) {
 			if (_currentPanAnim === anim) {
 				_currentPanAnim = null;
 			}
-			content.style.transform = "";
-			if (typeof renderCanvas === "function") {
+			content.style.transform = '';
+			if (typeof renderCanvas === 'function') {
 				renderCanvas();
 			}
 		};
@@ -2257,16 +1983,9 @@ function csrfFetch(url, options) {
 				? fromActiveId
 				: canvasState.selectedObjects[canvasState.activeIndex] &&
 					canvasState.selectedObjects[canvasState.activeIndex].id;
-		const fromEntry = canvasState.selectedObjects.find(
-			(s) => s.id === fromId,
-		);
+		const fromEntry = canvasState.selectedObjects.find((s) => s.id === fromId);
 		const toEntry = canvasState.selectedObjects[targetIdx];
-		if (
-			!fromEntry ||
-			!toEntry ||
-			!fromEntry.worldPos ||
-			!toEntry.worldPos
-		) {
+		if (!fromEntry || !toEntry || !fromEntry.worldPos || !toEntry.worldPos) {
 			canvasState.activeIndex = targetIdx;
 			renderAll();
 			return;
@@ -2282,7 +2001,6 @@ function csrfFetch(url, options) {
 		renderAll();
 	}
 
-
 	function renderStepper() {}
 	function renderBaseChip() {}
 
@@ -2291,8 +2009,8 @@ function csrfFetch(url, options) {
 		canvasState.selectedIdSeq = 1;
 		canvasState.activeIndex = 0;
 		canvasState.hiddenObjects.clear();
-		canvasState.graphFilterText = "";
-		canvasState.graphRelFilter = "parent";
+		canvasState.graphFilterText = '';
+		canvasState.graphRelFilter = 'parent';
 		canvasState.bulkRecords = [];
 		canvasState.bulkAssociations = [];
 		canvasState.bulkIdSeq = 1;
@@ -2306,8 +2024,8 @@ function csrfFetch(url, options) {
 		canvasState._prefetchedTypeNodeKeys.clear();
 		canvasState._renderedRecIds.clear();
 		basePickerFilter = {
-			text: "",
-			type: "all",
+			text: '',
+			type: 'all',
 		};
 		_highlightedRingKey = null;
 		_highlightedSelId = null;
@@ -2316,12 +2034,11 @@ function csrfFetch(url, options) {
 	}
 
 	const DESCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
-	const DESCRIBE_STORAGE_PREFIX = "orgloom-describe-v3";
-	const DESCRIBE_STORAGE_ORG = window.SF_ORG_ID || "unknown";
+	const DESCRIBE_STORAGE_PREFIX = 'orgloom-describe-v3';
+	const DESCRIBE_STORAGE_ORG = window.SF_ORG_ID || 'unknown';
+	// Include the org ID so field permissions and custom schema never bleed across connections.
 	function _describeStorageKey(name) {
-		return (
-			DESCRIBE_STORAGE_PREFIX + "|" + DESCRIBE_STORAGE_ORG + "|" + name
-		);
+		return DESCRIBE_STORAGE_PREFIX + '|' + DESCRIBE_STORAGE_ORG + '|' + name;
 	}
 	function _loadDescribeFromStorage(name) {
 		try {
@@ -2330,11 +2047,7 @@ function csrfFetch(url, options) {
 				return null;
 			}
 			const obj = JSON.parse(raw);
-			if (
-				!obj ||
-				!obj.savedAt ||
-				Date.now() - obj.savedAt > DESCRIBE_TTL_MS
-			) {
+			if (!obj || !obj.savedAt || Date.now() - obj.savedAt > DESCRIBE_TTL_MS) {
 				return null;
 			}
 			return obj.describe;
@@ -2344,16 +2057,12 @@ function csrfFetch(url, options) {
 	}
 	function _saveDescribeToStorage(name, describe) {
 		try {
-			sessionStorage.setItem(
-				_describeStorageKey(name),
-				JSON.stringify({ savedAt: Date.now(), describe }),
-			);
-		} catch (e) {
-		}
+			sessionStorage.setItem(_describeStorageKey(name), JSON.stringify({ savedAt: Date.now(), describe }));
+		} catch (e) {}
 	}
 	function ensureDescribe(name, options) {
-		if (!name || typeof name !== "string") {
-			return Promise.reject(new Error("ensureDescribe: name required"));
+		if (!name || typeof name !== 'string') {
+			return Promise.reject(new Error('ensureDescribe: name required'));
 		}
 		const force = !!(options && options.force);
 		if (force && canvasState.describeRequests[name]) {
@@ -2366,12 +2075,12 @@ function csrfFetch(url, options) {
 			delete canvasState.describeRequests[name];
 			try {
 				sessionStorage.removeItem(_describeStorageKey(name));
-			} catch (e) {
-			}
+			} catch (e) {}
 		}
 		if (canvasState.describeCache[name]) {
 			return Promise.resolve(canvasState.describeCache[name]);
 		}
+		// Share in-flight requests so concurrent panels see one consistent describe response.
 		if (canvasState.describeRequests[name]) {
 			return canvasState.describeRequests[name];
 		}
@@ -2380,9 +2089,7 @@ function csrfFetch(url, options) {
 			canvasState.describeCache[name] = cached;
 			return Promise.resolve(cached);
 		}
-		const request = csrfFetch(
-			"/api/objects/" + encodeURIComponent(name) + "/describe",
-		)
+		const request = csrfFetch('/api/objects/' + encodeURIComponent(name) + '/describe')
 			.then((r) => {
 				if (!r.ok) {
 					throw new Error(r.statusText);
@@ -2403,10 +2110,10 @@ function csrfFetch(url, options) {
 
 	function enterMigrateMode(opts) {
 		opts = opts || {};
+		// Migration mode only annotates the local canvas; Salesforce changes happen during upload.
 		canvasState.migrateMode.active = true;
 		canvasState.migrateMode.sourceSfOrgId = opts.sourceSfOrgId || null;
-		canvasState.migrateMode.targetSfOrgId =
-			opts.targetSfOrgId || window.SF_ORG_ID || null;
+		canvasState.migrateMode.targetSfOrgId = opts.targetSfOrgId || window.SF_ORG_ID || null;
 		return refreshMigrationAnnotations();
 	}
 
@@ -2421,34 +2128,38 @@ function csrfFetch(url, options) {
 				delete record._migrateFieldResolutions;
 			}
 		});
-		if (typeof renderBulkView === "function") {
+		if (typeof renderBulkView === 'function') {
 			renderBulkView();
 		}
 	}
 
 	function _renderMigrateBar() {
-		const bar = graph.querySelector("#migrate-mode-bar");
+		const bar = graph.querySelector('#migrate-mode-bar');
 		if (!bar) {
 			return;
 		}
 		const mm = canvasState.migrateMode;
 		if (!mm.active) {
-			bar.classList.add("hidden");
-			bar.innerHTML = "";
+			bar.classList.add('hidden');
+			bar.innerHTML = '';
 			return;
 		}
-		const total = (mm.summary && mm.summary.total) ||
+		const total =
+			(mm.summary && mm.summary.total) ||
 			(canvasState.bulkRecords || []).filter((record) => record && !record.isTypeNode).length;
 		bar.innerHTML =
 			'<span class="mmb-label"><span class="mmb-dot" aria-hidden="true"></span>Migration mode</span>' +
-			'<span class="mmb-sub"><strong>' + total + ' record' + (total === 1 ? '' : 's') +
+			'<span class="mmb-sub"><strong>' +
+			total +
+			' record' +
+			(total === 1 ? '' : 's') +
 			'</strong> prepared for the destination. Review the migration plan, then Upload.</span>' +
 			'<span class="mmb-actions">' +
 			'<button type="button" class="mmb-btn" data-mmb-review>Review migration</button>' +
 			'<button type="button" class="mmb-btn mmb-btn--ghost" data-mmb-discard>Discard</button>' +
 			'</span>';
-		bar.classList.remove("hidden");
-		const reviewBtn = bar.querySelector("[data-mmb-review]");
+		bar.classList.remove('hidden');
+		const reviewBtn = bar.querySelector('[data-mmb-review]');
 		if (reviewBtn) {
 			reviewBtn.onclick = () => {
 				if (window.Orgloom.migrateMatch && window.Orgloom.migrateMatch.open) {
@@ -2456,18 +2167,17 @@ function csrfFetch(url, options) {
 				}
 			};
 		}
-		const discardBtn = bar.querySelector("[data-mmb-discard]");
+		const discardBtn = bar.querySelector('[data-mmb-discard]');
 		if (discardBtn) {
 			discardBtn.onclick = () => {
 				try {
-					if (window.Orgloom.canvasOrgSwitch &&
-						window.Orgloom.canvasOrgSwitch.migrationClear) {
+					if (window.Orgloom.canvasOrgSwitch && window.Orgloom.canvasOrgSwitch.migrationClear) {
 						window.Orgloom.canvasOrgSwitch.migrationClear();
 					}
 				} catch (_e) {}
 				exitMigrateMode();
-				if (typeof window.olToast === "function") {
-					window.olToast("Migration discarded. The canvas stays as-is.", "info");
+				if (typeof window.olToast === 'function') {
+					window.olToast('Migration discarded. The canvas stays as-is.', 'info');
 				}
 			};
 		}
@@ -2481,14 +2191,8 @@ function csrfFetch(url, options) {
 		const recs = canvasState.bulkRecords || [];
 		const describeByObject = {};
 		recs.forEach((r) => {
-			if (
-				r &&
-				!r.isTypeNode &&
-				r.objectName &&
-				canvasState.describeCache[r.objectName]
-			) {
-				describeByObject[r.objectName] =
-					canvasState.describeCache[r.objectName];
+			if (r && !r.isTypeNode && r.objectName && canvasState.describeCache[r.objectName]) {
+				describeByObject[r.objectName] = canvasState.describeCache[r.objectName];
 			}
 		});
 		const anns = engine.annotateRecords(recs, describeByObject);
@@ -2515,11 +2219,9 @@ function csrfFetch(url, options) {
 			}
 		});
 		const names = Object.keys(objectNames);
-		return Promise.all(
-			names.map((n) => ensureDescribe(n).catch(() => null)),
-		).then(() => {
+		return Promise.all(names.map((n) => ensureDescribe(n).catch(() => null))).then(() => {
 			recomputeMigrationAnnotationsSync();
-			if (typeof renderBulkView === "function") {
+			if (typeof renderBulkView === 'function') {
 				renderBulkView();
 			}
 			return canvasState.migrateMode.summary;
@@ -2538,7 +2240,7 @@ function csrfFetch(url, options) {
 		if (!_smartDefaults) {
 			return null;
 		}
-		return _smartDefaults[objectName + "." + fieldName] || null;
+		return _smartDefaults[objectName + '.' + fieldName] || null;
 	}
 
 	const rulesCache = {};
@@ -2546,9 +2248,7 @@ function csrfFetch(url, options) {
 		if (rulesCache[name]) {
 			return Promise.resolve(rulesCache[name]);
 		}
-		return csrfFetch(
-			"/api/objects/" + encodeURIComponent(name) + "/validation-rules",
-		)
+		return csrfFetch('/api/objects/' + encodeURIComponent(name) + '/validation-rules')
 			.then((r) => (r.ok ? r.json() : []))
 			.then((data) => {
 				if (data && data.unavailable) {
@@ -2611,12 +2311,11 @@ function csrfFetch(url, options) {
 		if (canvasState.selectedObjects.length === 0) {
 			return;
 		}
-		const canvas = graph.querySelector("#bulk-canvas");
+		const canvas = graph.querySelector('#bulk-canvas');
 		const W = Math.max(canvas.clientWidth, 500);
 		const H = Math.max(canvas.clientHeight, 500);
 		const baseSel = canvasState.selectedObjects[0];
-		const baseWorld =
-			baseSel && baseSel.worldPos ? baseSel.worldPos : { x: 0, y: 0 };
+		const baseWorld = baseSel && baseSel.worldPos ? baseSel.worldPos : { x: 0, y: 0 };
 		const anchorX = Math.max(W / 2, 320);
 		const anchorY = Math.max(H / 2, 240);
 		const recBySelId = {};
@@ -2630,9 +2329,7 @@ function csrfFetch(url, options) {
 				label: s.label,
 				x,
 				y,
-				values: canvasState.savedRecords[s.name]
-					? Object.assign({}, canvasState.savedRecords[s.name])
-					: {},
+				values: canvasState.savedRecords[s.name] ? Object.assign({}, canvasState.savedRecords[s.name]) : {},
 				fromSelectionId: s.id,
 			};
 			canvasState.bulkRecords.push(rec);
@@ -2649,9 +2346,7 @@ function csrfFetch(url, options) {
 				label: s.label,
 				x: W / 2,
 				y: H / 2,
-				values: canvasState.savedRecords[s.name]
-					? Object.assign({}, canvasState.savedRecords[s.name])
-					: {},
+				values: canvasState.savedRecords[s.name] ? Object.assign({}, canvasState.savedRecords[s.name]) : {},
 				fromSelectionId: s.id,
 			};
 			canvasState.bulkRecords.push(rec);
@@ -2662,9 +2357,7 @@ function csrfFetch(url, options) {
 			if (s.addedFrom == null) {
 				return;
 			}
-			const from = canvasState.selectedObjects.find(
-				(so) => so.id === s.addedFrom,
-			);
+			const from = canvasState.selectedObjects.find((so) => so.id === s.addedFrom);
 			if (!from) {
 				return;
 			}
@@ -2677,10 +2370,10 @@ function csrfFetch(url, options) {
 				target = null,
 				fieldName = null;
 			if (s.addedVia && s.addedVia.fieldName) {
-				if (s.addedVia.direction === "parent") {
+				if (s.addedVia.direction === 'parent') {
 					holder = fromRec;
 					target = sRec;
-				} else if (s.addedVia.direction === "child") {
+				} else if (s.addedVia.direction === 'child') {
 					holder = sRec;
 					target = fromRec;
 				}
@@ -2691,8 +2384,8 @@ function csrfFetch(url, options) {
 				if (!info) {
 					return;
 				}
-				holder = info.direction === "fwd" ? sRec : fromRec;
-				target = info.direction === "fwd" ? fromRec : sRec;
+				holder = info.direction === 'fwd' ? sRec : fromRec;
+				target = info.direction === 'fwd' ? fromRec : sRec;
 				fieldName = info.fieldName;
 			}
 			canvasState.bulkAssociations.push({
@@ -2729,7 +2422,7 @@ function csrfFetch(url, options) {
 		_autosaveSchedule();
 		recomputeMigrationAnnotationsSync();
 		_renderMigrateBar();
-		const container = graph.querySelector("#graph-bulk");
+		const container = graph.querySelector('#graph-bulk');
 		if (!canvasState.bulkInitialized) {
 			canvasState.bulkInitialized = true;
 			seedBulkRecords();
@@ -2751,130 +2444,118 @@ function csrfFetch(url, options) {
 			canvasState._bulkSeenIds = null;
 			canvasState._lastBulkZoomSig = null;
 			canvasState._renderedRecIds.clear();
-			const nodesRoot = graph.querySelector("#bulk-nodes");
-			const edges = graph.querySelector("#bulk-edges");
+			const nodesRoot = graph.querySelector('#bulk-nodes');
+			const edges = graph.querySelector('#bulk-edges');
 			if (nodesRoot) {
-				nodesRoot.innerHTML = "";
+				nodesRoot.innerHTML = '';
 			}
 			if (edges) {
-				edges.innerHTML = "";
+				edges.innerHTML = '';
 			}
-			const cyContainer = graph.querySelector("#bulk-canvas-cy");
+			const cyContainer = graph.querySelector('#bulk-canvas-cy');
 			if (cyContainer) {
-				cyContainer.innerHTML = "";
+				cyContainer.innerHTML = '';
 			}
-			const empty = graph.querySelector("#bulk-empty");
+			const empty = graph.querySelector('#bulk-empty');
 			if (empty) {
-				empty.style.display = "";
+				empty.style.display = '';
 			}
 		}
-		const emptyPh = graph.querySelector("#bulk-empty-placeholder");
-		const progressGuide = graph.querySelector("#canvas-onboarding-progress");
-		const canvasHint = graph.querySelector("#bulk-canvas-hint");
-		const shortcutHint = graph.querySelector("#canvas-shortcut-hint");
+		const emptyPh = graph.querySelector('#bulk-empty-placeholder');
+		const progressGuide = graph.querySelector('#canvas-onboarding-progress');
+		const canvasHint = graph.querySelector('#bulk-canvas-hint');
+		const shortcutHint = graph.querySelector('#canvas-shortcut-hint');
 		if (emptyPh) {
-			const realCount = canvasState.bulkRecords.filter(
-				(r) => r && (!r.isTypeNode || r.isPending),
-			).length;
-			const _dismissed = _canvasGuideHas(
-				_canvasGuideDismissKey,
-				_canvasGuideDismissedThisPage,
-			);
-			const _completed = _canvasGuideHas(
-				_canvasGuideCompleteKey,
-				_canvasGuideCompletedThisPage,
-			);
+			const realCount = canvasState.bulkRecords.filter((r) => r && (!r.isTypeNode || r.isPending)).length;
+			const _dismissed = _canvasGuideHas(_canvasGuideDismissKey, _canvasGuideDismissedThisPage);
+			const _completed = _canvasGuideHas(_canvasGuideCompleteKey, _canvasGuideCompletedThisPage);
 			const showPh = realCount === 0 && !_dismissed && !_completed;
 			const showProgress = realCount > 0 && !_dismissed && !_completed;
-			emptyPh.style.display = showPh ? "" : "none";
+			emptyPh.style.display = showPh ? '' : 'none';
 			if (progressGuide) {
 				progressGuide.hidden = !showProgress;
-				const saveStep = progressGuide.querySelector("[data-cog-save-step]");
-				const uploadStep = progressGuide.querySelector("[data-cog-upload-step]");
-				const hasSavedCanvas = !!(
-					canvasState.currentCanvas && canvasState.currentCanvas.id
-				);
+				const saveStep = progressGuide.querySelector('[data-cog-save-step]');
+				const uploadStep = progressGuide.querySelector('[data-cog-upload-step]');
+				const hasSavedCanvas = !!(canvasState.currentCanvas && canvasState.currentCanvas.id);
 				if (saveStep) {
-					saveStep.classList.toggle("cog-step--done", hasSavedCanvas);
-					saveStep.classList.toggle("cog-step--active", !hasSavedCanvas);
-					const saveNum = saveStep.querySelector(".cog-step-num");
+					saveStep.classList.toggle('cog-step--done', hasSavedCanvas);
+					saveStep.classList.toggle('cog-step--active', !hasSavedCanvas);
+					const saveNum = saveStep.querySelector('.cog-step-num');
 					if (saveNum) {
-						saveNum.innerHTML = hasSavedCanvas ? "&#10003;" : "2";
+						saveNum.innerHTML = hasSavedCanvas ? '&#10003;' : '2';
 					}
 				}
 				if (uploadStep) {
-					uploadStep.classList.toggle("cog-step--active", hasSavedCanvas);
+					uploadStep.classList.toggle('cog-step--active', hasSavedCanvas);
 				}
 			}
 			if (canvasHint) {
-				canvasHint.style.display = showPh ? "none" : "";
+				canvasHint.style.display = showPh ? 'none' : '';
 			}
 			if (shortcutHint) {
-				shortcutHint.style.display = showPh ? "none" : "";
+				shortcutHint.style.display = showPh ? 'none' : '';
 			}
 
-			const dismissBtn = emptyPh.querySelector("[data-bec-dismiss]");
+			const dismissBtn = emptyPh.querySelector('[data-bec-dismiss]');
 			if (dismissBtn && !dismissBtn.dataset.wired) {
-				dismissBtn.dataset.wired = "1";
-				dismissBtn.addEventListener("click", (e) => {
+				dismissBtn.dataset.wired = '1';
+				dismissBtn.addEventListener('click', (e) => {
 					e.stopPropagation();
 					_dismissCanvasGuide();
-					emptyPh.style.display = "none";
+					emptyPh.style.display = 'none';
 					if (canvasHint) {
-						canvasHint.style.display = "";
+						canvasHint.style.display = '';
 					}
 					if (shortcutHint) {
-						shortcutHint.style.display = "";
+						shortcutHint.style.display = '';
 					}
 				});
 			}
 
-			const progressDismiss = progressGuide &&
-				progressGuide.querySelector("[data-cog-dismiss]");
+			const progressDismiss = progressGuide && progressGuide.querySelector('[data-cog-dismiss]');
 			if (progressDismiss && !progressDismiss.dataset.wired) {
-				progressDismiss.dataset.wired = "1";
-				progressDismiss.addEventListener("click", (e) => {
+				progressDismiss.dataset.wired = '1';
+				progressDismiss.addEventListener('click', (e) => {
 					e.stopPropagation();
 					_dismissCanvasGuide();
 					progressGuide.hidden = true;
 				});
 			}
 
-			emptyPh.querySelectorAll("[data-bec-action]").forEach((btn) => {
+			emptyPh.querySelectorAll('[data-bec-action]').forEach((btn) => {
 				if (btn.dataset.wired) {
 					return;
 				}
-				btn.dataset.wired = "1";
-				btn.addEventListener("click", (e) => {
+				btn.dataset.wired = '1';
+				btn.addEventListener('click', (e) => {
 					e.stopPropagation();
 
 					if (btn.disabled) {
 						return;
 					}
 					const action = btn.dataset.becAction;
-					if (action === "browse") {
+					if (action === 'browse') {
 						openBrowseModal();
-					} else if (action === "csv") {
+					} else if (action === 'csv') {
 						openLinkedCsvModal();
-					} else if (action === "soql") {
+					} else if (action === 'soql') {
 						openSoqlImportModal();
-					} else if (action === "blank") {
+					} else if (action === 'blank') {
 						spawnPendingRecord();
-					} else if (action === "ai") {
+					} else if (action === 'ai') {
 						openAiGenModal();
-					} else if (action === "connect") {
+					} else if (action === 'connect') {
 						if (
 							window.Orgloom &&
 							window.Orgloom.sfConnectionsModal &&
-							typeof window.Orgloom.sfConnectionsModal.open ===
-								"function"
+							typeof window.Orgloom.sfConnectionsModal.open === 'function'
 						) {
 							try {
 								window.Orgloom.sfConnectionsModal.open();
 							} catch (err) {
 								window.ORGLOOM_capture &&
 									window.ORGLOOM_capture(err, {
-										where: "app.js/sfConnectionsModal.open",
+										where: 'app.js/sfConnectionsModal.open',
 									});
 							}
 						}
@@ -2889,20 +2570,17 @@ function csrfFetch(url, options) {
 	}
 
 	function renderObjectFilterPanel() {
-		const panel = graph.querySelector("#object-filter-panel");
+		const panel = graph.querySelector('#object-filter-panel');
 		if (!panel) {
 			return;
 		}
-		if (
-			!Array.isArray(canvasState.bulkRecords) ||
-			canvasState.bulkRecords.length === 0
-		) {
+		if (!Array.isArray(canvasState.bulkRecords) || canvasState.bulkRecords.length === 0) {
 			_objectFilterHidden = new Set();
 			panel.hidden = true;
-			panel.innerHTML = "";
+			panel.innerHTML = '';
 			return;
 		}
-	
+
 		const counts = new Map();
 		canvasState.bulkRecords.forEach((r) => {
 			if (!r || !r.isTypeNode) {
@@ -2919,7 +2597,7 @@ function csrfFetch(url, options) {
 		});
 		if (counts.size === 0) {
 			panel.hidden = true;
-			panel.innerHTML = "";
+			panel.innerHTML = '';
 			return;
 		}
 		const sorted = [...counts.keys()].sort((a, b) => a.localeCompare(b));
@@ -2927,24 +2605,22 @@ function csrfFetch(url, options) {
 			'<div class="ofp-header">' +
 			'<span class="ofp-title">Filter objects</span>' +
 			'<button type="button" class="ofp-collapse" data-ofp-collapse aria-label="Collapse">\u2013</button>' +
-			"</div>";
+			'</div>';
 		const allChecked = sorted.every((n) => !_objectFilterHidden.has(n));
 		const noneChecked = sorted.every((n) => _objectFilterHidden.has(n));
 		const bulkRow =
 			'<div class="ofp-bulk">' +
 			'<button type="button" class="ofp-bulk-btn" data-ofp-all' +
-			(allChecked ? " disabled" : "") +
-			">Show all</button>" +
+			(allChecked ? ' disabled' : '') +
+			'>Show all</button>' +
 			'<button type="button" class="ofp-bulk-btn" data-ofp-none' +
-			(noneChecked ? " disabled" : "") +
-			">Hide all</button>" +
-			"</div>";
+			(noneChecked ? ' disabled' : '') +
+			'>Hide all</button>' +
+			'</div>';
 		const items = sorted
 			.map((name) => {
 				const checked = !_objectFilterHidden.has(name);
-				const labelObj = canvasState.selectedObjects.find(
-					(s) => s.name === name,
-				);
+				const labelObj = canvasState.selectedObjects.find((s) => s.name === name);
 				const labelText = (labelObj && labelObj.label) || name;
 				return (
 					'<label class="ofp-row" title="' +
@@ -2953,56 +2629,53 @@ function csrfFetch(url, options) {
 					'<input type="checkbox" data-ofp-name="' +
 					escapeHtml(name) +
 					'"' +
-					(checked ? " checked" : "") +
-					" />" +
+					(checked ? ' checked' : '') +
+					' />' +
 					'<span class="ofp-row-label">' +
 					escapeHtml(labelText) +
-					"</span>" +
+					'</span>' +
 					'<span class="ofp-row-count">' +
 					counts.get(name) +
-					"</span>" +
-					"</label>"
+					'</span>' +
+					'</label>'
 				);
 			})
-			.join("");
+			.join('');
 		panel.hidden = false;
-		panel.innerHTML =
-			headerRow + bulkRow + '<div class="ofp-list">' + items + "</div>";
+		panel.innerHTML = headerRow + bulkRow + '<div class="ofp-list">' + items + '</div>';
 
-		panel
-			.querySelectorAll('input[type="checkbox"][data-ofp-name]')
-			.forEach((cb) => {
-				cb.addEventListener("change", () => {
-					const name = cb.dataset.ofpName;
-					if (!name) {
-						return;
-					}
-					if (cb.checked) {
-						_objectFilterHidden.delete(name);
-					} else {
-						_objectFilterHidden.add(name);
-					}
-					rerenderForObjectFilter();
-				});
+		panel.querySelectorAll('input[type="checkbox"][data-ofp-name]').forEach((cb) => {
+			cb.addEventListener('change', () => {
+				const name = cb.dataset.ofpName;
+				if (!name) {
+					return;
+				}
+				if (cb.checked) {
+					_objectFilterHidden.delete(name);
+				} else {
+					_objectFilterHidden.add(name);
+				}
+				rerenderForObjectFilter();
 			});
-		const allBtn = panel.querySelector("[data-ofp-all]");
+		});
+		const allBtn = panel.querySelector('[data-ofp-all]');
 		if (allBtn) {
-			allBtn.addEventListener("click", () => {
+			allBtn.addEventListener('click', () => {
 				_objectFilterHidden = new Set();
 				rerenderForObjectFilter();
 			});
 		}
-		const noneBtn = panel.querySelector("[data-ofp-none]");
+		const noneBtn = panel.querySelector('[data-ofp-none]');
 		if (noneBtn) {
-			noneBtn.addEventListener("click", () => {
+			noneBtn.addEventListener('click', () => {
 				_objectFilterHidden = new Set(sorted);
 				rerenderForObjectFilter();
 			});
 		}
-		const collapseBtn = panel.querySelector("[data-ofp-collapse]");
+		const collapseBtn = panel.querySelector('[data-ofp-collapse]');
 		if (collapseBtn) {
-			collapseBtn.addEventListener("click", () => {
-				panel.classList.toggle("collapsed");
+			collapseBtn.addEventListener('click', () => {
+				panel.classList.toggle('collapsed');
 			});
 		}
 	}
@@ -3016,17 +2689,11 @@ function csrfFetch(url, options) {
 		if (canvasState._bulkUserDeleted) {
 			return false;
 		}
-		if (
-			!Array.isArray(canvasState.bulkRecords) ||
-			canvasState.bulkRecords.length === 0
-		) {
+		if (!Array.isArray(canvasState.bulkRecords) || canvasState.bulkRecords.length === 0) {
 			return true;
 		}
 		return canvasState.bulkRecords.every(
-			(r) =>
-				r.isTypeNode ||
-				(!r.loadedFromId &&
-					(!r.values || Object.keys(r.values).length === 0)),
+			(r) => r.isTypeNode || (!r.loadedFromId && (!r.values || Object.keys(r.values).length === 0)),
 		);
 	}
 
@@ -3074,22 +2741,15 @@ function csrfFetch(url, options) {
 			return;
 		}
 
-		const canvas = graph.querySelector("#bulk-canvas");
+		const canvas = graph.querySelector('#bulk-canvas');
 		const W = Math.max(canvas.clientWidth, 500);
 		const baseSel = canvasState.selectedObjects[0];
-		const baseRec = baseSel
-			? canvasState.bulkRecords.find(
-					(r) => r.fromSelectionId === baseSel.id,
-				)
-			: null;
+		const baseRec = baseSel ? canvasState.bulkRecords.find((r) => r.fromSelectionId === baseSel.id) : null;
 		const baseRecX = baseRec ? baseRec.x : W / 2;
 		const baseRecY = baseRec ? baseRec.y : 200;
 		const baseWorldX = baseSel && baseSel.worldPos ? baseSel.worldPos.x : 0;
 		const baseWorldY = baseSel && baseSel.worldPos ? baseSel.worldPos.y : 0;
-		const maxY = canvasState.bulkRecords.reduce(
-			(m, r) => Math.max(m, r.y || 0),
-			200,
-		);
+		const maxY = canvasState.bulkRecords.reduce((m, r) => Math.max(m, r.y || 0), 200);
 		const fallbackY = maxY + 200;
 		const colStep = 200;
 		const totalW = (missing.length - 1) * colStep;
@@ -3103,17 +2763,11 @@ function csrfFetch(url, options) {
 			let parentSel = null;
 			let parentRecs = [];
 			if (s.addedFrom != null) {
-				parentSel = canvasState.selectedObjects.find(
-					(so) => so.id === s.addedFrom,
-				);
+				parentSel = canvasState.selectedObjects.find((so) => so.id === s.addedFrom);
 				if (parentSel) {
-					parentRecs = canvasState.bulkRecords.filter(
-						(r) => r.fromSelectionId === parentSel.id,
-					);
+					parentRecs = canvasState.bulkRecords.filter((r) => r.fromSelectionId === parentSel.id);
 					if (parentRecs.length === 0) {
-						parentRecs = canvasState.bulkRecords.filter(
-							(r) => r.objectName === parentSel.name,
-						);
+						parentRecs = canvasState.bulkRecords.filter((r) => r.objectName === parentSel.name);
 					}
 					parentRecs = parentRecs.slice(0, ADD_MISSING_FANOUT_CAP);
 				}
@@ -3163,25 +2817,20 @@ function csrfFetch(url, options) {
 						target = null,
 						fieldName = null;
 					if (s.addedVia && s.addedVia.fieldName) {
-						if (s.addedVia.direction === "parent") {
+						if (s.addedVia.direction === 'parent') {
 							holder = parentRec;
 							target = childRec;
-						} else if (s.addedVia.direction === "child") {
+						} else if (s.addedVia.direction === 'child') {
 							holder = childRec;
 							target = parentRec;
 						}
 						fieldName = s.addedVia.fieldName;
 					}
 					if (!holder || !target || !fieldName) {
-						const info = inferRefFromGraphData(
-							s.name,
-							parentSel.name,
-						);
+						const info = inferRefFromGraphData(s.name, parentSel.name);
 						if (info) {
-							holder =
-								info.direction === "fwd" ? childRec : parentRec;
-							target =
-								info.direction === "fwd" ? parentRec : childRec;
+							holder = info.direction === 'fwd' ? childRec : parentRec;
+							target = info.direction === 'fwd' ? parentRec : childRec;
 							fieldName = info.fieldName;
 						}
 					}
@@ -3202,14 +2851,9 @@ function csrfFetch(url, options) {
 		if (createdRecordIds.length > 0) {
 			const recIds = new Set(createdRecordIds);
 			const assocIds = new Set(createdAssociationIds);
-			pushUndo("Undo schema add", () => {
-				canvasState.bulkRecords = canvasState.bulkRecords.filter(
-					(r) => !recIds.has(r.id),
-				);
-				canvasState.bulkAssociations =
-					canvasState.bulkAssociations.filter(
-						(a) => !assocIds.has(a.id),
-					);
+			pushUndo('Undo schema add', () => {
+				canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => !recIds.has(r.id));
+				canvasState.bulkAssociations = canvasState.bulkAssociations.filter((a) => !assocIds.has(a.id));
 				renderBulkView();
 			});
 		}
@@ -3217,21 +2861,12 @@ function csrfFetch(url, options) {
 		renderBulkView();
 
 		const totalCreated = createdRecordIds.length;
-		const verb = totalCreated === 1 ? "record" : "records";
+		const verb = totalCreated === 1 ? 'record' : 'records';
 		if (fanoutCount > 0) {
-			const prefix = opts.silent ? "Auto-added" : "Added";
-			showBulkToast(
-				prefix +
-					" " +
-					totalCreated +
-					" " +
-					verb +
-					" (one per existing parent). Ctrl+Z to undo.",
-			);
+			const prefix = opts.silent ? 'Auto-added' : 'Added';
+			showBulkToast(prefix + ' ' + totalCreated + ' ' + verb + ' (one per existing parent). Ctrl+Z to undo.');
 		} else if (!opts.silent) {
-			showBulkToast(
-				"Added " + totalCreated + " " + verb + " from your schema.",
-			);
+			showBulkToast('Added ' + totalCreated + ' ' + verb + ' from your schema.');
 		}
 	}
 
@@ -3240,19 +2875,16 @@ function csrfFetch(url, options) {
 			return canvasState._draftCanvasId;
 		}
 		let uuid;
-		if (typeof crypto !== "undefined" && crypto.randomUUID) {
+		if (typeof crypto !== 'undefined' && crypto.randomUUID) {
 			uuid = crypto.randomUUID();
 		} else {
-			uuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
-				/[xy]/g,
-				(c) => {
-					const r = (Math.random() * 16) | 0;
-					const v = c === "x" ? r : (r & 0x3) | 0x8;
-					return v.toString(16);
-				},
-			);
+			uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+				const r = (Math.random() * 16) | 0;
+				const v = c === 'x' ? r : (r & 0x3) | 0x8;
+				return v.toString(16);
+			});
 		}
-		canvasState._draftCanvasId = "draft-" + uuid;
+		canvasState._draftCanvasId = 'draft-' + uuid;
 		return canvasState._draftCanvasId;
 	}
 	function _clearDraftCanvasId() {
@@ -3276,9 +2908,7 @@ function csrfFetch(url, options) {
 			};
 		},
 		snapshot: ({ canvasId } = {}) => {
-			const myId =
-				(canvasState.currentCanvas && canvasState.currentCanvas.id) ||
-				canvasState._draftCanvasId;
+			const myId = (canvasState.currentCanvas && canvasState.currentCanvas.id) || canvasState._draftCanvasId;
 			if (!myId) {
 				return null;
 			}
@@ -3289,24 +2919,12 @@ function csrfFetch(url, options) {
 			if (payload && Array.isArray(payload.loadedRecords)) {
 				const valuesByLoadedFromId = new Map();
 				for (const r of canvasState.bulkRecords) {
-					if (
-						r &&
-						r.loadedFromId &&
-						r.values &&
-						!r.isTypeNode &&
-						!r.isPending
-					) {
-						valuesByLoadedFromId.set(
-							String(r.loadedFromId),
-							r.values,
-						);
+					if (r && r.loadedFromId && r.values && !r.isTypeNode && !r.isPending) {
+						valuesByLoadedFromId.set(String(r.loadedFromId), r.values);
 					}
 				}
 				payload.loadedRecords = payload.loadedRecords.map((lr) => {
-					const values =
-						lr && lr.loadedFromId
-							? valuesByLoadedFromId.get(String(lr.loadedFromId))
-							: null;
+					const values = lr && lr.loadedFromId ? valuesByLoadedFromId.get(String(lr.loadedFromId)) : null;
 					if (!values) {
 						return lr;
 					}
@@ -3315,10 +2933,7 @@ function csrfFetch(url, options) {
 					});
 				});
 			}
-			if (
-				payload &&
-				Array.isArray(payload.schema && payload.schema.objects)
-			) {
+			if (payload && Array.isArray(payload.schema && payload.schema.objects)) {
 				payload.schema = Object.assign({}, payload.schema, {
 					objects: payload.schema.objects.map((o) => {
 						const d = canvasState.describeCache[o.name];
@@ -3329,7 +2944,7 @@ function csrfFetch(url, options) {
 							.filter(
 								(f) =>
 									f &&
-									f.type === "reference" &&
+									f.type === 'reference' &&
 									Array.isArray(f.referenceTo) &&
 									f.referenceTo.length > 0,
 							)
@@ -3340,14 +2955,7 @@ function csrfFetch(url, options) {
 								referenceTo: f.referenceTo.slice(),
 							}));
 						const requiredFields = d.fields
-							.filter(
-								(f) =>
-									f &&
-									f.required &&
-									!f.defaultedOnCreate &&
-									!f.calculated &&
-									!f.autoNumber,
-							)
+							.filter((f) => f && f.required && !f.defaultedOnCreate && !f.calculated && !f.autoNumber)
 							.map((f) => f.name);
 						return Object.assign({}, o, {
 							referenceFields,
@@ -3358,17 +2966,10 @@ function csrfFetch(url, options) {
 			}
 			return {
 				id: myId,
-				title:
-					(canvasState.currentCanvas &&
-						canvasState.currentCanvas.title) ||
-					null,
+				title: (canvasState.currentCanvas && canvasState.currentCanvas.title) || null,
 				ownerSfUserId: window.SF_USER_ID || null,
-				versionId:
-					(canvasState.currentCanvas &&
-						canvasState.currentCanvas.versionId) ||
-					null,
-				isDraft:
-					!canvasState.currentCanvas || !canvasState.currentCanvas.id,
+				versionId: (canvasState.currentCanvas && canvasState.currentCanvas.versionId) || null,
+				isDraft: !canvasState.currentCanvas || !canvasState.currentCanvas.id,
 				payload,
 			};
 		},
@@ -3385,19 +2986,12 @@ function csrfFetch(url, options) {
 				return d;
 			}
 			const requested = new Set(fields.map((f) => String(f)));
-			const requestedLower = new Set(
-				Array.from(requested).map((f) => f.toLowerCase()),
-			);
-			const slicedFields = (
-				Array.isArray(d.fields) ? d.fields : []
-			).filter((f) => {
-				if (!f || typeof f.name !== "string") {
+			const requestedLower = new Set(Array.from(requested).map((f) => f.toLowerCase()));
+			const slicedFields = (Array.isArray(d.fields) ? d.fields : []).filter((f) => {
+				if (!f || typeof f.name !== 'string') {
 					return false;
 				}
-				return (
-					requested.has(f.name) ||
-					requestedLower.has(f.name.toLowerCase())
-				);
+				return requested.has(f.name) || requestedLower.has(f.name.toLowerCase());
 			});
 			return Object.assign({}, d, {
 				fields: slicedFields,
@@ -3409,8 +3003,7 @@ function csrfFetch(url, options) {
 	window.Orgloom.canvasMigrate = {
 		isActive: () => !!canvasState.migrateMode.active,
 		usesGuidedResolution: () => true,
-		annotationFor: (recId) =>
-			canvasState.migrateMode.annotationsById[recId] || null,
+		annotationFor: (recId) => canvasState.migrateMode.annotationsById[recId] || null,
 		summary: () => canvasState.migrateMode.summary,
 		recompute: () => recomputeMigrationAnnotationsSync(),
 		refresh: () => refreshMigrationAnnotations(),
@@ -3437,33 +3030,24 @@ function csrfFetch(url, options) {
 		try {
 			const state = window.Orgloom.canvasState.getCurrentCanvas();
 			if (state && state.canvasId) {
-				window.dispatchEvent(
-					new CustomEvent("orgloom:canvas-loaded", { detail: state }),
-				);
+				window.dispatchEvent(new CustomEvent('orgloom:canvas-loaded', { detail: state }));
 			} else {
-				window.dispatchEvent(
-					new CustomEvent("orgloom:canvas-unloaded", { detail: {} }),
-				);
+				window.dispatchEvent(new CustomEvent('orgloom:canvas-unloaded', { detail: {} }));
 			}
-		} catch (e) {
-		}
+		} catch (e) {}
 	}
 	window.Orgloom.canvasState._announceChange = _announceCanvasChange;
 
 	function cloneRecord(objectName) {
-		const s = canvasState.selectedObjects.find(
-			(so) => so.name === objectName,
-		);
+		const s = canvasState.selectedObjects.find((so) => so.name === objectName);
 		if (!s) {
 			return;
 		}
-		const canvas = graph.querySelector("#bulk-canvas");
+		const canvas = graph.querySelector('#bulk-canvas');
 		const STEP_X = 260;
 		const STEP_Y = 170;
 		const PER_ROW = 5;
-		const siblings = canvasState.bulkRecords.filter(
-			(r) => r.objectName === objectName,
-		);
+		const siblings = canvasState.bulkRecords.filter((r) => r.objectName === objectName);
 		let x;
 		let y;
 		if (siblings.length === 0) {
@@ -3491,7 +3075,7 @@ function csrfFetch(url, options) {
 			fromSelectionId: s.id,
 		});
 		renderBulkView();
-		pushUndo("Add record", () => {
+		pushUndo('Add record', () => {
 			const i = canvasState.bulkRecords.findIndex((r) => r && r.id === _newId);
 			if (i !== -1) {
 				canvasState.bulkRecords.splice(i, 1);
@@ -3507,13 +3091,13 @@ function csrfFetch(url, options) {
 		const meta = parsed._meta || {};
 		let recordCount = 0;
 		let schemaObjectCount = 0;
-		let kind = "canvas";
+		let kind = 'canvas';
 		if (isSavedCanvas) {
 			recordCount =
 				(Array.isArray(parsed.loadedRecords) ? parsed.loadedRecords.length : 0) +
 				(Array.isArray(parsed.drafts) ? parsed.drafts.length : 0);
 		} else if (meta.schemaOnly) {
-			kind = "schema";
+			kind = 'schema';
 			schemaObjectCount = ((parsed.schema && parsed.schema.objects) || []).length;
 		} else {
 			recordCount = Array.isArray(parsed.records) ? parsed.records.length : 0;
@@ -3531,12 +3115,12 @@ function csrfFetch(url, options) {
 	const _importShared = window.OrgLoom.importShared;
 	const _JSON_IMPORT_GATE = {
 		extRe: /\.json$/i,
-		extLabel: ".orgloom.json",
+		extLabel: '.orgloom.json',
 		maxBytes: 10 * 1024 * 1024,
-		flowLabel: "Import saved canvas",
+		flowLabel: 'Import saved canvas',
 	};
 	function _captureImportFailure(reason, message) {
-		_importShared.captureImportFailure("json", reason, message);
+		_importShared.captureImportFailure('json', reason, message);
 	}
 	function _gateCanvasImportFile(file) {
 		return _importShared.gateImportFile(file, _JSON_IMPORT_GATE);
@@ -3558,17 +3142,14 @@ function csrfFetch(url, options) {
 		const reader = new FileReader();
 		reader.onload = async () => {
 			try {
-				const parsed = JSON.parse(String(reader.result || ""));
-				const isSavedCanvas =
-					parsed &&
-					(Array.isArray(parsed.loadedRecords) ||
-						Array.isArray(parsed.drafts));
+				const parsed = JSON.parse(String(reader.result || ''));
+				const isSavedCanvas = parsed && (Array.isArray(parsed.loadedRecords) || Array.isArray(parsed.drafts));
 				if (isSavedCanvas) {
 					validateCanvasPayload(parsed);
 				} else {
 					validateTemplate(parsed);
 				}
-				let _mode = "replace";
+				let _mode = 'replace';
 				const currentSummary = _importShared.summarizeCanvasContent(canvasState);
 				if (currentSummary.hasContent) {
 					_mode = await showReplaceOrMergeDialog({
@@ -3578,7 +3159,7 @@ function csrfFetch(url, options) {
 							_importFileSummary(parsed, isSavedCanvas),
 						),
 					});
-					if (_mode === "cancel") {
+					if (_mode === 'cancel') {
 						return;
 					}
 				}
@@ -3586,17 +3167,12 @@ function csrfFetch(url, options) {
 				const _opts = Object.assign(
 					{
 						importFileName: file.name,
-						merge: _mode === "merge",
+						merge: _mode === 'merge',
 						undo: _undoImport,
 					},
 					opts || {},
 				);
-				if (
-					!isSavedCanvas &&
-					parsed._meta &&
-					parsed._meta.schemaOnly &&
-					_opts.schemaOnly == null
-				) {
+				if (!isSavedCanvas && parsed._meta && parsed._meta.schemaOnly && _opts.schemaOnly == null) {
 					_opts.schemaOnly = true;
 				}
 				if (isSavedCanvas) {
@@ -3605,64 +3181,52 @@ function csrfFetch(url, options) {
 					await applyTemplate(parsed, _opts);
 				}
 			} catch (e) {
-				_captureImportFailure(
-					"invalid",
-					e && e.message ? e.message : String(e),
-				);
-				showBulkToast(
-					"Could not load file: " +
-						(e && e.message ? e.message : String(e)),
-					"error",
-				);
+				_captureImportFailure('invalid', e && e.message ? e.message : String(e));
+				showBulkToast('Could not load file: ' + (e && e.message ? e.message : String(e)), 'error');
 			}
 		};
 		reader.onerror = () => {
-			_captureImportFailure("unreadable");
-			showBulkToast(
-				'Could not read file "' +
-					file.name +
-					'" - the file may be locked or unavailable.',
-				"error",
-			);
+			_captureImportFailure('unreadable');
+			showBulkToast('Could not read file "' + file.name + '" - the file may be locked or unavailable.', 'error');
 		};
 		reader.readAsText(file);
 	}
 
 	function triggerTemplateFileInput(opts) {
 		opts = opts || {};
-		const overlay = document.createElement("div");
-		overlay.className = "modal import-canvas-modal";
+		const overlay = document.createElement('div');
+		overlay.className = 'modal import-canvas-modal';
 		overlay.innerHTML =
 			'<div class="modal-overlay" data-ici-close></div>' +
 			'<div class="modal-body" style="max-width:460px">' +
-				'<div class="modal-header">' +
-					"<h3>Import saved canvas</h3>" +
-					'<button type="button" class="modal-close" data-ici-close aria-label="Close">×</button>' +
-				"</div>" +
-				'<div class="modal-content">' +
-					'<div class="lcsv-dropzone" id="ici-dropzone" tabindex="0">' +
-						"<strong>Drop a saved-canvas JSON file here</strong>" +
-						'<span class="tag">or click to select</span>' +
-					"</div>" +
-					'<p class="tag center" style="padding-top:0.8em">Accepts a canvas exported from Org Loom (<code>.orgloom.json</code> file).</p>' +
-				"</div>" +
-			"</div>";
-		const input = document.createElement("input");
-		input.type = "file";
-		input.accept = ".json,application/json";
-		input.style.display = "none";
+			'<div class="modal-header">' +
+			'<h3>Import saved canvas</h3>' +
+			'<button type="button" class="modal-close" data-ici-close aria-label="Close">×</button>' +
+			'</div>' +
+			'<div class="modal-content">' +
+			'<div class="lcsv-dropzone" id="ici-dropzone" tabindex="0">' +
+			'<strong>Drop a saved-canvas JSON file here</strong>' +
+			'<span class="tag">or click to select</span>' +
+			'</div>' +
+			'<p class="tag center" style="padding-top:0.8em">Accepts a canvas exported from Org Loom (<code>.orgloom.json</code> file).</p>' +
+			'</div>' +
+			'</div>';
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.json,application/json';
+		input.style.display = 'none';
 		overlay.appendChild(input);
 		document.body.appendChild(overlay);
 
-		const dz = overlay.querySelector("#ici-dropzone");
+		const dz = overlay.querySelector('#ici-dropzone');
 		function close() {
 			try {
 				overlay.remove();
 			} catch (_e) {}
-			document.removeEventListener("keydown", onKey);
+			document.removeEventListener('keydown', onKey);
 		}
 		function onKey(e) {
-			if (e.key === "Escape") {
+			if (e.key === 'Escape') {
 				close();
 			}
 		}
@@ -3672,42 +3236,35 @@ function csrfFetch(url, options) {
 			}
 			const gateError = _gateCanvasImportFile(file);
 			if (gateError) {
-				showBulkToast(gateError, "error");
-				_captureImportFailure(
-					/\.json$/i.test(String(file.name || "")) ? "size" : "type",
-				);
-				input.value = "";
+				showBulkToast(gateError, 'error');
+				_captureImportFailure(/\.json$/i.test(String(file.name || '')) ? 'size' : 'type');
+				input.value = '';
 				return;
 			}
 			close();
 			_processImportedCanvasFile(file, opts);
 		}
-		dz.addEventListener("click", () => input.click());
-		dz.addEventListener("keydown", (e) => {
-			if (e.key === "Enter" || e.key === " ") {
+		dz.addEventListener('click', () => input.click());
+		dz.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
 				e.preventDefault();
 				input.click();
 			}
 		});
-		input.addEventListener("change", () =>
-			handleFile(input.files && input.files[0]),
-		);
-		dz.addEventListener("dragover", (e) => {
+		input.addEventListener('change', () => handleFile(input.files && input.files[0]));
+		dz.addEventListener('dragover', (e) => {
 			e.preventDefault();
-			dz.classList.add("drag");
+			dz.classList.add('drag');
 		});
-		dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
-		dz.addEventListener("drop", (e) => {
+		dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+		dz.addEventListener('drop', (e) => {
 			e.preventDefault();
-			dz.classList.remove("drag");
-			const f =
-				e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+			dz.classList.remove('drag');
+			const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
 			handleFile(f);
 		});
-		overlay
-			.querySelectorAll("[data-ici-close]")
-			.forEach((el) => el.addEventListener("click", close));
-		document.addEventListener("keydown", onKey);
+		overlay.querySelectorAll('[data-ici-close]').forEach((el) => el.addEventListener('click', close));
+		document.addEventListener('keydown', onKey);
 		setTimeout(() => {
 			try {
 				dz.focus();
@@ -3716,34 +3273,29 @@ function csrfFetch(url, options) {
 	}
 
 	(function _mountCanvasFileDrop() {
-		const host = document.getElementById("graph-bulk");
+		const host = document.getElementById('graph-bulk');
 		if (!host) {
 			return;
 		}
-		const _isFileDrag = (e) =>
-			e.dataTransfer &&
-			Array.from(e.dataTransfer.types || []).includes("Files");
-		host.addEventListener("dragover", (e) => {
+		const _isFileDrag = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+		host.addEventListener('dragover', (e) => {
 			if (_isFileDrag(e)) {
 				e.preventDefault();
 			}
 		});
-		host.addEventListener("drop", (e) => {
+		host.addEventListener('drop', (e) => {
 			if (!_isFileDrag(e)) {
 				return;
 			}
 			e.preventDefault();
-			const f =
-				e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+			const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
 			if (!f) {
 				return;
 			}
 			const gateError = _gateCanvasImportFile(f);
 			if (gateError) {
-				showBulkToast(gateError, "error");
-				_captureImportFailure(
-					/\.json$/i.test(String(f.name || "")) ? "size" : "type",
-				);
+				showBulkToast(gateError, 'error');
+				_captureImportFailure(/\.json$/i.test(String(f.name || '')) ? 'size' : 'type');
 				return;
 			}
 			_processImportedCanvasFile(f, {});
@@ -3752,7 +3304,7 @@ function csrfFetch(url, options) {
 
 	var _vc = (window.OrgLoom && window.OrgLoom.valueCompare) || null;
 	if (!_vc) {
-		throw new Error("value-compare.js must load before app.js");
+		throw new Error('value-compare.js must load before app.js');
 	}
 	var valuesEquivalent = _vc.valuesEquivalent;
 	var valuesDiffer = _vc.valuesDiffer;
@@ -3767,9 +3319,7 @@ function csrfFetch(url, options) {
 		if (_modifiedLoadedCount() > 0) {
 			return true;
 		}
-		const hasSavedCanvas = !!(
-			canvasState.currentCanvas && canvasState.currentCanvas.id
-		);
+		const hasSavedCanvas = !!(canvasState.currentCanvas && canvasState.currentCanvas.id);
 		if (hasSavedCanvas) {
 			return false;
 		}
@@ -3791,8 +3341,7 @@ function csrfFetch(url, options) {
 	function _allowMigrationOAuthHandoff() {
 		try {
 			const orgSwitch = window.Orgloom && window.Orgloom.canvasOrgSwitch;
-			if (!orgSwitch || typeof orgSwitch.hasPendingMigration !== "function"
-				|| !orgSwitch.hasPendingMigration()) {
+			if (!orgSwitch || typeof orgSwitch.hasPendingMigration !== 'function' || !orgSwitch.hasPendingMigration()) {
 				return false;
 			}
 		} catch (_e) {
@@ -3805,13 +3354,11 @@ function csrfFetch(url, options) {
 		return true;
 	}
 	window.Orgloom = window.Orgloom || {};
-	window.Orgloom.canvasNavigation = Object.assign(
-		{},
-		window.Orgloom.canvasNavigation || {},
-		{ allowMigrationOAuthHandoff: _allowMigrationOAuthHandoff },
-	);
+	window.Orgloom.canvasNavigation = Object.assign({}, window.Orgloom.canvasNavigation || {}, {
+		allowMigrationOAuthHandoff: _allowMigrationOAuthHandoff,
+	});
 
-	window.addEventListener("beforeunload", (ev) => {
+	window.addEventListener('beforeunload', (ev) => {
 		if (_migrationOAuthHandoffAllowed) {
 			_migrationOAuthHandoffAllowed = false;
 			return;
@@ -3820,16 +3367,13 @@ function csrfFetch(url, options) {
 			return;
 		}
 		ev.preventDefault();
-		ev.returnValue = ""; // legacy browser support
+		ev.returnValue = ''; // legacy browser support
 	});
 
 	document.addEventListener(
-		"click",
+		'click',
 		(ev) => {
-			const link =
-				ev.target &&
-				ev.target.closest &&
-				ev.target.closest('a[href^="/workspace"]');
+			const link = ev.target && ev.target.closest && ev.target.closest('a[href^="/workspace"]');
 			if (!link) {
 				return;
 			}
@@ -3842,29 +3386,29 @@ function csrfFetch(url, options) {
 			if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) {
 				return;
 			}
-			if (link.target && link.target !== "" && link.target !== "_self") {
+			if (link.target && link.target !== '' && link.target !== '_self') {
 				return;
 			}
 			if (!_hasUnsavedCanvasWork()) {
 				return;
 			}
 			ev.preventDefault();
-			const href = link.getAttribute("href") || "/workspace";
+			const href = link.getAttribute('href') || '/workspace';
 			const modCount = _modifiedLoadedCount();
 			const message =
 				modCount > 0
 					? modCount +
-						" loaded record" +
-						(modCount === 1 ? "" : "s") +
-						" on this canvas " +
-						(modCount === 1 ? "has" : "have") +
-						" been edited locally. Edits to loaded records aren’t saved with the canvas - leaving without uploading will discard them."
-					: "This canvas has records that aren’t saved to Salesforce yet. Leaving will discard them - use “Save as new canvas” first to keep your work.";
+						' loaded record' +
+						(modCount === 1 ? '' : 's') +
+						' on this canvas ' +
+						(modCount === 1 ? 'has' : 'have') +
+						' been edited locally. Edits to loaded records aren’t saved with the canvas - leaving without uploading will discard them.'
+					: 'This canvas has records that aren’t saved to Salesforce yet. Leaving will discard them - use “Save as new canvas” first to keep your work.';
 			showConfirmDialog({
-				title: "Leave canvas with unsaved changes?",
+				title: 'Leave canvas with unsaved changes?',
 				message,
-				confirmLabel: "Leave anyway",
-				cancelLabel: "Stay",
+				confirmLabel: 'Leave anyway',
+				cancelLabel: 'Stay',
 				danger: true,
 			}).then((ok) => {
 				if (ok) {
@@ -3877,22 +3421,15 @@ function csrfFetch(url, options) {
 
 	async function loadRelatedForRecord(rec) {
 		if (!rec.loadedFromId) {
-			showBulkToast("Load an existing record first.");
+			showBulkToast('Load an existing record first.');
 			return;
 		}
-		const thisObj = canvasState.selectedObjects.find(
-			(s) => s.name === rec.objectName,
-		);
+		const thisObj = canvasState.selectedObjects.find((s) => s.name === rec.objectName);
 		if (!thisObj || !thisObj.data) {
-			showBulkToast(
-				"No schema data available for " + rec.objectName + ".",
-				"error",
-			);
+			showBulkToast('No schema data available for ' + rec.objectName + '.', 'error');
 			return;
 		}
-		const selectedNames = new Set(
-			canvasState.selectedObjects.map((s) => s.name),
-		);
+		const selectedNames = new Set(canvasState.selectedObjects.map((s) => s.name));
 		const labelForName = (n) => {
 			const hit = canvasState.selectedObjects.find((s) => s.name === n);
 			return hit ? hit.label : n;
@@ -3903,7 +3440,7 @@ function csrfFetch(url, options) {
 				return;
 			}
 			tasks.push({
-				direction: "child",
+				direction: 'child',
 				otherType: c.object,
 				fieldOnOther: c.field,
 			});
@@ -3913,26 +3450,26 @@ function csrfFetch(url, options) {
 				return;
 			}
 			const parentId = rec.values && rec.values[p.field];
-			if (!parentId || typeof parentId !== "string") {
+			if (!parentId || typeof parentId !== 'string') {
 				return;
 			}
 			tasks.push({
-				direction: "parent",
+				direction: 'parent',
 				otherType: p.object,
 				fieldOnThis: p.field,
 				parentId,
 			});
 		});
 		if (tasks.length === 0) {
-			showBulkToast("No related types in the schema to load from.");
+			showBulkToast('No related types in the schema to load from.');
 			return;
 		}
-		showBulkToast("Loading related records\u2026");
+		showBulkToast('Loading related records\u2026');
 
 		const recToValues = (r) => {
 			const v = {};
 			Object.keys(r).forEach((k) => {
-				if (k === "attributes" || r[k] == null) {
+				if (k === 'attributes' || r[k] == null) {
 					return;
 				}
 				v[k] = r[k];
@@ -3940,17 +3477,10 @@ function csrfFetch(url, options) {
 			return v;
 		};
 		const findOrNull = (objectName, loadedId) =>
-			canvasState.bulkRecords.find(
-				(br) =>
-					br.objectName === objectName &&
-					br.loadedFromId === loadedId,
-			);
+			canvasState.bulkRecords.find((br) => br.objectName === objectName && br.loadedFromId === loadedId);
 		const ensureAssociation = (fromId, toId, fieldName) => {
 			const dup = canvasState.bulkAssociations.some(
-				(a) =>
-					a.fromId === fromId &&
-					a.toId === toId &&
-					a.fieldName === fieldName,
+				(a) => a.fromId === fromId && a.toId === toId && a.fieldName === fieldName,
 			);
 			if (!dup) {
 				canvasState.bulkAssociations.push({
@@ -3968,9 +3498,7 @@ function csrfFetch(url, options) {
 				id: placeholder.id,
 				prevValues: Object.assign({}, placeholder.values || {}),
 				prevLoadedFromId: placeholder.loadedFromId || null,
-				prevLoadedValues: placeholder.loadedValues
-					? Object.assign({}, placeholder.loadedValues)
-					: null,
+				prevLoadedValues: placeholder.loadedValues ? Object.assign({}, placeholder.loadedValues) : null,
 			});
 			placeholder.loadedFromId = r.Id;
 			placeholder.loadedValues = Object.assign({}, v);
@@ -3995,28 +3523,25 @@ function csrfFetch(url, options) {
 		for (const t of tasks) {
 			try {
 				let records;
-				if (t.direction === "child") {
+				if (t.direction === 'child') {
 					const url =
-						"/api/objects/" +
+						'/api/objects/' +
 						encodeURIComponent(t.otherType) +
-						"/by-ref?field=" +
+						'/by-ref?field=' +
 						encodeURIComponent(t.fieldOnOther) +
-						"&id=" +
+						'&id=' +
 						encodeURIComponent(rec.loadedFromId);
 					const resp = await csrfFetch(url);
 					if (!resp.ok) {
-						throw new Error(
-							(await resp.json().catch(() => ({}))).error ||
-								resp.statusText,
-						);
+						throw new Error((await resp.json().catch(() => ({}))).error || resp.statusText);
 					}
 					const body = await resp.json();
 					records = body.records || [];
 				} else {
 					const url =
-						"/api/objects/" +
+						'/api/objects/' +
 						encodeURIComponent(t.otherType) +
-						"/records/" +
+						'/records/' +
 						encodeURIComponent(t.parentId);
 					const resp = await csrfFetch(url);
 					if (!resp.ok) {
@@ -4026,36 +3551,24 @@ function csrfFetch(url, options) {
 					records = single ? [single] : [];
 				}
 				let parentPlaceholderId = null;
-				if (t.direction === "parent") {
+				if (t.direction === 'parent') {
 					const existingAssoc = canvasState.bulkAssociations.find(
-						(a) =>
-							a.fromId === rec.id &&
-							a.fieldName === t.fieldOnThis,
+						(a) => a.fromId === rec.id && a.fieldName === t.fieldOnThis,
 					);
 					if (existingAssoc) {
-						const existingTarget = canvasState.bulkRecords.find(
-							(br) => br.id === existingAssoc.toId,
-						);
-						if (
-							existingTarget &&
-							existingTarget.objectName === t.otherType
-						) {
+						const existingTarget = canvasState.bulkRecords.find((br) => br.id === existingAssoc.toId);
+						if (existingTarget && existingTarget.objectName === t.otherType) {
 							parentPlaceholderId = existingTarget.id;
 						}
 					}
 				}
 				const childPlaceholderQueue = [];
-				if (t.direction === "child") {
+				if (t.direction === 'child') {
 					canvasState.bulkAssociations.forEach((a) => {
-						if (
-							a.toId !== rec.id ||
-							a.fieldName !== t.fieldOnOther
-						) {
+						if (a.toId !== rec.id || a.fieldName !== t.fieldOnOther) {
 							return;
 						}
-						const candidate = canvasState.bulkRecords.find(
-							(br) => br.id === a.fromId,
-						);
+						const candidate = canvasState.bulkRecords.find((br) => br.id === a.fromId);
 						if (!candidate) {
 							return;
 						}
@@ -4078,47 +3591,33 @@ function csrfFetch(url, options) {
 						reused++;
 					} else {
 						let placeholder = null;
-						if (
-							t.direction === "parent" &&
-							parentPlaceholderId != null
-						) {
-							placeholder = canvasState.bulkRecords.find(
-								(br) => br.id === parentPlaceholderId,
-							);
+						if (t.direction === 'parent' && parentPlaceholderId != null) {
+							placeholder = canvasState.bulkRecords.find((br) => br.id === parentPlaceholderId);
 							parentPlaceholderId = null; // consume regardless of decision
-						} else if (
-							t.direction === "child" &&
-							childPlaceholderQueue.length > 0
-						) {
+						} else if (t.direction === 'child' && childPlaceholderQueue.length > 0) {
 							placeholder = childPlaceholderQueue.shift();
 						}
 						if (placeholder) {
-							const filledKeys = Object.keys(
-								placeholder.values || {},
-							).filter((k) => {
+							const filledKeys = Object.keys(placeholder.values || {}).filter((k) => {
 								const val = placeholder.values[k];
-								return val !== "" && val != null;
+								return val !== '' && val != null;
 							});
-							let decision = "replace";
+							let decision = 'replace';
 							if (filledKeys.length > 0) {
 								try {
 									await ensureDescribe(t.otherType);
-								} catch (eDescribe) {
-								}
+								} catch (eDescribe) {}
 								decision = await confirmHydrateChoice({
 									placeholderLabel:
-										(placeholder.label ||
-											placeholder.objectName) +
-										" #" +
+										(placeholder.label || placeholder.objectName) +
+										' #' +
 										recordOrdinal(placeholder),
 									currentValues: placeholder.values || {},
 									incoming: v,
-									fieldLabelLookup: fieldLabelLookup(
-										t.otherType,
-									),
+									fieldLabelLookup: fieldLabelLookup(t.otherType),
 								});
 							}
-							if (decision === "replace") {
+							if (decision === 'replace') {
 								targetRec = hydrate(placeholder, r, v);
 								hydrated++;
 							} else {
@@ -4130,12 +3629,8 @@ function csrfFetch(url, options) {
 								id: canvasState.bulkIdSeq++,
 								objectName: t.otherType,
 								label: labelForName(t.otherType),
-								x:
-									rec.x +
-									260 * Math.cos(offset * (Math.PI / 6)),
-								y:
-									rec.y +
-									260 * Math.sin(offset * (Math.PI / 6)),
+								x: rec.x + 260 * Math.cos(offset * (Math.PI / 6)),
+								y: rec.y + 260 * Math.sin(offset * (Math.PI / 6)),
 								values: v,
 								loadedFromId: r.Id,
 								loadedValues: Object.assign({}, v),
@@ -4148,55 +3643,34 @@ function csrfFetch(url, options) {
 					if (!didCreateOrLink) {
 						continue;
 					}
-					const fromId =
-						t.direction === "child" ? targetRec.id : rec.id;
-					const toId =
-						t.direction === "child" ? rec.id : targetRec.id;
-					const fieldName =
-						t.direction === "child"
-							? t.fieldOnOther
-							: t.fieldOnThis;
+					const fromId = t.direction === 'child' ? targetRec.id : rec.id;
+					const toId = t.direction === 'child' ? rec.id : targetRec.id;
+					const fieldName = t.direction === 'child' ? t.fieldOnOther : t.fieldOnThis;
 					ensureAssociation(fromId, toId, fieldName);
 				}
 			} catch (e) {
-				showBulkToast(
-					"Load related failed for " +
-						t.otherType +
-						": " +
-						(e.message || e),
-					"error",
-				);
+				showBulkToast('Load related failed for ' + t.otherType + ': ' + (e.message || e), 'error');
 			}
 		}
 		renderBulkView();
 		const parts = [];
 		if (created > 0) {
-			parts.push("added " + created);
+			parts.push('added ' + created);
 		}
 		if (hydrated > 0) {
-			parts.push(
-				"hydrated " +
-					hydrated +
-					" placeholder" +
-					(hydrated === 1 ? "" : "s"),
-			);
+			parts.push('hydrated ' + hydrated + ' placeholder' + (hydrated === 1 ? '' : 's'));
 		}
 		if (reused > 0) {
-			parts.push("linked " + reused + " already loaded");
+			parts.push('linked ' + reused + ' already loaded');
 		}
 		if (skipped > 0) {
-			parts.push("skipped " + skipped);
+			parts.push('skipped ' + skipped);
 		}
-		const msg =
-			parts.length > 0
-				? "Loaded related: " + parts.join(", ") + "."
-				: "No related records found.";
+		const msg = parts.length > 0 ? 'Loaded related: ' + parts.join(', ') + '.' : 'No related records found.';
 		if (hydrateSnapshots.length > 0) {
-			showBulkToastWithAction(msg, "Undo hydrate", () => {
+			showBulkToastWithAction(msg, 'Undo hydrate', () => {
 				hydrateSnapshots.forEach((snap) => {
-					const target = canvasState.bulkRecords.find(
-						(b) => b.id === snap.id,
-					);
+					const target = canvasState.bulkRecords.find((b) => b.id === snap.id);
 					if (!target) {
 						return;
 					}
@@ -4214,11 +3688,11 @@ function csrfFetch(url, options) {
 				});
 				renderBulkView();
 				showBulkToast(
-					"Reverted " +
+					'Reverted ' +
 						hydrateSnapshots.length +
-						" hydrate" +
-						(hydrateSnapshots.length === 1 ? "" : "s") +
-						".",
+						' hydrate' +
+						(hydrateSnapshots.length === 1 ? '' : 's') +
+						'.',
 				);
 			});
 		} else {
@@ -4270,25 +3744,18 @@ function csrfFetch(url, options) {
 
 	function deleteRecord(id) {
 		const rec = canvasState.bulkRecords.find((r) => r.id === id);
-		const killedAssocs = canvasState.bulkAssociations.filter(
-			(a) => a.fromId === id || a.toId === id,
-		);
+		const killedAssocs = canvasState.bulkAssociations.filter((a) => a.fromId === id || a.toId === id);
 		const wasSelected = canvasState.bulkSelectedIds.has(id);
-		const sidWasMarked =
-			rec &&
-			rec.fromSelectionId != null &&
-			!_userDeletedSelectionIds.has(rec.fromSelectionId);
+		const sidWasMarked = rec && rec.fromSelectionId != null && !_userDeletedSelectionIds.has(rec.fromSelectionId);
 		if (rec && rec.fromSelectionId != null) {
 			_userDeletedSelectionIds.add(rec.fromSelectionId);
 		}
 		if (rec) {
-			pushUndo("Restore deleted record", () => {
+			pushUndo('Restore deleted record', () => {
 				canvasState.bulkRecords.push(rec);
 				killedAssocs.forEach((a) => {
 					if (
-						canvasState.bulkRecords.some(
-							(r) => r.id === a.fromId,
-						) &&
+						canvasState.bulkRecords.some((r) => r.id === a.fromId) &&
 						canvasState.bulkRecords.some((r) => r.id === a.toId)
 					) {
 						canvasState.bulkAssociations.push(a);
@@ -4302,21 +3769,13 @@ function csrfFetch(url, options) {
 					_userDeletedSelectionIds.delete(rec.fromSelectionId);
 				}
 				renderBulkView();
-				showBulkToast(
-					"Restored " + (rec.label || rec.objectName) + ".",
-				);
+				showBulkToast('Restored ' + (rec.label || rec.objectName) + '.');
 			});
 		}
-		canvasState.bulkRecords = canvasState.bulkRecords.filter(
-			(r) => r.id !== id,
-		);
+		canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => r.id !== id);
 
-		canvasState.bulkRecords = canvasState.bulkRecords.filter(
-			(r) => !(r.isTypeNode && r.hostRecordId === id),
-		);
-		canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
-			(a) => a.fromId !== id && a.toId !== id,
-		);
+		canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => !(r.isTypeNode && r.hostRecordId === id));
+		canvasState.bulkAssociations = canvasState.bulkAssociations.filter((a) => a.fromId !== id && a.toId !== id);
 		canvasState.bulkSelectedIds.delete(id);
 		canvasState._bulkUserDeleted = true;
 		renderBulkView();
@@ -4329,39 +3788,30 @@ function csrfFetch(url, options) {
 		}
 		if (!rec.loadedFromId) {
 			console.warn(
-				"markPendingDelete: refusing - record",
+				'markPendingDelete: refusing - record',
 				id,
-				"is a draft (use deleteRecord to remove drafts from canvas)",
+				'is a draft (use deleteRecord to remove drafts from canvas)',
 			);
 			return false;
 		}
 		if (rec.isTypeNode) {
-			console.warn(
-				"markPendingDelete: refusing - record",
-				id,
-				"is a type-node placeholder",
-			);
+			console.warn('markPendingDelete: refusing - record', id, 'is a type-node placeholder');
 			return false;
 		}
 		if (rec._inaccessible) {
-			console.warn(
-				"markPendingDelete: refusing - record",
-				id,
-				"is a no-access placeholder",
-			);
+			console.warn('markPendingDelete: refusing - record', id, 'is a no-access placeholder');
 			return false;
 		}
 		if (rec.pendingDelete) {
 			return true;
 		}
 		const prevValues = rec.values;
-		const discardingEdits =
-			isRecordModified(rec) && opts && opts.discardEdits;
+		const discardingEdits = isRecordModified(rec) && opts && opts.discardEdits;
 		if (isRecordModified(rec) && !(opts && opts.discardEdits)) {
 			console.warn(
-				"markPendingDelete: refusing - record",
+				'markPendingDelete: refusing - record',
 				id,
-				"has unsaved edits; pass {discardEdits:true} after user confirms",
+				'has unsaved edits; pass {discardEdits:true} after user confirms',
 			);
 			return false;
 		}
@@ -4369,7 +3819,7 @@ function csrfFetch(url, options) {
 		if (discardingEdits) {
 			rec.values = Object.assign({}, rec.loadedValues || {});
 		}
-		pushUndo("Restore from delete", () => {
+		pushUndo('Restore from delete', () => {
 			const r = canvasState.bulkRecords.find((x) => x.id === id);
 			if (!r) {
 				return;
@@ -4379,18 +3829,10 @@ function csrfFetch(url, options) {
 				r.values = prevValues;
 			}
 			renderBulkView();
-			showBulkToast(
-				"Unmarked: " +
-					(r.label || r.objectName) +
-					" will not be deleted.",
-			);
+			showBulkToast('Unmarked: ' + (r.label || r.objectName) + ' will not be deleted.');
 		});
 		renderBulkView();
-		showBulkToast(
-			"Marked for delete: " +
-				(rec.label || rec.objectName) +
-				". Will delete on next upload.",
-		);
+		showBulkToast('Marked for delete: ' + (rec.label || rec.objectName) + '. Will delete on next upload.');
 		return true;
 	}
 
@@ -4410,11 +3852,11 @@ function csrfFetch(url, options) {
 		}
 		if (isRecordModified(rec)) {
 			const ok = await showConfirmDialog({
-				title: "Discard unsaved edits?",
+				title: 'Discard unsaved edits?',
 				message:
-					"This record has unsaved local edits. Refreshing will replace them with the current Salesforce values. To compare side-by-side, cancel and use Diff records from the Tools menu instead.",
-				confirmLabel: "Refresh anyway",
-				cancelLabel: "Cancel",
+					'This record has unsaved local edits. Refreshing will replace them with the current Salesforce values. To compare side-by-side, cancel and use Diff records from the Tools menu instead.',
+				confirmLabel: 'Refresh anyway',
+				cancelLabel: 'Cancel',
 				danger: true,
 			});
 			if (!ok) {
@@ -4423,44 +3865,41 @@ function csrfFetch(url, options) {
 		}
 		let resp;
 		try {
-			resp = await csrfFetch("/api/records/refresh", {
-				method: "POST",
-				credentials: "same-origin",
-				headers: { "Content-Type": "application/json" },
+			resp = await csrfFetch('/api/records/refresh', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					records: [{ objectName: rec.objectName, sfId: rec.loadedFromId }],
 				}),
 			});
 		} catch (err) {
-			showBulkToast("Couldn't reach the server: " + (err.message || err), "error");
+			showBulkToast("Couldn't reach the server: " + (err.message || err), 'error');
 			return;
 		}
 		if (!resp.ok) {
 			const data = await resp.json().catch(() => ({}));
-			showBulkToast(data.message || data.error || "Refresh failed (HTTP " + resp.status + ")", "error");
+			showBulkToast(data.message || data.error || 'Refresh failed (HTTP ' + resp.status + ')', 'error');
 			return;
 		}
 		const data = await resp.json().catch(() => ({}));
 		const result = (data && Array.isArray(data.results) && data.results[0]) || null;
 		if (!result) {
-			showBulkToast("Refresh returned no result.", "error");
+			showBulkToast('Refresh returned no result.', 'error');
 			return;
 		}
 		if (!result.ok) {
-			if (result.error === "not-found") {
+			if (result.error === 'not-found') {
 				rec._deletedInSf = true;
 				showBulkToast(
-					"This record no longer exists in Salesforce. Mark it for delete or remove from canvas.",
-					"warn",
+					'This record no longer exists in Salesforce. Mark it for delete or remove from canvas.',
+					'warn',
 				);
-			} else if (result.error === "no-access") {
+			} else if (result.error === 'no-access') {
 				rec._deletedInSf = true;
-				showBulkToast(
-					"You no longer have access to this record.",
-					"warn",
-				);
+				showBulkToast('You no longer have access to this record.', 'warn');
 			} else {
-				showBulkToast("Refresh failed: " + result.error, "error");
+				showBulkToast('Refresh failed: ' + result.error, 'error');
 			}
 			renderBulkView();
 			return;
@@ -4472,7 +3911,7 @@ function csrfFetch(url, options) {
 		rec._lastRefreshedAt = Date.now();
 		rec._refreshPulse = true;
 		renderBulkView();
-		showBulkToast("Refreshed " + (rec.objectName || "record") + ".");
+		showBulkToast('Refreshed ' + (rec.objectName || 'record') + '.');
 		setTimeout(() => {
 			if (rec._refreshPulse) {
 				rec._refreshPulse = false;
@@ -4489,33 +3928,32 @@ function csrfFetch(url, options) {
 		const CHUNK = 200;
 		let okCount = 0;
 		let failCount = 0;
-		const byIdRec = new Map(records.map((r) => [r.objectName + "::" + r.loadedFromId, r]));
-		const progressToast = opts.showProgress === false
-			? null
-			: showBulkToast("Refreshing 0 / " + records.length + "…", "info");
+		const byIdRec = new Map(records.map((r) => [r.objectName + '::' + r.loadedFromId, r]));
+		const progressToast =
+			opts.showProgress === false ? null : showBulkToast('Refreshing 0 / ' + records.length + '…', 'info');
 		const updateProgress = (n) => {
-			if (progressToast && typeof progressToast.update === "function") {
-				progressToast.update("Refreshing " + n + " / " + records.length + "…");
+			if (progressToast && typeof progressToast.update === 'function') {
+				progressToast.update('Refreshing ' + n + ' / ' + records.length + '…');
 			}
 		};
 		for (let i = 0; i < records.length; i += CHUNK) {
 			const chunk = records.slice(i, i + CHUNK);
-			const resp = await csrfFetch("/api/records/refresh", {
-				method: "POST",
-				credentials: "same-origin",
-				headers: { "Content-Type": "application/json" },
+			const resp = await csrfFetch('/api/records/refresh', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					records: chunk.map((r) => ({ objectName: r.objectName, sfId: r.loadedFromId })),
 				}),
 			});
 			if (!resp.ok) {
 				const data = await resp.json().catch(() => ({}));
-				throw new Error(data.message || data.error || "Refresh failed (HTTP " + resp.status + ")");
+				throw new Error(data.message || data.error || 'Refresh failed (HTTP ' + resp.status + ')');
 			}
 			const data = await resp.json().catch(() => ({}));
-			const results = (data && Array.isArray(data.results)) ? data.results : [];
+			const results = data && Array.isArray(data.results) ? data.results : [];
 			for (const result of results) {
-				const rec = byIdRec.get(result.objectName + "::" + result.sfId);
+				const rec = byIdRec.get(result.objectName + '::' + result.sfId);
 				if (!rec) {
 					continue;
 				}
@@ -4533,7 +3971,7 @@ function csrfFetch(url, options) {
 						}
 					}, 1600);
 				} else {
-					if (result.error === "not-found" || result.error === "no-access") {
+					if (result.error === 'not-found' || result.error === 'no-access') {
 						rec._deletedInSf = true;
 					}
 					failCount++;
@@ -4554,61 +3992,65 @@ function csrfFetch(url, options) {
 		if (clean.length === 0) {
 			if (dirty.length > 0) {
 				showBulkToast(
-					"Recall completed. " + dirty.length + " canvas record" +
-						(dirty.length === 1 ? " was" : "s were") +
-						" left unchanged because " + (dirty.length === 1 ? "it has" : "they have") +
-						" unsaved edits.",
-					"warn",
+					'Recall completed. ' +
+						dirty.length +
+						' canvas record' +
+						(dirty.length === 1 ? ' was' : 's were') +
+						' left unchanged because ' +
+						(dirty.length === 1 ? 'it has' : 'they have') +
+						' unsaved edits.',
+					'warn',
 				);
 			}
 			return { okCount: 0, failCount: 0, skippedDirtyCount: dirty.length };
 		}
 		const result = await refreshLoadedCanvasRecords(clean);
-		let message = "Recall completed. Refreshed " + result.okCount + " canvas record" +
-			(result.okCount === 1 ? "" : "s") + ".";
+		let message =
+			'Recall completed. Refreshed ' +
+			result.okCount +
+			' canvas record' +
+			(result.okCount === 1 ? '' : 's') +
+			'.';
 		if (result.failCount > 0) {
-			message += " " + result.failCount + " could not be refreshed.";
+			message += ' ' + result.failCount + ' could not be refreshed.';
 		}
 		if (dirty.length > 0) {
-			message += " " + dirty.length + " with unsaved edits " +
-				(dirty.length === 1 ? "was" : "were") + " left unchanged.";
+			message +=
+				' ' +
+				dirty.length +
+				' with unsaved edits ' +
+				(dirty.length === 1 ? 'was' : 'were') +
+				' left unchanged.';
 		}
-		showBulkToast(message, result.failCount > 0 || dirty.length > 0 ? "warn" : "info");
+		showBulkToast(message, result.failCount > 0 || dirty.length > 0 ? 'warn' : 'info');
 		return Object.assign({}, result, { skippedDirtyCount: dirty.length });
 	}
 
 	async function openBulkRefreshFlow() {
 		const selectedIds = canvasState.bulkSelectedIds;
 		const allCandidates = canvasState.bulkRecords.filter(
-			(r) =>
-				r &&
-				!r.isTypeNode &&
-				!r.isPending &&
-				!r.pendingDelete &&
-				r.loadedFromId,
+			(r) => r && !r.isTypeNode && !r.isPending && !r.pendingDelete && r.loadedFromId,
 		);
 		const haveSelection = selectedIds && selectedIds.size > 0;
-		const candidates = haveSelection
-			? allCandidates.filter((r) => selectedIds.has(r.id))
-			: allCandidates;
+		const candidates = haveSelection ? allCandidates.filter((r) => selectedIds.has(r.id)) : allCandidates;
 		if (candidates.length === 0) {
 			showBulkToast(
 				haveSelection
-					? "None of the selected records are loaded from Salesforce."
-					: "No loaded records on the canvas to refresh.",
-				"warn",
+					? 'None of the selected records are loaded from Salesforce.'
+					: 'No loaded records on the canvas to refresh.',
+				'warn',
 			);
 			return;
 		}
 		const dirty = candidates.filter((r) => isRecordModified(r));
 		if (dirty.length > 0) {
 			const ok = await showConfirmDialog({
-				title: "Discard unsaved edits?",
+				title: 'Discard unsaved edits?',
 				message:
 					dirty.length +
-					" of these records have unsaved local edits. Refreshing will replace those edits with current Salesforce values. To pick which fields to keep, cancel and use Diff records from the Tools menu instead.",
-				confirmLabel: "Refresh anyway",
-				cancelLabel: "Cancel",
+					' of these records have unsaved local edits. Refreshing will replace those edits with current Salesforce values. To pick which fields to keep, cancel and use Diff records from the Tools menu instead.',
+				confirmLabel: 'Refresh anyway',
+				cancelLabel: 'Cancel',
 				danger: true,
 			});
 			if (!ok) {
@@ -4617,17 +4059,18 @@ function csrfFetch(url, options) {
 		}
 		try {
 			const result = await refreshLoadedCanvasRecords(candidates);
-			const msg = result.failCount === 0
-				? "Refreshed " + result.okCount + " record" + (result.okCount === 1 ? "" : "s") + "."
-				: "Refreshed " + result.okCount + ". " + result.failCount + " no longer accessible in Salesforce.";
-			showBulkToast(msg, result.failCount === 0 ? "info" : "warn");
+			const msg =
+				result.failCount === 0
+					? 'Refreshed ' + result.okCount + ' record' + (result.okCount === 1 ? '' : 's') + '.'
+					: 'Refreshed ' + result.okCount + '. ' + result.failCount + ' no longer accessible in Salesforce.';
+			showBulkToast(msg, result.failCount === 0 ? 'info' : 'warn');
 		} catch (err) {
-			showBulkToast("Refresh failed: " + (err.message || err), "error");
+			showBulkToast('Refresh failed: ' + (err.message || err), 'error');
 		}
 	}
 
-	document.addEventListener("keydown", (e) => {
-		if (!(e.key === "z" || e.key === "Z")) {
+	document.addEventListener('keydown', (e) => {
+		if (!(e.key === 'z' || e.key === 'Z')) {
 			return;
 		}
 		if (!(e.ctrlKey || e.metaKey)) {
@@ -4636,15 +4079,11 @@ function csrfFetch(url, options) {
 		if (e.shiftKey) {
 			return;
 		}
-		const tag = (e.target && e.target.tagName) || "";
-		if (
-			tag === "INPUT" ||
-			tag === "TEXTAREA" ||
-			(e.target && e.target.isContentEditable)
-		) {
+		const tag = (e.target && e.target.tagName) || '';
+		if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) {
 			return;
 		}
-		if (canvasState.graphView !== "bulk") {
+		if (canvasState.graphView !== 'bulk') {
 			return;
 		}
 		if (undoStack.length === 0) {
@@ -4657,7 +4096,7 @@ function csrfFetch(url, options) {
 			try {
 				ran = op.fn() !== false;
 			} catch (err) {
-				showBulkToast("Undo failed: " + (err.message || err), "error");
+				showBulkToast('Undo failed: ' + (err.message || err), 'error');
 				ran = true;
 			}
 			if (ran) {
@@ -4685,14 +4124,10 @@ function csrfFetch(url, options) {
 		if (!rec.isTypeNode) {
 			let selIdx = -1;
 			if (rec.fromSelectionId != null) {
-				selIdx = canvasState.selectedObjects.findIndex(
-					(s) => s.id === rec.fromSelectionId,
-				);
+				selIdx = canvasState.selectedObjects.findIndex((s) => s.id === rec.fromSelectionId);
 			}
 			if (selIdx === -1) {
-				selIdx = canvasState.selectedObjects.findIndex(
-					(s) => s.name === rec.objectName,
-				);
+				selIdx = canvasState.selectedObjects.findIndex((s) => s.name === rec.objectName);
 			}
 			if (selIdx !== -1) {
 				canvasState.activeIndex = selIdx;
@@ -4702,21 +4137,18 @@ function csrfFetch(url, options) {
 	}
 
 	function applyBulkZoom() {
-		const content = graph.querySelector("#bulk-content");
+		const content = graph.querySelector('#bulk-content');
 		if (!content) {
 			return;
 		}
 		content.style.zoom = canvasState.bulkZoom;
-		const hud = graph.querySelector("#bulk-zoom-hud");
+		const hud = graph.querySelector('#bulk-zoom-hud');
 		if (hud) {
 			if (canvasState.bulkZoom !== 1) {
-				hud.textContent =
-					"Zoom " +
-					Math.round(canvasState.bulkZoom * 100) +
-					"%  \u00b7  ctrl+scroll to adjust";
-				hud.style.display = "";
+				hud.textContent = 'Zoom ' + Math.round(canvasState.bulkZoom * 100) + '%  \u00b7  ctrl+scroll to adjust';
+				hud.style.display = '';
 			} else {
-				hud.style.display = "none";
+				hud.style.display = 'none';
 			}
 		}
 	}
@@ -4739,9 +4171,7 @@ function csrfFetch(url, options) {
 			canvas.scrollTop = targetTop;
 			return;
 		}
-		const reduceMotion =
-			window.matchMedia &&
-			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		if (reduceMotion) {
 			canvas.scrollLeft = targetLeft;
 			canvas.scrollTop = targetTop;
@@ -4769,7 +4199,7 @@ function csrfFetch(url, options) {
 	const BULK_DBLCLICK_MS = 350;
 
 	function clientToCanvasCoords(clientX, clientY) {
-		const canvas = graph.querySelector("#bulk-canvas");
+		const canvas = graph.querySelector('#bulk-canvas');
 		const rect = canvas.getBoundingClientRect();
 		return {
 			x: (clientX - rect.left + canvas.scrollLeft) / canvasState.bulkZoom,
@@ -4778,28 +4208,21 @@ function csrfFetch(url, options) {
 	}
 
 	function findRecordAtClient(clientX, clientY) {
-		const nodesRoot = graph.querySelector("#bulk-nodes");
+		const nodesRoot = graph.querySelector('#bulk-nodes');
 		for (const rec of canvasState.bulkRecords) {
-			const el = nodesRoot.querySelector(
-				'[data-rec-id="' + rec.id + '"]',
-			);
+			const el = nodesRoot.querySelector('[data-rec-id="' + rec.id + '"]');
 			if (!el) {
 				continue;
 			}
 			const r = el.getBoundingClientRect();
-			if (
-				clientX >= r.left &&
-				clientX <= r.right &&
-				clientY >= r.top &&
-				clientY <= r.bottom
-			) {
+			if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
 				return rec;
 			}
 		}
 		return null;
 	}
 
-	document.addEventListener("mousemove", (e) => {
+	document.addEventListener('mousemove', (e) => {
 		if (!canvasState.bulkMarquee) {
 			return;
 		}
@@ -4814,17 +4237,14 @@ function csrfFetch(url, options) {
 		}
 		updateMarqueeElement();
 	});
-	document.addEventListener("mouseup", () => {
+	document.addEventListener('mouseup', () => {
 		if (!canvasState.bulkMarquee) {
 			return;
 		}
 		if (canvasState.bulkMarquee.moved) {
 			finalizeMarqueeSelection();
 		} else {
-			if (
-				canvasState.bulkSelectedIds.size > 0 ||
-				canvasState.bulkSelectedEdgeId != null
-			) {
+			if (canvasState.bulkSelectedIds.size > 0 || canvasState.bulkSelectedEdgeId != null) {
 				canvasState.bulkSelectedIds = new Set();
 				canvasState.bulkSelectedEdgeId = null;
 				renderBulkView();
@@ -4893,12 +4313,12 @@ function csrfFetch(url, options) {
 	const _openSlotRecordPicker = _cm._openSlotRecordPicker;
 
 	function renderChips() {
-		const bar = graph.querySelector("#graph-chips");
+		const bar = graph.querySelector('#graph-chips');
 		if (!bar) {
 			return;
 		}
 		if (canvasState.selectedObjects.length === 0) {
-			bar.innerHTML = "";
+			bar.innerHTML = '';
 			return;
 		}
 
@@ -4910,32 +4330,30 @@ function csrfFetch(url, options) {
 		bar.innerHTML = canvasState.selectedObjects
 			.map((s, i) => {
 				nameSeen[s.name] = (nameSeen[s.name] || 0) + 1;
-				const suffix =
-					nameCounts[s.name] > 1 ? " #" + nameSeen[s.name] : "";
+				const suffix = nameCounts[s.name] > 1 ? ' #' + nameSeen[s.name] : '';
 				const hasDraft =
-					canvasState.savedRecords[s.name] &&
-					Object.keys(canvasState.savedRecords[s.name]).length > 0;
+					canvasState.savedRecords[s.name] && Object.keys(canvasState.savedRecords[s.name]).length > 0;
 				return (
 					'<div class="chip' +
-					(i === canvasState.activeIndex ? " active" : "") +
-					(hasDraft ? " has-draft" : "") +
+					(i === canvasState.activeIndex ? ' active' : '') +
+					(hasDraft ? ' has-draft' : '') +
 					'" data-chip="' +
 					i +
 					'"' +
-					(hasDraft ? ' title="Has saved draft"' : "") +
-					">" +
-					(hasDraft ? '<span class="chip-check">\u2713</span>' : "") +
+					(hasDraft ? ' title="Has saved draft"' : '') +
+					'>' +
+					(hasDraft ? '<span class="chip-check">\u2713</span>' : '') +
 					escapeHtml(s.label + suffix) +
 					'<button class="chip-remove" data-chip-remove="' +
 					i +
 					'" title="Remove">&times;</button>' +
-					"</div>"
+					'</div>'
 				);
 			})
-			.join("");
-		bar.querySelectorAll("[data-chip]").forEach((el) => {
-			el.addEventListener("click", (e) => {
-				if (e.target.closest("[data-chip-remove]")) {
+			.join('');
+		bar.querySelectorAll('[data-chip]').forEach((el) => {
+			el.addEventListener('click', (e) => {
+				if (e.target.closest('[data-chip-remove]')) {
 					return;
 				}
 				const i = parseInt(el.dataset.chip, 10);
@@ -4945,8 +4363,8 @@ function csrfFetch(url, options) {
 				}
 			});
 		});
-		bar.querySelectorAll("[data-chip-remove]").forEach((btn) => {
-			btn.addEventListener("click", (e) => {
+		bar.querySelectorAll('[data-chip-remove]').forEach((btn) => {
+			btn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				removeFromSelection(parseInt(btn.dataset.chipRemove, 10));
 			});
@@ -4955,20 +4373,19 @@ function csrfFetch(url, options) {
 
 	let _basePickerWired = false;
 	function renderBasePicker() {
-		const picker = graph.querySelector("#base-picker");
-		const nodesRoot = graph.querySelector("#graph-nodes");
-		const edges = graph.querySelector("#graph-edges");
-		const subbar = graph.querySelector("#graph-subbar");
+		const picker = graph.querySelector('#base-picker');
+		const nodesRoot = graph.querySelector('#graph-nodes');
+		const edges = graph.querySelector('#graph-edges');
+		const subbar = graph.querySelector('#graph-subbar');
 		if (subbar) {
-			subbar.classList.add("hidden");
+			subbar.classList.add('hidden');
 		}
-		nodesRoot.innerHTML = "";
-		edges.innerHTML = "";
-		picker.classList.remove("hidden");
+		nodesRoot.innerHTML = '';
+		edges.innerHTML = '';
+		picker.classList.remove('hidden');
 
 		if (canvasState.allObjects === null) {
-			picker.innerHTML =
-				'<p class="tag center" style="margin-top:3em">Loading objects\u2026</p>';
+			picker.innerHTML = '<p class="tag center" style="margin-top:3em">Loading objects\u2026</p>';
 			_basePickerWired = false;
 			return;
 		}
@@ -4979,69 +4396,59 @@ function csrfFetch(url, options) {
 				'<div class="base-picker-eyebrow">Get started</div>' +
 				'<h1 class="base-picker-title">What\u2019s the main thing you\u2019re doing?</h1>' +
 				'<p class="base-picker-sub" id="base-picker-sub">Pick the object that represents the records you want to create or edit. You can add related objects in the next step.</p>' +
-				"</div>" +
+				'</div>' +
 				'<div class="base-picker-search">' +
 				'<input id="base-picker-q" type="search" placeholder="Filter by label or API name\u2026" autocomplete="off">' +
-				"</div>" +
+				'</div>' +
 				'<div class="base-picker-filters">' +
 				'<div class="segmented" role="tablist" id="base-picker-types">' +
 				'<button type="button" data-bp-type="all" class="active">All</button>' +
 				'<button type="button" data-bp-type="standard">Standard</button>' +
 				'<button type="button" data-bp-type="custom">Custom</button>' +
-				"</div>" +
+				'</div>' +
 				'<span class="tag" id="base-picker-summary"></span>' +
-				"</div>" +
+				'</div>' +
 				'<div class="base-picker-grid" id="base-picker-grid"></div>';
 
-			const input = picker.querySelector("#base-picker-q");
-			input.value = basePickerFilter.text || "";
-			input.addEventListener("input", () => {
+			const input = picker.querySelector('#base-picker-q');
+			input.value = basePickerFilter.text || '';
+			input.addEventListener('input', () => {
 				basePickerFilter.text = input.value.trim();
 				updateBasePickerResults();
 			});
-			picker.querySelectorAll("[data-bp-type]").forEach((btn) => {
-				btn.addEventListener("click", () => {
+			picker.querySelectorAll('[data-bp-type]').forEach((btn) => {
+				btn.addEventListener('click', () => {
 					basePickerFilter.type = btn.dataset.bpType;
 					picker
-						.querySelectorAll("[data-bp-type]")
-						.forEach((b) =>
-							b.classList.toggle(
-								"active",
-								b.dataset.bpType === basePickerFilter.type,
-							),
-						);
+						.querySelectorAll('[data-bp-type]')
+						.forEach((b) => b.classList.toggle('active', b.dataset.bpType === basePickerFilter.type));
 					updateBasePickerResults();
 				});
 			});
-			picker
-				.querySelector("#base-picker-grid")
-				.addEventListener("click", async (e) => {
-					const card = e.target.closest("[data-base-pick]");
-					if (!card) {
-						return;
-					}
-					const name = card.dataset.basePick;
-					if (subbar) {
-						subbar.classList.remove("hidden");
-					}
-					picker.classList.add("hidden");
-					_basePickerWired = false; // force fresh frame on next mount
-					nodesRoot.innerHTML =
-						'<div class="graph-empty">Loading\u2026</div>';
-					try {
-						await addToSelection(name);
-						renderAll();
-					} catch (err) {
-						picker.classList.remove("hidden");
-						picker.querySelector("#base-picker-grid").innerHTML =
-							'<div class="base-picker-empty">Failed to load: ' +
-							escapeHtml(err.message) +
-							"</div>";
-					}
-				});
+			picker.querySelector('#base-picker-grid').addEventListener('click', async (e) => {
+				const card = e.target.closest('[data-base-pick]');
+				if (!card) {
+					return;
+				}
+				const name = card.dataset.basePick;
+				if (subbar) {
+					subbar.classList.remove('hidden');
+				}
+				picker.classList.add('hidden');
+				_basePickerWired = false; // force fresh frame on next mount
+				nodesRoot.innerHTML = '<div class="graph-empty">Loading\u2026</div>';
+				try {
+					await addToSelection(name);
+					renderAll();
+				} catch (err) {
+					picker.classList.remove('hidden');
+					picker.querySelector('#base-picker-grid').innerHTML =
+						'<div class="base-picker-empty">Failed to load: ' + escapeHtml(err.message) + '</div>';
+				}
+			});
 			_basePickerWired = true;
 			setTimeout(() => {
-				const i = picker.querySelector("#base-picker-q");
+				const i = picker.querySelector('#base-picker-q');
 				if (i) {
 					i.focus();
 				}
@@ -5055,10 +4462,7 @@ function csrfFetch(url, options) {
 		const toRemove = [];
 		const _ensureAssoc = (fromId, toId, fieldName) => {
 			const exists = canvasState.bulkAssociations.some(
-				(a) =>
-					a.fromId === fromId &&
-					a.toId === toId &&
-					a.fieldName === fieldName,
+				(a) => a.fromId === fromId && a.toId === toId && a.fieldName === fieldName,
 			);
 			if (!exists) {
 				canvasState.bulkAssociations.push({
@@ -5073,33 +4477,24 @@ function csrfFetch(url, options) {
 			if (!tn.isTypeNode || tn.isFreeTypeNode) {
 				return;
 			}
-			const host = canvasState.bulkRecords.find(
-				(r) => r.id === tn.hostRecordId,
-			);
+			const host = canvasState.bulkRecords.find((r) => r.id === tn.hostRecordId);
 			if (!host || !host.loadedFromId) {
 				return;
 			}
-			if (tn.direction === "parent") {
+			if (tn.direction === 'parent') {
 				const parentId = host.values && host.values[tn.fieldOnThis];
 				if (!_sfIdValue(parentId)) {
 					return;
 				}
 				const match = canvasState.bulkRecords.find(
-					(r) =>
-						!r.isTypeNode &&
-						r.objectName === tn.objectName &&
-						_sfIdMatch(r.loadedFromId, parentId),
+					(r) => !r.isTypeNode && r.objectName === tn.objectName && _sfIdMatch(r.loadedFromId, parentId),
 				);
 				if (match) {
 					_ensureAssoc(host.id, match.id, tn.fieldOnThis);
 					toRemove.push(tn.id);
 				}
-			} else if (tn.direction === "child") {
-				const cacheKey = _countCacheKey(
-					tn.objectName,
-					tn.fieldOnOther,
-					host.loadedFromId,
-				);
+			} else if (tn.direction === 'child') {
+				const cacheKey = _countCacheKey(tn.objectName, tn.fieldOnOther, host.loadedFromId);
 				if (!_relatedCountCache.has(cacheKey)) {
 					return;
 				}
@@ -5112,15 +4507,10 @@ function csrfFetch(url, options) {
 						!r.isTypeNode &&
 						r.objectName === tn.objectName &&
 						r.values &&
-						_sfIdMatch(
-							r.values[tn.fieldOnOther],
-							host.loadedFromId,
-						),
+						_sfIdMatch(r.values[tn.fieldOnOther], host.loadedFromId),
 				);
 				if (canvasMatches.length >= sfCount) {
-					canvasMatches.forEach((m) =>
-						_ensureAssoc(m.id, host.id, tn.fieldOnOther),
-					);
+					canvasMatches.forEach((m) => _ensureAssoc(m.id, host.id, tn.fieldOnOther));
 					toRemove.push(tn.id);
 				}
 			}
@@ -5129,9 +4519,7 @@ function csrfFetch(url, options) {
 			return 0;
 		}
 		const remIds = new Set(toRemove);
-		canvasState.bulkRecords = canvasState.bulkRecords.filter(
-			(r) => !remIds.has(r.id),
-		);
+		canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => !remIds.has(r.id));
 		return toRemove.length;
 	}
 
@@ -5141,54 +4529,38 @@ function csrfFetch(url, options) {
 		}
 
 		if (!_canAuthorSlots()) {
-			showBulkToast(
-				"Slot canvases require Pro or higher. Upgrade at /pricing.",
-				"error",
-			);
+			showBulkToast('Slot canvases require Pro or higher. Upgrade at /pricing.', 'error');
 			return;
 		}
 		if (!rec.loadedFromId) {
-			showBulkToast(
-				"Field-level slots only apply to loaded records.",
-				"error",
-			);
+			showBulkToast('Field-level slots only apply to loaded records.', 'error');
 			return;
 		}
 		let describe;
 		try {
 			describe = await ensureDescribe(rec.objectName);
 		} catch (e) {
-			showBulkToast(
-				"Failed to load fields: " + (e.message || e),
-				"error",
-			);
+			showBulkToast('Failed to load fields: ' + (e.message || e), 'error');
 			return;
 		}
 		const writable = (describe.fields || []).filter(
-			(f) =>
-				f.updateable &&
-				f.name !== "RecordTypeId" &&
-				f.type !== "address" &&
-				f.type !== "location",
+			(f) => f.updateable && f.name !== 'RecordTypeId' && f.type !== 'address' && f.type !== 'location',
 		);
 		if (writable.length === 0) {
-			showBulkToast(
-				"No writable fields on " + rec.objectName + ".",
-				"error",
-			);
+			showBulkToast('No writable fields on ' + rec.objectName + '.', 'error');
 			return;
 		}
 		const picked = await showFieldSlotPicker(rec.objectName, writable);
 		if (!picked || picked.length === 0) {
 			return;
 		}
-		const meta = await showSlotMetaPicker({ title: "Field-level slot" });
+		const meta = await showSlotMetaPicker({ title: 'Field-level slot' });
 		if (!meta) {
 			return;
 		}
 		rec.slot = {
 			slotId: slotIdSeq++,
-			kind: "fields",
+			kind: 'fields',
 			fields: picked,
 			label: meta.label,
 			description: meta.description,
@@ -5198,18 +4570,18 @@ function csrfFetch(url, options) {
 		};
 		renderBulkView();
 		const _assigneeBit = meta.assigneeName
-			? " (assigned to " + meta.assigneeName + ")"
-			: " (open to any recipient)";
+			? ' (assigned to ' + meta.assigneeName + ')'
+			: ' (open to any recipient)';
 		showBulkToast(
-			"Marked " +
+			'Marked ' +
 				picked.length +
-				" field" +
-				(picked.length === 1 ? "" : "s") +
-				" as slot" +
-				(picked.length === 1 ? "" : "s") +
-				" on this record" +
+				' field' +
+				(picked.length === 1 ? '' : 's') +
+				' as slot' +
+				(picked.length === 1 ? '' : 's') +
+				' on this record' +
 				_assigneeBit +
-				".",
+				'.',
 		);
 	}
 
@@ -5219,13 +4591,10 @@ function csrfFetch(url, options) {
 		}
 
 		if (!_canAuthorSlots()) {
-			showBulkToast(
-				"Slot canvases require Pro or higher. Upgrade at /pricing.",
-				"error",
-			);
+			showBulkToast('Slot canvases require Pro or higher. Upgrade at /pricing.', 'error');
 			return;
 		}
-		const meta = await showSlotMetaPicker({ title: "Convert to slot" });
+		const meta = await showSlotMetaPicker({ title: 'Convert to slot' });
 		if (!meta) {
 			return;
 		}
@@ -5240,15 +4609,9 @@ function csrfFetch(url, options) {
 		};
 		renderBulkView();
 		const _slotAssigneeBit = meta.assigneeName
-			? " (assigned to " + meta.assigneeName + ")"
-			: " (open to any recipient)";
-		showBulkToast(
-			"Marked as slot \u201c" +
-				rec.slot.label +
-				"\u201d" +
-				_slotAssigneeBit +
-				".",
-		);
+			? ' (assigned to ' + meta.assigneeName + ')'
+			: ' (open to any recipient)';
+		showBulkToast('Marked as slot \u201c' + rec.slot.label + '\u201d' + _slotAssigneeBit + '.');
 	}
 
 	function convertSlotBackToRecord(rec) {
@@ -5258,28 +4621,21 @@ function csrfFetch(url, options) {
 		const wasLabel = rec.slot.label;
 		delete rec.slot;
 		renderBulkView();
-		showBulkToast(
-			"Removed slot marker" +
-				(wasLabel ? " (was \u201c" + wasLabel + "\u201d)" : "") +
-				".",
-		);
+		showBulkToast('Removed slot marker' + (wasLabel ? ' (was \u201c' + wasLabel + '\u201d)' : '') + '.');
 	}
 
 	function _slotNoAccessMessage(rec, e) {
-		const label =
-			(rec && rec.slot && rec.slot.label) ||
-			(rec && (rec.label || rec.objectName)) ||
-			"this slot";
-		if (e && e.code === "object-no-access") {
+		const label = (rec && rec.slot && rec.slot.label) || (rec && (rec.label || rec.objectName)) || 'this slot';
+		if (e && e.code === 'object-no-access') {
 			return (
-				"You don’t have access to the “" +
+				'You don’t have access to the “' +
 				label +
-				"” object (" +
+				'” object (' +
 				rec.objectName +
-				") in Salesforce, so you can’t fill this slot. Ask the sender or your Salesforce admin for access."
+				') in Salesforce, so you can’t fill this slot. Ask the sender or your Salesforce admin for access.'
 			);
 		}
-		return "Couldn’t open “" + label + "”: " + ((e && e.message) || e);
+		return 'Couldn’t open “' + label + '”: ' + ((e && e.message) || e);
 	}
 
 	async function fillSlotWithLoad(rec, anchorEl) {
@@ -5293,26 +4649,20 @@ function csrfFetch(url, options) {
 		}
 
 		if (_slotInaccessibleObjects.has(rec.objectName)) {
-			showBulkToast(
-				_slotNoAccessMessage(rec, { code: "object-no-access" }),
-				"error",
-			);
+			showBulkToast(_slotNoAccessMessage(rec, { code: 'object-no-access' }), 'error');
 			return;
 		}
-		let s = canvasState.selectedObjects.find(
-			(so) => so.name === rec.objectName,
-		);
+		let s = canvasState.selectedObjects.find((so) => so.name === rec.objectName);
 		if (!s) {
 			try {
 				s = await addToSelection(rec.objectName);
 			} catch (e) {
-				showBulkToast(_slotNoAccessMessage(rec, e), "error");
+				showBulkToast(_slotNoAccessMessage(rec, e), 'error');
 				return;
 			}
 		}
 		_openSlotRecordPicker(rec, anchorEl);
 	}
-
 
 	async function _runSlotPreflight() {
 		_slotInaccessibleObjects.clear();
@@ -5328,12 +4678,9 @@ function csrfFetch(url, options) {
 		const probes = await Promise.all(
 			[...slotObjects].map(async (name) => {
 				try {
-					const r = await csrfFetch(
-						"/api/objects/" +
-							encodeURIComponent(name) +
-							"/describe",
-						{ credentials: "same-origin" },
-					);
+					const r = await csrfFetch('/api/objects/' + encodeURIComponent(name) + '/describe', {
+						credentials: 'same-origin',
+					});
 					return { name, ok: r.ok };
 				} catch (e) {
 					return { name, ok: false };
@@ -5344,15 +4691,13 @@ function csrfFetch(url, options) {
 		inaccessible.forEach((n) => _slotInaccessibleObjects.add(n));
 		if (inaccessible.length > 0) {
 			const list =
-				inaccessible.slice(0, 3).join(", ") +
-				(inaccessible.length > 3
-					? ", +" + (inaccessible.length - 3) + " more"
-					: "");
+				inaccessible.slice(0, 3).join(', ') +
+				(inaccessible.length > 3 ? ', +' + (inaccessible.length - 3) + ' more' : '');
 			showBulkToast(
-				"Some slots may not be fillable with your current permissions: " +
+				'Some slots may not be fillable with your current permissions: ' +
 					list +
-					". Ask your admin for read access if you need to fill them.",
-				"error",
+					'. Ask your admin for read access if you need to fill them.',
+				'error',
 			);
 		}
 		renderBulkView();
@@ -5360,15 +4705,12 @@ function csrfFetch(url, options) {
 
 	async function _fillSlotWithSfRecord(rec, sfRecord) {
 		if (!sfRecord || !sfRecord.Id) {
-			showBulkToast("Record could not be loaded.", "error");
+			showBulkToast('Record could not be loaded.', 'error');
 			return;
 		}
 		const dup = canvasState.bulkRecords.find(
 			(b) =>
-				!b.isTypeNode &&
-				b.id !== rec.id &&
-				b.objectName === rec.objectName &&
-				b.loadedFromId === sfRecord.Id,
+				!b.isTypeNode && b.id !== rec.id && b.objectName === rec.objectName && b.loadedFromId === sfRecord.Id,
 		);
 		if (dup) {
 			canvasState.bulkAssociations.forEach((a) => {
@@ -5386,24 +4728,20 @@ function csrfFetch(url, options) {
 			canvasState.bulkSelectedIds.clear();
 			canvasState.bulkSelectedIds.add(dup.id);
 			renderBulkView();
-			showBulkToast(
-				"That record was already on the canvas - the slot now points at it.",
-			);
+			showBulkToast('That record was already on the canvas - the slot now points at it.');
 			return;
 		}
-		let targetSel = canvasState.selectedObjects.find(
-			(s) => s.name === rec.objectName,
-		);
+		let targetSel = canvasState.selectedObjects.find((s) => s.name === rec.objectName);
 		if (!targetSel) {
 			try {
 				targetSel = await addToSelection(rec.objectName);
 			} catch (e) {
-				console.warn("addToSelection failed", e);
+				console.warn('addToSelection failed', e);
 			}
 		}
 		const values = {};
 		Object.keys(sfRecord).forEach((k) => {
-			if (k === "attributes" || sfRecord[k] == null) {
+			if (k === 'attributes' || sfRecord[k] == null) {
 				return;
 			}
 			values[k] = sfRecord[k];
@@ -5415,9 +4753,7 @@ function csrfFetch(url, options) {
 		rec.fromSelectionId = targetSel ? targetSel.id : null;
 		delete rec.slot;
 		renderBulkView();
-		showBulkToast(
-			"Loaded " + (rec.label || rec.objectName) + " into slot.",
-		);
+		showBulkToast('Loaded ' + (rec.label || rec.objectName) + ' into slot.');
 	}
 
 	function fillSlotWithBlank(rec) {
@@ -5430,43 +4766,33 @@ function csrfFetch(url, options) {
 			return;
 		}
 		if (_slotInaccessibleObjects.has(rec.objectName)) {
-			showBulkToast(
-				_slotNoAccessMessage(rec, { code: "object-no-access" }),
-				"error",
-			);
+			showBulkToast(_slotNoAccessMessage(rec, { code: 'object-no-access' }), 'error');
 			return;
 		}
-		const matchingSel = canvasState.selectedObjects.find(
-			(s) => s.name === rec.objectName,
-		);
+		const matchingSel = canvasState.selectedObjects.find((s) => s.name === rec.objectName);
 		rec.fromSelectionId = matchingSel ? matchingSel.id : null;
 		rec.label = (matchingSel && matchingSel.label) || rec.objectName;
 		rec.values = {};
 		delete rec.slot;
 		renderBulkView();
-		showBulkToast(
-			"Slot filled with a new draft. Edit the fields, then upload to save it.",
-		);
+		showBulkToast('Slot filled with a new draft. Edit the fields, then upload to save it.');
 	}
 
 	async function runWithConcurrency(tasks, limit) {
 		const queue = tasks.slice();
-		const workers = new Array(Math.min(limit, queue.length))
-			.fill(0)
-			.map(async () => {
-				while (queue.length > 0) {
-					const t = queue.shift();
-					try {
-						await t();
-					} catch (e) {
-					}
-				}
-			});
+		const workers = new Array(Math.min(limit, queue.length)).fill(0).map(async () => {
+			while (queue.length > 0) {
+				const t = queue.shift();
+				try {
+					await t();
+				} catch (e) {}
+			}
+		});
 		await Promise.all(workers);
 	}
 	if (
-		typeof window !== "undefined" &&
-		typeof window.location !== "undefined" &&
+		typeof window !== 'undefined' &&
+		typeof window.location !== 'undefined' &&
 		/[?&]test=1/.test(window.location.search)
 	) {
 		window.__orgloomTest = {
@@ -5491,23 +4817,17 @@ function csrfFetch(url, options) {
 					x: r.x,
 					y: r.y,
 					values: Object.assign({}, r.values || {}),
-					loadedValues: r.loadedValues
-						? Object.assign({}, r.loadedValues)
-						: undefined,
+					loadedValues: r.loadedValues ? Object.assign({}, r.loadedValues) : undefined,
 					slot: r.slot
 						? Object.assign({}, r.slot, {
-								fields: Array.isArray(r.slot.fields)
-									? r.slot.fields.slice()
-									: undefined,
+								fields: Array.isArray(r.slot.fields) ? r.slot.fields.slice() : undefined,
 							})
 						: undefined,
 					_recipientSlot: !!r._recipientSlot,
 				})),
 
 			setSelection: (ids) => {
-				canvasState.bulkSelectedIds = new Set(
-					Array.isArray(ids) ? ids : [ids],
-				);
+				canvasState.bulkSelectedIds = new Set(Array.isArray(ids) ? ids : [ids]);
 				renderBulkView();
 			},
 			getAssociations: () =>
@@ -5517,15 +4837,16 @@ function csrfFetch(url, options) {
 					toId: a.toId,
 					fieldName: a.fieldName,
 				})),
-			getRenderedEdges: () => _cyInstance
-				? _cyInstance.edges().map((edge) => ({
-					id: edge.id(),
-					source: edge.data('source'),
-					target: edge.data('target'),
-					fieldName: edge.data('label') || '',
-					kind: edge.data('kind') || '',
-				}))
-				: [],
+			getRenderedEdges: () =>
+				_cyInstance
+					? _cyInstance.edges().map((edge) => ({
+							id: edge.id(),
+							source: edge.data('source'),
+							target: edge.data('target'),
+							fieldName: edge.data('label') || '',
+							kind: edge.data('kind') || '',
+						}))
+					: [],
 
 			getSchemaViewObject: () => canvasState._schemaViewObject || null,
 
@@ -5551,26 +4872,17 @@ function csrfFetch(url, options) {
 				renderBulkView();
 			},
 			getCyZoom: () => (_cyInstance ? _cyInstance.zoom() : null),
-			getCyPan: () =>
-				_cyInstance ? Object.assign({}, _cyInstance.pan()) : null,
+			getCyPan: () => (_cyInstance ? Object.assign({}, _cyInstance.pan()) : null),
 			getModifiedLoadedCount: () => _modifiedLoadedCount(),
 
-			seedLoadedRecord: ({
-				objectName,
-				sfId,
-				loadedValues,
-				currentValues,
-			}) => {
+			seedLoadedRecord: ({ objectName, sfId, loadedValues, currentValues }) => {
 				const id = canvasState.bulkIdSeq++;
 				canvasState.bulkRecords.push({
 					id,
 					objectName,
 					loadedFromId: sfId,
 					loadedValues: Object.assign({}, loadedValues || {}),
-					values: Object.assign(
-						{},
-						currentValues || loadedValues || {},
-					),
+					values: Object.assign({}, currentValues || loadedValues || {}),
 				});
 				renderBulkView();
 				return id;
@@ -5585,10 +4897,7 @@ function csrfFetch(url, options) {
 						objectName: r.objectName,
 						loadedFromId: r.sfId,
 						loadedValues: Object.assign({}, r.loadedValues || {}),
-						values: Object.assign(
-							{},
-							r.currentValues || r.loadedValues || {},
-						),
+						values: Object.assign({}, r.currentValues || r.loadedValues || {}),
 					});
 					ids.push(id);
 				});
@@ -5598,32 +4907,22 @@ function csrfFetch(url, options) {
 
 			openEditModal: (id) => {
 				const rec = canvasState.bulkRecords.find((r) => r.id === id);
-				if (
-					!rec ||
-					rec.isTypeNode ||
-					rec.isPending ||
-					rec._inaccessible
-				) {
+				if (!rec || rec.isTypeNode || rec.isPending || rec._inaccessible) {
 					return false;
 				}
 				openInsertModal(rec.objectName, { record: rec });
 				return true;
 			},
 
-			confirmAndRecall: async (batchId) =>
-				_uh_testConfirmAndRecall(batchId),
+			confirmAndRecall: async (batchId) => _uh_testConfirmAndRecall(batchId),
 
 			createAssociation: (fromRecId, toRecId, fieldName) => {
-				const src = canvasState.bulkRecords.find(
-					(r) => r.id === fromRecId,
-				);
-				const tgt = canvasState.bulkRecords.find(
-					(r) => r.id === toRecId,
-				);
+				const src = canvasState.bulkRecords.find((r) => r.id === fromRecId);
+				const tgt = canvasState.bulkRecords.find((r) => r.id === toRecId);
 				if (!src || !tgt) {
 					return false;
 				}
-				createAssociation(src, tgt, "fwd", fieldName);
+				createAssociation(src, tgt, 'fwd', fieldName);
 				return true;
 			},
 			deleteAssociation: (assocId) => {
@@ -5634,22 +4933,18 @@ function csrfFetch(url, options) {
 	}
 
 	function updateBasePickerResults() {
-		const picker = graph.querySelector("#base-picker");
-		if (
-			!picker ||
-			picker.classList.contains("hidden") ||
-			!canvasState.allObjects
-		) {
+		const picker = graph.querySelector('#base-picker');
+		if (!picker || picker.classList.contains('hidden') || !canvasState.allObjects) {
 			return;
 		}
-		const grid = picker.querySelector("#base-picker-grid");
-		const summary = picker.querySelector("#base-picker-summary");
-		const q = (basePickerFilter.text || "").toLowerCase();
+		const grid = picker.querySelector('#base-picker-grid');
+		const summary = picker.querySelector('#base-picker-summary');
+		const q = (basePickerFilter.text || '').toLowerCase();
 		const filtered = canvasState.allObjects.filter((o) => {
-			if (basePickerFilter.type === "standard" && o.custom) {
+			if (basePickerFilter.type === 'standard' && o.custom) {
 				return false;
 			}
-			if (basePickerFilter.type === "custom" && !o.custom) {
+			if (basePickerFilter.type === 'custom' && !o.custom) {
 				return false;
 			}
 			if (!q) {
@@ -5675,30 +4970,22 @@ function csrfFetch(url, options) {
 								'">' +
 								'<span class="bp-label">' +
 								escapeHtml(o.label) +
-								"</span>" +
+								'</span>' +
 								'<span class="bp-name">' +
 								escapeHtml(o.name) +
-								"</span>" +
+								'</span>' +
 								'<span class="bp-tag">' +
-								(o.custom ? "Custom" : "Standard") +
-								(o.queryable ? "" : " \u00b7 not queryable") +
-								"</span>" +
-								"</button>",
+								(o.custom ? 'Custom' : 'Standard') +
+								(o.queryable ? '' : ' \u00b7 not queryable') +
+								'</span>' +
+								'</button>',
 						)
-						.join("");
+						.join('');
 		if (summary) {
 			summary.textContent =
 				filtered.length === capped.length
-					? "Showing " +
-						capped.length +
-						" / " +
-						canvasState.allObjects.length
-					: "Showing " +
-						capped.length +
-						" of " +
-						filtered.length +
-						" / " +
-						canvasState.allObjects.length;
+					? 'Showing ' + capped.length + ' / ' + canvasState.allObjects.length
+					: 'Showing ' + capped.length + ' of ' + filtered.length + ' / ' + canvasState.allObjects.length;
 		}
 	}
 
@@ -5713,16 +5000,10 @@ function csrfFetch(url, options) {
 		}
 		let focusedSel = null;
 		if (rec.fromSelectionId != null) {
-			focusedSel =
-				canvasState.selectedObjects.find(
-					(s) => s.id === rec.fromSelectionId,
-				) || null;
+			focusedSel = canvasState.selectedObjects.find((s) => s.id === rec.fromSelectionId) || null;
 		}
 		if (!focusedSel) {
-			focusedSel =
-				canvasState.selectedObjects.find(
-					(s) => s.name === rec.objectName,
-				) || null;
+			focusedSel = canvasState.selectedObjects.find((s) => s.name === rec.objectName) || null;
 		}
 		if (!focusedSel) {
 			return null;
@@ -5756,9 +5037,7 @@ function csrfFetch(url, options) {
 		});
 
 		const _selHasAnyRecord = (selId) =>
-			canvasState.bulkRecords.some(
-				(r) => !r.isTypeNode && r.fromSelectionId === selId,
-			);
+			canvasState.bulkRecords.some((r) => !r.isTypeNode && r.fromSelectionId === selId);
 		let grew = true;
 		while (grew) {
 			grew = false;
@@ -6579,12 +5858,12 @@ function csrfFetch(url, options) {
 		} catch (err) {
 			window.ORGLOOM_capture &&
 				window.ORGLOOM_capture(err, {
-					where: "app.js/draftAutoPersistTick",
+					where: 'app.js/draftAutoPersistTick',
 				});
 		}
 	}, 5000);
 
-	window.addEventListener("beforeunload", () => {
+	window.addEventListener('beforeunload', () => {
 		try {
 			const cur = canvasState.currentCanvas;
 			if (cur && cur.id) {
@@ -6593,7 +5872,7 @@ function csrfFetch(url, options) {
 		} catch (err) {
 			window.ORGLOOM_capture &&
 				window.ORGLOOM_capture(err, {
-					where: "app.js/draftPersistOnUnload",
+					where: 'app.js/draftPersistOnUnload',
 				});
 		}
 	});
@@ -6625,7 +5904,7 @@ function csrfFetch(url, options) {
 			} catch (err) {
 				window.ORGLOOM_capture &&
 					window.ORGLOOM_capture(err, {
-						where: "app.js/hasUnsavedWork/isRecordModified",
+						where: 'app.js/hasUnsavedWork/isRecordModified',
 					});
 			}
 		}
@@ -6638,10 +5917,7 @@ function csrfFetch(url, options) {
 			return false;
 		}
 		try {
-			const r = await csrfFetch(
-				"/api/canvas/" + encodeURIComponent(cur.id),
-				{ credentials: "same-origin" },
-			);
+			const r = await csrfFetch('/api/canvas/' + encodeURIComponent(cur.id), { credentials: 'same-origin' });
 			if (!r.ok) {
 				return false;
 			}
@@ -6656,7 +5932,7 @@ function csrfFetch(url, options) {
 			_setStaleRefsFromLoad(data.staleRefs);
 			canvasState.currentCanvas = {
 				id: cur.id,
-				title: data.title || cur.title || "",
+				title: data.title || cur.title || '',
 				ownedByMe: !!data.ownedByMe,
 				versionId: data.versionId || null,
 			};
@@ -6666,13 +5942,13 @@ function csrfFetch(url, options) {
 			} catch (err) {
 				window.ORGLOOM_capture &&
 					window.ORGLOOM_capture(err, {
-						where: "app.js/reloadCanvas/rehydrateSession",
+						where: 'app.js/reloadCanvas/rehydrateSession',
 					});
 			}
 			renderBulkView();
 			return true;
 		} catch (e) {
-			console.warn("[presence] live-sync reload failed:", e && e.message);
+			console.warn('[presence] live-sync reload failed:', e && e.message);
 			return false;
 		}
 	}
@@ -6764,9 +6040,7 @@ function csrfFetch(url, options) {
 			return _cyInstance;
 		},
 		getCyContainer: function () {
-			return _cyInstance && typeof _cyInstance.container === "function"
-				? _cyInstance.container()
-				: null;
+			return _cyInstance && typeof _cyInstance.container === 'function' ? _cyInstance.container() : null;
 		},
 	});
 	const openInsertModal = _ins.openInsertModal;
@@ -6786,9 +6060,9 @@ function csrfFetch(url, options) {
 		const fmt = (ms) => {
 			const s = Math.floor(ms / 1000);
 			const m = Math.floor(s / 60);
-			return m + ":" + String(s % 60).padStart(2, "0");
+			return m + ':' + String(s % 60).padStart(2, '0');
 		};
-		el.textContent = "0:00";
+		el.textContent = '0:00';
 		const id = setInterval(() => {
 			el.textContent = fmt(Date.now() - t0);
 		}, 500);
@@ -6796,7 +6070,7 @@ function csrfFetch(url, options) {
 	}
 
 	try {
-		Object.defineProperty(window, "__orgloom", {
+		Object.defineProperty(window, '__orgloom', {
 			value: Object.freeze({
 				get bulkRecords() {
 					return canvasState.bulkRecords;
@@ -6817,79 +6091,81 @@ function csrfFetch(url, options) {
 			writable: false,
 			configurable: true,
 		});
-	} catch (e) {
-	}
+	} catch (e) {}
 
 	const _migrationResumed = _migrationResume ? _migrationResume() : false;
 	if (_migrationResumed) {
 		const _migrationGuideReady = enterMigrateMode({
 			sourceSfOrgId: _migrationResumed.sourceSfOrgId || null,
-			targetSfOrgId:
-				_migrationResumed.targetSfOrgId || window.SF_ORG_ID || null,
+			targetSfOrgId: _migrationResumed.targetSfOrgId || window.SF_ORG_ID || null,
 		});
 		if (_migrationResumed.justArrived) {
 			Promise.resolve(_migrationGuideReady).then(() => {
 				setTimeout(() => {
-					if (canvasState.migrateMode.active &&
-						window.Orgloom.migrateMatch && window.Orgloom.migrateMatch.open) {
+					if (
+						canvasState.migrateMode.active &&
+						window.Orgloom.migrateMatch &&
+						window.Orgloom.migrateMatch.open
+					) {
 						window.Orgloom.migrateMatch.open({ autoOpened: true });
 					}
 				}, 0);
 			});
 		}
 		const _msg = _migrationResumed.justArrived
-			? "Migration canvas restored - review, then upload to the destination org."
-			: "Resumed your in-progress migration.";
-		if (typeof showBulkToastWithAction === "function") {
-			showBulkToastWithAction(_msg, "Discard migration", function () {
-				try {
-					if (
-						window.Orgloom &&
-						window.Orgloom.canvasOrgSwitch &&
-						window.Orgloom.canvasOrgSwitch.migrationClear
-					) {
-						window.Orgloom.canvasOrgSwitch.migrationClear();
-					}
-					exitMigrateMode();
-					if (typeof window.olToast === "function") {
-						window.olToast("Migration discarded. The canvas stays as-is.", "info");
-					}
-				} catch (_e) {}
-			}, "info");
-		} else if (typeof window.olToast === "function") {
-			window.olToast(_msg, "info");
+			? 'Migration canvas restored - review, then upload to the destination org.'
+			: 'Resumed your in-progress migration.';
+		if (typeof showBulkToastWithAction === 'function') {
+			showBulkToastWithAction(
+				_msg,
+				'Discard migration',
+				function () {
+					try {
+						if (
+							window.Orgloom &&
+							window.Orgloom.canvasOrgSwitch &&
+							window.Orgloom.canvasOrgSwitch.migrationClear
+						) {
+							window.Orgloom.canvasOrgSwitch.migrationClear();
+						}
+						exitMigrateMode();
+						if (typeof window.olToast === 'function') {
+							window.olToast('Migration discarded. The canvas stays as-is.', 'info');
+						}
+					} catch (_e) {}
+				},
+				'info',
+			);
+		} else if (typeof window.olToast === 'function') {
+			window.olToast(_msg, 'info');
 		}
 	}
 	const _orgSwitchRestored =
-		!_migrationResumed &&
-		window.Orgloom &&
-		window.Orgloom.canvasOrgSwitch &&
-		window.Orgloom.canvasOrgSwitch.restore
+		!_migrationResumed && window.Orgloom && window.Orgloom.canvasOrgSwitch && window.Orgloom.canvasOrgSwitch.restore
 			? window.Orgloom.canvasOrgSwitch.restore()
 			: false;
-	const _restored =
-		_migrationResumed || _orgSwitchRestored || _autosaveRestore();
-	const _quickUploadRestored = !_migrationResumed && !_orgSwitchRestored &&
-		_restoreInterruptedQuickUpload && _restoreInterruptedQuickUpload();
+	const _restored = _migrationResumed || _orgSwitchRestored || _autosaveRestore();
+	const _quickUploadRestored =
+		!_migrationResumed && !_orgSwitchRestored && _restoreInterruptedQuickUpload && _restoreInterruptedQuickUpload();
 	if (
 		(_restored || _quickUploadRestored) &&
 		!_migrationResumed &&
 		!_orgSwitchRestored &&
-		typeof window.olToast === "function"
+		typeof window.olToast === 'function'
 	) {
-		window.olToast(_quickUploadRestored
-			? "Quick Upload was interrupted. Restored your original canvas from this tab."
-			: "Restored your unsaved canvas from this tab.", "info");
+		window.olToast(
+			_quickUploadRestored
+				? 'Quick Upload was interrupted. Restored your original canvas from this tab.'
+				: 'Restored your unsaved canvas from this tab.',
+			'info',
+		);
 	}
 
 	renderStepper();
 	renderAll();
 
-	document.addEventListener("click", (e) => {
-		const trigger =
-			e.target &&
-			e.target.closest &&
-			e.target.closest("[data-quick-upload]");
+	document.addEventListener('click', (e) => {
+		const trigger = e.target && e.target.closest && e.target.closest('[data-quick-upload]');
 		if (!trigger) {
 			return;
 		}
@@ -6905,11 +6181,8 @@ function csrfFetch(url, options) {
 		setTimeout(() => openLinkedCsvModal({ quickUpload: true }), 0);
 	}
 
-	document.addEventListener("click", (e) => {
-		const trigger =
-			e.target &&
-			e.target.closest &&
-			e.target.closest("[data-app-history]");
+	document.addEventListener('click', (e) => {
+		const trigger = e.target && e.target.closest && e.target.closest('[data-app-history]');
 		if (!trigger) {
 			return;
 		}
@@ -6917,11 +6190,8 @@ function csrfFetch(url, options) {
 		showUploadHistoryModal();
 	});
 
-	document.addEventListener("click", (e) => {
-		const trigger =
-			e.target &&
-			e.target.closest &&
-			e.target.closest("[data-app-canvases]");
+	document.addEventListener('click', (e) => {
+		const trigger = e.target && e.target.closest && e.target.closest('[data-app-canvases]');
 		if (!trigger) {
 			return;
 		}

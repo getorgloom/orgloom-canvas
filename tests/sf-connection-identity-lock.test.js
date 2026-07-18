@@ -1,4 +1,3 @@
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { initTestDb, clearTestDb } from './helpers/db.js';
@@ -72,7 +71,12 @@ describe('getActiveSfConnection: basic gates', () => {
 		const a = await makeAccount();
 		const r = reqFor({
 			accountId: a.id,
-			sfAuth: { accessToken: 'tok', instanceUrl: 'https://acme.my.salesforce.com', sfUserId: '005USER1', sfOrgId: '00DORG1' },
+			sfAuth: {
+				accessToken: 'tok',
+				instanceUrl: 'https://acme.my.salesforce.com',
+				sfUserId: '005USER1',
+				sfOrgId: '00DORG1',
+			},
 			currentConnectionId: 'conn_missing',
 		});
 		assert.equal(await getActiveSfConnection(r), null);
@@ -86,7 +90,12 @@ describe('getActiveSfConnection: account isolation', () => {
 		const aliceConn = await makeConnection(alice.id);
 		const r = reqFor({
 			accountId: bob.id,
-			sfAuth: { accessToken: 'tok', instanceUrl: aliceConn.instance_url, sfUserId: '005USER1', sfOrgId: '00DORG1' },
+			sfAuth: {
+				accessToken: 'tok',
+				instanceUrl: aliceConn.instance_url,
+				sfUserId: '005USER1',
+				sfOrgId: '00DORG1',
+			},
 			currentConnectionId: aliceConn.id,
 		});
 		assert.equal(await getActiveSfConnection(r), null);
@@ -115,7 +124,7 @@ describe('getActiveSfConnection: identity-mismatch lockout', () => {
 			sfAuth: {
 				accessToken: 'tok',
 				instanceUrl: conn.instance_url,
-				sfUserId: '005DIFFERENT',  // doesn't match conn.sf_user_id
+				sfUserId: '005DIFFERENT', // doesn't match conn.sf_user_id
 				sfOrgId: '00DORG1',
 			},
 			currentConnectionId: conn.id,
@@ -132,7 +141,7 @@ describe('getActiveSfConnection: identity-mismatch lockout', () => {
 				accessToken: 'tok',
 				instanceUrl: conn.instance_url,
 				sfUserId: '005USER1',
-				sfOrgId: '00DDIFFERENT',  // wrong org
+				sfOrgId: '00DDIFFERENT', // wrong org
 			},
 			currentConnectionId: conn.id,
 		});

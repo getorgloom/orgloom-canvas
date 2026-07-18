@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import {
-	databaseDialectLabel,
-	isPostgresDatabaseUrl,
-	sqlitePathFromDatabaseUrl,
-} from '../src/database-url.js';
+import { databaseDialectLabel, isPostgresDatabaseUrl, sqlitePathFromDatabaseUrl } from '../src/database-url.js';
 
 describe('database URL parsing', () => {
 	test('recognizes both PostgreSQL URL schemes without exposing credentials', () => {

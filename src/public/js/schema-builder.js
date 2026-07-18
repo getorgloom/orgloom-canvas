@@ -1,19 +1,30 @@
-
 (function () {
 	'use strict';
+	// Projects Salesforce describe metadata into a navigable object-and-relationship graph.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	window.OrgLoom.schemaBuilder = {
 		mount: function mount(deps) {
-			if (!deps || !deps.canvasState || !deps.escapeHtml || !deps.showBulkToast
-				|| !deps.addToSelection || !deps.renderBulkView || !deps.fetchGraphData
-				|| !deps.ensureDescribe
-				|| !deps._canvasCapBlockReason
-				|| !deps.attachCyEdgeMarkers
-				|| !deps.attachCyMiddleClickPan || !deps.attachCyWheelZoom
-				|| !deps.redrawCyEdgeMarkers || !deps.SCHEMA_SYSTEM_FK_FIELDS
-				|| !deps.getGraph || !deps.getCySchemaInstance || !deps.setCySchemaInstance) {
+			if (
+				!deps ||
+				!deps.canvasState ||
+				!deps.escapeHtml ||
+				!deps.showBulkToast ||
+				!deps.addToSelection ||
+				!deps.renderBulkView ||
+				!deps.fetchGraphData ||
+				!deps.ensureDescribe ||
+				!deps._canvasCapBlockReason ||
+				!deps.attachCyEdgeMarkers ||
+				!deps.attachCyMiddleClickPan ||
+				!deps.attachCyWheelZoom ||
+				!deps.redrawCyEdgeMarkers ||
+				!deps.SCHEMA_SYSTEM_FK_FIELDS ||
+				!deps.getGraph ||
+				!deps.getCySchemaInstance ||
+				!deps.setCySchemaInstance
+			) {
 				throw new Error('schema-builder.mount: missing required deps');
 			}
 			const canvasState = deps.canvasState;
@@ -35,7 +46,6 @@
 			const getCySchemaInstance = deps.getCySchemaInstance;
 			const setCySchemaInstance = deps.setCySchemaInstance;
 
-			
 			const SCHEMA_NODE_W = 160;
 			const SCHEMA_NODE_H = 68;
 			const SCHEMA_NODE_W_EXPANDED = 280;
@@ -62,31 +72,31 @@
 				}
 				if (_expandedRenderHandler && getCySchemaInstance()) {
 					try {
- getCySchemaInstance().off('render position', _expandedRenderHandler); 
-} catch (_) {}
+						getCySchemaInstance().off('render position', _expandedRenderHandler);
+					} catch (_) {}
 				}
 				if (_expandedCyNode && _expandedCyNode.length) {
 					_expandedCyNode.removeData('expanded');
 					const cy = getCySchemaInstance();
 					if (cy) {
 						try {
- cy.style().update(); 
-} catch (_) {}
+							cy.style().update();
+						} catch (_) {}
 						const objName = _expandedCyNode.data('objectName');
 						const spawn = objName ? cy.getElementById('spawn_' + objName) : null;
 						if (spawn && spawn.length) {
-spawn.removeData('expandedHidden');
-}
+							spawn.removeData('expandedHidden');
+						}
 						const expand = objName ? cy.getElementById('expand_' + objName) : null;
 						if (expand && expand.length) {
-expand.removeData('expandedHidden');
-}
+							expand.removeData('expandedHidden');
+						}
 						if (_expandedNeighborPositions) {
 							_expandedNeighborPositions.forEach((pos, id) => {
 								const n = cy.getElementById(id);
 								if (n && n.length) {
-n.position(pos);
-}
+									n.position(pos);
+								}
 							});
 						}
 					}
@@ -99,13 +109,13 @@ n.position(pos);
 			}
 			function _pinSchemaFieldsPanel() {
 				if (!_expandedPanelEl || !_expandedCyNode || !getCySchemaInstance()) {
-return;
-}
+					return;
+				}
 				const cy = getCySchemaInstance();
 				const container = cy.container();
 				if (!container) {
-return;
-}
+					return;
+				}
 				const cRect = container.getBoundingClientRect();
 				const bb = _expandedCyNode.renderedBoundingBox();
 				const BORDER = 2;
@@ -117,8 +127,8 @@ return;
 				const bottom = Math.floor(cRect.top + bb.y2 - INSET);
 				_expandedPanelEl.style.left = left + 'px';
 				_expandedPanelEl.style.top = top + 'px';
-				_expandedPanelEl.style.width = (right - left) + 'px';
-				_expandedPanelEl.style.height = (bottom - top) + 'px';
+				_expandedPanelEl.style.width = right - left + 'px';
+				_expandedPanelEl.style.height = bottom - top + 'px';
 			}
 			function _renderSchemaFieldsPanelBody(objectName) {
 				const data = canvasState.describeCache && canvasState.describeCache[objectName];
@@ -130,74 +140,104 @@ return;
 					const bl = (b.label || b.name || '').toLowerCase();
 					return al < bl ? -1 : al > bl ? 1 : 0;
 				});
-				const rows = fields.map((f) => {
-					const labelRaw = f.label || f.name || '';
-					const nameRaw = f.name || '';
-					const typeRaw = f.type || '';
-					const label = escapeHtml(labelRaw);
-					const apiName = escapeHtml(nameRaw);
-					const type = escapeHtml(typeRaw);
-					const isPicklist = (typeRaw === 'picklist' || typeRaw === 'multipicklist')
-						&& Array.isArray(f.picklistValues) && f.picklistValues.length > 0;
-					let searchRaw = (labelRaw + ' ' + nameRaw + ' ' + typeRaw).toLowerCase();
-					if (isPicklist) {
-						searchRaw += ' ' + f.picklistValues
-							.map((pv) => ((pv.label || '') + ' ' + (pv.value || '')))
-							.join(' ')
-							.toLowerCase();
-					}
-					const search = escapeHtml(searchRaw);
-					const classes = 'schema-expand-field' + (isPicklist ? ' is-picklist' : '');
-					let valuesHtml = '';
-					if (isPicklist) {
-						const items = f.picklistValues.map((pv) => {
-							const pvLabel = escapeHtml(pv.label || pv.value || '');
-							const pvValue = escapeHtml(pv.value || '');
-							const showValue = (pv.label || '') !== (pv.value || '');
-							return (
-								'<li class="sxf-picklist-value">' +
-									'<span class="sxf-pv-label">' + pvLabel + '</span>' +
-									(showValue ? '<span class="sxf-pv-value">' + pvValue + '</span>' : '') +
-									(pv.defaultValue ? '<span class="sxf-pv-default">default</span>' : '') +
-								'</li>'
-							);
-						}).join('');
-						valuesHtml = '<ul class="sxf-picklist-values" hidden>' + items + '</ul>';
-					}
-					return (
-						'<li class="' + classes + '" data-search="' + search + '"' + (isPicklist ? ' data-picklist="1"' : '') + '>' +
+				const rows = fields
+					.map((f) => {
+						const labelRaw = f.label || f.name || '';
+						const nameRaw = f.name || '';
+						const typeRaw = f.type || '';
+						const label = escapeHtml(labelRaw);
+						const apiName = escapeHtml(nameRaw);
+						const type = escapeHtml(typeRaw);
+						const isPicklist =
+							(typeRaw === 'picklist' || typeRaw === 'multipicklist') &&
+							Array.isArray(f.picklistValues) &&
+							f.picklistValues.length > 0;
+						let searchRaw = (labelRaw + ' ' + nameRaw + ' ' + typeRaw).toLowerCase();
+						if (isPicklist) {
+							searchRaw +=
+								' ' +
+								f.picklistValues
+									.map((pv) => (pv.label || '') + ' ' + (pv.value || ''))
+									.join(' ')
+									.toLowerCase();
+						}
+						const search = escapeHtml(searchRaw);
+						const classes = 'schema-expand-field' + (isPicklist ? ' is-picklist' : '');
+						let valuesHtml = '';
+						if (isPicklist) {
+							const items = f.picklistValues
+								.map((pv) => {
+									const pvLabel = escapeHtml(pv.label || pv.value || '');
+									const pvValue = escapeHtml(pv.value || '');
+									const showValue = (pv.label || '') !== (pv.value || '');
+									return (
+										'<li class="sxf-picklist-value">' +
+										'<span class="sxf-pv-label">' +
+										pvLabel +
+										'</span>' +
+										(showValue ? '<span class="sxf-pv-value">' + pvValue + '</span>' : '') +
+										(pv.defaultValue ? '<span class="sxf-pv-default">default</span>' : '') +
+										'</li>'
+									);
+								})
+								.join('');
+							valuesHtml = '<ul class="sxf-picklist-values" hidden>' + items + '</ul>';
+						}
+						return (
+							'<li class="' +
+							classes +
+							'" data-search="' +
+							search +
+							'"' +
+							(isPicklist ? ' data-picklist="1"' : '') +
+							'>' +
 							'<div class="sxf-row">' +
-								(isPicklist ? '<button type="button" class="sxf-disclose" aria-label="Show picklist values" aria-expanded="false">▸</button>' : '<span class="sxf-disclose-spacer"></span>') +
-								'<div class="sxf-row-text">' +
-									'<div class="sxf-label">' + label + '</div>' +
-									'<div class="sxf-meta">' +
-										'<span class="sxf-api">' + apiName + '</span>' +
-										'<span class="sxf-type">' + type + '</span>' +
-										(isPicklist ? '<span class="sxf-count">(' + f.picklistValues.length + ')</span>' : '') +
-									'</div>' +
-								'</div>' +
+							(isPicklist
+								? '<button type="button" class="sxf-disclose" aria-label="Show picklist values" aria-expanded="false">▸</button>'
+								: '<span class="sxf-disclose-spacer"></span>') +
+							'<div class="sxf-row-text">' +
+							'<div class="sxf-label">' +
+							label +
+							'</div>' +
+							'<div class="sxf-meta">' +
+							'<span class="sxf-api">' +
+							apiName +
+							'</span>' +
+							'<span class="sxf-type">' +
+							type +
+							'</span>' +
+							(isPicklist ? '<span class="sxf-count">(' + f.picklistValues.length + ')</span>' : '') +
+							'</div>' +
+							'</div>' +
 							'</div>' +
 							valuesHtml +
-						'</li>'
-					);
-				}).join('');
+							'</li>'
+						);
+					})
+					.join('');
 				return (
 					'<div class="schema-expand-filter-row">' +
-						'<input type="search" class="schema-expand-filter" placeholder="Filter fields…" autocomplete="off">' +
-						'<span class="schema-expand-count" data-total="' + fields.length + '">' + fields.length + ' fields</span>' +
+					'<input type="search" class="schema-expand-filter" placeholder="Filter fields…" autocomplete="off">' +
+					'<span class="schema-expand-count" data-total="' +
+					fields.length +
+					'">' +
+					fields.length +
+					' fields</span>' +
 					'</div>' +
-					'<ul class="schema-expand-fields">' + rows + '</ul>'
+					'<ul class="schema-expand-fields">' +
+					rows +
+					'</ul>'
 				);
 			}
 			function _wireSchemaFieldsFilter(panel) {
 				if (!panel) {
-return;
-}
+					return;
+				}
 				const input = panel.querySelector('.schema-expand-filter');
 				const countEl = panel.querySelector('.schema-expand-count');
 				if (!input || !countEl) {
-return;
-}
+					return;
+				}
 				const rows = panel.querySelectorAll('.schema-expand-field');
 				const total = Number(countEl.getAttribute('data-total')) || rows.length;
 				const apply = () => {
@@ -213,9 +253,7 @@ return;
 							row.setAttribute('hidden', '');
 						}
 					});
-					countEl.textContent = q
-						? shown + ' of ' + total + ' fields'
-						: total + ' fields';
+					countEl.textContent = q ? shown + ' of ' + total + ' fields' : total + ' fields';
 				};
 				input.addEventListener('input', apply);
 				input.addEventListener('keydown', (e) => e.stopPropagation());
@@ -223,16 +261,16 @@ return;
 				panel.addEventListener('click', (e) => {
 					const row = e.target && e.target.closest && e.target.closest('.schema-expand-field.is-picklist');
 					if (!row) {
-return;
-}
+						return;
+					}
 					if (e.target.closest('a, input, select, textarea')) {
-return;
-}
+						return;
+					}
 					const values = row.querySelector('.sxf-picklist-values');
 					const disclose = row.querySelector('.sxf-disclose');
 					if (!values) {
-return;
-}
+						return;
+					}
 					const isOpen = !values.hasAttribute('hidden');
 					if (isOpen) {
 						values.setAttribute('hidden', '');
@@ -257,12 +295,12 @@ return;
 				const cy = getCySchemaInstance();
 				const spawn = cy ? cy.getElementById('spawn_' + objectName) : null;
 				if (spawn && spawn.length) {
-spawn.data('expandedHidden', '1');
-}
+					spawn.data('expandedHidden', '1');
+				}
 				const expand = cy ? cy.getElementById('expand_' + objectName) : null;
 				if (expand && expand.length) {
-expand.data('expandedHidden', '1');
-}
+					expand.data('expandedHidden', '1');
+				}
 				_expandedNeighborPositions = new Map();
 				if (cy) {
 					const center = cyNode.position();
@@ -272,54 +310,63 @@ expand.data('expandedHidden', '1');
 					const halfHE = SCHEMA_NODE_H_EXPANDED / 2;
 					cy.nodes().forEach((n) => {
 						if (n.id() === cyNode.id()) {
-return;
-}
+							return;
+						}
 						const kind = n.data('kind');
 						if (kind === 'spawn-btn' || kind === 'expand-btn') {
-return;
-}
+							return;
+						}
 						const p = n.position();
 						_expandedNeighborPositions.set(n.id(), { x: p.x, y: p.y });
 						const dx = p.x - center.x;
 						const dy = p.y - center.y;
 						const dist = Math.hypot(dx, dy);
 						if (dist < 0.5) {
-return;
-} // overlapping the active, leave it
+							return;
+						} // overlapping the active, leave it
 						const ux = dx / dist;
 						const uy = dy / dist;
 						const collapsedExt = Math.min(
 							halfWC / Math.max(0.001, Math.abs(ux)),
-							halfHC / Math.max(0.001, Math.abs(uy))
+							halfHC / Math.max(0.001, Math.abs(uy)),
 						);
 						const expandedExt = Math.min(
 							halfWE / Math.max(0.001, Math.abs(ux)),
-							halfHE / Math.max(0.001, Math.abs(uy))
+							halfHE / Math.max(0.001, Math.abs(uy)),
 						);
 						const shift = Math.max(0, expandedExt - collapsedExt);
 						if (shift <= 0) {
-return;
-}
+							return;
+						}
 						n.position({ x: p.x + ux * shift, y: p.y + uy * shift });
 					});
 				}
-				const objLabel = (canvasState.describeCache
-					&& canvasState.describeCache[objectName]
-					&& canvasState.describeCache[objectName].label) || objectName;
+				const objLabel =
+					(canvasState.describeCache &&
+						canvasState.describeCache[objectName] &&
+						canvasState.describeCache[objectName].label) ||
+					objectName;
 				const panel = document.createElement('div');
 				panel.className = 'schema-expand-panel';
 				panel.innerHTML =
 					'<div class="schema-expand-header">' +
-						'<span class="schema-expand-title">' + escapeHtml(objLabel) + '</span>' +
-						'<span class="schema-expand-api">' + escapeHtml(objectName) + '</span>' +
-						'<button type="button" class="schema-expand-add" aria-label="Add record" title="Add a record of this type to the canvas">+ Add</button>' +
-						'<button type="button" class="schema-expand-close" aria-label="Collapse" title="Collapse">⤡</button>' +
+					'<span class="schema-expand-title">' +
+					escapeHtml(objLabel) +
+					'</span>' +
+					'<span class="schema-expand-api">' +
+					escapeHtml(objectName) +
+					'</span>' +
+					'<button type="button" class="schema-expand-add" aria-label="Add record" title="Add a record of this type to the canvas">+ Add</button>' +
+					'<button type="button" class="schema-expand-close" aria-label="Collapse" title="Collapse">⤡</button>' +
 					'</div>' +
-					'<div class="schema-expand-body">' + _renderSchemaFieldsPanelBody(objectName) + '</div>';
+					'<div class="schema-expand-body">' +
+					_renderSchemaFieldsPanelBody(objectName) +
+					'</div>';
 				panel.addEventListener('mousedown', (e) => e.stopPropagation());
 				panel.addEventListener('dblclick', (e) => {
- e.stopPropagation(); _hideSchemaFieldsPanel(); 
-});
+					e.stopPropagation();
+					_hideSchemaFieldsPanel();
+				});
 				panel.querySelector('.schema-expand-close').addEventListener('click', _hideSchemaFieldsPanel);
 				panel.querySelector('.schema-expand-add').addEventListener('click', () => {
 					_spawnRecordFromSchemaObject(objectName);
@@ -330,191 +377,241 @@ return;
 				_pinSchemaFieldsPanel();
 				_expandedRenderHandler = _pinSchemaFieldsPanel;
 				cy.on('render position', _expandedRenderHandler);
-				if (!canvasState.describeCache[objectName] || !Array.isArray(canvasState.describeCache[objectName].fields)) {
+				if (
+					!canvasState.describeCache[objectName] ||
+					!Array.isArray(canvasState.describeCache[objectName].fields)
+				) {
 					ensureDescribe(objectName)
 						.then(() => {
 							if (_expandedObjectName !== objectName || !_expandedPanelEl) {
-return;
-}
+								return;
+							}
 							const body = _expandedPanelEl.querySelector('.schema-expand-body');
 							if (body) {
-body.innerHTML = _renderSchemaFieldsPanelBody(objectName);
-}
+								body.innerHTML = _renderSchemaFieldsPanelBody(objectName);
+							}
 							_wireSchemaFieldsFilter(_expandedPanelEl);
 							_pinSchemaFieldsPanel();
 						})
 						.catch((err) => {
 							if (_expandedObjectName !== objectName || !_expandedPanelEl) {
-return;
-}
+								return;
+							}
 							const body = _expandedPanelEl.querySelector('.schema-expand-body');
 							if (body) {
-body.innerHTML = '<div class="schema-expand-empty">Couldn’t load fields: ' + escapeHtml(err.message || 'unknown error') + '</div>';
-}
+								body.innerHTML =
+									'<div class="schema-expand-empty">Couldn’t load fields: ' +
+									escapeHtml(err.message || 'unknown error') +
+									'</div>';
+							}
 						});
 				}
 			}
 			const SCHEMA_STYLE = [
-				{ selector: 'core', style: {
-					'active-bg-opacity': 0,
-					'active-bg-size': 0,
-				}},
-				{ selector: 'node', style: {
-					label: 'data(label)',
-					'text-valign': 'center', 'text-halign': 'center',
-					'text-wrap': 'wrap',
-					'text-max-width': SCHEMA_NODE_W - 16,
-					color: '#e8e6e1',
-					'font-family': 'system-ui, sans-serif',
-					'font-size': 11,
-					shape: 'round-rectangle',
-					width: SCHEMA_NODE_W,
-					height: SCHEMA_NODE_H,
-					'background-color': '#1e2025',
-					'border-width': 1,
-					'border-color': '#3a3f47',
-					'overlay-opacity': 0,
-				}},
-				{ selector: 'node[kind = "sel-active"]', style: {
-					'border-color': '#d68b3c',
-					'border-width': 2,
-				}},
-				{ selector: 'node[expanded = "1"]', style: {
-					width: SCHEMA_NODE_W_EXPANDED,
-					height: SCHEMA_NODE_H_EXPANDED,
-					label: '',
-					'background-color': '#262a31',
-					'border-color': '#d68b3c',
-					'border-width': 2,
-				}},
-				{ selector: 'node[kind = "ring"]', style: {
-					'background-color': '#16191d',
-					'border-style': 'dashed',
-					'border-color': '#4a5058',
-					color: '#9aa0a8',
-					width: SCHEMA_NODE_W - 20,
-					height: SCHEMA_NODE_H - 10,
-				}},
-				{ selector: 'node[kind = "spawn-btn"]', style: {
-					shape: 'ellipse',
-					width: SCHEMA_SPAWN_BTN_SIZE,
-					height: SCHEMA_SPAWN_BTN_SIZE,
-					'background-opacity': 0,
-					'border-width': 0,
-					label: '+',
-					color: '#e8e6e1',
-					'font-size': 16,
-					'text-valign': 'center',
-					'text-halign': 'center',
-					opacity: 1,
-					'overlay-opacity': 0,
-				}},
-				{ selector: 'node[kind = "spawn-btn"]:active', style: {
-					color: '#d68b3c',
-				}},
-				{ selector: 'node[kind = "expand-btn"]', style: {
-					shape: 'ellipse',
-					width: SCHEMA_EXPAND_BTN_SIZE,
-					height: SCHEMA_EXPAND_BTN_SIZE,
-					'background-opacity': 0,
-					'border-width': 0,
-					label: 'data(label)',
-					color: '#e8e6e1',
-					'font-size': 14,
-					'text-valign': 'center',
-					'text-halign': 'center',
-					opacity: 1,
-					'overlay-opacity': 0,
-				}},
-				{ selector: 'node[kind = "expand-btn"]:active', style: {
-					color: '#d68b3c',
-				}},
-				{ selector: 'node[?expandedHidden]', style: {
-					display: 'none',
-				}},
-				{ selector: 'edge[kind = "spawn-link"]', style: {
-					'line-color': 'transparent',
-					'target-arrow-shape': 'none',
-					'source-arrow-shape': 'none',
-					label: '',
-					width: 0,
-				}},
-				{ selector: 'node:selected', style: {
-					'border-color': '#d68b3c',
-					'border-width': 3,
-				}},
-				{ selector: 'edge', style: {
-					width: 1.5,
-					'line-color': '#5a6068',
-					'curve-style': 'bezier',
-					'target-arrow-shape': 'none',
-					'font-size': 10,
-					color: '#9aa0a8',
-					'text-background-color': '#1c2226',
-					'text-background-opacity': 0.9,
-					'text-background-padding': 2,
-					'text-rotation': 'autorotate',
-				}},
+				{
+					selector: 'core',
+					style: {
+						'active-bg-opacity': 0,
+						'active-bg-size': 0,
+					},
+				},
+				{
+					selector: 'node',
+					style: {
+						label: 'data(label)',
+						'text-valign': 'center',
+						'text-halign': 'center',
+						'text-wrap': 'wrap',
+						'text-max-width': SCHEMA_NODE_W - 16,
+						color: '#e8e6e1',
+						'font-family': 'system-ui, sans-serif',
+						'font-size': 11,
+						shape: 'round-rectangle',
+						width: SCHEMA_NODE_W,
+						height: SCHEMA_NODE_H,
+						'background-color': '#1e2025',
+						'border-width': 1,
+						'border-color': '#3a3f47',
+						'overlay-opacity': 0,
+					},
+				},
+				{
+					selector: 'node[kind = "sel-active"]',
+					style: {
+						'border-color': '#d68b3c',
+						'border-width': 2,
+					},
+				},
+				{
+					selector: 'node[expanded = "1"]',
+					style: {
+						width: SCHEMA_NODE_W_EXPANDED,
+						height: SCHEMA_NODE_H_EXPANDED,
+						label: '',
+						'background-color': '#262a31',
+						'border-color': '#d68b3c',
+						'border-width': 2,
+					},
+				},
+				{
+					selector: 'node[kind = "ring"]',
+					style: {
+						'background-color': '#16191d',
+						'border-style': 'dashed',
+						'border-color': '#4a5058',
+						color: '#9aa0a8',
+						width: SCHEMA_NODE_W - 20,
+						height: SCHEMA_NODE_H - 10,
+					},
+				},
+				{
+					selector: 'node[kind = "spawn-btn"]',
+					style: {
+						shape: 'ellipse',
+						width: SCHEMA_SPAWN_BTN_SIZE,
+						height: SCHEMA_SPAWN_BTN_SIZE,
+						'background-opacity': 0,
+						'border-width': 0,
+						label: '+',
+						color: '#e8e6e1',
+						'font-size': 16,
+						'text-valign': 'center',
+						'text-halign': 'center',
+						opacity: 1,
+						'overlay-opacity': 0,
+					},
+				},
+				{
+					selector: 'node[kind = "spawn-btn"]:active',
+					style: {
+						color: '#d68b3c',
+					},
+				},
+				{
+					selector: 'node[kind = "expand-btn"]',
+					style: {
+						shape: 'ellipse',
+						width: SCHEMA_EXPAND_BTN_SIZE,
+						height: SCHEMA_EXPAND_BTN_SIZE,
+						'background-opacity': 0,
+						'border-width': 0,
+						label: 'data(label)',
+						color: '#e8e6e1',
+						'font-size': 14,
+						'text-valign': 'center',
+						'text-halign': 'center',
+						opacity: 1,
+						'overlay-opacity': 0,
+					},
+				},
+				{
+					selector: 'node[kind = "expand-btn"]:active',
+					style: {
+						color: '#d68b3c',
+					},
+				},
+				{
+					selector: 'node[?expandedHidden]',
+					style: {
+						display: 'none',
+					},
+				},
+				{
+					selector: 'edge[kind = "spawn-link"]',
+					style: {
+						'line-color': 'transparent',
+						'target-arrow-shape': 'none',
+						'source-arrow-shape': 'none',
+						label: '',
+						width: 0,
+					},
+				},
+				{
+					selector: 'node:selected',
+					style: {
+						'border-color': '#d68b3c',
+						'border-width': 3,
+					},
+				},
+				{
+					selector: 'edge',
+					style: {
+						width: 1.5,
+						'line-color': '#5a6068',
+						'curve-style': 'bezier',
+						'target-arrow-shape': 'none',
+						'font-size': 10,
+						color: '#9aa0a8',
+						'text-background-color': '#1c2226',
+						'text-background-opacity': 0.9,
+						'text-background-padding': 2,
+						'text-rotation': 'autorotate',
+					},
+				},
 				{ selector: 'edge[label]', style: { label: 'data(label)' } },
-				{ selector: 'edge[kind = "fk"]', style: {
-					'target-arrow-shape': 'none',
-				}},
-				{ selector: 'edge[kind = "ring"]', style: {
-					'line-style': 'dashed',
-					'line-color': '#3a3f47',
-					'target-arrow-shape': 'none',
-					color: '#6a7078',
-				}},
+				{
+					selector: 'edge[kind = "fk"]',
+					style: {
+						'target-arrow-shape': 'none',
+					},
+				},
+				{
+					selector: 'edge[kind = "ring"]',
+					style: {
+						'line-style': 'dashed',
+						'line-color': '#3a3f47',
+						'target-arrow-shape': 'none',
+						color: '#6a7078',
+					},
+				},
 			];
-			
+
 			function _resolveDescribeData(name) {
+				// Prefer the selected-object snapshot, then fall back to the shared graph cache.
 				const sel = canvasState.selectedObjects.find((s) => s.name === name);
 				if (sel && sel.data) {
-return sel.data;
-}
+					return sel.data;
+				}
 				if (canvasState.graphCache && canvasState.graphCache[name]) {
-return canvasState.graphCache[name];
-}
+					return canvasState.graphCache[name];
+				}
 				return null;
 			}
-			
+
 			function _findSpawnLinkTargets(spawningName, newId) {
-				const focusedRecId = canvasState.bulkSelectedIds.size === 1
-					? canvasState.bulkSelectedIds.values().next().value
-					: null;
-				const focusedRec = focusedRecId != null
-					? canvasState.bulkRecords.find((r) => r.id === focusedRecId)
-					: null;
+				// Auto-link only through relationships already proven by the current schema path or component.
+				const focusedRecId =
+					canvasState.bulkSelectedIds.size === 1 ? canvasState.bulkSelectedIds.values().next().value : null;
+				const focusedRec =
+					focusedRecId != null ? canvasState.bulkRecords.find((r) => r.id === focusedRecId) : null;
 				if (!focusedRec) {
-return [];
-}
+					return [];
+				}
 				const componentRecIds = new Set();
 				const queue = [focusedRec.id];
 				while (queue.length) {
 					const id = queue.shift();
 					if (componentRecIds.has(id)) {
-continue;
-}
+						continue;
+					}
 					componentRecIds.add(id);
 					canvasState.bulkAssociations.forEach((a) => {
 						if (a.fromId === id && !componentRecIds.has(a.toId)) {
-queue.push(a.toId);
-}
+							queue.push(a.toId);
+						}
 						if (a.toId === id && !componentRecIds.has(a.fromId)) {
-queue.push(a.fromId);
-}
+							queue.push(a.fromId);
+						}
 					});
 				}
-				const findComponentRecs = (name) => canvasState.bulkRecords.filter((r) => (
-					!r.isTypeNode &&
-					r.objectName === name &&
-					r.id !== newId &&
-					componentRecIds.has(r.id)
-				));
+				const findComponentRecs = (name) =>
+					canvasState.bulkRecords.filter(
+						(r) => !r.isTypeNode && r.objectName === name && r.id !== newId && componentRecIds.has(r.id),
+					);
 				const expandMatch = (otherRecs, fromSide, toSide, field) => {
 					if (otherRecs.length === 0) {
-return [];
-}
+						return [];
+					}
 					const newIsFrom = fromSide === spawningName;
 					if (newIsFrom) {
 						const otherRec = otherRecs[0];
@@ -531,17 +628,17 @@ return [];
 					const step = canvasState._schemaViewPathEdges[i];
 					let otherName = null;
 					if (step.to === spawningName) {
-otherName = step.from;
-} else if (step.from === spawningName) {
-otherName = step.to;
-}
+						otherName = step.from;
+					} else if (step.from === spawningName) {
+						otherName = step.to;
+					}
 					if (!otherName || !step.field) {
-continue;
-}
+						continue;
+					}
 					const otherRecs = findComponentRecs(otherName);
 					if (otherRecs.length === 0) {
-continue;
-}
+						continue;
+					}
 					const fromSide = step.direction === 'parent' ? step.from : step.to;
 					const toSide = step.direction === 'parent' ? step.to : step.from;
 					return expandMatch(otherRecs, fromSide, toSide, step.field);
@@ -550,13 +647,13 @@ continue;
 					const byKey = new Map();
 					for (const a of canvasState.bulkAssociations) {
 						if (!componentRecIds.has(a.fromId) || !componentRecIds.has(a.toId)) {
-continue;
-}
+							continue;
+						}
 						const fromRec = canvasState.bulkRecords.find((r) => r.id === a.fromId);
 						const toRec = canvasState.bulkRecords.find((r) => r.id === a.toId);
 						if (!fromRec || !toRec) {
-continue;
-}
+							continue;
+						}
 						let fromSide, toSide, otherRec;
 						if (fromRec.objectName === spawningName && toRec.objectName !== spawningName) {
 							fromSide = spawningName;
@@ -571,21 +668,22 @@ continue;
 						}
 						const key = otherRec.objectName + '|' + a.fieldName;
 						if (!byKey.has(key)) {
-byKey.set(key, { fromSide, toSide, field: a.fieldName, others: [] });
-}
+							byKey.set(key, { fromSide, toSide, field: a.fieldName, others: [] });
+						}
 						byKey.get(key).others.push(otherRec);
 					}
 					for (const entry of byKey.values()) {
 						const links = expandMatch(entry.others, entry.fromSide, entry.toSide, entry.field);
 						if (links.length > 0) {
-return links;
-}
+							return links;
+						}
 					}
 				}
 				return [];
 			}
-			
+
 			function _nearestFreeSpotToViewportCenter() {
+				// Search deterministic rings so new cards land near the viewport without covering existing cards.
 				const canvasEl = getGraph().querySelector('#bulk-canvas');
 				const cw = (canvasEl && canvasEl.clientWidth) || 800;
 				const ch = (canvasEl && canvasEl.clientHeight) || 600;
@@ -593,11 +691,17 @@ return links;
 				const cy0 = ((canvasEl && canvasEl.scrollTop) || 0) + ch / 2;
 				const CARD_W = 230;
 				const CARD_H = 90;
-				const overlaps = (x, y) => canvasState.bulkRecords.some((r) => (
-					r && !r.isTypeNode && !r._chipLoader
-					&& typeof r.x === 'number' && typeof r.y === 'number'
-					&& Math.abs(r.x - x) < CARD_W && Math.abs(r.y - y) < CARD_H
-				));
+				const overlaps = (x, y) =>
+					canvasState.bulkRecords.some(
+						(r) =>
+							r &&
+							!r.isTypeNode &&
+							!r._chipLoader &&
+							typeof r.x === 'number' &&
+							typeof r.y === 'number' &&
+							Math.abs(r.x - x) < CARD_W &&
+							Math.abs(r.y - y) < CARD_H,
+					);
 				if (!overlaps(cx0, cy0)) {
 					return { x: cx0, y: cy0 };
 				}
@@ -617,19 +721,20 @@ return links;
 			}
 			function _spawnRecordFromSchemaObject(objectName) {
 				if (!objectName) {
-return;
-}
+					return;
+				}
 				const blocked = _canvasCapBlockReason(1);
 				if (blocked) {
- showBulkToast(blocked); return; 
-}
+					showBulkToast(blocked);
+					return;
+				}
 				const doSpawn = (selEntry) => {
-					const focusedRecId = canvasState.bulkSelectedIds.size === 1
-						? canvasState.bulkSelectedIds.values().next().value
-						: null;
-					const focusedRec = focusedRecId != null
-						? canvasState.bulkRecords.find((r) => r.id === focusedRecId)
-						: null;
+					const focusedRecId =
+						canvasState.bulkSelectedIds.size === 1
+							? canvasState.bulkSelectedIds.values().next().value
+							: null;
+					const focusedRec =
+						focusedRecId != null ? canvasState.bulkRecords.find((r) => r.id === focusedRecId) : null;
 					let x, y;
 					if (focusedRec && !focusedRec.isTypeNode) {
 						const baseSchemaNode = getCySchemaInstance()
@@ -638,12 +743,10 @@ return;
 						const objSchemaNode = getCySchemaInstance()
 							? getCySchemaInstance().getElementById('o_' + selEntry.name)
 							: null;
-						const baseSchemaPos = baseSchemaNode && baseSchemaNode.length
-							? baseSchemaNode.position()
-							: { x: 0, y: 0 };
-						const objSchemaPos = objSchemaNode && objSchemaNode.length
-							? objSchemaNode.position()
-							: baseSchemaPos;
+						const baseSchemaPos =
+							baseSchemaNode && baseSchemaNode.length ? baseSchemaNode.position() : { x: 0, y: 0 };
+						const objSchemaPos =
+							objSchemaNode && objSchemaNode.length ? objSchemaNode.position() : baseSchemaPos;
 						x = focusedRec.x + (objSchemaPos.x - baseSchemaPos.x) * RECORDS_WORLD_SCALE;
 						y = focusedRec.y + (objSchemaPos.y - baseSchemaPos.y) * RECORDS_WORLD_SCALE;
 					} else {
@@ -655,15 +758,16 @@ return;
 					const SPAWN_CARD_H = 90;
 					const SPAWN_STEP = 32;
 					const SPAWN_MAX_STEPS = 80;
-					const _overlaps = (cx, cy) => canvasState.bulkRecords.some((r) => {
-						if (!r || r.isTypeNode || r._chipLoader) {
-return false;
-}
-						if (typeof r.x !== 'number' || typeof r.y !== 'number') {
-return false;
-}
-						return Math.abs(r.x - cx) < SPAWN_CARD_W && Math.abs(r.y - cy) < SPAWN_CARD_H;
-					});
+					const _overlaps = (cx, cy) =>
+						canvasState.bulkRecords.some((r) => {
+							if (!r || r.isTypeNode || r._chipLoader) {
+								return false;
+							}
+							if (typeof r.x !== 'number' || typeof r.y !== 'number') {
+								return false;
+							}
+							return Math.abs(r.x - cx) < SPAWN_CARD_W && Math.abs(r.y - cy) < SPAWN_CARD_H;
+						});
 					let steps = 0;
 					while (_overlaps(x, y) && steps < SPAWN_MAX_STEPS) {
 						x += SPAWN_STEP;
@@ -674,7 +778,8 @@ return false;
 						id: canvasState.bulkIdSeq++,
 						objectName: selEntry.name,
 						label: selEntry.label,
-						x, y,
+						x,
+						y,
 						values: {},
 						fromSelectionId: selEntry.id,
 					};
@@ -692,20 +797,27 @@ return false;
 						const _spawnedId = newRec.id;
 						const _spawnedFingerprint = JSON.stringify(newRec);
 						const _linkFingerprint = JSON.stringify(
-							canvasState.bulkAssociations.filter((a) => a && (a.fromId === _spawnedId || a.toId === _spawnedId)),
+							canvasState.bulkAssociations.filter(
+								(a) => a && (a.fromId === _spawnedId || a.toId === _spawnedId),
+							),
 						);
 						pushUndo('Add record', function () {
 							const current = canvasState.bulkRecords.find((r) => r && r.id === _spawnedId);
 							const currentLinks = canvasState.bulkAssociations.filter(
 								(a) => a && (a.fromId === _spawnedId || a.toId === _spawnedId),
 							);
-							if (!current || JSON.stringify(current) !== _spawnedFingerprint || JSON.stringify(currentLinks) !== _linkFingerprint) {
-								showBulkToast('Can’t undo the schema add because that record or its relationships were edited afterward.', 'info');
+							if (
+								!current ||
+								JSON.stringify(current) !== _spawnedFingerprint ||
+								JSON.stringify(currentLinks) !== _linkFingerprint
+							) {
+								showBulkToast(
+									'Can’t undo the schema add because that record or its relationships were edited afterward.',
+									'info',
+								);
 								return false;
 							}
-							canvasState.bulkRecords = canvasState.bulkRecords.filter(
-								(r) => !r || r.id !== _spawnedId,
-							);
+							canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => !r || r.id !== _spawnedId);
 							canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
 								(a) => a && a.fromId !== _spawnedId && a.toId !== _spawnedId,
 							);
@@ -719,7 +831,16 @@ return false;
 						const other = links[0].otherRec;
 						toastMsg = 'Added ' + label + ' record (linked to ' + (other.label || other.objectName) + ').';
 					} else if (links.length > 1) {
-						toastMsg = 'Added ' + label + ' record (linked to ' + links.length + ' ' + (links[0].otherRec.label || links[0].otherRec.objectName) + ' record' + (links.length === 1 ? '' : 's') + ').';
+						toastMsg =
+							'Added ' +
+							label +
+							' record (linked to ' +
+							links.length +
+							' ' +
+							(links[0].otherRec.label || links[0].otherRec.objectName) +
+							' record' +
+							(links.length === 1 ? '' : 's') +
+							').';
 					}
 					showBulkToast(toastMsg);
 				};
@@ -727,33 +848,36 @@ return false;
 				if (existing) {
 					doSpawn(existing);
 				} else if (typeof addToSelection === 'function') {
-					addToSelection(objectName).then(doSpawn).catch((err) => {
-						console.warn('spawn from schema: addToSelection failed for', objectName, err);
-						showBulkToast('Failed to load ' + objectName + ': ' + (err.message || err), 'error');
-					});
+					addToSelection(objectName)
+						.then(doSpawn)
+						.catch((err) => {
+							console.warn('spawn from schema: addToSelection failed for', objectName, err);
+							showBulkToast('Failed to load ' + objectName + ': ' + (err.message || err), 'error');
+						});
 				}
 			}
-			
+
 			function _schemaViewFromSelection() {
+				// A single selected record anchors the schema view; navigation may then override the focus object.
 				let focusedRec = null;
 				if (canvasState.bulkSelectedIds.size === 1) {
 					const onlyId = canvasState.bulkSelectedIds.values().next().value;
 					const r = canvasState.bulkRecords.find((rr) => rr.id === onlyId);
 					if (r && !r.isTypeNode) {
-focusedRec = r;
-}
+						focusedRec = r;
+					}
 				}
 				const overrideName = canvasState._schemaViewObject;
 				if (!focusedRec && !overrideName) {
-return null;
-}
+					return null;
+				}
 
 				const activeName = overrideName || focusedRec.objectName;
 				if (!overrideName) {
 					canvasState._schemaViewObject = activeName;
 				}
 				const isOverride = true;
-			
+
 				let componentRecIds;
 				let objectNames;
 				const seenNames = new Set();
@@ -763,8 +887,8 @@ return null;
 					seenNames.add(activeName);
 					canvasState._schemaViewPath.forEach((name) => {
 						if (seenNames.has(name)) {
-return;
-}
+							return;
+						}
 						seenNames.add(name);
 						objectNames.push(name);
 					});
@@ -774,39 +898,39 @@ return;
 					while (queue.length) {
 						const id = queue.shift();
 						if (componentRecIds.has(id)) {
-continue;
-}
+							continue;
+						}
 						componentRecIds.add(id);
 						canvasState.bulkAssociations.forEach((a) => {
 							if (a.fromId === id && !componentRecIds.has(a.toId)) {
-queue.push(a.toId);
-}
+								queue.push(a.toId);
+							}
 							if (a.toId === id && !componentRecIds.has(a.fromId)) {
-queue.push(a.fromId);
-}
+								queue.push(a.fromId);
+							}
 						});
 					}
 					objectNames = [];
 					componentRecIds.forEach((id) => {
 						const r = canvasState.bulkRecords.find((x) => x.id === id);
 						if (!r || r.isTypeNode) {
-return;
-}
+							return;
+						}
 						if (seenNames.has(r.objectName)) {
-return;
-}
+							return;
+						}
 						seenNames.add(r.objectName);
 						objectNames.push(r.objectName);
 					});
 				}
-			
+
 				const labelFor = (name) => {
 					const sel = canvasState.selectedObjects.find((s) => s.name === name);
 					return (sel && sel.label) || name;
 				};
 				const elements = [];
 				const nodeKindById = new Map();
-			
+
 				objectNames.forEach((name) => {
 					const id = 'o_' + name;
 					const kind = name === activeName ? 'sel-active' : 'sel';
@@ -840,52 +964,52 @@ return;
 						data: { id: 'expandedge_' + name, source: id, target: expandId, kind: 'spawn-link' },
 					});
 				});
-			
+
 				const edgeKeys = [];
 				const seenEdges = new Set();
 				if (!isOverride) {
-				canvasState.bulkAssociations.forEach((a) => {
-					const fromRec = canvasState.bulkRecords.find((r) => r.id === a.fromId);
-					const toRec = canvasState.bulkRecords.find((r) => r.id === a.toId);
-					if (!fromRec || !toRec || fromRec.isTypeNode || toRec.isTypeNode) {
-return;
-}
-					if (isOverride) {
-						if (!seenNames.has(fromRec.objectName) || !seenNames.has(toRec.objectName)) {
-return;
-}
-					} else {
-						if (!componentRecIds.has(a.fromId) || !componentRecIds.has(a.toId)) {
-return;
-}
-					}
-					const fromObj = fromRec.objectName;
-					const toObj = toRec.objectName;
-					const field = a.fieldName || '';
-					const key = fromObj + '|' + toObj + '|' + field;
-					if (seenEdges.has(key)) {
-return;
-}
-					seenEdges.add(key);
-					edgeKeys.push(key);
-					elements.push({
-						group: 'edges',
-						data: {
-							id: 'e_' + key,
-							source: 'o_' + fromObj,
-							target: 'o_' + toObj,
-							label: field,
-							kind: 'fk',
-						},
+					canvasState.bulkAssociations.forEach((a) => {
+						const fromRec = canvasState.bulkRecords.find((r) => r.id === a.fromId);
+						const toRec = canvasState.bulkRecords.find((r) => r.id === a.toId);
+						if (!fromRec || !toRec || fromRec.isTypeNode || toRec.isTypeNode) {
+							return;
+						}
+						if (isOverride) {
+							if (!seenNames.has(fromRec.objectName) || !seenNames.has(toRec.objectName)) {
+								return;
+							}
+						} else {
+							if (!componentRecIds.has(a.fromId) || !componentRecIds.has(a.toId)) {
+								return;
+							}
+						}
+						const fromObj = fromRec.objectName;
+						const toObj = toRec.objectName;
+						const field = a.fieldName || '';
+						const key = fromObj + '|' + toObj + '|' + field;
+						if (seenEdges.has(key)) {
+							return;
+						}
+						seenEdges.add(key);
+						edgeKeys.push(key);
+						elements.push({
+							group: 'edges',
+							data: {
+								id: 'e_' + key,
+								source: 'o_' + fromObj,
+								target: 'o_' + toObj,
+								label: field,
+								kind: 'fk',
+							},
+						});
 					});
-				});
 				}
 
 				if (isOverride && canvasState._schemaViewPathEdges.length) {
 					canvasState._schemaViewPathEdges.forEach((step) => {
 						if (!seenNames.has(step.from) || !seenNames.has(step.to)) {
-return;
-}
+							return;
+						}
 						let source, target;
 						if (step.direction === 'parent') {
 							source = 'o_' + step.from;
@@ -895,12 +1019,12 @@ return;
 							target = 'o_' + step.from;
 						}
 						if (seenEdges.has(source.slice(2) + '|' + target.slice(2) + '|' + step.field)) {
-return;
-}
+							return;
+						}
 						const key = step.from + '|' + step.to + '|' + step.field + '|' + step.direction;
 						if (seenEdges.has('pe_' + key)) {
-return;
-}
+							return;
+						}
 						seenEdges.add('pe_' + key);
 						edgeKeys.push('pe_' + key);
 						if (step.from === activeName || step.to === activeName) {
@@ -919,22 +1043,24 @@ return;
 						});
 					});
 				}
-			
-				const allObjsByName = new Map((Array.isArray(canvasState.allObjects) ? canvasState.allObjects : []).map((o) => [o.name, o]));
+
+				const allObjsByName = new Map(
+					(Array.isArray(canvasState.allObjects) ? canvasState.allObjects : []).map((o) => [o.name, o]),
+				);
 				const relFilter = canvasState.graphRelFilter || 'both';
 				const filterText = (canvasState.graphFilterText || '').trim().toLowerCase();
 				const matchesFilterText = (name) => {
 					if (!filterText) {
-return true;
-}
+						return true;
+					}
 					const lower = (name || '').toLowerCase();
 					if (lower.includes(filterText)) {
-return true;
-}
+						return true;
+					}
 					const meta = allObjsByName.get(name);
 					if (meta && meta.label && meta.label.toLowerCase().includes(filterText)) {
-return true;
-}
+						return true;
+					}
 					return false;
 				};
 				const ringKeys = [];
@@ -943,46 +1069,54 @@ return true;
 					const ringSeen = new Set();
 					const pushRing = (peerObj, fieldName, direction) => {
 						if (!peerObj || !fieldName) {
-return;
-}
+							return;
+						}
 						if (peerObj === activeName) {
-return;
-} // self-refs collapse to a single node - skip
+							return;
+						} // self-refs collapse to a single node - skip
 						const peerIsSel = seenNames.has(peerObj);
 						if (!peerIsSel) {
 							if (relFilter === 'parent' && direction !== 'parent') {
-return;
-}
+								return;
+							}
 							if (relFilter === 'child' && direction !== 'child') {
-return;
-}
+								return;
+							}
 						}
 						if (canvasState._systemFieldsFilter && SCHEMA_SYSTEM_FK_FIELDS.has(fieldName) && !peerIsSel) {
-return;
-}
+							return;
+						}
 						if (!peerIsSel && !matchesFilterText(peerObj)) {
-return;
-}
+							return;
+						}
 						if (isOverride && peerIsSel) {
-return;
-}
+							return;
+						}
 						const ringKey = direction + '|' + peerObj + '|' + fieldName;
 						if (ringSeen.has(ringKey)) {
-return;
-}
+							return;
+						}
 						ringSeen.add(ringKey);
-						const fkA = (direction === 'parent')
-							? activeName + '|' + peerObj + '|' + fieldName  // FK on active points at peer
-							: peerObj + '|' + activeName + '|' + fieldName; // FK on peer points at active
+						const fkA =
+							direction === 'parent'
+								? activeName + '|' + peerObj + '|' + fieldName // FK on active points at peer
+								: peerObj + '|' + activeName + '|' + fieldName; // FK on peer points at active
 						if (seenEdges.has(fkA)) {
-return;
-}
+							return;
+						}
 						ringKeys.push(ringKey);
 						const nodeId = 'ring_' + activeName + '_' + ringKey;
 						nodeKindById.set(nodeId, 'ring');
 						elements.push({
 							group: 'nodes',
-							data: { id: nodeId, kind: 'ring', label: peerObj, ringObject: peerObj, ringField: fieldName, ringDirection: direction },
+							data: {
+								id: nodeId,
+								kind: 'ring',
+								label: peerObj,
+								ringObject: peerObj,
+								ringField: fieldName,
+								ringDirection: direction,
+							},
 						});
 						const edgeId = 'redge_' + activeName + '_' + ringKey;
 						const source = direction === 'parent' ? 'o_' + activeName : nodeId;
@@ -995,41 +1129,43 @@ return;
 					(activeData.parents || []).forEach((p) => pushRing(p.object, p.field, 'parent'));
 					(activeData.children || []).forEach((c) => pushRing(c.object, c.field, 'child'));
 				}
-			
+
 				const sig = [
 					[].concat(objectNames).sort().join(','),
 					[].concat(edgeKeys).sort().join(','),
 					[].concat(ringKeys).sort().join(','),
 					activeName,
-					canvasState._schemaViewPathEdges.map((e) => e.key).sort().join(','),
+					canvasState._schemaViewPathEdges
+						.map((e) => e.key)
+						.sort()
+						.join(','),
 					canvasState._systemFieldsFilter ? 'sys:on' : 'sys:off',
 				].join('||');
 				return { activeName, elements, nodeKindById, sig };
 			}
-			
+
 			function renderCanvas() {
 				const subbar = getGraph().querySelector('#graph-subbar');
 				if (subbar) {
-subbar.classList.remove('hidden');
-}
+					subbar.classList.remove('hidden');
+				}
 				const picker = getGraph().querySelector('#base-picker');
 				if (picker) {
-picker.classList.add('hidden');
-}
+					picker.classList.add('hidden');
+				}
 				const container = getGraph().querySelector('#graph-canvas-cy');
 				if (!container || typeof cytoscape !== 'function') {
-return;
-}
-			
-				const currentFocusId = canvasState.bulkSelectedIds.size === 1
-					? canvasState.bulkSelectedIds.values().next().value
-					: null;
+					return;
+				}
+
+				const currentFocusId =
+					canvasState.bulkSelectedIds.size === 1 ? canvasState.bulkSelectedIds.values().next().value : null;
 				if (currentFocusId !== canvasState._lastSchemaFocusRecId) {
 					canvasState._schemaViewPath = [];
 					canvasState._schemaViewPathEdges = [];
 				}
 				canvasState._lastSchemaFocusRecId = currentFocusId;
-			
+
 				const view = _schemaViewFromSelection();
 				if (!view) {
 					_hideSchemaFieldsPanel();
@@ -1041,18 +1177,21 @@ return;
 					return;
 				}
 				if (typeof fetchGraphData === 'function' && !_resolveDescribeData(view.activeName)) {
+					// Render cached structure immediately and refresh only the missing active-object metadata.
 					const targetName = view.activeName;
-					fetchGraphData(targetName).then(() => {
-						if (canvasState.graphCache && canvasState.graphCache[targetName]) {
-renderCanvas();
-}
-					}).catch((err) => console.warn('schema render: fetchGraphData failed for', targetName, err));
+					fetchGraphData(targetName)
+						.then(() => {
+							if (canvasState.graphCache && canvasState.graphCache[targetName]) {
+								renderCanvas();
+							}
+						})
+						.catch((err) => console.warn('schema render: fetchGraphData failed for', targetName, err));
 				}
-			
+
 				const sigChanged = view.sig !== canvasState._cySchemaSig;
 				canvasState._cySchemaSig = view.sig;
 				const SPOKE_RADIUS = 1.67 * SCHEMA_NODE_W;
-			
+
 				const startAngle = -Math.PI / 2;
 				const sortedSelNames = view.elements
 					.filter((el) => el.group === 'nodes' && (el.data.kind === 'sel' || el.data.kind === 'sel-active'))
@@ -1090,8 +1229,8 @@ renderCanvas();
 				const ringN = ringNodes.length;
 				view.elements.forEach((el) => {
 					if (el.group !== 'nodes') {
-return;
-}
+						return;
+					}
 					if (el.data.kind === 'sel-active' && navOrigin) {
 						el.position = { x: navOrigin.x, y: navOrigin.y };
 						return;
@@ -1099,34 +1238,34 @@ return;
 					if (el.data.kind === 'sel' || el.data.kind === 'sel-active') {
 						const pos = selPositionByName.get(el.data.objectName);
 						if (pos) {
-el.position = { x: pos.x, y: pos.y };
-}
+							el.position = { x: pos.x, y: pos.y };
+						}
 					}
 				});
 				function _bestRingRotation(activePos, ringN, otherNodes) {
 					if (ringN === 0) {
-return startAngle;
-}
+						return startAngle;
+					}
 					const blockedAngles = [];
 					otherNodes.forEach((n) => {
 						if (!n.position) {
-return;
-}
+							return;
+						}
 						const dx = n.position.x - activePos.x;
 						const dy = n.position.y - activePos.y;
 						if (dx === 0 && dy === 0) {
-return;
-}
+							return;
+						}
 						blockedAngles.push(Math.atan2(dy, dx));
 					});
 					if (blockedAngles.length === 0) {
-return startAngle;
-}
+						return startAngle;
+					}
 					let bestRotation = startAngle;
 					let bestMinDist = -1;
 					const TWO_PI = 2 * Math.PI;
 					const angularDist = (a, b) => {
-						const d = Math.abs(((a - b) % TWO_PI + TWO_PI) % TWO_PI);
+						const d = Math.abs((((a - b) % TWO_PI) + TWO_PI) % TWO_PI);
 						return Math.min(d, TWO_PI - d);
 					};
 					const samples = 48;
@@ -1138,8 +1277,8 @@ return startAngle;
 							for (const blocked of blockedAngles) {
 								const d = angularDist(slot, blocked);
 								if (d < minDist) {
-minDist = d;
-}
+									minDist = d;
+								}
 							}
 						}
 						if (minDist > bestMinDist) {
@@ -1152,14 +1291,14 @@ minDist = d;
 				const otherPositionedNodes = [];
 				view.elements.forEach((el) => {
 					if (el.group !== 'nodes') {
-return;
-}
+						return;
+					}
 					if (el.data.kind === 'spawn-btn' || el.data.kind === 'ring') {
-return;
-}
+						return;
+					}
 					if (el.data.id === 'o_' + view.activeName) {
-return;
-}
+						return;
+					}
 					let position = null;
 					if (getCySchemaInstance()) {
 						const cyEl = getCySchemaInstance().getElementById(el.data.id);
@@ -1168,11 +1307,11 @@ return;
 						}
 					}
 					if (!position) {
-position = el.position;
-}
+						position = el.position;
+					}
 					if (position) {
-otherPositionedNodes.push({ position });
-}
+						otherPositionedNodes.push({ position });
+					}
 				});
 				const ringStartAngle = _bestRingRotation(activePos, ringN, otherPositionedNodes);
 				ringNodes.forEach((node, i) => {
@@ -1184,14 +1323,12 @@ otherPositionedNodes.push({ position });
 				});
 				view.elements.forEach((el) => {
 					if (el.group !== 'nodes' || el.data.kind !== 'spawn-btn') {
-return;
-}
-					const parentEl = view.elements.find((p) => (
-						p.group === 'nodes' && p.data.id === 'o_' + el.data.spawnFor
-					));
-					const parentPos = parentEl && parentEl.position
-						? parentEl.position
-						: activePos;
+						return;
+					}
+					const parentEl = view.elements.find(
+						(p) => p.group === 'nodes' && p.data.id === 'o_' + el.data.spawnFor,
+					);
+					const parentPos = parentEl && parentEl.position ? parentEl.position : activePos;
 					el.position = {
 						x: parentPos.x + SCHEMA_SPAWN_OFFSET_X,
 						y: parentPos.y + SCHEMA_SPAWN_OFFSET_Y,
@@ -1199,51 +1336,54 @@ return;
 				});
 				view.elements.forEach((el) => {
 					if (el.group !== 'nodes' || el.data.kind !== 'expand-btn') {
-return;
-}
-					const parentEl = view.elements.find((p) => (
-						p.group === 'nodes' && p.data.id === 'o_' + el.data.expandFor
-					));
-					const parentPos = parentEl && parentEl.position
-						? parentEl.position
-						: activePos;
+						return;
+					}
+					const parentEl = view.elements.find(
+						(p) => p.group === 'nodes' && p.data.id === 'o_' + el.data.expandFor,
+					);
+					const parentPos = parentEl && parentEl.position ? parentEl.position : activePos;
 					el.position = {
 						x: parentPos.x + SCHEMA_EXPAND_OFFSET_X,
 						y: parentPos.y + SCHEMA_EXPAND_OFFSET_Y,
 					};
 				});
-			
+
 				let activeNodeIsNewlyAdded = false;
 				let cyJustCreated = false;
-			
+
 				if (!getCySchemaInstance()) {
 					activeNodeIsNewlyAdded = true;
 					cyJustCreated = true;
-					setCySchemaInstance(cytoscape({
-						container,
-						elements: view.elements,
-						style: SCHEMA_STYLE,
-						layout: { name: 'preset', fit: false },
-						boxSelectionEnabled: false,
-						userPanningEnabled: false,
-						zoom: 0.7,
-					}));
-					getCySchemaInstance().nodes('[kind = "spawn-btn"], [kind = "expand-btn"]').ungrabify().unselectify();
+					setCySchemaInstance(
+						cytoscape({
+							container,
+							elements: view.elements,
+							style: SCHEMA_STYLE,
+							layout: { name: 'preset', fit: false },
+							boxSelectionEnabled: false,
+							userPanningEnabled: false,
+							zoom: 0.7,
+						}),
+					);
+					getCySchemaInstance()
+						.nodes('[kind = "spawn-btn"], [kind = "expand-btn"]')
+						.ungrabify()
+						.unselectify();
 					attachCyEdgeMarkers(getCySchemaInstance(), container);
 					attachCyMiddleClickPan(getCySchemaInstance(), container);
 					attachCyWheelZoom(getCySchemaInstance(), container);
 					container.addEventListener('contextmenu', (e) => e.preventDefault());
-			
+
 					getCySchemaInstance().on('position', 'node', (evt) => {
 						const target = evt.target;
 						const dd = target.data();
 						if (dd.kind !== 'sel' && dd.kind !== 'sel-active') {
-return;
-}
+							return;
+						}
 						const objName = dd.objectName;
 						if (!objName) {
-return;
-}
+							return;
+						}
 						const cyInst = getCySchemaInstance();
 						const p = target.position();
 						const spawn = cyInst.getElementById('spawn_' + objName);
@@ -1261,16 +1401,16 @@ return;
 							});
 						}
 					});
-			
+
 					getCySchemaInstance().on('dbltap', 'node', (evt) => {
 						const d = evt.target.data();
 						if (!d || (d.kind !== 'sel' && d.kind !== 'sel-active')) {
-return;
-}
+							return;
+						}
 						const objectName = d.objectName;
 						if (!objectName) {
-return;
-}
+							return;
+						}
 						if (_expandedObjectName === objectName) {
 							_hideSchemaFieldsPanel();
 							return;
@@ -1279,27 +1419,27 @@ return;
 					});
 					getCySchemaInstance().on('tap', (evt) => {
 						if (evt.target === getCySchemaInstance()) {
-_hideSchemaFieldsPanel();
-}
+							_hideSchemaFieldsPanel();
+						}
 					});
 
 					getCySchemaInstance().on('tap', 'node', (evt) => {
 						const d = evt.target.data();
 						if (d && d.kind === 'spawn-btn') {
 							if (d.spawnFor) {
-_spawnRecordFromSchemaObject(d.spawnFor);
-}
+								_spawnRecordFromSchemaObject(d.spawnFor);
+							}
 							return;
 						}
 						if (d && d.kind === 'expand-btn') {
 							const objectName = d.expandFor;
 							if (!objectName) {
-return;
-}
+								return;
+							}
 							const parent = getCySchemaInstance().getElementById('o_' + objectName);
 							if (!parent || parent.length === 0) {
-return;
-}
+								return;
+							}
 							if (_expandedObjectName === objectName) {
 								_hideSchemaFieldsPanel();
 							} else {
@@ -1309,15 +1449,16 @@ return;
 						}
 						const targetName = d && (d.objectName || d.ringObject);
 						if (!targetName) {
-return;
-}
-						const cyActive = getCySchemaInstance().nodes().filter((n) => n.data('kind') === 'sel-active').first();
-						const previousActive = cyActive && cyActive.length
-							? (cyActive.data('objectName') || null)
-							: null;
+							return;
+						}
+						const cyActive = getCySchemaInstance()
+							.nodes()
+							.filter((n) => n.data('kind') === 'sel-active')
+							.first();
+						const previousActive = cyActive && cyActive.length ? cyActive.data('objectName') || null : null;
 						if (!previousActive || previousActive === targetName) {
-return;
-}
+							return;
+						}
 						const ringField = d.ringField || null;
 						const ringDirection = d.ringDirection || null;
 						const tappedPos = evt.target.position();
@@ -1329,7 +1470,8 @@ return;
 								canvasState._schemaViewPath.push(previousActive);
 							}
 							if (ringField && ringDirection) {
-								const stepKey = previousActive + '|' + targetName + '|' + ringField + '|' + ringDirection;
+								const stepKey =
+									previousActive + '|' + targetName + '|' + ringField + '|' + ringDirection;
 								if (!canvasState._schemaViewPathEdges.some((e) => e.key === stepKey)) {
 									canvasState._schemaViewPathEdges.push({
 										key: stepKey,
@@ -1346,35 +1488,42 @@ return;
 						if (cached) {
 							apply();
 						} else if (typeof fetchGraphData === 'function') {
-							fetchGraphData(targetName).then(apply).catch((err) => {
-								console.warn('schema nav: fetchGraphData failed for', targetName, err);
-							});
+							fetchGraphData(targetName)
+								.then(apply)
+								.catch((err) => {
+									console.warn('schema nav: fetchGraphData failed for', targetName, err);
+								});
 						}
 					});
 				} else if (sigChanged) {
 					canvasState._pendingNavOriginPos = null;
 					const wantedIds = new Set(view.elements.map((e) => e.data.id));
-					const obsolete = getCySchemaInstance().elements().filter((el) => !wantedIds.has(el.id()));
+					const obsolete = getCySchemaInstance()
+						.elements()
+						.filter((el) => !wantedIds.has(el.id()));
 					if (obsolete.length) {
-obsolete.remove();
-}
+						obsolete.remove();
+					}
 					const activeId = 'o_' + view.activeName;
 					view.elements.forEach((el) => {
 						const cyEl = getCySchemaInstance().getElementById(el.data.id);
 						if (!cyEl || !cyEl.length) {
 							if (el.data.id === activeId) {
-activeNodeIsNewlyAdded = true;
-}
+								activeNodeIsNewlyAdded = true;
+							}
 							getCySchemaInstance().add(el);
 						}
 					});
 					view.nodeKindById.forEach((kind, id) => {
 						const el = getCySchemaInstance().getElementById(id);
 						if (el && el.length && el.data('kind') !== kind) {
-el.data('kind', kind);
-}
+							el.data('kind', kind);
+						}
 					});
-					getCySchemaInstance().nodes('[kind = "spawn-btn"], [kind = "expand-btn"]').ungrabify().unselectify();
+					getCySchemaInstance()
+						.nodes('[kind = "spawn-btn"], [kind = "expand-btn"]')
+						.ungrabify()
+						.unselectify();
 					if (typeof redrawCyEdgeMarkers === 'function') {
 						redrawCyEdgeMarkers(getCySchemaInstance(), container);
 					}
@@ -1382,11 +1531,11 @@ el.data('kind', kind);
 					view.nodeKindById.forEach((kind, id) => {
 						const el = getCySchemaInstance().getElementById(id);
 						if (el && el.length && el.data('kind') !== kind) {
-el.data('kind', kind);
-}
+							el.data('kind', kind);
+						}
 					});
 				}
-			
+
 				(function _parkAllSatellites() {
 					const cyI = getCySchemaInstance();
 					if (!cyI) {
@@ -1411,8 +1560,8 @@ el.data('kind', kind);
 
 				requestAnimationFrame(() => {
 					if (!getCySchemaInstance()) {
-return;
-}
+						return;
+					}
 					getCySchemaInstance().resize();
 					const activeNode = getCySchemaInstance().getElementById('o_' + view.activeName);
 					if (!activeNode || !activeNode.length) {
@@ -1426,8 +1575,8 @@ return;
 						} else {
 							getCySchemaInstance().fit(undefined, 80);
 							if (getCySchemaInstance().zoom() > 1) {
-getCySchemaInstance().zoom(1);
-}
+								getCySchemaInstance().zoom(1);
+							}
 						}
 						getCySchemaInstance().center(activeNode);
 					}
@@ -1437,12 +1586,12 @@ getCySchemaInstance().zoom(1);
 						const targetActiveId = 'o_' + view.activeName;
 						setTimeout(() => {
 							if (!getCySchemaInstance()) {
-return;
-}
+								return;
+							}
 							const node = getCySchemaInstance().getElementById(targetActiveId);
 							if (!node || !node.length) {
-return;
-}
+								return;
+							}
 							getCySchemaInstance().animate(
 								{ center: { eles: node } },
 								{ duration: 800, easing: 'ease-out' },
@@ -1451,7 +1600,7 @@ return;
 					}
 				});
 			}
-			
+
 			function makeNode(label, name, relation, x, y, variant, onRemove, cloneOpts, loading) {
 				const div = document.createElement('div');
 				div.className = 'graph-node ' + (variant || '') + (loading ? ' loading' : '');
@@ -1466,44 +1615,50 @@ return;
 				}
 				html += '<div class="obj-label">' + escapeHtml(label) + '</div>';
 				if (name && name !== label) {
-html += '<div class="obj-name">' + escapeHtml(name) + '</div>';
-}
+					html += '<div class="obj-name">' + escapeHtml(name) + '</div>';
+				}
 				if (loading) {
-					html += '<div class="graph-node-loading" aria-label="Loading related objects">' +
+					html +=
+						'<div class="graph-node-loading" aria-label="Loading related objects">' +
 						'<span class="graph-node-spinner"></span>' +
-					'</div>';
+						'</div>';
 				}
 				if (clonable) {
 					const count = Number(cloneOpts.count || 0);
-					html += '<button class="node-clone" data-node-clone title="Add a record of ' + escapeHtml(label) + ' to the canvas">' +
-						'+ record <span class="node-clone-count">' + count + '</span>' +
-					'</button>';
+					html +=
+						'<button class="node-clone" data-node-clone title="Add a record of ' +
+						escapeHtml(label) +
+						' to the canvas">' +
+						'+ record <span class="node-clone-count">' +
+						count +
+						'</span>' +
+						'</button>';
 				}
 				div.innerHTML = html;
 				if (relation) {
-div.title = (div.title ? div.title + ' -' : '') + relation;
-}
+					div.title = (div.title ? div.title + ' -' : '') + relation;
+				}
 				if (loading) {
-div.title = (div.title ? div.title + ' -' : '') + 'Loading related objects\u2026';
-}
+					div.title = (div.title ? div.title + ' -' : '') + 'Loading related objects\u2026';
+				}
 				if (removable) {
 					const btn = div.querySelector('[data-node-remove]');
 					btn.addEventListener('click', (e) => {
- e.stopPropagation(); onRemove(); 
-});
+						e.stopPropagation();
+						onRemove();
+					});
 				}
 				if (clonable) {
 					const cb = div.querySelector('[data-node-clone]');
 					if (cb) {
-cb.addEventListener('click', (e) => {
- e.stopPropagation(); cloneOpts.onClone(); 
-});
-}
+						cb.addEventListener('click', (e) => {
+							e.stopPropagation();
+							cloneOpts.onClone();
+						});
+					}
 				}
 				return div;
 			}
-			
-			
 
 			return {
 				renderCanvas: renderCanvas,

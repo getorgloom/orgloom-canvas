@@ -36,9 +36,12 @@ export async function initializeStandaloneDatabase() {
 			async getMigrations() {
 				const migrations = {};
 				const files = (await fs.promises.readdir(canvasMigrationsDir))
-					.filter((file) => file.endsWith('.js')).sort();
+					.filter((file) => file.endsWith('.js'))
+					.sort();
 				for (const file of files) {
-					migrations[file.replace(/\.js$/, '')] = await import(pathToFileURL(path.join(canvasMigrationsDir, file)).href);
+					migrations[file.replace(/\.js$/, '')] = await import(
+						pathToFileURL(path.join(canvasMigrationsDir, file)).href
+					);
 				}
 				return migrations;
 			},
@@ -46,7 +49,7 @@ export async function initializeStandaloneDatabase() {
 	});
 	const { error } = await migrator.migrateToLatest();
 	if (error) {
-throw error;
-}
+		throw error;
+	}
 	return db;
 }

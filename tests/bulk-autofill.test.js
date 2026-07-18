@@ -8,7 +8,14 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.resolve(here, '../src/public/js/bulk-autofill.js'), 'utf8');
 
-function harness({ records, describes = {}, associations = [], ensureDescribe, getSmartDefault, sampleValueForField } = {}) {
+function harness({
+	records,
+	describes = {},
+	associations = [],
+	ensureDescribe,
+	getSmartDefault,
+	sampleValueForField,
+} = {}) {
 	const toasts = [];
 	const state = { bulkRecords: records || [], bulkAssociations: associations, describeCache: { ...describes } };
 	const window = {};
@@ -19,7 +26,8 @@ function harness({ records, describes = {}, associations = [], ensureDescribe, g
 		fieldTypeFilter: () => () => true,
 		getSmartDefault: getSmartDefault || (() => null),
 		renderBulkView: () => {},
-		sampleValueForField: sampleValueForField || ((field) => field.sample === undefined ? `sample-${field.name}` : field.sample),
+		sampleValueForField:
+			sampleValueForField || ((field) => (field.sample === undefined ? `sample-${field.name}` : field.sample)),
 		showBulkToast: (message, kind) => toasts.push({ message, kind }),
 		showConfirmDialog: async () => true,
 		loadSmartDefaults: async () => {},
@@ -60,7 +68,10 @@ test('AF-050: a describe failure is atomic across the whole fill', async () => {
 		},
 	});
 	await settleFill(api, 'required');
-	assert.deepEqual(records.map((record) => record.values), [{}, {}]);
+	assert.deepEqual(
+		records.map((record) => record.values),
+		[{}, {}],
+	);
 });
 
 test('AF-051: fill required handles 9,999 drafts without truncation', async () => {

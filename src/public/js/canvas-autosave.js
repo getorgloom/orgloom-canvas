@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Debounces saves for persisted canvases and keeps unsaved work in session storage only.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -42,8 +42,8 @@
 			];
 
 			function _applyRestoredState(s, sourceOrg, targetOrg) {
-				const isCrossOrg =
-					!!sourceOrg && !!targetOrg && sourceOrg !== targetOrg;
+				// Salesforce IDs are org-specific, so cross-org loaded records return as drafts.
+				const isCrossOrg = !!sourceOrg && !!targetOrg && sourceOrg !== targetOrg;
 				let convertedCount = 0;
 				const converted = (s.bulkRecords || []).map((rec) => {
 					if (!rec || typeof rec !== 'object') {
@@ -75,7 +75,9 @@
 						if (!child || !child.values || !a.fieldName) {
 							return;
 						}
-						const key = Object.keys(child.values).find((k) => k.toLowerCase() === String(a.fieldName).toLowerCase());
+						const key = Object.keys(child.values).find(
+							(k) => k.toLowerCase() === String(a.fieldName).toLowerCase(),
+						);
 						if (key) {
 							delete child.values[key];
 						}
@@ -84,13 +86,13 @@
 				if (Array.isArray(s.selectedObjects)) {
 					canvasState.selectedObjects = isCrossOrg
 						? s.selectedObjects.map((sel) => {
-							if (!sel || typeof sel !== 'object' || !('data' in sel)) {
-								return sel;
-							}
-							const out = Object.assign({}, sel);
-							delete out.data;
-							return out;
-						})
+								if (!sel || typeof sel !== 'object' || !('data' in sel)) {
+									return sel;
+								}
+								const out = Object.assign({}, sel);
+								delete out.data;
+								return out;
+							})
 						: s.selectedObjects;
 				}
 				if (typeof s.selectedIdSeq === 'number') {
@@ -120,16 +122,14 @@
 			}
 
 			function _orgSwitchStash() {
+				// A short-lived, account-bound session snapshot bridges the OAuth org switch.
 				try {
 					const payload = {
 						v: 1,
 						ts: Date.now(),
 						sourceSfOrgId: window.SF_ORG_ID || null,
 						sourceAccountId: window.ORGLOOM_ACCOUNT_ID || null,
-						sourceCanvasId:
-							(canvasState.currentCanvas &&
-								canvasState.currentCanvas.id) ||
-							null,
+						sourceCanvasId: (canvasState.currentCanvas && canvasState.currentCanvas.id) || null,
 						state: {
 							selectedObjects: canvasState.selectedObjects,
 							selectedIdSeq: canvasState.selectedIdSeq,
@@ -143,8 +143,7 @@
 						},
 					};
 					sessionStorage.setItem(_ORGSWITCH_STASH_KEY, JSON.stringify(payload));
-				} catch (_e) {
-				}
+				} catch (_e) {}
 			}
 
 			function _orgSwitchRestore() {
@@ -169,10 +168,7 @@
 				if (!payload || payload.v !== 1) {
 					return false;
 				}
-				if (
-					typeof payload.ts === 'number' &&
-					Date.now() - payload.ts > 10 * 60 * 1000
-				) {
+				if (typeof payload.ts === 'number' && Date.now() - payload.ts > 10 * 60 * 1000) {
 					return false;
 				}
 				const currentAccountId = window.ORGLOOM_ACCOUNT_ID || null;
@@ -204,18 +200,15 @@
 						} else {
 							window.olToast('Canvas restored.', 'info');
 						}
-					} catch (_e) {
-					}
+					} catch (_e) {}
 				}, 0);
 				return true;
 			}
 
-
 			function _stampSourceRecordTypeDevNames() {
 				const cache = canvasState.describeCache || {};
 				(canvasState.bulkRecords || []).forEach((rec) => {
-					if (!rec || rec.isTypeNode ||
-						rec._sourceRecordTypeDeveloperName) {
+					if (!rec || rec.isTypeNode || rec._sourceRecordTypeDeveloperName) {
 						return;
 					}
 					const v = rec.values || {};
@@ -228,8 +221,7 @@
 					for (let i = 0; i < rts.length; i++) {
 						if (rts[i] && String(rts[i].id) === String(rtId)) {
 							if (rts[i].developerName) {
-								rec._sourceRecordTypeDeveloperName =
-									rts[i].developerName;
+								rec._sourceRecordTypeDeveloperName = rts[i].developerName;
 							}
 							break;
 						}
@@ -238,6 +230,7 @@
 			}
 
 			function _migrationStash(opts) {
+				// Migration state stays in session storage and is bound to the initiating account.
 				opts = opts || {};
 				_stampSourceRecordTypeDevNames();
 				try {
@@ -247,10 +240,7 @@
 						status: opts.status || 'in-progress',
 						sourceSfOrgId: window.SF_ORG_ID || null,
 						sourceAccountId: window.ORGLOOM_ACCOUNT_ID || null,
-						sourceCanvasId:
-							(canvasState.currentCanvas &&
-								canvasState.currentCanvas.id) ||
-							null,
+						sourceCanvasId: (canvasState.currentCanvas && canvasState.currentCanvas.id) || null,
 						targetSfOrgId: opts.targetSfOrgId || null,
 						state: {
 							selectedObjects: canvasState.selectedObjects,
@@ -272,6 +262,7 @@
 			}
 
 			function _migrationSyncIfActive() {
+				// Keep destination decisions recoverable while the guided migration remains active.
 				const existing = _peekMigration();
 				if (!existing || existing.status !== 'in-progress') {
 					return;
@@ -366,14 +357,9 @@
 				const sourceOrg = payload.sourceSfOrgId || null;
 				const status = payload.status || 'in-progress';
 
-				const isArrival =
-					status === 'awaiting-target' &&
-					!!currentOrg &&
-					currentOrg !== sourceOrg;
+				const isArrival = status === 'awaiting-target' && !!currentOrg && currentOrg !== sourceOrg;
 				const isRecovery =
-					status === 'in-progress' &&
-					!!currentOrg &&
-					currentOrg === (payload.targetSfOrgId || currentOrg);
+					status === 'in-progress' && !!currentOrg && currentOrg === (payload.targetSfOrgId || currentOrg);
 
 				if (!isArrival && !isRecovery) {
 					return false;
@@ -398,8 +384,7 @@
 					window.ORGLOOM_ACCOUNT_ID || 'anon',
 					window.SF_ORG_ID || 'no-org',
 					window.SF_USER_ID || 'no-user',
-					(canvasState.currentCanvas && canvasState.currentCanvas.id) ||
-						'new',
+					(canvasState.currentCanvas && canvasState.currentCanvas.id) || 'new',
 				].join(':');
 			}
 
@@ -429,8 +414,7 @@
 						},
 					};
 					sessionStorage.setItem(_scopedDraftKey(), JSON.stringify(payload));
-				} catch (_e) {
-				}
+				} catch (_e) {}
 				_migrationSyncIfActive();
 			}
 
@@ -469,8 +453,7 @@
 					const s = payload.state || {};
 					const hasContent =
 						(Array.isArray(s.bulkRecords) && s.bulkRecords.length > 0) ||
-						(Array.isArray(s.selectedObjects) &&
-							s.selectedObjects.length > 0);
+						(Array.isArray(s.selectedObjects) && s.selectedObjects.length > 0);
 					if (!hasContent) {
 						return false;
 					}

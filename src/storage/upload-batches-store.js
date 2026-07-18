@@ -1,4 +1,4 @@
-
+// Encrypted two-phase upload ledger stored in the connected Salesforce org.
 import { escapeSoqlLiteral } from '../sf-soql.js';
 import crypto from 'node:crypto';
 import {
@@ -19,7 +19,16 @@ function _sanitizeBatchFileName(externalId, attemptId) {
 
 function _summaryTitle({ source, recordCount, createdAt }) {
 	const dt = new Date(createdAt).toISOString().slice(0, 10);
-	return 'Upload ' + recordCount + ' record' + (recordCount === 1 ? '' : 's') + ' · ' + (source || 'unknown') + ' · ' + dt;
+	return (
+		'Upload ' +
+		recordCount +
+		' record' +
+		(recordCount === 1 ? '' : 's') +
+		' · ' +
+		(source || 'unknown') +
+		' · ' +
+		dt
+	);
 }
 
 function makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
@@ -27,13 +36,15 @@ function makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 	const sessionId = (opts && opts.sessionId) || null;
 
 	async function _writeBatchPayload(payload) {
+		// Persist intent before business-record DML so an interrupted attempt can be reconciled safely.
 		const json = JSON.stringify(payload);
 		const dataKey = generateDataKey();
 		const envelope = encryptPayload(json, dataKey);
 		const result = await conn.sobject('ContentVersion').create({
 			Title: _summaryTitle(payload),
 			PathOnClient: _sanitizeBatchFileName(payload.externalId, payload.attemptId),
-			Description: 'Org Loom recall ledger entry. Encrypted by Org Loom; ' +
+			Description:
+				'Org Loom recall ledger entry. Encrypted by Org Loom; ' +
 				'opens through the Org Loom Upload History UI. See orgloom.com for details.',
 			VersionData: envelope.toString('base64'),
 		});
@@ -57,9 +68,12 @@ function makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 				'OwnerId, CreatedDate ' +
 				'FROM ContentVersion ' +
 				'WHERE IsLatest = TRUE ' +
-				"AND PathOnClient LIKE '%" + BATCH_PATH_EXT + "' " +
+				"AND PathOnClient LIKE '%" +
+				BATCH_PATH_EXT +
+				"' " +
 				(sfUserId ? "AND OwnerId = '" + escapeSoqlLiteral(sfUserId) + "' " : '') +
-				'ORDER BY CreatedDate DESC LIMIT ' + lim;
+				'ORDER BY CreatedDate DESC LIMIT ' +
+				lim;
 			const result = await conn.query(soql);
 			const versions = result.records || [];
 			const items = [];
@@ -72,8 +86,8 @@ function makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 						sessionId,
 					});
 					if (!payload) {
-continue;
-}
+						continue;
+					}
 					items.push({
 						id: v.ContentDocumentId,
 						externalId: payload.externalId || null,
@@ -81,7 +95,10 @@ continue;
 						createdAt: payload.createdAt || new Date(v.CreatedDate).getTime(),
 						status: payload.status || 'uploaded',
 						source: payload.source || 'unknown',
-						recordCount: typeof payload.recordCount === 'number' ? payload.recordCount : (payload.insertedIds || []).length,
+						recordCount:
+							typeof payload.recordCount === 'number'
+								? payload.recordCount
+								: (payload.insertedIds || []).length,
 						note: payload.note || null,
 						recalledAt: payload.recalledAt || null,
 						failedAt: payload.failedAt || null,
@@ -90,7 +107,9 @@ continue;
 						insertedCount: Array.isArray(payload.insertedIds) ? payload.insertedIds.length : 0,
 						deletedCount: Array.isArray(payload.deletedIds) ? payload.deletedIds.length : 0,
 					});
-				} catch (_e) { /* skip unreadable batch */ }
+				} catch (_e) {
+					/* skip unreadable batch */
+				}
 			}
 			return items;
 		},
@@ -101,24 +120,28 @@ continue;
 			}
 			const docResult = await conn.query(
 				'SELECT Id, Title, OwnerId FROM ContentDocument ' +
-				"WHERE Id = '" + escapeSoqlLiteral(id) + "' LIMIT 1"
+					"WHERE Id = '" +
+					escapeSoqlLiteral(id) +
+					"' LIMIT 1",
 			);
 			const doc = (docResult.records || [])[0];
 			if (!doc) {
-return null;
-}
+				return null;
+			}
 			if (sfUserId && doc.OwnerId !== sfUserId) {
-return null;
-}
+				return null;
+			}
 			const versionResult = await conn.query(
 				'SELECT Id, VersionData, PathOnClient FROM ContentVersion ' +
-				"WHERE ContentDocumentId = '" + escapeSoqlLiteral(id) + "' " +
-				'ORDER BY CreatedDate DESC LIMIT 1'
+					"WHERE ContentDocumentId = '" +
+					escapeSoqlLiteral(id) +
+					"' " +
+					'ORDER BY CreatedDate DESC LIMIT 1',
 			);
 			const v = (versionResult.records || [])[0];
 			if (!v) {
-return null;
-}
+				return null;
+			}
 			if (typeof v.PathOnClient !== 'string' || !v.PathOnClient.endsWith(BATCH_PATH_EXT)) {
 				return null;
 			}
@@ -129,8 +152,8 @@ return null;
 				sessionId,
 			});
 			if (!payload) {
-return null;
-}
+				return null;
+			}
 			return {
 				id: doc.Id,
 				versionId: v.Id,
@@ -139,7 +162,8 @@ return null;
 				createdAt: payload.createdAt || null,
 				status: payload.status || 'uploaded',
 				source: payload.source || 'unknown',
-				recordCount: typeof payload.recordCount === 'number' ? payload.recordCount : (payload.insertedIds || []).length,
+				recordCount:
+					typeof payload.recordCount === 'number' ? payload.recordCount : (payload.insertedIds || []).length,
 				note: payload.note || null,
 				recalledAt: payload.recalledAt || null,
 				recallResult: payload.recallResult || null,
@@ -156,8 +180,8 @@ return null;
 
 		async create({ source, recordCount, note, insertedIds, deletedIds, associations, attemptId }) {
 			if (!Array.isArray(insertedIds)) {
-throw new Error('insertedIds must be an array');
-}
+				throw new Error('insertedIds must be an array');
+			}
 			const _deletedIds = Array.isArray(deletedIds) ? deletedIds : [];
 			const payload = {
 				externalId: crypto.randomUUID(),
@@ -202,8 +226,8 @@ throw new Error('insertedIds must be an array');
 		async finalize(id, { insertedIds, deletedIds, associations, recordCount } = {}) {
 			const existing = await this.get(id);
 			if (!existing) {
-throw new Error('finalize: batch not found');
-}
+				throw new Error('finalize: batch not found');
+			}
 			const _inserted = Array.isArray(insertedIds) ? insertedIds : [];
 			const _deleted = Array.isArray(deletedIds) ? deletedIds : [];
 			const next = Object.assign({}, existing, {
@@ -238,37 +262,44 @@ throw new Error('finalize: batch not found');
 
 		async findByAttemptId(attemptId) {
 			if (!attemptId) {
-return null;
-}
+				return null;
+			}
 			const tag = '__att-' + String(attemptId).replace(/[^a-zA-Z0-9-]/g, '');
 			const soql =
 				'SELECT ContentDocumentId FROM ContentVersion ' +
 				'WHERE IsLatest = TRUE ' +
-				"AND PathOnClient LIKE '%" + tag + BATCH_PATH_EXT + "' " +
+				"AND PathOnClient LIKE '%" +
+				tag +
+				BATCH_PATH_EXT +
+				"' " +
 				(sfUserId ? "AND OwnerId = '" + escapeSoqlLiteral(sfUserId) + "' " : '') +
 				'ORDER BY CreatedDate DESC LIMIT 1';
 			const result = await conn.query(soql);
 			const row = (result.records || [])[0];
 			if (!row) {
-return null;
-}
+				return null;
+			}
 			return this.get(row.ContentDocumentId);
 		},
 
 		async markRecalling(id) {
 			const existing = await this.get(id);
 			if (!existing) {
-throw new Error('batch not found');
-}
-			await _rewriteBatch(conn, id, Object.assign({}, existing, { status: 'recalling' }), { sfOrgId, kekProvider, sessionId });
+				throw new Error('batch not found');
+			}
+			await _rewriteBatch(conn, id, Object.assign({}, existing, { status: 'recalling' }), {
+				sfOrgId,
+				kekProvider,
+				sessionId,
+			});
 			return { id, status: 'recalling' };
 		},
 
 		async markRecallResult(id, { status, recallResult }) {
 			const existing = await this.get(id);
 			if (!existing) {
-throw new Error('batch not found');
-}
+				throw new Error('batch not found');
+			}
 			const next = Object.assign({}, existing, {
 				status: status || 'recalled',
 				recalledAt: Date.now(),
@@ -295,7 +326,6 @@ throw new Error('batch not found');
 			try {
 				await batchKeys.remove({ sfOrgId, batchId: id });
 			} catch (e) {
-				 
 				console.warn('upload-batches-store: failed to drop batch_keys row for ' + id + ':', e && e.message);
 			}
 			return true;
@@ -304,9 +334,10 @@ throw new Error('batch not found');
 }
 
 async function _decodeVersionData(conn, vData, { sfOrgId, batchId, kekProvider, sessionId } = {}) {
+	// Legacy plaintext ledgers remain readable; every subsequent rewrite uses encryption.
 	if (vData == null) {
-return null;
-}
+		return null;
+	}
 	let buf;
 	if (typeof vData === 'string' && vData.startsWith('/')) {
 		const url = conn.instanceUrl.replace(/\/+$/, '') + vData;
@@ -328,24 +359,25 @@ return null;
 		}
 		const dataKey = await batchKeys.get({ sfOrgId, batchId, kekProvider, sessionId });
 		if (!dataKey) {
-return null;
-}
+			return null;
+		}
 		try {
- json = decryptPayload(buf, dataKey);
-} catch (_e) {
- return null;
-}
+			json = decryptPayload(buf, dataKey);
+		} catch (_e) {
+			return null;
+		}
 	} else {
 		json = buf.toString('utf8');
 	}
 	try {
- return JSON.parse(json); 
-} catch (_e) {
- return null; 
-}
+		return JSON.parse(json);
+	} catch (_e) {
+		return null;
+	}
 }
 
 async function _rewriteBatch(conn, contentDocumentId, payload, { sfOrgId, kekProvider, sessionId } = {}) {
+	// Rewrites append a ContentVersion and retain the batch's existing DEK.
 	const json = JSON.stringify(payload);
 	const title = _summaryTitle(payload);
 	let envelope;
@@ -359,7 +391,8 @@ async function _rewriteBatch(conn, contentDocumentId, payload, { sfOrgId, kekPro
 		ContentDocumentId: contentDocumentId,
 		Title: title,
 		PathOnClient: _sanitizeBatchFileName(payload.externalId || 'batch', payload.attemptId),
-		Description: 'Org Loom recall ledger entry. Encrypted by Org Loom; ' +
+		Description:
+			'Org Loom recall ledger entry. Encrypted by Org Loom; ' +
 			'opens through the Org Loom Upload History UI. See orgloom.com for details.',
 		VersionData: envelope.toString('base64'),
 	});

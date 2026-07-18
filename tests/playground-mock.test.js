@@ -1,4 +1,3 @@
-
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -35,12 +34,20 @@ before(() => {
 	};
 	const sandbox = {
 		window: windowShim,
-		document: { addEventListener() {}, getElementById() {
- return null; 
-} },
+		document: {
+			addEventListener() {},
+			getElementById() {
+				return null;
+			},
+		},
 		console: { log() {}, warn() {}, error() {} },
-		URL, Response, Request, Headers,
-		JSON, Math, Date,
+		URL,
+		Response,
+		Request,
+		Headers,
+		JSON,
+		Math,
+		Date,
 		localStorage: windowShim.localStorage,
 		sessionStorage: windowShim.sessionStorage,
 	};
@@ -133,10 +140,7 @@ describe('dataset integrity: describes vs records', () => {
 					if (refersToUser && String(v).startsWith('005')) {
 						continue; // demo user ids are synthesized, not in records
 					}
-					assert.ok(
-						allIds.has(v),
-						obj + ' ' + rec.Id + ' field ' + f.name + ' → dangling id ' + v,
-					);
+					assert.ok(allIds.has(v), obj + ' ' + rec.Id + ' field ' + f.name + ' → dangling id ' + v);
 				}
 			}
 		}

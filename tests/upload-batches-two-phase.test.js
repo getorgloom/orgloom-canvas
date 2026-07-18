@@ -1,4 +1,3 @@
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { uploadBatchesStoreFromSfConnection } from '../src/storage/upload-batches-store.js';
@@ -26,27 +25,45 @@ describe('upload-batches store, layer 4: VersionData-as-URL', () => {
 	test('a batch whose VersionData comes back as a URL decodes correctly', async () => {
 		const stub = installSfFetchStub();
 		try {
-			const wConn = makeKekConn({ creates: [{ success: true, id: '068A' }], retrieves: [{ ContentDocumentId: '069A' }] });
+			const wConn = makeKekConn({
+				creates: [{ success: true, id: '068A' }],
+				retrieves: [{ ContentDocumentId: '069A' }],
+			});
 			const wStore = await uploadBatchesStoreFromSfConnection(wConn, USER_ID, ORG_ID);
 			await wStore.create({
 				source: 'canvas-graph',
 				insertedIds: [{ tempId: 1, sfId: '001x', objectName: 'Account', mode: 'create' }],
-				deletedIds: [], associations: null,
+				deletedIds: [],
+				associations: null,
 			});
 			const envBuf = Buffer.from(wConn.calls.sobjectCreates[0].payload.VersionData, 'base64');
 
 			const vdUrl = '/services/data/v60.0/sobjects/ContentVersion/068A/VersionData';
 			const rConn = makeKekConn({
-				queries: [{ records: [{
-					Id: '068A', ContentDocumentId: '069A', VersionData: vdUrl,
-					PathOnClient: 'batch-x' + BATCH_EXT, OwnerId: USER_ID, CreatedDate: '2026-06-01T00:00:00Z',
-				}] }],
+				queries: [
+					{
+						records: [
+							{
+								Id: '068A',
+								ContentDocumentId: '069A',
+								VersionData: vdUrl,
+								PathOnClient: 'batch-x' + BATCH_EXT,
+								OwnerId: USER_ID,
+								CreatedDate: '2026-06-01T00:00:00Z',
+							},
+						],
+					},
+				],
 			});
 			stub.registerVersionUrl(rConn.instanceUrl + vdUrl, envBuf);
 			const rStore = await uploadBatchesStoreFromSfConnection(rConn, USER_ID, ORG_ID);
 
 			const items = await rStore.list();
-			assert.equal(items.length, 1, 'URL-delivered VersionData must decode (regression: binary fetch, not UTF-8)');
+			assert.equal(
+				items.length,
+				1,
+				'URL-delivered VersionData must decode (regression: binary fetch, not UTF-8)',
+			);
 			assert.equal(items[0].source, 'canvas-graph');
 			assert.equal(items[0].insertedCount, 1);
 		} finally {
@@ -60,7 +77,10 @@ describe('upload-batches store: two-phase write', () => {
 		const stub = installSfFetchStub();
 		try {
 			const DOC_ID = '069O400000RjEorIAF';
-			const conn = makeKekConn({ creates: [{ success: true, id: '068O400000S8kK5IAJ' }], retrieves: [{ ContentDocumentId: DOC_ID }] });
+			const conn = makeKekConn({
+				creates: [{ success: true, id: '068O400000S8kK5IAJ' }],
+				retrieves: [{ ContentDocumentId: DOC_ID }],
+			});
 			const store = await uploadBatchesStoreFromSfConnection(conn, USER_ID, ORG_ID);
 
 			await store.createPending({
@@ -77,7 +97,15 @@ describe('upload-batches store: two-phase write', () => {
 
 			conn._queues.queries.push(
 				{ records: [{ Id: DOC_ID, Title: 't', OwnerId: USER_ID, CreatedDate: '2026-06-01T00:00:00Z' }] },
-				{ records: [{ Id: '068O400000S8kK5IAJ', VersionData: pendingVd, PathOnClient: 'batch-x__att-att-xyz' + BATCH_EXT }] },
+				{
+					records: [
+						{
+							Id: '068O400000S8kK5IAJ',
+							VersionData: pendingVd,
+							PathOnClient: 'batch-x__att-att-xyz' + BATCH_EXT,
+						},
+					],
+				},
 			);
 			conn._queues.creates.push({ success: true, id: '068O400000S8kK6IAJ' });
 			await store.finalize(DOC_ID, {
@@ -113,7 +141,15 @@ describe('upload-batches store: two-phase write', () => {
 
 			conn._queues.queries.push(
 				{ records: [{ Id: DOC_ID, Title: 't', OwnerId: USER_ID, CreatedDate: '2026-06-01T00:00:00Z' }] },
-				{ records: [{ Id: '068O400000S8FailAJ', VersionData: pendingVd, PathOnClient: 'batch-x__att-att-known-rollback' + BATCH_EXT }] },
+				{
+					records: [
+						{
+							Id: '068O400000S8FailAJ',
+							VersionData: pendingVd,
+							PathOnClient: 'batch-x__att-att-known-rollback' + BATCH_EXT,
+						},
+					],
+				},
 			);
 			conn._queues.creates.push({ success: true, id: '068O400000S9FailAJ' });
 			await store.markFailed(DOC_ID, {
@@ -128,7 +164,11 @@ describe('upload-batches store: two-phase write', () => {
 			assert.equal(failed.failureCode, 'FIELD_CUSTOM_VALIDATION_EXCEPTION');
 			assert.equal(failed.failureMessage, 'A validation rule rejected the record.');
 			assert.deepEqual(failed.insertedIds, []);
-			assert.equal(conn.calls.sobjectDestroys.length, 0, 'terminal settlement must not depend on File delete permission');
+			assert.equal(
+				conn.calls.sobjectDestroys.length,
+				0,
+				'terminal settlement must not depend on File delete permission',
+			);
 		} finally {
 			stub.restore();
 		}
@@ -139,13 +179,17 @@ describe('upload-batches store: idempotency index (attemptId)', () => {
 	test('create() encodes attemptId into PathOnClient', async () => {
 		const stub = installSfFetchStub();
 		try {
-			const conn = makeKekConn({ creates: [{ success: true, id: '068C' }], retrieves: [{ ContentDocumentId: '069C' }] });
+			const conn = makeKekConn({
+				creates: [{ success: true, id: '068C' }],
+				retrieves: [{ ContentDocumentId: '069C' }],
+			});
 			const store = await uploadBatchesStoreFromSfConnection(conn, USER_ID, ORG_ID);
 			await store.create({
 				source: 'canvas',
 				attemptId: 'att-tag-1',
 				insertedIds: [{ tempId: 1, sfId: '001x', objectName: 'Account', mode: 'create' }],
-				deletedIds: [], associations: null,
+				deletedIds: [],
+				associations: null,
 			});
 			const path = conn.calls.sobjectCreates[0].payload.PathOnClient;
 			assert.match(path, /__att-att-tag-1\.orgloom-batch\.json$/);
@@ -162,7 +206,11 @@ describe('upload-batches store: idempotency index (attemptId)', () => {
 			const res = await store.findByAttemptId('att-abc');
 			assert.equal(res, null);
 			const soql = conn.calls.queries[0];
-			assert.match(soql, /__att-att-abc\.orgloom-batch\.json/, 'lookup must filter on the attemptId tag (cheap, no decrypt)');
+			assert.match(
+				soql,
+				/__att-att-abc\.orgloom-batch\.json/,
+				'lookup must filter on the attemptId tag (cheap, no decrypt)',
+			);
 			assert.match(soql, /OwnerId = '005TESTUploader'/, 'lookup must be owner-scoped');
 		} finally {
 			stub.restore();

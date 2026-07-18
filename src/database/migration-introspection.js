@@ -1,4 +1,3 @@
-
 export async function migrationTable(db, tableName) {
 	const tables = await db.introspection.getTables();
 	return tables.find((table) => table.name === tableName) || null;

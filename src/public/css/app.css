@@ -1,3 +1,4 @@
+/* Theme tokens and global primitives */
 :root {
 	color-scheme: dark;
 	--bg:          #181b20;
@@ -47,6 +48,7 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
+/* Shared public footer */
 .site-footer { padding: 2em 0 4em; text-align: center; color: var(--ink-faint, #6d6a62); }
 .site-footer-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.6em; margin-bottom: 0.8em; }
 .site-footer-row a { color: var(--ink-soft, #cfccc3); text-decoration: none; font-size: 0.9rem; border-bottom: 0 !important; }
@@ -54,6 +56,7 @@ body {
 .site-footer-btn { background: transparent; border: 0; padding: 0; color: var(--ink-soft, #cfccc3); cursor: pointer; font: inherit; font-size: 0.9rem; }
 .site-footer-btn:hover { color: var(--ink, #ede8dd); }
 .site-footer-tagline { font-size: 0.8rem; }
+/* Authenticated application chrome */
 body.canvas-page {
 	animation: app-paint-fade-in 180ms ease-out;
 }
@@ -427,6 +430,7 @@ span.app-plan-chip:hover { filter: none; }
 .signup-team-help { color: var(--ink-faint); font-size: 0.82rem; line-height: 1.4; }
 .signup-team-actions { display: flex; justify-content: space-between; align-items: center; gap: 0.6em; margin-top: 0.5em; flex-wrap: wrap; }
 
+/* Public landing page */
 .landing-hero { margin: 2.5em auto 1.5em; max-width: 760px; text-align: left; }
 .landing-title {
 	font-family: var(--font-mono);
@@ -501,6 +505,7 @@ span.app-plan-chip:hover { filter: none; }
 	.app-utility-btn { padding: 0.25em 0.5em; gap: 0.35em; }
 }
 
+/* Pricing and plan comparison */
 .pricing-main { max-width: 1100px; margin: 0 auto; padding: 2em 1.5em 4em; }
 .pricing-hero { text-align: center; margin: 1.5em auto 2.5em; max-width: 780px; }
 .pricing-title {
@@ -1083,6 +1088,7 @@ tbody tr[data-row-open]:hover { background: var(--accent-soft); }
 tbody tr[data-row-open]:hover code { background: var(--bg); border-color: var(--accent); }
 .center { text-align: center; padding: 1em 0; color: var(--muted); }
 
+/* Modal shell, including inline card editors */
 .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; zoom: 1; }
 .modal.hidden { display: none; }
 .modal-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.62); backdrop-filter: blur(2px); }
@@ -1175,6 +1181,7 @@ tbody tr[data-row-open]:hover code { background: var(--bg); border-color: var(--
 	box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65), 0 0 0 2px var(--accent);
 }
 
+/* Canvas sharing and collaborator roles */
 .canvas-share-modal .modal-content { overflow-x: hidden; }
 .canvas-share-modal .cs-tabs { display: flex; gap: 0.4em; margin-bottom: 0.6em; border-bottom: 1px solid var(--border); padding-bottom: 0.6em; }
 .canvas-share-modal .cs-tab { background: transparent; border: 1px solid var(--border); border-radius: 4px; padding: 0.35em 0.85em; font-size: 0.84rem; color: var(--ink-soft); cursor: pointer; font-family: var(--font-sans); transition: background 80ms, color 80ms; }
@@ -1195,6 +1202,7 @@ tbody tr[data-row-open]:hover code { background: var(--bg); border-color: var(--
 .tpl-share { background: transparent; border: 1px solid var(--border); color: var(--ink-soft); border-radius: 3px; padding: 0.25em 0.7em; font-size: 0.78rem; cursor: pointer; font-family: var(--font-sans); transition: all 100ms; }
 .tpl-share:hover { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 
+/* AI scope, preview, and proposal surfaces */
 .ai-scope-pane { display: flex; flex-direction: column; gap: 0.4em; min-height: 320px; max-height: 50vh; border: 1px solid var(--border); border-radius: 6px; padding: 0.55em 0.55em 0.4em; background: var(--bg-inset); }
 .ai-scope-search { padding: 0.36em 0.6em; font-size: 0.86rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-elev); color: var(--ink); font-family: var(--font-sans); }
 .ai-scope-search:focus { outline: none; border-color: var(--accent); }
@@ -1461,6 +1469,7 @@ body.canvas-share-banner-active .presence-saved-banner { top: calc(56px + 44px);
 .graph-node.center .node-remove:hover { background: var(--danger); color: var(--bg); }
 
 .graph-chips { display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center; flex: 1; }
+/* Canvas and schema-view controls */
 .schema-controls-overlay { position: absolute; top: 8px; right: 8px; z-index: 35; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; padding: 0.35em 0.5em; background: rgba(38, 42, 49, 0.78); border: 1px solid var(--border); border-radius: 4px; backdrop-filter: blur(2px); max-width: calc(74% - 16px); opacity: 1; visibility: visible; transition: opacity 240ms ease, visibility 0s linear 0s; }
 .schema-controls-overlay .batch-btn { background: transparent; color: var(--ink-soft); border: 1px solid var(--border); border-radius: 4px; padding: 0.38em 0.85em; font-size: 0.82rem; font-weight: 500; cursor: pointer; font-family: var(--font-sans); transition: all 100ms; }
 .schema-controls-overlay .batch-btn:hover { background: var(--bg-hover); color: var(--accent); border-color: var(--accent); }
@@ -1765,6 +1774,7 @@ body.canvas-share-banner-active .presence-saved-banner { top: calc(56px + 44px);
 .bulk-toolbar .upload-btn { background: var(--accent); color: var(--accent-text); border: 1px solid var(--accent); border-radius: 4px; padding: 0.42em 1.1em; font-size: 0.86rem; font-weight: 500; cursor: pointer; font-family: var(--font-sans); transition: background 120ms ease-out; }
 .bulk-toolbar .upload-btn:hover { background: var(--accent-hot); border-color: var(--accent-hot); }
 .bulk-toolbar .upload-btn:disabled { background: var(--bg-hover); color: var(--muted); border-color: var(--border); cursor: not-allowed; }
+/* Upload preflight and scope selection */
 .upload-scope-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; margin: 0 0 0.9em; background: var(--bg-elev); }
 .upload-scope-btn { padding: 0.38em 0.95em; font-size: 0.82rem; font-family: var(--font-sans); color: var(--ink-soft); background: transparent; border: 0; cursor: pointer; transition: background 100ms ease-out, color 100ms ease-out; }
 .upload-scope-btn + .upload-scope-btn { border-left: 1px solid var(--border); }
@@ -1799,6 +1809,7 @@ button.confirm-danger:hover { background: color-mix(in srgb, var(--danger, #d358
 .upload-failure-block strong { font-family: var(--font-mono); font-weight: 500; font-size: 0.85rem; }
 .upload-failure-msg { font-size: 0.82rem; color: var(--ink-soft); margin-top: 0.25em; }
 .load-error { color: var(--danger); }
+/* CSV import and field mapping */
 .csv-step { margin: 0.9em 0; }
 .csv-mapping-table { max-height: 300px; overflow-y: auto; margin-top: 0.5em; border: 1px solid var(--border); border-radius: 4px; padding: 0.5em; background: var(--bg-inset); }
 .csv-map-row { display: grid; grid-template-columns: 1fr auto 2fr; gap: 0.5em; align-items: center; padding: 0.35em 0.25em; }
@@ -1943,6 +1954,7 @@ button.confirm-danger:hover { background: color-mix(in srgb, var(--danger, #d358
 .bulk-edges { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
 .bulk-edges line { pointer-events: stroke; cursor: pointer; }
 .bulk-nodes { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+/* Canvas record cards and relationship affordances */
 .record-card { position: absolute; min-width: 160px; max-width: 220px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 5px; padding: 0.65em 0.85em; box-shadow: var(--shadow-soft); cursor: grab; user-select: none; transform: translate(-50%, -50%); pointer-events: auto; color: var(--ink); transition: border-color 100ms, box-shadow 100ms; }
 .cy-card-shell { pointer-events: none; }
 .cy-card-shell > .record-card { position: static; transform: none; cursor: inherit; pointer-events: none; box-shadow: var(--shadow-soft); }
@@ -2108,6 +2120,7 @@ button.confirm-danger:hover { background: color-mix(in srgb, var(--danger, #d358
   .field-section--orphans .orphan-actions { grid-template-columns: minmax(0, 1fr) auto; }
   .field-section--orphans .orphan-target { grid-column: 1 / -1; }
 }
+/* Guided cross-org migration */
 .field-section--migrate { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 4px; padding: 0.6em 0.8em; margin-top: 0.8em; }
 .field-section--migrate .field-section-header { color: var(--warn); }
 .field-section--migrate .orphan-banner { margin: 0.3em 0 0.7em; font-size: 0.9rem; line-height: 1.4; }
@@ -2422,6 +2435,7 @@ body:has(.trial-banner:not([hidden])) .graph-overlay { top: calc(48px + 44px); }
 .canvas-export-csv-modal .cec-obj-chip code { font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink); }
 .canvas-export-csv-modal .cec-empty { font-style: italic; color: var(--muted); }
 
+/* Duplicate review and canvas search */
 .fdm-overlay .modal-body { max-width: 680px; }
 .fdm-overlay .fdm-intro { color: var(--muted); font-size: 0.85rem; line-height: 1.45; margin: 0 0 0.9em; }
 .fdm-overlay .fdm-body { display: flex; flex-direction: column; gap: 1.1em; max-height: 60vh; overflow-y: auto; }
@@ -2832,6 +2846,7 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 .rs-row .rs-add { padding: 0.32em 0.7em; font-size: 0.78rem; }
 .bulk-switch-reasons { margin: 0.5em 0 0 1.2em; padding: 0.55em 0.8em 0.55em 1.2em; background: color-mix(in srgb, var(--accent) 8%, var(--bg-card)); border-left: 3px solid var(--accent); border-radius: 3px; color: var(--ink-soft); font-size: 0.86rem; line-height: 1.5; list-style: disc; }
 .bulk-switch-reasons li { margin: 0.15em 0; }
+/* Upload history and recall */
 .upload-history-modal .uh-list { display: flex; flex-direction: column; gap: 0.4em; }
 .upload-history-modal .uh-row { display: flex; align-items: flex-start; gap: 0.7em; padding: 0.55em 0.7em; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-inset); }
 .upload-history-modal .uh-row-main { flex: 1; min-width: 0; }
@@ -2892,6 +2907,7 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 .upload-history-modal .uh-drifted-list code { font-size: 0.78rem; }
 .upload-history-modal .uh-drifted-toggle { display: flex; align-items: center; gap: 0.5em; margin-top: 0.5em; font-size: 0.86rem; cursor: pointer; }
 
+/* Salesforce record browser */
 .record-browse-modal .rb-content { display: flex; flex-direction: column; gap: 0.8em; }
 .record-browse-modal .rb-toolbar {
 	display: flex;
@@ -3229,6 +3245,7 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 }
 .record-browse-modal .rb-load-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Record comparison and field copy */
 .record-diff-modal .rdm-content { display: flex; flex-direction: column; gap: 0.7em; }
 .record-diff-modal .rdm-banner {
 	padding: 0.55em 0.75em;
@@ -3846,6 +3863,7 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 	color: var(--ink);
 }
 
+/* Super-admin operations */
 .admin-main { max-width: 1100px; margin: 1.5em auto; padding: 0 1.4em 4em; color: var(--ink); }
 .admin-head { margin-bottom: 1.2em; }
 .admin-title { margin: 0; font-size: 1.4rem; color: var(--ink); }
@@ -4004,6 +4022,7 @@ tbody tr[data-row-open]:nth-child(10) { animation-delay: 180ms; }
 .team-panel-head h2 { margin: 0; font-size: 1rem; color: var(--ink); }
 .team-panel-head .tag { display: block; margin-top: 0.3em; color: var(--muted); font-size: 0.82rem; }
 
+/* Workspace billing and seats */
 .billing-workspace-rollup {
 	margin-top: 1em;
 	padding-top: 1em;
@@ -5577,6 +5596,7 @@ body.canvas-share-banner-active .canvas-status-strip {
 	white-space: pre;
 }
 
+/* Documentation pages */
 .docs-main { padding: 1.5em 2em; }
 .docs-article { max-width: 760px; margin: 0 auto; line-height: 1.6; }
 .docs-article--form { max-width: 520px; }

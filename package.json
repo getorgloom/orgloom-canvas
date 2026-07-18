@@ -20,6 +20,8 @@
   "scripts": {
     "start": "node src/standalone.js",
     "dev": "node --watch src/standalone.js",
+    "format": "prettier --write \"src/**/*.js\" \"tests/**/*.js\"",
+    "format:check": "prettier --check \"src/**/*.js\" \"tests/**/*.js\"",
     "test": "node --test tests/*.test.js",
     "test:integration": "node --test tests/integration/*.test.js"
   },
@@ -45,5 +47,8 @@
   "optionalDependencies": {
     "connect-pg-simple": "^10.0.0",
     "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2"
   }
 }

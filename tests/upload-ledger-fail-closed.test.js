@@ -23,14 +23,27 @@ before(async () => {
 	const workspaceId = 'ws_' + crypto.randomUUID();
 	if (await hasTestTable('workspace_members')) {
 		const now = Date.now();
-		await ext.getDb().insertInto('workspaces').values({
-			id: workspaceId, name: 'Ledger Test', owner_account_id: testAccount.id,
-			created_at: now, updated_at: now,
-		}).execute();
-		await ext.getDb().insertInto('workspace_members').values({
-			workspace_id: workspaceId, account_id: testAccount.id,
-			role: 'admin', joined_at: now,
-		}).execute();
+		await ext
+			.getDb()
+			.insertInto('workspaces')
+			.values({
+				id: workspaceId,
+				name: 'Ledger Test',
+				owner_account_id: testAccount.id,
+				created_at: now,
+				updated_at: now,
+			})
+			.execute();
+		await ext
+			.getDb()
+			.insertInto('workspace_members')
+			.values({
+				workspace_id: workspaceId,
+				account_id: testAccount.id,
+				role: 'admin',
+				joined_at: now,
+			})
+			.execute();
 		await viewState.setCurrentWorkspace(testAccount.id, workspaceId);
 	} else {
 		await viewState.set(testAccount.id, { currentWorkspaceId: workspaceId });

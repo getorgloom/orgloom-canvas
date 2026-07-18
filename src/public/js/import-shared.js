@@ -1,19 +1,36 @@
-
 (function () {
 	'use strict';
+	// Shared import caps, association admission, summaries, and stale-safe undo capture.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	function gateImportFile(file, opts) {
 		const extRe = opts.extRe;
 		if (!extRe.test(String(file.name || ''))) {
-			return '"' + file.name + '" isn\'t a ' + opts.extLabel + ' file: ' +
-				opts.flowLabel + ' only accepts ' + opts.extLabel + ' files.';
+			return (
+				'"' +
+				file.name +
+				'" isn\'t a ' +
+				opts.extLabel +
+				' file: ' +
+				opts.flowLabel +
+				' only accepts ' +
+				opts.extLabel +
+				' files.'
+			);
 		}
 		if (file.size > opts.maxBytes) {
-			return '"' + file.name + '" is ' + (file.size / (1024 * 1024)).toFixed(1) +
-				' MB, over the ' + Math.round(opts.maxBytes / (1024 * 1024)) +
-				' MB limit for ' + opts.flowLabel + '. Was this the right file?';
+			return (
+				'"' +
+				file.name +
+				'" is ' +
+				(file.size / (1024 * 1024)).toFixed(1) +
+				' MB, over the ' +
+				Math.round(opts.maxBytes / (1024 * 1024)) +
+				' MB limit for ' +
+				opts.flowLabel +
+				'. Was this the right file?'
+			);
 		}
 		return null;
 	}
@@ -53,9 +70,7 @@
 		if (skippedAssoc > 0) {
 			dropped.push(skippedAssoc + ' association' + (skippedAssoc === 1 ? '' : 's'));
 		}
-		return dropped.length
-			? ' Skipped ' + dropped.join(' and ') + " that couldn't be read or resolved."
-			: '';
+		return dropped.length ? ' Skipped ' + dropped.join(' and ') + " that couldn't be read or resolved." : '';
 	}
 
 	function summarizeCanvasContent(canvasState) {
@@ -133,9 +148,12 @@
 				}
 			}
 			function restore() {
-				if (armed && (canvasState.bulkRecords !== armed.records ||
-					canvasState.bulkAssociations !== armed.associations ||
-					fingerprint() !== armed.fingerprint)) {
+				if (
+					armed &&
+					(canvasState.bulkRecords !== armed.records ||
+						canvasState.bulkAssociations !== armed.associations ||
+						fingerprint() !== armed.fingerprint)
+				) {
 					showBulkToast('Can’t undo the import because the canvas was edited afterward.', 'info');
 					return;
 				}

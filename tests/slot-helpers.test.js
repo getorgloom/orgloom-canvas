@@ -1,7 +1,14 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { stripDraftsForNonOwner, stripDraftValuesForSave, applySlotFieldFilter, slotKind, slotProgress, aggregateSlotProgress, slotProgressClass } from '../src/slot-helpers.js';
+import {
+	stripDraftsForNonOwner,
+	stripDraftValuesForSave,
+	applySlotFieldFilter,
+	slotKind,
+	slotProgress,
+	aggregateSlotProgress,
+	slotProgressClass,
+} from '../src/slot-helpers.js';
 
 describe('slotKind', () => {
 	test('returns null for missing slot', () => {
@@ -23,7 +30,14 @@ describe('stripDraftsForNonOwner', () => {
 	test('preserves draft values + structure + slot', () => {
 		const out = stripDraftsForNonOwner({
 			drafts: [
-				{ tempId: 't1', objectName: 'Account', x: 10, y: 20, values: { Name: 'Acme' }, slot: { slotId: 1, label: 'Customer' } },
+				{
+					tempId: 't1',
+					objectName: 'Account',
+					x: 10,
+					y: 20,
+					values: { Name: 'Acme' },
+					slot: { slotId: 1, label: 'Customer' },
+				},
 			],
 			loadedRecords: [],
 		});
@@ -48,7 +62,13 @@ describe('stripDraftsForNonOwner', () => {
 		const out = stripDraftsForNonOwner({
 			drafts: [],
 			loadedRecords: [
-				{ objectName: 'Account', x: 0, y: 0, loadedFromId: '001ABC', slot: { slotId: 5, kind: 'whole-record', label: 'Slot' } },
+				{
+					objectName: 'Account',
+					x: 0,
+					y: 0,
+					loadedFromId: '001ABC',
+					slot: { slotId: 5, kind: 'whole-record', label: 'Slot' },
+				},
 			],
 		});
 		assert.equal(out.loadedRecords[0].loadedFromId, undefined);
@@ -71,7 +91,8 @@ describe('stripDraftsForNonOwner', () => {
 			loadedRecords: [
 				{
 					objectName: 'Opportunity',
-					x: 100, y: 200,
+					x: 100,
+					y: 200,
 					loadedFromId: '006FIELDS',
 					slot: { slotId: 7, kind: 'fields', fields: ['StageName', 'CloseDate'], label: 'Update' },
 				},
@@ -86,9 +107,7 @@ describe('stripDraftsForNonOwner', () => {
 	test('non-slot loaded records pass through unchanged', () => {
 		const out = stripDraftsForNonOwner({
 			drafts: [],
-			loadedRecords: [
-				{ objectName: 'Account', x: 0, y: 0, loadedFromId: '001PLAIN' },
-			],
+			loadedRecords: [{ objectName: 'Account', x: 0, y: 0, loadedFromId: '001PLAIN' }],
 		});
 		assert.equal(out.loadedRecords[0].loadedFromId, '001PLAIN');
 	});
@@ -103,7 +122,14 @@ describe('stripDraftValuesForSave', () => {
 	test('preserves drafts with values (identity pass-through)', () => {
 		const input = {
 			drafts: [
-				{ tempId: 't1', objectName: 'Account', x: 10, y: 20, values: { Name: 'Acme', Phone: '555' }, slot: { slotId: 7, label: 'Lead' } },
+				{
+					tempId: 't1',
+					objectName: 'Account',
+					x: 10,
+					y: 20,
+					values: { Name: 'Acme', Phone: '555' },
+					slot: { slotId: 7, label: 'Lead' },
+				},
 				{ tempId: 't2', objectName: 'Contact', x: 30, y: 40, values: { Email: 'a@b.c' } },
 			],
 		};
@@ -115,9 +141,7 @@ describe('stripDraftValuesForSave', () => {
 
 	test('does not touch loadedRecords', () => {
 		const input = {
-			loadedRecords: [
-				{ tempId: 'r1', objectName: 'Account', loadedFromId: '001abc', values: { Name: 'Acme' } },
-			],
+			loadedRecords: [{ tempId: 'r1', objectName: 'Account', loadedFromId: '001abc', values: { Name: 'Acme' } }],
 			drafts: [],
 		};
 		const out = stripDraftValuesForSave(input);

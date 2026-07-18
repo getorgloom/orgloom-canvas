@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -13,10 +12,12 @@ import {
 test('AF-040: describe-global preserves create permission for object gating', async () => {
 	const conn = {
 		async describeGlobal() {
-			return { sobjects: [
-				{ name: 'Allowed__c', label: 'Allowed', labelPlural: 'Allowed', queryable: true, createable: true },
-				{ name: 'Denied__c', label: 'Denied', labelPlural: 'Denied', queryable: true, createable: false },
-			] };
+			return {
+				sobjects: [
+					{ name: 'Allowed__c', label: 'Allowed', labelPlural: 'Allowed', queryable: true, createable: true },
+					{ name: 'Denied__c', label: 'Denied', labelPlural: 'Denied', queryable: true, createable: false },
+				],
+			};
 		},
 	};
 	const objects = await listObjects(conn, 'af-040');
@@ -28,8 +29,8 @@ function fakeConn(objectNames) {
 	let calls = 0;
 	return {
 		get describeGlobalCalls() {
- return calls; 
-},
+			return calls;
+		},
 		async describeGlobal() {
 			calls++;
 			return { sobjects: objectNames.map((name) => ({ name, queryable: true })) };
@@ -45,7 +46,7 @@ describe('decodeValidForBitmap', () => {
 	});
 
 	test('two high bits → indices 0 and 1', () => {
-		assert.deepEqual(decodeValidForBitmap(b64(0xC0)), [0, 1]);
+		assert.deepEqual(decodeValidForBitmap(b64(0xc0)), [0, 1]);
 	});
 
 	test('LSB of first byte is index 7', () => {
@@ -58,7 +59,7 @@ describe('decodeValidForBitmap', () => {
 	});
 
 	test('mixed multi-byte bitmap decodes every set bit in order', () => {
-		assert.deepEqual(decodeValidForBitmap(b64(0xA0, 0x05)), [0, 2, 13, 15]);
+		assert.deepEqual(decodeValidForBitmap(b64(0xa0, 0x05)), [0, 2, 13, 15]);
 	});
 
 	test('all-zero bitmap → no valid controller values', () => {
@@ -130,7 +131,14 @@ describe('isNoiseSObject', () => {
 	});
 
 	test('system prefixes and exact names are filtered', () => {
-		for (const n of ['ApexClass', 'AuthProvider', 'ContentDocument', 'PermissionSet', 'RecentlyViewed', 'AsyncApexJob']) {
+		for (const n of [
+			'ApexClass',
+			'AuthProvider',
+			'ContentDocument',
+			'PermissionSet',
+			'RecentlyViewed',
+			'AsyncApexJob',
+		]) {
 			assert.equal(isNoiseSObject(n), true, n + ' should be noise');
 		}
 	});

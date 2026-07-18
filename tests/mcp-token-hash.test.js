@@ -1,4 +1,3 @@
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -23,7 +22,8 @@ describe('mcpTokens.issue', () => {
 		const issued = await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'cli' });
 		assert.ok(issued.plaintext.startsWith('ol_mcp_'));
 		assert.equal(issued.plaintext.length, 'ol_mcp_'.length + 64, '64 hex chars after prefix');
-		const row = await ext.getDb()
+		const row = await ext
+			.getDb()
 			.selectFrom('mcp_tokens')
 			.select(['token_hash', 'workspace_id'])
 			.where('id', '=', issued.id)
@@ -58,10 +58,16 @@ describe('mcpTokens.issue', () => {
 		const a = await makeAccount();
 		const issued = [];
 		for (let i = 0; i < 10; i++) {
-issued.push(await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: `client-${i}` }));
-}
-		await assert.rejects(() => mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'eleven' }), /mcp-token-cap-reached/);
-		assert.ok(await mcpTokens.issue({ accountId: a.id, workspaceId: WS_B, name: 'other workspace' }), 'cap is per workspace');
+			issued.push(await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: `client-${i}` }));
+		}
+		await assert.rejects(
+			() => mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'eleven' }),
+			/mcp-token-cap-reached/,
+		);
+		assert.ok(
+			await mcpTokens.issue({ accountId: a.id, workspaceId: WS_B, name: 'other workspace' }),
+			'cap is per workspace',
+		);
 		await mcpTokens.revoke(issued[0].id, a.id, WS_A);
 		assert.ok(await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'replacement' }));
 	});
@@ -118,7 +124,7 @@ describe('mcpTokens.authenticate', () => {
 });
 
 describe('mcpTokens.revoke', () => {
-	test('account-scoped revoke rejects another user\'s token', async () => {
+	test("account-scoped revoke rejects another user's token", async () => {
 		const { mcpTokens } = await import('../src/database/index.js');
 		const alice = await makeAccount('alice@x.com');
 		const bob = await makeAccount('bob@x.com');
@@ -208,7 +214,10 @@ describe('mcpTokens.listForWorkspace', () => {
 		await mcpTokens.issue({ accountId: bob.id, workspaceId: WS_B, name: 'other workspace' });
 
 		const memberList = await mcpTokens.listForWorkspace(alice.id, WS_A);
-		assert.deepEqual(memberList.map((token) => token.name), ['alice client']);
+		assert.deepEqual(
+			memberList.map((token) => token.name),
+			['alice client'],
+		);
 		const adminList = await mcpTokens.listForWorkspace(alice.id, WS_A, { includeAllOwners: true });
 		assert.deepEqual(adminList.map((token) => token.name).sort(), ['alice client', 'bob client']);
 		assert.deepEqual(new Set(adminList.map((token) => token.accountId)), new Set([alice.id, bob.id]));

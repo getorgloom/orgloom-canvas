@@ -13,13 +13,4 @@ import * as audit from './audit.js';
 import * as aiProposals from '../mcp/proposals-store.js';
 import * as aiClarifications from '../mcp/clarifications-store.js';
 import * as canvasRoleGrants from './canvas-role-grants.js';
-export {
-	accounts,
-	viewState,
-	mcpTokens,
-	connections,
-	audit,
-	aiProposals,
-	aiClarifications,
-	canvasRoleGrants,
-};
+export { accounts, viewState, mcpTokens, connections, audit, aiProposals, aiClarifications, canvasRoleGrants };

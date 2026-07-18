@@ -1,4 +1,3 @@
-
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -20,36 +19,36 @@ function mockSseRes() {
 	return {
 		writes,
 		write(chunk) {
- writes.push(chunk); return true; 
-},
+			writes.push(chunk);
+			return true;
+		},
 		on(event, handler) {
 			if (event === 'close') {
-closeHandlers.push(handler);
-}
+				closeHandlers.push(handler);
+			}
 			if (event === 'error') {
-errorHandlers.push(handler);
-}
+				errorHandlers.push(handler);
+			}
 		},
 		fireClose() {
- closeHandlers.forEach((h) => h()); 
-},
+			closeHandlers.forEach((h) => h());
+		},
 		fireError() {
- errorHandlers.forEach((h) => h(new Error('socket failed'))); 
-},
+			errorHandlers.forEach((h) => h(new Error('socket failed')));
+		},
 		lastDataEvent() {
 			for (let i = writes.length - 1; i >= 0; i--) {
 				const m = writes[i].match(/^data: (.+)\n\n$/);
 				if (m) {
-return JSON.parse(m[1]);
-}
+					return JSON.parse(m[1]);
+				}
 			}
 			return null;
 		},
 	};
 }
 
-beforeEach(() => {
-});
+beforeEach(() => {});
 
 describe('register / unregister symmetry', () => {
 	test('SSE error eagerly removes a half-open registration', () => {
@@ -241,18 +240,21 @@ describe('workspaceLiveSummary', () => {
 		const sse = mockSseRes();
 		const id = registerConnection({ accountId: 'a1', workspaceId: 'wsSum', sseRes: sse });
 		registerCanvas({
-			connectionId: id, canvasId: 'c1',
+			connectionId: id,
+			canvasId: 'c1',
 			meta: { title: 'C1', ownerSfUserId: '005abc', secret: 'should-not-leak' },
 		});
 		const summary = workspaceLiveSummary('wsSum');
 		assert.equal(summary.canvasCount, 1);
 		assert.equal(summary.browserCount, 1);
-		assert.deepEqual(summary.canvases, [{
-			canvasId: 'c1',
-			title: 'C1',
-			ownerSfUserId: '005abc',
-			liveBrowsers: 1,
-		}]);
+		assert.deepEqual(summary.canvases, [
+			{
+				canvasId: 'c1',
+				title: 'C1',
+				ownerSfUserId: '005abc',
+				liveBrowsers: 1,
+			},
+		]);
 		const keys = Object.keys(summary.canvases[0]).sort();
 		assert.deepEqual(keys, ['canvasId', 'liveBrowsers', 'ownerSfUserId', 'title']);
 		sse.fireClose();
@@ -286,11 +288,13 @@ describe('account binding (defense-in-depth)', () => {
 		const { requestId } = sse.lastDataEvent();
 		assert.equal(
 			recordResponse({ connectionId: id, requestId, result: { spoofed: true }, accountId: 'attacker' }),
-			false, 'spoofed response rejected',
+			false,
+			'spoofed response rejected',
 		);
 		assert.equal(
 			recordResponse({ connectionId: id, requestId, result: { real: true }, accountId: 'owner' }),
-			true, 'owner response accepted',
+			true,
+			'owner response accepted',
 		);
 		assert.deepEqual(await p, { real: true });
 		sse.fireClose();

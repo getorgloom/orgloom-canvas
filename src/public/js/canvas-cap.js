@@ -1,18 +1,15 @@
-
 (function () {
 	'use strict';
+	// Applies the shared record cap consistently across import, AI, browse, and manual add flows.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	window.OrgLoom.canvasCap = {
 		mount: function mount(deps) {
-			const required = [
-				'canvasState', 'isRecordModified',
-				'getShareCountByCanvasId', 'renderBulkToolbar',
-			];
+			const required = ['canvasState', 'isRecordModified', 'getShareCountByCanvasId', 'renderBulkToolbar'];
 			if (!deps) {
-throw new Error('canvas-cap.mount: missing deps object');
-}
+				throw new Error('canvas-cap.mount: missing deps object');
+			}
 			for (const k of required) {
 				if (deps[k] === undefined || deps[k] === null) {
 					throw new Error('canvas-cap.mount: missing dep ' + k);
@@ -27,34 +24,57 @@ throw new Error('canvas-cap.mount: missing deps object');
 			let _caps = {};
 
 			function setCaps(caps) {
- _caps = caps || {}; 
-}
+				_caps = caps || {};
+			}
 			function _hasCap(name) {
- return !!(_caps && _caps[name]); 
-}
+				return !!(_caps && _caps[name]);
+			}
 			function _canAuthorSlots() {
- return _hasCap('create-slot-canvas'); 
-}
+				return _hasCap('create-slot-canvas');
+			}
 			function _canRunScripts() {
- return _hasCap('run-script'); 
-}
+				return _hasCap('run-script');
+			}
 
 			function _realRecordCount() {
-				return canvasState.bulkRecords.filter(r => !r.isTypeNode).length;
+				return canvasState.bulkRecords.filter((r) => !r.isTypeNode).length;
 			}
 			function canvasCapCheck(addCount) {
 				const current = _realRecordCount();
 				const n = Math.max(0, addCount || 0);
 				const headroom = Math.max(0, _CANVAS_RECORD_CAP - current);
 				if (current + n > _CANVAS_RECORD_CAP) {
-					const reason = n <= 1
-						? 'Canvas is full (' + _CANVAS_RECORD_CAP + ' records). Remove some records, or use Direct CSV upload for larger sets.'
-						: 'Loading ' + n + ' records would exceed the ' + _CANVAS_RECORD_CAP
-							+ '-record canvas limit (' + headroom + ' slot' + (headroom === 1 ? '' : 's')
-							+ ' left). Narrow your selection or filter, or use Direct CSV upload for larger sets.';
-					return { ok: false, blocked: true, attempted: n, headroom: headroom, cap: _CANVAS_RECORD_CAP, reason: reason };
+					const reason =
+						n <= 1
+							? 'Canvas is full (' +
+								_CANVAS_RECORD_CAP +
+								' records). Remove some records, or use Direct CSV upload for larger sets.'
+							: 'Loading ' +
+								n +
+								' records would exceed the ' +
+								_CANVAS_RECORD_CAP +
+								'-record canvas limit (' +
+								headroom +
+								' slot' +
+								(headroom === 1 ? '' : 's') +
+								' left). Narrow your selection or filter, or use Direct CSV upload for larger sets.';
+					return {
+						ok: false,
+						blocked: true,
+						attempted: n,
+						headroom: headroom,
+						cap: _CANVAS_RECORD_CAP,
+						reason: reason,
+					};
 				}
-				return { ok: true, blocked: false, attempted: n, headroom: headroom, cap: _CANVAS_RECORD_CAP, reason: null };
+				return {
+					ok: true,
+					blocked: false,
+					attempted: n,
+					headroom: headroom,
+					cap: _CANVAS_RECORD_CAP,
+					reason: null,
+				};
 			}
 			function _canvasCapBlockReason(addCount) {
 				return canvasCapCheck(addCount).reason;
@@ -63,15 +83,19 @@ throw new Error('canvas-cap.mount: missing deps object');
 				return canvasState.bulkRecords.filter((r) => !r.isTypeNode && isRecordModified(r)).length;
 			}
 			function getCanvasRecordCap() {
- return _CANVAS_RECORD_CAP; 
-}
+				return _CANVAS_RECORD_CAP;
+			}
 
 			function _invalidateShareCountForCanvas(canvasId) {
 				if (!canvasId) {
-return;
-}
+					return;
+				}
 				getShareCountByCanvasId().delete(canvasId);
-				if (typeof canvasState.graphView !== 'undefined' && canvasState.graphView === 'bulk' && typeof renderBulkToolbar === 'function') {
+				if (
+					typeof canvasState.graphView !== 'undefined' &&
+					canvasState.graphView === 'bulk' &&
+					typeof renderBulkToolbar === 'function'
+				) {
 					renderBulkToolbar();
 				}
 			}

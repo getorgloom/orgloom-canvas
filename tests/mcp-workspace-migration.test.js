@@ -19,13 +19,16 @@ test('workspace-binding migration invalidates credentials whose scope cannot be 
 			.addColumn('expires_at', 'integer')
 			.addColumn('revoked_at', 'integer')
 			.execute();
-		await db.insertInto('mcp_tokens').values({
-			id: 'legacy',
-			account_id: 'acct',
-			token_hash: 'a'.repeat(64),
-			name: 'ambiguous client',
-			created_at: Date.now(),
-		}).execute();
+		await db
+			.insertInto('mcp_tokens')
+			.values({
+				id: 'legacy',
+				account_id: 'acct',
+				token_hash: 'a'.repeat(64),
+				name: 'ambiguous client',
+				created_at: Date.now(),
+			})
+			.execute();
 
 		await up(db);
 

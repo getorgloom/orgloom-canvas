@@ -1,4 +1,4 @@
-
+// Salesforce upload mechanics. Routes own policy, authorization, audit, and usage accounting.
 import { isWritableForOperation } from './sf-field-structure.js';
 
 export const FAKE_REF_ID = '001000000000001';
@@ -20,6 +20,7 @@ export function rejectIfOverPayloadCap(req, res) {
 }
 
 export async function withSfRetry(fn, { maxAttempts = 4, baseDelay = 500 } = {}) {
+	// Retry only Salesforce rate limits; validation and permission failures are deterministic.
 	let lastErr;
 	for (let i = 0; i < maxAttempts; i++) {
 		try {
@@ -29,8 +30,8 @@ export async function withSfRetry(fn, { maxAttempts = 4, baseDelay = 500 } = {})
 			const msg = String((err && (err.errorCode || err.message)) || '');
 			const isRateLimited = /TotalRequests Limit/i.test(msg) || /REQUEST_LIMIT_EXCEEDED/i.test(msg);
 			if (!isRateLimited || i === maxAttempts - 1) {
-throw err;
-}
+				throw err;
+			}
 			const delay = baseDelay * Math.pow(2, i);
 			console.warn('[sf retry] limit hit, waiting', delay, 'ms before retry', i + 1);
 			await new Promise((r) => setTimeout(r, delay));
@@ -43,11 +44,10 @@ export function makeDescribeCache(conn) {
 	const cache = new Map();
 	return async function getDescribe(objectName) {
 		if (!cache.has(objectName)) {
-			const pending = withSfRetry(() => conn.sobject(objectName).describe())
-				.catch((err) => {
-					cache.delete(objectName);
-					throw err;
-				});
+			const pending = withSfRetry(() => conn.sobject(objectName).describe()).catch((err) => {
+				cache.delete(objectName);
+				throw err;
+			});
 			cache.set(objectName, pending);
 		}
 		return await cache.get(objectName);
@@ -55,37 +55,38 @@ export function makeDescribeCache(conn) {
 }
 
 export function stripUnwritableFields(values, describe, isUpdate) {
+	// Compound fields are read projections; uploads use their writable component fields.
 	if (!values || !describe || !Array.isArray(describe.fields)) {
-return Object.assign({}, values || {});
-}
+		return Object.assign({}, values || {});
+	}
 	const writable = new Set();
 	describe.fields.forEach((f) => {
 		if (!f || !f.name) {
-return;
-}
-		const operation = isUpdate === 'upsert' ? 'upsert' : (isUpdate ? 'update' : 'create');
+			return;
+		}
+		const operation = isUpdate === 'upsert' ? 'upsert' : isUpdate ? 'update' : 'create';
 		const writableForOperation = isWritableForOperation(f, operation);
 		if (writableForOperation) {
-writable.add(f.name);
-}
+			writable.add(f.name);
+		}
 	});
 	const out = {};
 	Object.keys(values).forEach((k) => {
 		if (k === 'Id' || writable.has(k)) {
-out[k] = values[k];
-}
+			out[k] = values[k];
+		}
 	});
 	return out;
 }
 
 export function formatUploadError(err) {
 	if (!err) {
-return 'Unknown error';
-}
+		return 'Unknown error';
+	}
 	const fmtOne = (e) => {
 		if (!e) {
-return '';
-}
+			return '';
+		}
 		const code = e.statusCode || e.errorCode;
 		const msg = e.message || (typeof e === 'string' ? e : JSON.stringify(e));
 		const fields = Array.isArray(e.fields) && e.fields.length > 0 ? ' [' + e.fields.join(', ') + ']' : '';
@@ -125,24 +126,25 @@ export function extractUploadErrorCode(err) {
 }
 
 export function topoSortRecords(records, associations) {
+	// Parent drafts must be inserted before children whose lookups need the parents' new IDs.
 	const recordsById = new Map();
 	records.forEach((r) => {
- if (r && r.tempId != null) {
-recordsById.set(r.tempId, r);
-} 
-});
+		if (r && r.tempId != null) {
+			recordsById.set(r.tempId, r);
+		}
+	});
 	const deps = new Map();
 	recordsById.forEach((_, id) => deps.set(id, new Set()));
 	(associations || []).forEach((a) => {
 		if (!a) {
-return;
-}
+			return;
+		}
 		if (!deps.has(a.fromId)) {
-return;
-}
+			return;
+		}
 		if (!recordsById.has(a.toId)) {
-return;
-}
+			return;
+		}
 		deps.get(a.fromId).add(a.toId);
 	});
 	const order = [];
@@ -152,13 +154,13 @@ return;
 	const cycleIds = new Set();
 	function visit(id) {
 		if (visited.has(id)) {
-return;
-}
+			return;
+		}
 		if (stackSet.has(id)) {
 			const entry = stackArr.indexOf(id);
 			for (let i = entry; i < stackArr.length; i++) {
-cycleIds.add(stackArr[i]);
-}
+				cycleIds.add(stackArr[i]);
+			}
 			return;
 		}
 		stackSet.add(id);
@@ -174,24 +176,32 @@ cycleIds.add(stackArr[i]);
 }
 
 export const SYSTEM_RO_FIELDS = new Set([
-	'Id', 'IsDeleted', 'CreatedDate', 'CreatedById',
-	'LastModifiedDate', 'LastModifiedById', 'SystemModstamp',
-	'LastActivityDate', 'LastViewedDate', 'LastReferencedDate',
+	'Id',
+	'IsDeleted',
+	'CreatedDate',
+	'CreatedById',
+	'LastModifiedDate',
+	'LastModifiedById',
+	'SystemModstamp',
+	'LastActivityDate',
+	'LastViewedDate',
+	'LastReferencedDate',
 ]);
 
 export const GRAPH_PER_GRAPH_CAP = 75;
 export const GRAPH_TOTAL_NODES_CAP = 500;
 
 export function groupConnectedComponents(submittedIds, submittedOrder, associations) {
+	// Each component is atomic independently, limiting rollback to related records.
 	const adj = new Map();
 	submittedIds.forEach((id) => adj.set(id, new Set()));
 	(associations || []).forEach((a) => {
 		if (!a) {
-return;
-}
+			return;
+		}
 		if (!submittedIds.has(a.fromId) || !submittedIds.has(a.toId)) {
-return;
-}
+			return;
+		}
 		adj.get(a.fromId).add(a.toId);
 		adj.get(a.toId).add(a.fromId);
 	});
@@ -199,28 +209,28 @@ return;
 	let componentCount = 0;
 	for (const seed of submittedIds) {
 		if (componentByTempId.has(seed)) {
-continue;
-}
+			continue;
+		}
 		const idx = componentCount++;
 		const queue = [seed];
 		while (queue.length) {
 			const cur = queue.shift();
 			if (componentByTempId.has(cur)) {
-continue;
-}
+				continue;
+			}
 			componentByTempId.set(cur, idx);
-			for (const neighbor of (adj.get(cur) || [])) {
+			for (const neighbor of adj.get(cur) || []) {
 				if (!componentByTempId.has(neighbor)) {
-queue.push(neighbor);
-}
+					queue.push(neighbor);
+				}
 			}
 		}
 	}
 	const components = Array.from({ length: componentCount }, () => []);
 	for (const tempId of submittedOrder) {
 		if (!submittedIds.has(tempId)) {
-continue;
-}
+			continue;
+		}
 		components[componentByTempId.get(tempId)].push(tempId);
 	}
 	return components;
@@ -242,18 +252,18 @@ export function buildGraphSubRequest({
 	let values = Object.assign({}, rec.values || {});
 	const describe = describesByObject.get(rec.objectName);
 	if (describe) {
-values = stripUnwritableFields(values, describe, !!rec.loadedFromId);
-}
+		values = stripUnwritableFields(values, describe, !!rec.loadedFromId);
+	}
 	Object.keys(values).forEach((k) => {
- if (SYSTEM_RO_FIELDS.has(k)) {
-delete values[k];
-} 
-});
+		if (SYSTEM_RO_FIELDS.has(k)) {
+			delete values[k];
+		}
+	});
 	Object.keys(values).forEach((k) => {
- if (values[k] === FAKE_REF_ID) {
-delete values[k];
-} 
-});
+		if (values[k] === FAKE_REF_ID) {
+			delete values[k];
+		}
+	});
 	Object.keys(values).forEach((k) => {
 		if (typeof values[k] === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(values[k])) {
 			values[k] = values[k] + ':00.000Z';
@@ -261,24 +271,24 @@ delete values[k];
 	});
 	Object.keys(values).forEach((k) => {
 		if (!k.endsWith('Code')) {
-return;
-}
+			return;
+		}
 		if (values[k] == null || values[k] === '') {
-return;
-}
+			return;
+		}
 		const textField = k.slice(0, -'Code'.length);
 		if (Object.prototype.hasOwnProperty.call(values, textField)) {
-delete values[textField];
-}
+			delete values[textField];
+		}
 	});
 	(associations || []).forEach((a) => {
 		if (a.fromId !== tempId) {
-return;
-}
+			return;
+		}
 		const parent = recordsById.get(a.toId);
 		if (!parent) {
-return;
-}
+			return;
+		}
 		if (parent.loadedFromId) {
 			values[a.fieldName] = parent.loadedFromId;
 		} else if (submittedIds.has(a.toId)) {
@@ -305,8 +315,8 @@ export function normalizeValuesForUpload(rec, tempId, associations, realIdByTemp
 	const values = Object.assign({}, rec.values || {});
 	Object.keys(values).forEach((k) => {
 		if (values[k] === FAKE_REF_ID) {
-delete values[k];
-}
+			delete values[k];
+		}
 	});
 	Object.keys(values).forEach((k) => {
 		if (typeof values[k] === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(values[k])) {
@@ -315,11 +325,11 @@ delete values[k];
 	});
 	Object.keys(values).forEach((k) => {
 		if (!k.endsWith('Code')) {
-return;
-}
+			return;
+		}
 		if (values[k] == null || values[k] === '') {
-return;
-}
+			return;
+		}
 		const textField = k.slice(0, -'Code'.length);
 		if (Object.prototype.hasOwnProperty.call(values, textField)) {
 			delete values[textField];
@@ -328,11 +338,11 @@ return;
 	const _fkSetByAssoc = new Set();
 	(associations || []).forEach((a) => {
 		if (a.fromId !== tempId) {
-return;
-}
+			return;
+		}
 		if (_fkSetByAssoc.has(a.fieldName)) {
-return;
-}
+			return;
+		}
 		const parentId = realIdByTempId.get(a.toId);
 		if (parentId) {
 			values[a.fieldName] = parentId;

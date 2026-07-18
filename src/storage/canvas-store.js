@@ -1,4 +1,4 @@
-
+// Encrypted canvas persistence in Salesforce Files, with package metadata as the searchable index.
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { getActiveSfConnection } from '../sf-connection.js';
@@ -16,13 +16,17 @@ import * as canvasKeys from '../database/canvas-keys.js';
 const CANVAS_PATH_EXT = '.orgloom-canvas.json';
 
 const _updateLocks = new Map(); // "org|canvas" -> tail promise
+// Salesforce has no ContentVersion compare-and-swap; serialize local version checks and writes.
 async function _acquireUpdateLock(key) {
 	const prev = _updateLocks.get(key) || Promise.resolve();
 	let release;
 	const gate = new Promise((res) => {
 		release = res;
 	});
-	_updateLocks.set(key, prev.then(() => gate));
+	_updateLocks.set(
+		key,
+		prev.then(() => gate),
+	);
 	await prev.catch(() => {});
 	return release;
 }
@@ -39,12 +43,11 @@ function _countCanvasRecords(p) {
 	if (Array.isArray(p.drafts) || Array.isArray(p.loadedRecords)) {
 		return (p.drafts || []).length + (p.loadedRecords || []).length;
 	}
-	return Array.isArray(p.bulkRecords)
-		? p.bulkRecords.filter((r) => r && !r.isTypeNode).length
-		: 0;
+	return Array.isArray(p.bulkRecords) ? p.bulkRecords.filter((r) => r && !r.isTypeNode).length : 0;
 }
 
 async function _writeHybridCanvasRecord(conn, args) {
+	// The custom object stores metadata only; encrypted canvas content remains in ContentVersion.
 	const obj = _hybridApi('Orgloom_Canvas__c');
 	const field = (n) => _hybridApi(n);
 	const recordPayload = {
@@ -82,19 +85,28 @@ async function _writeHybridCanvasRecord(conn, args) {
 }
 
 function _sanitizeFileName(name) {
-	const safe = String(name || 'canvas').replace(/[^a-zA-Z0-9_\-. ]+/g, '_').slice(0, 80);
+	const safe = String(name || 'canvas')
+		.replace(/[^a-zA-Z0-9_\-. ]+/g, '_')
+		.slice(0, 80);
 	return (safe || 'canvas') + CANVAS_PATH_EXT;
 }
 
 function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
+	// Reuse one DEK across versions so Salesforce's file history remains decryptable.
 	const kekProvider = makeSfApexKekProvider(conn);
 	const sessionId = (opts && opts.sessionId) || null;
 
 	const _getHybridCanvasRecordId = async (canvasId) => {
 		const obj = _hybridApi('Orgloom_Canvas__c');
 		const result = await conn.query(
-			'SELECT Id FROM ' + obj + ' ' +
-			"WHERE " + _hybridApi('Canvas_Id__c') + " = '" + escapeSoqlLiteral(canvasId) + "' LIMIT 1"
+			'SELECT Id FROM ' +
+				obj +
+				' ' +
+				'WHERE ' +
+				_hybridApi('Canvas_Id__c') +
+				" = '" +
+				escapeSoqlLiteral(canvasId) +
+				"' LIMIT 1",
 		);
 		const row = result.records && result.records[0];
 		if (!row) {
@@ -109,18 +121,25 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 	return {
 		backend: 'content-version',
 
-
 		async list() {
 			const obj = _hybridApi('Orgloom_Canvas__c');
 			const soql =
 				'SELECT Id, Name, OwnerId, ' +
-				_hybridApi('Canvas_Id__c') + ', ' +
-				_hybridApi('Body_Document_Id__c') + ', ' +
-				_hybridApi('Record_Count__c') + ', ' +
-				_hybridApi('Last_Edited_At__c') + ', ' +
+				_hybridApi('Canvas_Id__c') +
+				', ' +
+				_hybridApi('Body_Document_Id__c') +
+				', ' +
+				_hybridApi('Record_Count__c') +
+				', ' +
+				_hybridApi('Last_Edited_At__c') +
+				', ' +
 				'CreatedDate, LastModifiedDate ' +
-				'FROM ' + obj + ' ' +
-				'ORDER BY ' + _hybridApi('Last_Edited_At__c') + ' DESC NULLS LAST LIMIT 200';
+				'FROM ' +
+				obj +
+				' ' +
+				'ORDER BY ' +
+				_hybridApi('Last_Edited_At__c') +
+				' DESC NULLS LAST LIMIT 200';
 			const result = await conn.query(soql);
 			const items = (result.records || []).map((r) => ({
 				id: r[_hybridApi('Canvas_Id__c')] || r[_hybridApi('Body_Document_Id__c')],
@@ -136,7 +155,7 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 			if (docIds.length) {
 				const inList = docIds.map((d) => "'" + escapeSoqlLiteral(d) + "'").join(',');
 				const titleResult = await conn.query(
-					'SELECT Id, Title FROM ContentDocument WHERE Id IN (' + inList + ')'
+					'SELECT Id, Title FROM ContentDocument WHERE Id IN (' + inList + ')',
 				);
 				const titleById = new Map((titleResult.records || []).map((d) => [d.Id, d.Title]));
 				items.forEach((i) => {
@@ -151,12 +170,10 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 
 		async countOwned() {
 			if (!sfUserId) {
-return 0;
-}
+				return 0;
+			}
 			const obj = _hybridApi('Orgloom_Canvas__c');
-			const soql =
-				'SELECT COUNT() FROM ' + obj + ' ' +
-				"WHERE OwnerId = '" + escapeSoqlLiteral(sfUserId) + "'";
+			const soql = 'SELECT COUNT() FROM ' + obj + ' ' + "WHERE OwnerId = '" + escapeSoqlLiteral(sfUserId) + "'";
 			const result = await conn.query(soql);
 			return Number(result.totalSize) || 0;
 		},
@@ -171,7 +188,8 @@ return 0;
 				result = await conn.sobject('ContentVersion').create({
 					Title: String(name).slice(0, 255),
 					PathOnClient: _sanitizeFileName(name),
-					Description: 'Org Loom workspace canvas. Encrypted by Org Loom; ' +
+					Description:
+						'Org Loom workspace canvas. Encrypted by Org Loom; ' +
 						'opens through the Org Loom app. See orgloom.com for details.',
 					VersionData: envelope.toString('base64'),
 				});
@@ -187,26 +205,32 @@ return 0;
 			try {
 				await canvasKeys.persist({ sfOrgId, canvasId, dataKey, kekProvider, sessionId });
 
-			const recordCount = _countCanvasRecords(safe);
-			const bodySha256 = crypto.createHash('sha256').update(envelope).digest('hex');
+				const recordCount = _countCanvasRecords(safe);
+				const bodySha256 = crypto.createHash('sha256').update(envelope).digest('hex');
 				await _writeHybridCanvasRecord(conn, {
-				canvasId,
-				contentDocumentId: canvasId,
-				sfUserId,
-				recordCount,
-				bodySha256,
-				encryptionKeyVersion: 'v1',
+					canvasId,
+					contentDocumentId: canvasId,
+					sfUserId,
+					recordCount,
+					bodySha256,
+					encryptionKeyVersion: 'v1',
 				});
 			} catch (persistErr) {
 				try {
 					await conn.sobject('ContentDocument').destroy(canvasId);
 				} catch (cleanupErr) {
-					console.warn('canvas-store: failed to clean up partial canvas ' + canvasId + ':', cleanupErr && cleanupErr.message);
+					console.warn(
+						'canvas-store: failed to clean up partial canvas ' + canvasId + ':',
+						cleanupErr && cleanupErr.message,
+					);
 				}
 				try {
 					await canvasKeys.remove({ sfOrgId, canvasId });
 				} catch (cleanupErr) {
-					console.warn('canvas-store: failed to clean up partial canvas key ' + canvasId + ':', cleanupErr && cleanupErr.message);
+					console.warn(
+						'canvas-store: failed to clean up partial canvas key ' + canvasId + ':',
+						cleanupErr && cleanupErr.message,
+					);
 				}
 				throw persistErr;
 			}
@@ -219,8 +243,7 @@ return 0;
 			const _release = await _acquireUpdateLock(_lockKey);
 			try {
 				const docResult = await conn.query(
-					"SELECT Id, Title FROM ContentDocument WHERE Id = '" +
-					escapeSoqlLiteral(id) + "' LIMIT 1"
+					"SELECT Id, Title FROM ContentDocument WHERE Id = '" + escapeSoqlLiteral(id) + "' LIMIT 1",
 				);
 				const doc = (docResult.records || [])[0];
 				if (!doc) {
@@ -230,14 +253,18 @@ return 0;
 				}
 				if (expectedVersionId) {
 					const latestResult = await conn.query(
-						"SELECT Id FROM ContentVersion " +
-						"WHERE ContentDocumentId = '" + escapeSoqlLiteral(id) + "' " +
-						'ORDER BY CreatedDate DESC LIMIT 1'
+						'SELECT Id FROM ContentVersion ' +
+							"WHERE ContentDocumentId = '" +
+							escapeSoqlLiteral(id) +
+							"' " +
+							'ORDER BY CreatedDate DESC LIMIT 1',
 					);
 					const latest = (latestResult.records || [])[0];
 					const currentVersionId = latest && latest.Id;
 					if (currentVersionId && currentVersionId !== expectedVersionId) {
-						const e = new Error('This canvas was edited elsewhere since you opened it. Reload, then re-apply your changes.');
+						const e = new Error(
+							'This canvas was edited elsewhere since you opened it. Reload, then re-apply your changes.',
+						);
 						e.statusCode = 409;
 						e.code = 'version-mismatch';
 						e.currentVersionId = currentVersionId;
@@ -254,7 +281,8 @@ return 0;
 						ContentDocumentId: id,
 						Title: doc.Title,
 						PathOnClient: _sanitizeFileName(doc.Title || 'canvas'),
-						Description: 'Org Loom workspace canvas. Encrypted by Org Loom; ' +
+						Description:
+							'Org Loom workspace canvas. Encrypted by Org Loom; ' +
 							'opens through the Org Loom app. See orgloom.com for details.',
 						VersionData: envelope.toString('base64'),
 					});
@@ -263,7 +291,10 @@ return 0;
 				}
 				if (!result.success) {
 					const errs = (result.errors || []).map((e) => e.message || e).join('; ');
-					throw _tagContentVersionPermError(new Error('Update failed: ' + (errs || 'unknown error')), 'update');
+					throw _tagContentVersionPermError(
+						new Error('Update failed: ' + (errs || 'unknown error')),
+						'update',
+					);
 				}
 				await _writeHybridCanvasRecord(conn, {
 					canvasId: id,
@@ -282,13 +313,25 @@ return 0;
 		async get(id) {
 			const obj = _hybridApi('Orgloom_Canvas__c');
 			const probeSoql =
-				'SELECT Id, ' + _hybridApi('Canvas_Id__c') + ', ' +
-				_hybridApi('Body_Document_Id__c') + ', ' +
-				_hybridApi('Body_Sha256__c') + ', ' +
-				_hybridApi('Schema_Version__c') + ', ' +
-				_hybridApi('Encryption_Key_Version__c') + ' ' +
-				'FROM ' + obj + ' ' +
-				"WHERE " + _hybridApi('Canvas_Id__c') + " = '" + escapeSoqlLiteral(id) + "' LIMIT 1";
+				'SELECT Id, ' +
+				_hybridApi('Canvas_Id__c') +
+				', ' +
+				_hybridApi('Body_Document_Id__c') +
+				', ' +
+				_hybridApi('Body_Sha256__c') +
+				', ' +
+				_hybridApi('Schema_Version__c') +
+				', ' +
+				_hybridApi('Encryption_Key_Version__c') +
+				' ' +
+				'FROM ' +
+				obj +
+				' ' +
+				'WHERE ' +
+				_hybridApi('Canvas_Id__c') +
+				" = '" +
+				escapeSoqlLiteral(id) +
+				"' LIMIT 1";
 			const probe = await conn.query(probeSoql);
 			const _hybridMeta = (probe.records || [])[0] || null;
 			if (!_hybridMeta) {
@@ -300,21 +343,25 @@ return 0;
 
 			const docResult = await conn.query(
 				'SELECT Id, Title, OwnerId, CreatedDate, LastModifiedDate ' +
-				"FROM ContentDocument WHERE Id = '" + escapeSoqlLiteral(id) + "' LIMIT 1"
+					"FROM ContentDocument WHERE Id = '" +
+					escapeSoqlLiteral(id) +
+					"' LIMIT 1",
 			);
 			const doc = (docResult.records || [])[0];
 			if (!doc) {
-return null;
-}
+				return null;
+			}
 			const versionResult = await conn.query(
-				"SELECT Id, VersionData, PathOnClient FROM ContentVersion " +
-				"WHERE ContentDocumentId = '" + escapeSoqlLiteral(id) + "' " +
-				'ORDER BY CreatedDate DESC LIMIT 1'
+				'SELECT Id, VersionData, PathOnClient FROM ContentVersion ' +
+					"WHERE ContentDocumentId = '" +
+					escapeSoqlLiteral(id) +
+					"' " +
+					'ORDER BY CreatedDate DESC LIMIT 1',
 			);
 			const v = (versionResult.records || [])[0];
 			if (!v) {
-return null;
-}
+				return null;
+			}
 			const path = v.PathOnClient;
 			if (typeof path !== 'string' || !path.endsWith(CANVAS_PATH_EXT)) {
 				const e = new Error('Not an Orgloom canvas file');
@@ -322,8 +369,8 @@ return null;
 				throw e;
 			}
 			if (!v.VersionData) {
-return null;
-}
+				return null;
+			}
 			let buf;
 			if (typeof v.VersionData === 'string' && v.VersionData.startsWith('/')) {
 				const url = conn.instanceUrl.replace(/\/+$/, '') + v.VersionData;
@@ -344,8 +391,14 @@ return null;
 				if (expectedSha) {
 					const actualSha = crypto.createHash('sha256').update(buf).digest('hex');
 					if (actualSha !== expectedSha) {
-						console.warn('[hybrid-canvas] body sha256 mismatch for', id,
-							'expected', expectedSha, 'got', actualSha);
+						console.warn(
+							'[hybrid-canvas] body sha256 mismatch for',
+							id,
+							'expected',
+							expectedSha,
+							'got',
+							actualSha,
+						);
 					}
 				}
 			}
@@ -353,8 +406,10 @@ return null;
 			if (isEncryptedEnvelope(buf)) {
 				const dataKey = await canvasKeys.get({ sfOrgId, canvasId: id, kekProvider, sessionId });
 				if (!dataKey) {
-					const err = new Error("This canvas was saved with a key Org Loom can't locate. " +
-						"If you saved it under a different Salesforce org, switch back to that org.");
+					const err = new Error(
+						"This canvas was saved with a key Org Loom can't locate. " +
+							'If you saved it under a different Salesforce org, switch back to that org.',
+					);
 					err.statusCode = 500;
 					err.code = 'canvas-key-missing';
 					throw err;
@@ -373,8 +428,8 @@ return null;
 			}
 			let payload;
 			try {
- payload = JSON.parse(json); 
-} catch (e) {
+				payload = JSON.parse(json);
+			} catch (e) {
 				const err = new Error('Stored payload is not valid JSON');
 				err.statusCode = 500;
 				throw err;
@@ -402,14 +457,19 @@ return null;
 			try {
 				await canvasKeys.remove({ sfOrgId, canvasId: id });
 			} catch (e) {
-
 				console.warn('canvas-store: failed to drop canvas_keys row for ' + id + ':', e && e.message);
 			}
 			try {
 				const obj = _hybridApi('Orgloom_Canvas__c');
 				const lookup = await conn.query(
-					'SELECT Id FROM ' + obj + ' ' +
-					"WHERE " + _hybridApi('Canvas_Id__c') + " = '" + escapeSoqlLiteral(id) + "' LIMIT 1"
+					'SELECT Id FROM ' +
+						obj +
+						' ' +
+						'WHERE ' +
+						_hybridApi('Canvas_Id__c') +
+						" = '" +
+						escapeSoqlLiteral(id) +
+						"' LIMIT 1",
 				);
 				if (lookup.records && lookup.records.length > 0) {
 					await conn.sobject(obj).destroy(lookup.records[0].Id);
@@ -425,8 +485,12 @@ return null;
 			const shareObj = _hybridApi('Orgloom_Canvas__Share');
 			const hybridSoql =
 				'SELECT Id, UserOrGroupId, AccessLevel, RowCause ' +
-				'FROM ' + shareObj + ' ' +
-				"WHERE ParentId = '" + escapeSoqlLiteral(hybridRecordId) + "' " +
+				'FROM ' +
+				shareObj +
+				' ' +
+				"WHERE ParentId = '" +
+				escapeSoqlLiteral(hybridRecordId) +
+				"' " +
 				"AND RowCause = 'Manual' " +
 				'ORDER BY LastModifiedDate DESC LIMIT 200';
 			const result = await conn.query(hybridSoql);
@@ -438,7 +502,8 @@ return null;
 			if (userIds.length > 0) {
 				const users = await conn.query(
 					"SELECT Id, Name FROM User WHERE Id IN ('" +
-					userIds.map(escapeSoqlLiteral).join("','") + "') LIMIT 200"
+						userIds.map(escapeSoqlLiteral).join("','") +
+						"') LIMIT 200",
 				);
 				for (const u of users.records || []) {
 					nameById.set(u.Id, u.Name);
@@ -447,7 +512,8 @@ return null;
 			if (groupIds.length > 0) {
 				const groups = await conn.query(
 					"SELECT Id, Name FROM Group WHERE Id IN ('" +
-					groupIds.map(escapeSoqlLiteral).join("','") + "') LIMIT 200"
+						groupIds.map(escapeSoqlLiteral).join("','") +
+						"') LIMIT 200",
 				);
 				for (const g of groups.records || []) {
 					nameById.set(g.Id, g.Name);
@@ -479,16 +545,25 @@ return null;
 				hError = e;
 			}
 			const isDup = (() => {
-				const probe = hError ? String(hError.message || hError) :
-					hResult && !hResult.success ? (hResult.errors || []).map((e) => e.message || e).join('; ') : '';
+				const probe = hError
+					? String(hError.message || hError)
+					: hResult && !hResult.success
+						? (hResult.errors || []).map((e) => e.message || e).join('; ')
+						: '';
 				return /duplicate|already.*(shared|exists)/i.test(probe);
 			})();
 			if (isDup) {
 				const existing = await conn.query(
-					'SELECT Id, AccessLevel FROM ' + shareObj + ' ' +
-					"WHERE ParentId = '" + escapeSoqlLiteral(hybridRecordId) + "' " +
-					"AND UserOrGroupId = '" + escapeSoqlLiteral(entityId) + "' " +
-					"AND RowCause = 'Manual' LIMIT 1"
+					'SELECT Id, AccessLevel FROM ' +
+						shareObj +
+						' ' +
+						"WHERE ParentId = '" +
+						escapeSoqlLiteral(hybridRecordId) +
+						"' " +
+						"AND UserOrGroupId = '" +
+						escapeSoqlLiteral(entityId) +
+						"' " +
+						"AND RowCause = 'Manual' LIMIT 1",
 				);
 				const row = (existing.records || [])[0];
 				if (row) {
@@ -516,10 +591,16 @@ return null;
 			const shareObj = _hybridApi('Orgloom_Canvas__Share');
 			const targetLevel = accessLevel === 'Edit' ? 'Edit' : 'Read';
 			const existing = await conn.query(
-				'SELECT Id, AccessLevel FROM ' + shareObj + ' ' +
-				"WHERE ParentId = '" + escapeSoqlLiteral(hybridRecordId) + "' " +
-				"AND UserOrGroupId = '" + escapeSoqlLiteral(entityId) + "' " +
-				"AND RowCause = 'Manual' LIMIT 1"
+				'SELECT Id, AccessLevel FROM ' +
+					shareObj +
+					' ' +
+					"WHERE ParentId = '" +
+					escapeSoqlLiteral(hybridRecordId) +
+					"' " +
+					"AND UserOrGroupId = '" +
+					escapeSoqlLiteral(entityId) +
+					"' " +
+					"AND RowCause = 'Manual' LIMIT 1",
 			);
 			const row = (existing.records || [])[0];
 			if (!row) {
@@ -552,28 +633,28 @@ return null;
 export async function canvasStoreFor(req) {
 	const bundle = await getActiveSfConnection(req);
 	if (!bundle) {
-throw new Error('Not authenticated');
-}
+		throw new Error('Not authenticated');
+	}
 	return makeContentVersionStoreFromConnection(bundle.conn, bundle.sfUserId, bundle.sfOrgId);
 }
 
 function _tagContentVersionPermError(err, mode /* 'create' | 'update' */) {
 	const msg = String((err && err.message) || err || '');
-	const looksLikePerm = /INSUFFICIENT_ACCESS|insufficient.*(access|privileg)|permission|FIELD_INTEGRITY_EXCEPTION/i.test(msg);
+	const looksLikePerm =
+		/INSUFFICIENT_ACCESS|insufficient.*(access|privileg)|permission|FIELD_INTEGRITY_EXCEPTION/i.test(msg);
 	if (!looksLikePerm) {
-return err;
-} // leave non-perm errors as-is
+		return err;
+	} // leave non-perm errors as-is
 	err.statusCode = 403;
-	err.code = mode === 'update'
-		? 'sf-content-document-edit-denied'
-		: 'sf-content-version-create-denied';
+	err.code = mode === 'update' ? 'sf-content-document-edit-denied' : 'sf-content-version-create-denied';
 	err.sfError = msg;
-	err.message = mode === 'update'
-		? "Your Salesforce user can't edit this saved canvas (Salesforce ContentDocument). " +
-		  "If you're not the canvas owner, ask the owner to make changes. If you are the owner, " +
-		  "ask your SF admin to grant you edit access on Files / ContentDocument."
-		: "Your Salesforce user can't save canvas files to this org. " +
-		  "Ask your SF admin to grant your profile the \"Create Content\" / \"Add Files\" permission.";
+	err.message =
+		mode === 'update'
+			? "Your Salesforce user can't edit this saved canvas (Salesforce ContentDocument). " +
+				"If you're not the canvas owner, ask the owner to make changes. If you are the owner, " +
+				'ask your SF admin to grant you edit access on Files / ContentDocument.'
+			: "Your Salesforce user can't save canvas files to this org. " +
+				'Ask your SF admin to grant your profile the "Create Content" / "Add Files" permission.';
 	return err;
 }
 

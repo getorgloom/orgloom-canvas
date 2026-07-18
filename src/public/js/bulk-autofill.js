@@ -1,21 +1,25 @@
-
 (function () {
 	'use strict';
+	// Fills empty writable fields with type-aware samples and guards undo with value revisions.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	window.OrgLoom.bulkAutofill = {
 		mount: function mount(deps) {
 			const required = [
-				'canvasState', 'ensureDescribe',
-				'fieldTypeFilter', 'getSmartDefault', 'renderBulkView',
-				'sampleValueForField', 'showBulkToast',
+				'canvasState',
+				'ensureDescribe',
+				'fieldTypeFilter',
+				'getSmartDefault',
+				'renderBulkView',
+				'sampleValueForField',
+				'showBulkToast',
 				'showConfirmDialog',
 				'loadSmartDefaults',
 			];
 			if (!deps) {
-throw new Error('bulk-autofill.mount: missing deps object');
-}
+				throw new Error('bulk-autofill.mount: missing deps object');
+			}
 			for (const k of required) {
 				if (deps[k] === undefined || deps[k] === null) {
 					throw new Error('bulk-autofill.mount: missing dep ' + k);
@@ -30,8 +34,8 @@ throw new Error('bulk-autofill.mount: missing deps object');
 			const showBulkToast = deps.showBulkToast;
 			const showConfirmDialog = deps.showConfirmDialog;
 			const loadSmartDefaults = deps.loadSmartDefaults;
-			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
-				? deps.showBulkToastWithAction : null;
+			const showBulkToastWithAction =
+				typeof deps.showBulkToastWithAction === 'function' ? deps.showBulkToastWithAction : null;
 
 			function _replaceValues(rec, values) {
 				rec.values = values;
@@ -47,6 +51,7 @@ throw new Error('bulk-autofill.mount: missing deps object');
 			}
 
 			function _captureValuesUndo(records) {
+				// Undo is valid only while every affected record still matches the post-fill revision.
 				const priorByRecord = new Map(records.map((r) => [r, r.values]));
 				return function arm(touchedRecords) {
 					const entries = touchedRecords.map((rec) => ({
@@ -57,10 +62,11 @@ throw new Error('bulk-autofill.mount: missing deps object');
 						expectedFingerprint: _valuesFingerprint(rec.values),
 					}));
 					return function restore() {
-						const stale = entries.some((p) =>
-							(Number(p.rec._valuesRevision) || 0) !== p.expectedRevision ||
-							p.rec.values !== p.expectedValues ||
-							_valuesFingerprint(p.rec.values) !== p.expectedFingerprint
+						const stale = entries.some(
+							(p) =>
+								(Number(p.rec._valuesRevision) || 0) !== p.expectedRevision ||
+								p.rec.values !== p.expectedValues ||
+								_valuesFingerprint(p.rec.values) !== p.expectedFingerprint,
 						);
 						if (stale) {
 							showBulkToast(
@@ -126,44 +132,44 @@ throw new Error('bulk-autofill.mount: missing deps object');
 			}
 
 			async function bulkAutoFill(scope, fieldType, opts) {
+				// Relationship fields need real canvas links, so autofill reports rather than fabricates them.
 				opts = opts || {};
-				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0
-					? new Set(opts.tempIds)
-					: null;
+				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0 ? new Set(opts.tempIds) : null;
 				const selectionScope = opts.selectionScope !== undefined ? !!opts.selectionScope : !!onlyIds;
 				const silent = !!opts.silent;
 				const includeLoaded = !!opts.includeLoaded;
 				if (canvasState.bulkRecords.length === 0) {
 					if (!silent) {
-showBulkToast('No records to fill.');
-}
+						showBulkToast('No records to fill.');
+					}
 					return;
 				}
 				let draftRecords = canvasState.bulkRecords.filter((r) => {
 					if (r.isTypeNode || r.isPending) {
-return false;
-}
+						return false;
+					}
 					if (r.loadedFromId && !includeLoaded) {
-return false;
-}
+						return false;
+					}
 					return true;
 				});
 				const skippedLoaded = includeLoaded
 					? 0
 					: canvasState.bulkRecords.filter((r) => r.loadedFromId && !r.isTypeNode).length;
 				if (onlyIds) {
-draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
-}
+					draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
+				}
 				if (draftRecords.length === 0) {
-					const msg = skippedLoaded > 0
-						? 'No draft records to fill. Seed only applies to new records; loaded-existing records keep their Salesforce values.'
-						: 'No records to fill.';
+					const msg =
+						skippedLoaded > 0
+							? 'No draft records to fill. Seed only applies to new records; loaded-existing records keep their Salesforce values.'
+							: 'No records to fill.';
 					if (!silent) {
-showBulkToast(msg);
-}
+						showBulkToast(msg);
+					}
 					return;
 				}
-				const objectNames = Array.from(new Set(draftRecords.map(r => r.objectName)));
+				const objectNames = Array.from(new Set(draftRecords.map((r) => r.objectName)));
 
 				if (!silent) {
 					const objCounts = new Map();
@@ -178,21 +184,37 @@ showBulkToast(msg);
 					const moreObjs = objCounts.size > 3 ? ' + ' + (objCounts.size - 3) + ' more' : '';
 					const recordWord = draftRecords.length === 1 ? 'record' : 'records';
 					const scopeNoun = scope === 'required' ? 'required' : 'all';
-					const scopeLine = scope === 'required'
-						? '• Adds sample data to empty required fields. Required relationships still need canvas connections.'
-						: '• Adds sample data to empty fields. Relationship fields still need canvas connections.';
+					const scopeLine =
+						scope === 'required'
+							? '• Adds sample data to empty required fields. Required relationships still need canvas connections.'
+							: '• Adds sample data to empty fields. Relationship fields still need canvas connections.';
 					const skipLine = selectionScope
 						? '• Only draft records in your selection are changed.'
-						: (skippedLoaded > 0
-							? '• Skips ' + skippedLoaded + ' loaded Salesforce record' + (skippedLoaded === 1 ? '' : 's') + ' on the canvas; only draft records are changed.'
-							: '• Only draft records on the canvas are changed.');
+						: skippedLoaded > 0
+							? '• Skips ' +
+								skippedLoaded +
+								' loaded Salesforce record' +
+								(skippedLoaded === 1 ? '' : 's') +
+								' on the canvas; only draft records are changed.'
+							: '• Only draft records on the canvas are changed.';
 					const scopeQualifier = selectionScope ? ' selected' : '';
 					const message =
-						'Fill ' + scopeNoun + ' fields on ' + draftRecords.length + scopeQualifier + ' draft ' + recordWord +
-						' (' + objSummary + moreObjs + ').\n\n' +
+						'Fill ' +
+						scopeNoun +
+						' fields on ' +
+						draftRecords.length +
+						scopeQualifier +
+						' draft ' +
+						recordWord +
+						' (' +
+						objSummary +
+						moreObjs +
+						').\n\n' +
 						'What this does:\n' +
-						scopeLine + '\n' +
-						skipLine + '\n\n' +
+						scopeLine +
+						'\n' +
+						skipLine +
+						'\n\n' +
 						'Sample data is fictional (e.g. "Acme Corp", "name@example.com"). You can edit any field afterward.';
 					const ok = await showConfirmDialog({
 						title: scope === 'required' ? 'Fill required fields?' : 'Fill all fields?',
@@ -200,41 +222,40 @@ showBulkToast(msg);
 						confirmLabel: scope === 'required' ? 'Fill required' : 'Fill all',
 					});
 					if (!ok) {
-return;
-}
+						return;
+					}
 				}
-				Promise.all([
-					loadSmartDefaults(),
-					...objectNames.map(n => ensureDescribe(n)),
-				])
+				Promise.all([loadSmartDefaults(), ...objectNames.map((n) => ensureDescribe(n))])
 					.then(() => {
 						const _undo = _captureValuesUndo(draftRecords);
 						let touchedCount = 0;
 						const touchedRecords = [];
-						draftRecords.forEach(rec => {
+						draftRecords.forEach((rec) => {
 							const describe = canvasState.describeCache[rec.objectName];
 							if (!describe || !describe.fields) {
-return;
-}
+								return;
+							}
 							const values = Object.assign({}, rec.values || {});
-							if (rec.objectName === 'User'
-								&& (values.IsActive === undefined || values.IsActive === '' || values.IsActive === null)) {
+							if (
+								rec.objectName === 'User' &&
+								(values.IsActive === undefined || values.IsActive === '' || values.IsActive === null)
+							) {
 								values.IsActive = false;
 							}
-							const recRtId = (values.RecordTypeId) || describe.defaultRecordTypeId || null;
+							const recRtId = values.RecordTypeId || describe.defaultRecordTypeId || null;
 							let touched = false;
 							const ordered = [
-								...describe.fields.filter(f => !f.controllerName),
-								...describe.fields.filter(f => f.controllerName),
+								...describe.fields.filter((f) => !f.controllerName),
+								...describe.fields.filter((f) => f.controllerName),
 							];
 							const typePick = fieldTypeFilter(fieldType);
-							ordered.forEach(f => {
+							ordered.forEach((f) => {
 								if (scope === 'required' && !f.required) {
-return;
-}
+									return;
+								}
 								if (!typePick(f)) {
-return;
-}
+									return;
+								}
 								const existing = values[f.name];
 								if (existing === undefined || existing === '' || existing === null) {
 									if (f.type === 'reference') {
@@ -245,7 +266,13 @@ return;
 											return;
 										}
 									}
-									const sample = sampleValueForField(f, describe.fields, values, recRtId, rec.objectName);
+									const sample = sampleValueForField(
+										f,
+										describe.fields,
+										values,
+										recRtId,
+										rec.objectName,
+									);
 									if (sample !== undefined && sample !== '' && sample !== null) {
 										values[f.name] = sample;
 										touched = true;
@@ -263,19 +290,41 @@ return;
 						});
 						renderBulkView();
 						const label = scope === 'required' ? 'required fields' : 'all fields';
-						const skipNote = skippedLoaded > 0
-							? ' Skipped ' + skippedLoaded + ' loaded record' + (skippedLoaded === 1 ? '' : 's') + ' (Seed only applies to drafts).'
-							: '';
+						const skipNote =
+							skippedLoaded > 0
+								? ' Skipped ' +
+									skippedLoaded +
+									' loaded record' +
+									(skippedLoaded === 1 ? '' : 's') +
+									' (Seed only applies to drafts).'
+								: '';
 						const recNoun = includeLoaded ? 'record' : 'draft record';
 						const scopeNote = selectionScope ? ' selected' : '';
 						const remaining = summarizeAutoFillTargets(draftRecords, scope, fieldType);
 						const relationshipCount = remaining ? remaining.unresolvedRelationships : 0;
-						const relationshipNote = relationshipCount > 0
-							? ' ' + relationshipCount + (scope === 'required' ? ' required' : '') +
-								' relationship' + (relationshipCount === 1 ? '' : 's') +
-								' still need' + (relationshipCount === 1 ? 's' : '') + ' a canvas connection.'
-							: '';
-						const _msg = 'Pre-filled ' + label + ' on ' + touchedCount + scopeNote + ' ' + recNoun + (touchedCount === 1 ? '' : 's') + '.' + relationshipNote + skipNote;
+						const relationshipNote =
+							relationshipCount > 0
+								? ' ' +
+									relationshipCount +
+									(scope === 'required' ? ' required' : '') +
+									' relationship' +
+									(relationshipCount === 1 ? '' : 's') +
+									' still need' +
+									(relationshipCount === 1 ? 's' : '') +
+									' a canvas connection.'
+								: '';
+						const _msg =
+							'Pre-filled ' +
+							label +
+							' on ' +
+							touchedCount +
+							scopeNote +
+							' ' +
+							recNoun +
+							(touchedCount === 1 ? '' : 's') +
+							'.' +
+							relationshipNote +
+							skipNote;
 						if (!silent) {
 							if (touchedCount > 0 && showBulkToastWithAction) {
 								showBulkToastWithAction(_msg, 'Undo', _undo(touchedRecords));
@@ -284,18 +333,16 @@ return;
 							}
 						}
 					})
-					.catch(err => {
+					.catch((err) => {
 						if (!silent) {
-showBulkToast('Failed to load field metadata: ' + (err.message || err), 'error');
-}
+							showBulkToast('Failed to load field metadata: ' + (err.message || err), 'error');
+						}
 					});
 			}
-			
+
 			async function bulkClearAllFields(opts) {
 				opts = opts || {};
-				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0
-					? new Set(opts.tempIds)
-					: null;
+				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0 ? new Set(opts.tempIds) : null;
 				const selectionScope = opts.selectionScope !== undefined ? !!opts.selectionScope : !!onlyIds;
 				const includeLoaded = !!opts.includeLoaded;
 				if (canvasState.bulkRecords.length === 0) {
@@ -304,31 +351,29 @@ showBulkToast('Failed to load field metadata: ' + (err.message || err), 'error')
 				}
 				let draftRecords = canvasState.bulkRecords.filter((r) => {
 					if (r.isTypeNode || r.isPending) {
-return false;
-}
+						return false;
+					}
 					if (r.loadedFromId && !includeLoaded) {
-return false;
-}
+						return false;
+					}
 					return true;
 				});
 				const skippedLoaded = includeLoaded
 					? 0
 					: canvasState.bulkRecords.filter((r) => r.loadedFromId && !r.isTypeNode).length;
 				if (onlyIds) {
-draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
-}
+					draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
+				}
 				if (draftRecords.length === 0) {
 					const msg = onlyIds
 						? 'No draft records in the selection. Clear only applies to drafts; loaded-existing records keep their Salesforce values.'
-						: (skippedLoaded > 0
+						: skippedLoaded > 0
 							? 'No draft records to clear. Clear only applies to drafts; loaded-existing records keep their Salesforce values.'
-							: 'No records to clear.');
+							: 'No records to clear.';
 					showBulkToast(msg);
 					return;
 				}
-				const loadedInScope = includeLoaded
-					? draftRecords.filter((r) => r.loadedFromId).length
-					: 0;
+				const loadedInScope = includeLoaded ? draftRecords.filter((r) => r.loadedFromId).length : 0;
 				const recordWord = draftRecords.length === 1 ? 'record' : 'records';
 				const objCounts = new Map();
 				draftRecords.forEach((r) => {
@@ -342,37 +387,52 @@ draftRecords = draftRecords.filter((r) => onlyIds.has(r.id));
 				const moreObjs = objCounts.size > 3 ? ' + ' + (objCounts.size - 3) + ' more' : '';
 				let skipLine;
 				if (includeLoaded && loadedInScope > 0) {
-					skipLine = '\u2022 Includes ' + loadedInScope + ' loaded Salesforce record' +
+					skipLine =
+						'\u2022 Includes ' +
+						loadedInScope +
+						' loaded Salesforce record' +
 						(loadedInScope === 1 ? '' : 's') +
 						': next upload will NULL those fields in Salesforce.';
 				} else if (selectionScope) {
 					skipLine = '\u2022 Only draft records in your selection are wiped.';
 				} else if (skippedLoaded > 0) {
-					skipLine = '\u2022 Skips ' + skippedLoaded + ' loaded Salesforce record' +
+					skipLine =
+						'\u2022 Skips ' +
+						skippedLoaded +
+						' loaded Salesforce record' +
 						(skippedLoaded === 1 ? '' : 's') +
 						' on the canvas; only draft records are wiped.';
 				} else {
 					skipLine = '\u2022 Only draft records on the canvas are wiped.';
 				}
-				const scopeQualifier = selectionScope
-					? ' selected'
-					: (includeLoaded ? '' : ' draft');
-				const noun = includeLoaded ? recordWord : ('draft ' + recordWord);
+				const scopeQualifier = selectionScope ? ' selected' : includeLoaded ? '' : ' draft';
+				const noun = includeLoaded ? recordWord : 'draft ' + recordWord;
 				const ok = await showConfirmDialog({
-					title: includeLoaded && loadedInScope > 0 ? 'Clear fields (including Salesforce records)?' : 'Clear all fields?',
+					title:
+						includeLoaded && loadedInScope > 0
+							? 'Clear fields (including Salesforce records)?'
+							: 'Clear all fields?',
 					message:
-						'Wipe every field value from ' + draftRecords.length + scopeQualifier + ' ' + noun +
-						' (' + objSummary + moreObjs + ').\n\n' +
+						'Wipe every field value from ' +
+						draftRecords.length +
+						scopeQualifier +
+						' ' +
+						noun +
+						' (' +
+						objSummary +
+						moreObjs +
+						').\n\n' +
 						'What this does:\n' +
 						'\u2022 Removes every value from each record (required and optional fields).\n' +
-						skipLine + '\n' +
+						skipLine +
+						'\n' +
 						'\u2022 You can Undo from the toast right after; once it expires, the values are gone.',
 					confirmLabel: 'Clear fields',
 					danger: true,
 				});
 				if (!ok) {
-return;
-}
+					return;
+				}
 				const _undo = _captureValuesUndo(draftRecords);
 				let touchedCount = 0;
 				const touchedRecords = [];
@@ -382,24 +442,35 @@ return;
 						_replaceValues(rec, {});
 						touchedRecords.push(rec);
 						touchedCount++;
-}
+					}
 				});
 				renderBulkView();
 				const skipNote = selectionScope
 					? ''
-					: (skippedLoaded > 0
-						? ' Skipped ' + skippedLoaded + ' loaded record' + (skippedLoaded === 1 ? '' : 's') + ' (Clear only applies to drafts).'
-						: '');
+					: skippedLoaded > 0
+						? ' Skipped ' +
+							skippedLoaded +
+							' loaded record' +
+							(skippedLoaded === 1 ? '' : 's') +
+							' (Clear only applies to drafts).'
+						: '';
 				const scopeNote = selectionScope ? ' selected' : '';
 				const recNoun = includeLoaded ? 'record' : 'draft record';
-				const _msg = 'Cleared all fields on ' + touchedCount + scopeNote + ' ' + recNoun + (touchedCount === 1 ? '' : 's') + '.' + skipNote;
+				const _msg =
+					'Cleared all fields on ' +
+					touchedCount +
+					scopeNote +
+					' ' +
+					recNoun +
+					(touchedCount === 1 ? '' : 's') +
+					'.' +
+					skipNote;
 				if (touchedCount > 0 && showBulkToastWithAction) {
 					showBulkToastWithAction(_msg, 'Undo', _undo(touchedRecords));
 				} else {
 					showBulkToast(_msg);
 				}
 			}
-			
 
 			return {
 				bulkAutoFill: bulkAutoFill,

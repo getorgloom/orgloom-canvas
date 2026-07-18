@@ -9,10 +9,7 @@ const src = path.resolve(here, '../src');
 const saasSrc = path.resolve(here, '../../../apps/saas/src');
 
 test('PostHog disables DOM capture for signed-in pages and hashes identity', () => {
-	const template = fs.readFileSync(
-		path.join(src, 'views/partials/top-strip.ejs'),
-		'utf8',
-	);
+	const template = fs.readFileSync(path.join(src, 'views/partials/top-strip.ejs'), 'utf8');
 	assert.match(template, /const _ph_signedIn =/);
 	assert.match(template, /autocapture: <%= _ph_signedIn \? 'false' : 'true' %>/);
 	assert.match(template, /disable_session_recording: <%= _ph_signedIn \? 'true' : 'false' %>/);

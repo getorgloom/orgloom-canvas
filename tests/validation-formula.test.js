@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -12,18 +11,22 @@ import {
 	UNRESOLVED_FIELD,
 } from '../src/validation-formula.js';
 
-
 describe('tokenize', () => {
 	test('skips whitespace', () => {
 		const toks = tokenize('  AND  (  TRUE  ,  FALSE  )  ');
-		assert.deepEqual(toks.map((t) => t.t), ['ID', '(', 'ID', ',', 'ID', ')']);
+		assert.deepEqual(
+			toks.map((t) => t.t),
+			['ID', '(', 'ID', ',', 'ID', ')'],
+		);
 	});
 
 	test('parses integer + decimal literals', () => {
 		const toks = tokenize('5 + 3.14 + .5');
 		assert.deepEqual(toks, [
-			{ t: 'NUM', v: 5 }, { t: 'OP', v: '+' },
-			{ t: 'NUM', v: 3.14 }, { t: 'OP', v: '+' },
+			{ t: 'NUM', v: 5 },
+			{ t: 'OP', v: '+' },
+			{ t: 'NUM', v: 3.14 },
+			{ t: 'OP', v: '+' },
 			{ t: 'NUM', v: 0.5 },
 		]);
 	});
@@ -57,7 +60,6 @@ describe('tokenize', () => {
 		assert.throws(() => tokenize('@'), /unexpected char/);
 	});
 });
-
 
 describe('parseFormula', () => {
 	test('literal number', () => {
@@ -120,7 +122,6 @@ describe('parseFormula', () => {
 	});
 });
 
-
 describe('num', () => {
 	test('passes numbers through', () => {
 		assert.equal(num(3.14), 3.14);
@@ -166,7 +167,6 @@ describe('looseEq', () => {
 		assert.equal(looseEq('foo', 'Foo'), false);
 	});
 });
-
 
 function ev(formula, vals = {}, opts = {}) {
 	return evalNode(parseFormula(formula), vals, opts);
@@ -317,12 +317,8 @@ describe('evalNode: unsupported function throws', () => {
 	});
 });
 
-
 describe('resolveFieldValue: cross-object via savedRecords', () => {
-	const fields = [
-		{ name: 'Name' },
-		{ name: 'AccountId', relationshipName: 'Account', referenceTo: ['Account'] },
-	];
+	const fields = [{ name: 'Name' }, { name: 'AccountId', relationshipName: 'Account', referenceTo: ['Account'] }];
 	const opts = {
 		currentFields: fields,
 		savedRecords: { Account: { Name: 'Acme Corp', Industry: 'Tech' } },
@@ -350,23 +346,16 @@ describe('resolveFieldValue: cross-object via savedRecords', () => {
 	});
 
 	test('a direct field on the current record wins over chasing the dot', () => {
-		assert.equal(
-			resolveFieldValue('Account.Name', { 'Account.Name': 'Direct value' }, opts),
-			'Direct value',
-		);
+		assert.equal(resolveFieldValue('Account.Name', { 'Account.Name': 'Direct value' }, opts), 'Direct value');
 	});
 });
 
 describe('resolveFieldValue: cross-object via bulk associations', () => {
-	const fields = [
-		{ name: 'AccountId', relationshipName: 'Account', referenceTo: ['Account'] },
-	];
+	const fields = [{ name: 'AccountId', relationshipName: 'Account', referenceTo: ['Account'] }];
 	const opts = {
 		currentFields: fields,
 		currentRecord: { id: 'rec-1', objectName: 'Contact' },
-		bulkRecords: [
-			{ id: 'rec-acct', objectName: 'Account', values: { Name: 'BulkAcc Co' } },
-		],
+		bulkRecords: [{ id: 'rec-acct', objectName: 'Account', values: { Name: 'BulkAcc Co' } }],
 		bulkAssociations: [{ fromId: 'rec-1', fieldName: 'AccountId', toId: 'rec-acct' }],
 		describeCache: { Account: { fields: [{ name: 'Name' }] } },
 		savedRecords: {},
@@ -384,7 +373,6 @@ describe('resolveFieldValue: cross-object via bulk associations', () => {
 		assert.equal(resolveFieldValue('Account.Name', {}, opts2), 'Saved Co');
 	});
 });
-
 
 describe('real-world rule patterns', () => {
 	const rules = {
@@ -430,12 +418,12 @@ describe('real-world rule patterns', () => {
 	});
 
 	test('description-required-for-important fires only when both conditions hold', () => {
-		assert.equal(evaluateRule(rules.descRequiredForImportant,
-			{ Type: 'Important', Description: null }), 'fail');
-		assert.equal(evaluateRule(rules.descRequiredForImportant,
-			{ Type: 'Important', Description: 'present' }), 'pass');
-		assert.equal(evaluateRule(rules.descRequiredForImportant,
-			{ Type: 'Casual', Description: null }), 'pass');
+		assert.equal(evaluateRule(rules.descRequiredForImportant, { Type: 'Important', Description: null }), 'fail');
+		assert.equal(
+			evaluateRule(rules.descRequiredForImportant, { Type: 'Important', Description: 'present' }),
+			'pass',
+		);
+		assert.equal(evaluateRule(rules.descRequiredForImportant, { Type: 'Casual', Description: null }), 'pass');
 	});
 
 	test('amount cap fires above the threshold', () => {
@@ -445,21 +433,15 @@ describe('real-world rule patterns', () => {
 	});
 
 	test('at-least-one-contact-method requires either email or phone', () => {
-		assert.equal(evaluateRule(rules.oneContactMethod,
-			{ Email: null, Phone: null }), 'fail');
-		assert.equal(evaluateRule(rules.oneContactMethod,
-			{ Email: 'a@b.com', Phone: null }), 'pass');
-		assert.equal(evaluateRule(rules.oneContactMethod,
-			{ Email: null, Phone: '555-1234' }), 'pass');
+		assert.equal(evaluateRule(rules.oneContactMethod, { Email: null, Phone: null }), 'fail');
+		assert.equal(evaluateRule(rules.oneContactMethod, { Email: 'a@b.com', Phone: null }), 'pass');
+		assert.equal(evaluateRule(rules.oneContactMethod, { Email: null, Phone: '555-1234' }), 'pass');
 	});
 
 	test('Closed-Won close-date rule fires for won-stage records with no date', () => {
-		assert.equal(evaluateRule(rules.closeDateOnWon,
-			{ StageName: 'Closed Won', CloseDate: null }), 'fail');
-		assert.equal(evaluateRule(rules.closeDateOnWon,
-			{ StageName: 'Closed Won', CloseDate: '2026-01-01' }), 'pass');
-		assert.equal(evaluateRule(rules.closeDateOnWon,
-			{ StageName: 'Prospecting', CloseDate: null }), 'pass');
+		assert.equal(evaluateRule(rules.closeDateOnWon, { StageName: 'Closed Won', CloseDate: null }), 'fail');
+		assert.equal(evaluateRule(rules.closeDateOnWon, { StageName: 'Closed Won', CloseDate: '2026-01-01' }), 'pass');
+		assert.equal(evaluateRule(rules.closeDateOnWon, { StageName: 'Prospecting', CloseDate: null }), 'pass');
 	});
 
 	test('cross-object Account.Type rule fires when title missing on important-account contact', () => {
@@ -489,7 +471,6 @@ describe('real-world rule patterns', () => {
 		assert.equal(evaluateRule(rules.titleAtImportantAccount, { Title: null }, opts), 'unknown');
 	});
 });
-
 
 describe('evaluateRule', () => {
 	test('returns "unknown" for a rule with no formula', () => {

@@ -22,9 +22,18 @@ test('CSV field policy uses create access for new rows and edit access for exist
 });
 
 test('read-only Salesforce output fields remain context without producing a write warning', () => {
-	assert.equal(policy.csvFieldDisposition({ calculated: true, createable: false, updateable: false }, 'create'), 'context');
-	assert.equal(policy.csvFieldDisposition({ autoNumber: true, createable: false, updateable: false }, 'create'), 'context');
-	assert.equal(policy.csvFieldDisposition({ type: 'address', createable: false, updateable: false }, 'update'), 'context');
+	assert.equal(
+		policy.csvFieldDisposition({ calculated: true, createable: false, updateable: false }, 'create'),
+		'context',
+	);
+	assert.equal(
+		policy.csvFieldDisposition({ autoNumber: true, createable: false, updateable: false }, 'create'),
+		'context',
+	);
+	assert.equal(
+		policy.csvFieldDisposition({ type: 'address', createable: false, updateable: false }, 'update'),
+		'context',
+	);
 });
 
 test('upsert accepts a field writable on either branch and warns when neither branch can write it', () => {
@@ -42,7 +51,16 @@ test('resolved Salesforce Ids classify as updates while missing Ids remain creat
 
 test('mapping choices describe field access without assuming every row is a create', () => {
 	assert.equal(policy.csvFieldAccessSuffix({ name: 'Name', createable: true, updateable: true }), '');
-	assert.equal(policy.csvFieldAccessSuffix({ name: 'Formula__c', createable: false, updateable: false }), ' - read only');
-	assert.equal(policy.csvFieldAccessSuffix({ name: 'Create_Only__c', createable: true, updateable: false }), ' - new records only');
-	assert.equal(policy.csvFieldAccessSuffix({ name: 'Update_Only__c', createable: false, updateable: true }), ' - existing records only');
+	assert.equal(
+		policy.csvFieldAccessSuffix({ name: 'Formula__c', createable: false, updateable: false }),
+		' - read only',
+	);
+	assert.equal(
+		policy.csvFieldAccessSuffix({ name: 'Create_Only__c', createable: true, updateable: false }),
+		' - new records only',
+	);
+	assert.equal(
+		policy.csvFieldAccessSuffix({ name: 'Update_Only__c', createable: false, updateable: true }),
+		' - existing records only',
+	);
 });

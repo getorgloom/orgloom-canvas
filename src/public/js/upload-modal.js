@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Freezes a validated canvas snapshot, submits it, and reconciles only confirmed successes.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -9,6 +9,7 @@
 		if (!selectedOnly || !selectedIds || selectedIds.size === 0) {
 			return real;
 		}
+		// "Selected only" is literal; related drafts are never silently added to the upload.
 		return real.filter((r) => selectedIds.has(r.id));
 	}
 
@@ -16,11 +17,7 @@
 		if (!selectedOnly || !scopedIds || scopedIds.size === 0) {
 			return [];
 		}
-		const realById = new Map(
-			(records || [])
-				.filter((r) => r && !r.isTypeNode)
-				.map((r) => [r.id, r]),
-		);
+		const realById = new Map((records || []).filter((r) => r && !r.isTypeNode).map((r) => [r.id, r]));
 		return (associations || []).filter((a) => {
 			if (!a || !scopedIds.has(a.fromId) || scopedIds.has(a.toId)) {
 				return false;
@@ -34,28 +31,27 @@
 		if (!scopedIds || scopedIds.size === 0) {
 			return [];
 		}
-		return (associations || []).filter((a) =>
-			a && scopedIds.has(a.fromId) && scopedIds.has(a.toId));
+		return (associations || []).filter((a) => a && scopedIds.has(a.fromId) && scopedIds.has(a.toId));
 	}
 
 	function requiredExcludedDraftParentLinks(records, links, describeCache) {
-		const realById = new Map(
-			(records || [])
-				.filter((r) => r && !r.isTypeNode)
-				.map((r) => [r.id, r]),
-		);
+		const realById = new Map((records || []).filter((r) => r && !r.isTypeNode).map((r) => [r.id, r]));
 		return (links || []).filter((link) => {
 			const child = realById.get(link.fromId);
 			if (!child || child.loadedFromId) {
 				return false;
 			}
 			const describe = describeCache && describeCache[child.objectName];
-			const field = describe && Array.isArray(describe.fields)
-				? describe.fields.find((f) => f && f.name === link.fieldName)
-				: null;
+			const field =
+				describe && Array.isArray(describe.fields)
+					? describe.fields.find((f) => f && f.name === link.fieldName)
+					: null;
 			return !!(
-				field && field.type === 'reference' && field.createable !== false &&
-				field.required && !field.defaultedOnCreate
+				field &&
+				field.type === 'reference' &&
+				field.createable !== false &&
+				field.required &&
+				!field.defaultedOnCreate
 			);
 		});
 	}
@@ -87,9 +83,11 @@
 
 		const objectName = Array.from(objectNames)[0];
 		const describe = describeCache && describeCache[objectName];
-		const objectLabel = count === 1
-			? ((describe && describe.label) || objectName)
-			: ((describe && describe.labelPlural) || (describe && describe.label ? describe.label + 's' : objectName + 's'));
+		const objectLabel =
+			count === 1
+				? (describe && describe.label) || objectName
+				: (describe && describe.labelPlural) ||
+					(describe && describe.label ? describe.label + 's' : objectName + 's');
 		return 'Uploading ' + count + ' ' + objectLabel + '…';
 	}
 
@@ -102,17 +100,25 @@
 		formatUploadProgress: formatUploadProgress,
 		mount: function mount(deps) {
 			const required = [
-				'canvasState', 'csrfFetch', 'escapeHtml',
-				'showBulkToast', 'showConfirmDialog', 'showBulkSwitchWarning',
-				'validateBulkRecords', 'computeUploadOrder',
-				'isRecordModified', 'isRecordPendingDelete', 'recordOrdinal',
-				'renderBulkView', 'startElapsedTicker',
+				'canvasState',
+				'csrfFetch',
+				'escapeHtml',
+				'showBulkToast',
+				'showConfirmDialog',
+				'showBulkSwitchWarning',
+				'validateBulkRecords',
+				'computeUploadOrder',
+				'isRecordModified',
+				'isRecordPendingDelete',
+				'recordOrdinal',
+				'renderBulkView',
+				'startElapsedTicker',
 				'ensureDescribe',
 				'isLinkedCsvQuickUploadMode',
 			];
 			if (!deps) {
-throw new Error('upload-modal.mount: missing deps object');
-}
+				throw new Error('upload-modal.mount: missing deps object');
+			}
 			for (const k of required) {
 				if (deps[k] === undefined || deps[k] === null) {
 					throw new Error('upload-modal.mount: missing dep ' + k);
@@ -150,23 +156,25 @@ throw new Error('upload-modal.mount: missing deps object');
 			uploadModal.innerHTML =
 				'<div class="modal-overlay" data-upload-close></div>' +
 				'<div class="modal-body">' +
-					'<div class="modal-header">' +
-						'<h3>Upload records to Salesforce</h3>' +
-						'<button class="modal-close" data-upload-close>&times;</button>' +
-					'</div>' +
-					'<div class="modal-content" id="upload-modal-content"></div>' +
-					'<div class="modal-footer">' +
-						'<button class="button secondary" id="upload-cancel" data-upload-close>Cancel</button>' +
-						'<button class="button" id="upload-confirm">Upload</button>' +
-					'</div>' +
+				'<div class="modal-header">' +
+				'<h3>Upload records to Salesforce</h3>' +
+				'<button class="modal-close" data-upload-close>&times;</button>' +
+				'</div>' +
+				'<div class="modal-content" id="upload-modal-content"></div>' +
+				'<div class="modal-footer">' +
+				'<button class="button secondary" id="upload-cancel" data-upload-close>Cancel</button>' +
+				'<button class="button" id="upload-confirm">Upload</button>' +
+				'</div>' +
 				'</div>';
 			document.body.appendChild(uploadModal);
-			uploadModal.querySelectorAll('[data-upload-close]').forEach(el => el.addEventListener('click', closeUploadModal));
-			document.addEventListener('keydown', e => {
- if (e.key === 'Escape' && !uploadModal.classList.contains('hidden')) {
-closeUploadModal();
-} 
-});
+			uploadModal
+				.querySelectorAll('[data-upload-close]')
+				.forEach((el) => el.addEventListener('click', closeUploadModal));
+			document.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape' && !uploadModal.classList.contains('hidden')) {
+					closeUploadModal();
+				}
+			});
 			uploadModal.querySelector('#upload-confirm').onclick = confirmUpload;
 
 			async function openUploadModal(opts) {
@@ -178,9 +186,14 @@ closeUploadModal();
 				_preflightOverride = false;
 				_bulkSwitchAcknowledged = false;
 				const _allRealCount = canvasState.bulkRecords.filter((r) => !r.isTypeNode).length;
-				const _selectedRealCount = canvasState.bulkRecords.filter((r) => !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id)).length;
-				const _wantSelected = opts && opts.initialScope === 'selected'
-					&& _selectedRealCount > 0 && _selectedRealCount < _allRealCount;
+				const _selectedRealCount = canvasState.bulkRecords.filter(
+					(r) => !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id),
+				).length;
+				const _wantSelected =
+					opts &&
+					opts.initialScope === 'selected' &&
+					_selectedRealCount > 0 &&
+					_selectedRealCount < _allRealCount;
 				_uploadScopeSelected = !!_wantSelected;
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
 				confirmBtn.disabled = false;
@@ -190,37 +203,36 @@ closeUploadModal();
 				confirmBtn.onclick = confirmUpload;
 				const cancelBtn = uploadModal.querySelector('#upload-cancel');
 				if (cancelBtn) {
- cancelBtn.style.display = ''; cancelBtn.textContent = 'Cancel'; 
-}
-			
+					cancelBtn.style.display = '';
+					cancelBtn.textContent = 'Cancel';
+				}
+
 				const content = uploadModal.querySelector('#upload-modal-content');
 				content.innerHTML = '<p class="center tag">Running pre-flight checks\u2026</p>';
 				uploadModal.classList.remove('hidden');
 				const uniqObjs = Array.from(new Set(canvasState.bulkRecords.map((r) => r.objectName)));
 				await Promise.all(uniqObjs.map((n) => ensureDescribe(n).catch(() => null)));
-			
+
 				_renderUploadModalSummary();
 			}
-			
+
 			function _renderUploadModalSummary() {
 				const content = uploadModal.querySelector('#upload-modal-content');
 				if (!content) {
-return;
-}
+					return;
+				}
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
 				const cancelBtn = uploadModal.querySelector('#upload-cancel');
-			
+
 				const allReal = canvasState.bulkRecords.filter((r) => !r.isTypeNode);
 				const selectedRealCount = allReal.filter((r) => canvasState.bulkSelectedIds.has(r.id)).length;
 				const canScope = selectedRealCount > 0 && selectedRealCount < allReal.length;
 				if (!canScope) {
-_uploadScopeSelected = false;
-}
+					_uploadScopeSelected = false;
+				}
 				const scopedRecords = _scopedRealRecords();
 				const scopedIds = new Set(scopedRecords.map((r) => r.id));
-				const excludedDraftLinks = _uploadScopeSelected
-					? _scopedExcludedDraftParentLinks()
-					: [];
+				const excludedDraftLinks = _uploadScopeSelected ? _scopedExcludedDraftParentLinks() : [];
 				const requiredExcludedDraftLinks = requiredExcludedDraftParentLinks(
 					canvasState.bulkRecords,
 					excludedDraftLinks,
@@ -257,30 +269,45 @@ _uploadScopeSelected = false;
 				const _migMatchBlocked = _migMatchUnresolved + _migDuplicateTargets;
 				const migrateBanner = _migActive
 					? '<div class="preflight ' +
-						((_migBlocked > 0 || _migMatchBlocked > 0) ? 'has-errors' : (_migWarning > 0 ? 'has-warnings' : 'ok')) +
+						(_migBlocked > 0 || _migMatchBlocked > 0
+							? 'has-errors'
+							: _migWarning > 0
+								? 'has-warnings'
+								: 'ok') +
 						'">' +
-						'<span class="pf-icon">' + ((_migBlocked > 0 || _migMatchBlocked > 0) ? '⚠' : (_migWarning > 0 ? 'i' : '✓')) + '</span>' +
+						'<span class="pf-icon">' +
+						(_migBlocked > 0 || _migMatchBlocked > 0 ? '⚠' : _migWarning > 0 ? 'i' : '✓') +
+						'</span>' +
 						'<span class="pf-msg"><strong>Migrating to this org.</strong> ' +
 						(_migMatchUnresolved > 0
-							? _migMatchUnresolved + ' record' + (_migMatchUnresolved === 1 ? '' : 's') + ' still needs an action. Open <em>Review migration</em> and choose Update existing with a destination record, or Create new.'
-							: (_migDuplicateTargets > 0
+							? _migMatchUnresolved +
+								' record' +
+								(_migMatchUnresolved === 1 ? '' : 's') +
+								' still needs an action. Open <em>Review migration</em> and choose Update existing with a destination record, or Create new.'
+							: _migDuplicateTargets > 0
 								? 'More than one canvas record is assigned to the same destination record. Review the record actions before uploading.'
-							: (_migBlocked > 0
-							? _migBlocked + ' record' + (_migBlocked === 1 ? '' : 's') + ' can’t be migrated yet. Open <em>Review migration</em> and resolve the required destination differences.'
-							: (_migWarning > 0
-								? _migWarning + ' record' + (_migWarning === 1 ? '' : 's') + ' has values that will be omitted unless resolved. Review the migration plan, or proceed.'
-								: 'All records are ready to recreate in the destination org.')))) +
+								: _migBlocked > 0
+									? _migBlocked +
+										' record' +
+										(_migBlocked === 1 ? '' : 's') +
+										' can’t be migrated yet. Open <em>Review migration</em> and resolve the required destination differences.'
+									: _migWarning > 0
+										? _migWarning +
+											' record' +
+											(_migWarning === 1 ? '' : 's') +
+											' has values that will be omitted unless resolved. Review the migration plan, or proceed.'
+										: 'All records are ready to recreate in the destination org.') +
 						' <button type="button" class="link-button" data-migrate-review>Review migration…</button>' +
 						'</span></div>'
 					: '';
-			
+
 				const { issues: rawIssues, byRecordId: rawByRecordId, missingDescribes } = validateBulkRecords();
 				const issues = rawIssues.filter((i) => !i.recordId || scopedIds.has(i.recordId));
 				const byRecordId = new Map();
 				rawByRecordId.forEach((rIssues, rid) => {
 					if (scopedIds.has(rid)) {
-byRecordId.set(rid, rIssues.slice());
-}
+						byRecordId.set(rid, rIssues.slice());
+					}
 				});
 				requiredExcludedDraftLinks.forEach((link) => {
 					const rec = scopedRecords.find((r) => r.id === link.fromId);
@@ -288,9 +315,10 @@ byRecordId.set(rid, rIssues.slice());
 						return;
 					}
 					const describe = canvasState.describeCache[rec.objectName];
-					const field = describe && Array.isArray(describe.fields)
-						? describe.fields.find((f) => f && f.name === link.fieldName)
-						: null;
+					const field =
+						describe && Array.isArray(describe.fields)
+							? describe.fields.find((f) => f && f.name === link.fieldName)
+							: null;
 					const issue = {
 						recordId: rec.id,
 						objectName: rec.objectName,
@@ -298,7 +326,8 @@ byRecordId.set(rid, rIssues.slice());
 						field: link.fieldName,
 						fieldLabel: (field && field.label) || link.fieldName,
 						severity: 'error',
-						message: 'This required relationship points to an unselected draft and won’t be included. Select the related draft too.',
+						message:
+							'This required relationship points to an unselected draft and won’t be included. Select the related draft too.',
 					};
 					issues.push(issue);
 					const recordIssues = byRecordId.get(rec.id) || [];
@@ -307,11 +336,9 @@ byRecordId.set(rid, rIssues.slice());
 				});
 				const errorCount = issues.filter((i) => i.severity === 'error').length;
 				const warningCount = issues.filter((i) => i.severity === 'warning').length;
-			
+
 				const realRecordsForCount = scopedRecords;
-				const deleteIdSet = new Set(
-					realRecordsForCount.filter(isRecordPendingDelete).map((r) => r.id)
-				);
+				const deleteIdSet = new Set(realRecordsForCount.filter(isRecordPendingDelete).map((r) => r.id));
 				const unchangedTempIds = realRecordsForCount
 					.filter((r) => r.loadedFromId && !isRecordModified(r) && !r.pendingDelete)
 					.map((r) => r.id);
@@ -323,127 +350,203 @@ byRecordId.set(rid, rIssues.slice());
 				const cycleIds = orderResult.cycleIds || new Set();
 				const orderEntries = orderResult.creates.filter((e) => e.upload > 0);
 				const deleteEntries = orderResult.deletes;
-				const orderRows = orderEntries.map((entry, idx) => {
-					const detail = entry.unchanged > 0
-						? '<span class="us-detail tag">' + entry.unchanged + ' unchanged skipped</span>'
-						: '';
-					return (
-						'<div class="us-step">' + (idx + 1) + '</div>' +
-						'<div class="us-label">' + escapeHtml(entry.label) + ' ' + detail + '</div>' +
-						'<div class="us-count">' + entry.upload + '</div>'
-					);
-				}).join('');
-				const deleteRowsHtml = deleteEntries.map((entry, idx) => (
-					'<div class="us-step us-step-delete">' + (orderEntries.length + idx + 1) + '</div>' +
-					'<div class="us-label">' + escapeHtml(entry.label) + ' <span class="us-detail tag tag-danger">DELETE</span></div>' +
-					'<div class="us-count">' + entry.count + '</div>'
-				)).join('');
+				const orderRows = orderEntries
+					.map((entry, idx) => {
+						const detail =
+							entry.unchanged > 0
+								? '<span class="us-detail tag">' + entry.unchanged + ' unchanged skipped</span>'
+								: '';
+						return (
+							'<div class="us-step">' +
+							(idx + 1) +
+							'</div>' +
+							'<div class="us-label">' +
+							escapeHtml(entry.label) +
+							' ' +
+							detail +
+							'</div>' +
+							'<div class="us-count">' +
+							entry.upload +
+							'</div>'
+						);
+					})
+					.join('');
+				const deleteRowsHtml = deleteEntries
+					.map(
+						(entry, idx) =>
+							'<div class="us-step us-step-delete">' +
+							(orderEntries.length + idx + 1) +
+							'</div>' +
+							'<div class="us-label">' +
+							escapeHtml(entry.label) +
+							' <span class="us-detail tag tag-danger">DELETE</span></div>' +
+							'<div class="us-count">' +
+							entry.count +
+							'</div>',
+					)
+					.join('');
 				const totalRecords = scopedRecords.length;
 				const scopeToggleHtml = canScope
 					? '<div class="upload-scope-toggle">' +
-						'<button type="button" class="upload-scope-btn' + (_uploadScopeSelected ? '' : ' is-active') + '" data-upload-scope="all">' +
-							'All records (' + allReal.length + ')' +
+						'<button type="button" class="upload-scope-btn' +
+						(_uploadScopeSelected ? '' : ' is-active') +
+						'" data-upload-scope="all">' +
+						'All records (' +
+						allReal.length +
+						')' +
 						'</button>' +
-						'<button type="button" class="upload-scope-btn' + (_uploadScopeSelected ? ' is-active' : '') + '" data-upload-scope="selected">' +
-							'Selected only (' + selectedRealCount + ')' +
+						'<button type="button" class="upload-scope-btn' +
+						(_uploadScopeSelected ? ' is-active' : '') +
+						'" data-upload-scope="selected">' +
+						'Selected only (' +
+						selectedRealCount +
+						')' +
 						'</button>' +
-					'</div>'
+						'</div>'
 					: '';
-			
+
 				let preflightHtml = '';
 				if (issues.length === 0 && missingDescribes.size === 0) {
 					preflightHtml =
 						'<div class="preflight ok">' +
-							'<span class="pf-icon">\u2713</span>' +
-							'<span class="pf-msg"><strong>Pre-flight passed.</strong> All records look ready to upload.</span>' +
+						'<span class="pf-icon">\u2713</span>' +
+						'<span class="pf-msg"><strong>Pre-flight passed.</strong> All records look ready to upload.</span>' +
 						'</div>';
 				} else if (issues.length > 0) {
-					const recordSections = Array.from(byRecordId.entries()).map(([rid, rIssues]) => {
-						const first = rIssues[0];
-						const errs = rIssues.filter((x) => x.severity === 'error').length;
-						const warns = rIssues.filter((x) => x.severity === 'warning').length;
-						const summaryParts = [];
-						if (errs > 0) {
-summaryParts.push(errs + ' error' + (errs === 1 ? '' : 's'));
-}
-						if (warns > 0) {
-summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
-}
-						const items = rIssues.map((iss) => (
-							'<li class="pf-item pf-' + iss.severity + '">' +
-								'<span class="pf-field">' + escapeHtml(iss.fieldLabel) + ' (<code>' + escapeHtml(iss.field) + '</code>)</span> ' +
-								'<span class="pf-msg-text">' + escapeHtml(iss.message) + '</span>' +
-							'</li>'
-						)).join('');
-						return (
-							'<details class="pf-record"' + (errs > 0 ? ' open' : '') + '>' +
+					const recordSections = Array.from(byRecordId.entries())
+						.map(([rid, rIssues]) => {
+							const first = rIssues[0];
+							const errs = rIssues.filter((x) => x.severity === 'error').length;
+							const warns = rIssues.filter((x) => x.severity === 'warning').length;
+							const summaryParts = [];
+							if (errs > 0) {
+								summaryParts.push(errs + ' error' + (errs === 1 ? '' : 's'));
+							}
+							if (warns > 0) {
+								summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
+							}
+							const items = rIssues
+								.map(
+									(iss) =>
+										'<li class="pf-item pf-' +
+										iss.severity +
+										'">' +
+										'<span class="pf-field">' +
+										escapeHtml(iss.fieldLabel) +
+										' (<code>' +
+										escapeHtml(iss.field) +
+										'</code>)</span> ' +
+										'<span class="pf-msg-text">' +
+										escapeHtml(iss.message) +
+										'</span>' +
+										'</li>',
+								)
+								.join('');
+							return (
+								'<details class="pf-record"' +
+								(errs > 0 ? ' open' : '') +
+								'>' +
 								'<summary>' +
-									'<span class="pf-rec-label">' + escapeHtml(first.recordLabel) + '</span>' +
-									'<span class="pf-rec-counts">' + summaryParts.join(' \u00b7 ') + '</span>' +
-								'</summary>' +
-								'<ul class="pf-issues">' + items + '</ul>' +
-							'</details>'
-						);
-					}).join('');
-					preflightHtml =
-						'<div class="preflight ' + (errorCount > 0 ? 'has-errors' : 'has-warnings') + '">' +
-							'<div class="pf-head">' +
-								'<span class="pf-icon">' + (errorCount > 0 ? '\u26A0' : 'i') + '</span>' +
-								'<span class="pf-msg">' +
-									'<strong>Pre-flight: ' +
-									(errorCount > 0 ? errorCount + ' error' + (errorCount === 1 ? '' : 's') : '') +
-									(errorCount > 0 && warningCount > 0 ? ', ' : '') +
-									(warningCount > 0 ? warningCount + ' warning' + (warningCount === 1 ? '' : 's') : '') +
-									'.</strong> ' +
-									(errorCount > 0
-										? 'Salesforce will likely reject these records. Fix them on the canvas, or upload anyway and review the errors after.'
-										: 'These look fixable but should still upload. Review or proceed.') +
+								'<span class="pf-rec-label">' +
+								escapeHtml(first.recordLabel) +
 								'</span>' +
-							'</div>' +
-							'<div class="pf-body">' + recordSections + '</div>' +
+								'<span class="pf-rec-counts">' +
+								summaryParts.join(' \u00b7 ') +
+								'</span>' +
+								'</summary>' +
+								'<ul class="pf-issues">' +
+								items +
+								'</ul>' +
+								'</details>'
+							);
+						})
+						.join('');
+					preflightHtml =
+						'<div class="preflight ' +
+						(errorCount > 0 ? 'has-errors' : 'has-warnings') +
+						'">' +
+						'<div class="pf-head">' +
+						'<span class="pf-icon">' +
+						(errorCount > 0 ? '\u26A0' : 'i') +
+						'</span>' +
+						'<span class="pf-msg">' +
+						'<strong>Pre-flight: ' +
+						(errorCount > 0 ? errorCount + ' error' + (errorCount === 1 ? '' : 's') : '') +
+						(errorCount > 0 && warningCount > 0 ? ', ' : '') +
+						(warningCount > 0 ? warningCount + ' warning' + (warningCount === 1 ? '' : 's') : '') +
+						'.</strong> ' +
+						(errorCount > 0
+							? 'Salesforce will likely reject these records. Fix them on the canvas, or upload anyway and review the errors after.'
+							: 'These look fixable but should still upload. Review or proceed.') +
+						'</span>' +
+						'</div>' +
+						'<div class="pf-body">' +
+						recordSections +
+						'</div>' +
 						'</div>';
 				}
 				if (missingDescribes.size > 0) {
 					preflightHtml +=
 						'<div class="preflight has-warnings">' +
-							'<span class="pf-icon">i</span>' +
-							'<span class="pf-msg">Describes still loading for: ' +
-								Array.from(missingDescribes).map((n) => '<code>' + escapeHtml(n) + '</code>').join(', ') +
-								'. These objects weren\u2019t pre-flight checked.' +
-							'</span>' +
+						'<span class="pf-icon">i</span>' +
+						'<span class="pf-msg">Describes still loading for: ' +
+						Array.from(missingDescribes)
+							.map((n) => '<code>' + escapeHtml(n) + '</code>')
+							.join(', ') +
+						'. These objects weren\u2019t pre-flight checked.' +
+						'</span>' +
 						'</div>';
 				}
 				if (cycleIds.size > 0) {
 					preflightHtml =
 						'<div class="preflight has-errors">' +
-							'<span class="pf-icon">⚠</span>' +
-							'<span class="pf-msg"><strong>Reference cycle detected.</strong> ' +
-							cycleIds.size + ' record' + (cycleIds.size === 1 ? '' : 's') +
-							' depend on each other. Break the cycle on the canvas before uploading; no records have been sent to Salesforce.</span>' +
+						'<span class="pf-icon">⚠</span>' +
+						'<span class="pf-msg"><strong>Reference cycle detected.</strong> ' +
+						cycleIds.size +
+						' record' +
+						(cycleIds.size === 1 ? '' : 's') +
+						' depend on each other. Break the cycle on the canvas before uploading; no records have been sent to Salesforce.</span>' +
 						'</div>';
 				}
-			
-				const unchangedNote = unchangedSet.size > 0
-					? '<p class="tag" style="margin-top:0.4em">' + unchangedSet.size + ' loaded record' + (unchangedSet.size === 1 ? '' : 's') + ' ' + (unchangedSet.size === 1 ? 'has' : 'have') + ' no local changes and will be skipped: only modified or new records will sync.</p>'
-					: '';
-				const excludedDraftLinkNote = optionalExcludedDraftLinkCount > 0
-					? '<div class="preflight has-warnings">' +
-						'<span class="pf-icon">i</span>' +
-						'<span class="pf-msg"><strong>Some relationships won’t be included.</strong> ' +
-						optionalExcludedDraftLinkCount + ' relationship' + (optionalExcludedDraftLinkCount === 1 ? '' : 's') +
-						' point' + (optionalExcludedDraftLinkCount === 1 ? 's' : '') + ' to an unselected draft. Only the selected ' +
-						'record' + (scopedRecords.length === 1 ? '' : 's') + ' will upload. Select the related draft' +
-						(optionalExcludedDraftLinkCount === 1 ? '' : 's') + ' too if you want Salesforce to preserve ' +
-						(optionalExcludedDraftLinkCount === 1 ? 'that relationship' : 'those relationships') + '.</span>' +
-					'</div>'
-					: '';
-				const deletesBlock = deleteEntries.length > 0
-					? '<div class="upload-section-head upload-section-head--danger">Then delete <span class="tag tag-danger">irreversible</span></div>' +
-						'<p class="upload-deletes-lead">These records will be DELETE\'d in Salesforce after the creates/updates above. Deletes can\u2019t be undone from Org Loom; recover from the Salesforce recycle bin within 15 days if needed.</p>' +
-						'<div class="upload-summary upload-summary--ordered upload-summary--deletes">' +
+
+				const unchangedNote =
+					unchangedSet.size > 0
+						? '<p class="tag" style="margin-top:0.4em">' +
+							unchangedSet.size +
+							' loaded record' +
+							(unchangedSet.size === 1 ? '' : 's') +
+							' ' +
+							(unchangedSet.size === 1 ? 'has' : 'have') +
+							' no local changes and will be skipped: only modified or new records will sync.</p>'
+						: '';
+				const excludedDraftLinkNote =
+					optionalExcludedDraftLinkCount > 0
+						? '<div class="preflight has-warnings">' +
+							'<span class="pf-icon">i</span>' +
+							'<span class="pf-msg"><strong>Some relationships won’t be included.</strong> ' +
+							optionalExcludedDraftLinkCount +
+							' relationship' +
+							(optionalExcludedDraftLinkCount === 1 ? '' : 's') +
+							' point' +
+							(optionalExcludedDraftLinkCount === 1 ? 's' : '') +
+							' to an unselected draft. Only the selected ' +
+							'record' +
+							(scopedRecords.length === 1 ? '' : 's') +
+							' will upload. Select the related draft' +
+							(optionalExcludedDraftLinkCount === 1 ? '' : 's') +
+							' too if you want Salesforce to preserve ' +
+							(optionalExcludedDraftLinkCount === 1 ? 'that relationship' : 'those relationships') +
+							'.</span>' +
+							'</div>'
+						: '';
+				const deletesBlock =
+					deleteEntries.length > 0
+						? '<div class="upload-section-head upload-section-head--danger">Then delete <span class="tag tag-danger">irreversible</span></div>' +
+							'<p class="upload-deletes-lead">These records will be DELETE\'d in Salesforce after the creates/updates above. Deletes can\u2019t be undone from Org Loom; recover from the Salesforce recycle bin within 15 days if needed.</p>' +
+							'<div class="upload-summary upload-summary--ordered upload-summary--deletes">' +
 							deleteRowsHtml +
-						'</div>'
-					: '';
+							'</div>'
+						: '';
 				content.innerHTML =
 					scopeToggleHtml +
 					migrateBanner +
@@ -452,11 +555,13 @@ summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
 					unchangedNote +
 					'<div class="upload-section-head">Upload order</div>' +
 					'<div class="upload-summary upload-summary--ordered">' +
-						orderRows +
+					orderRows +
 					'</div>' +
 					deletesBlock +
 					'<div class="upload-totals">' +
-						'<div class="ut-row"><span>Total records</span><strong>' + totalRecords + '</strong></div>' +
+					'<div class="ut-row"><span>Total records</span><strong>' +
+					totalRecords +
+					'</strong></div>' +
 					'</div>';
 				const _matchBtn = content.querySelector('[data-migrate-review]');
 				if (_matchBtn) {
@@ -471,13 +576,13 @@ summaryParts.push(warns + ' warning' + (warns === 1 ? '' : 's'));
 					btn.addEventListener('click', () => {
 						const next = btn.dataset.uploadScope === 'selected';
 						if (next === _uploadScopeSelected) {
-return;
-}
+							return;
+						}
 						_uploadScopeSelected = next;
 						_renderUploadModalSummary();
 					});
 				});
-			
+
 				const hasWork = willUploadCount > 0 || willDeleteCount > 0;
 				if (cycleIds.size > 0) {
 					confirmBtn.style.display = '';
@@ -486,14 +591,15 @@ return;
 					confirmBtn.classList.remove('confirm-anyway');
 					confirmBtn.classList.remove('confirm-danger');
 					if (cancelBtn) {
-cancelBtn.textContent = 'Cancel';
-}
+						cancelBtn.textContent = 'Cancel';
+					}
 				} else if (_migActive && _migMatchBlocked > 0) {
 					confirmBtn.style.display = '';
 					confirmBtn.disabled = true;
-					confirmBtn.textContent = _migMatchUnresolved > 0
-						? 'Resolve ' + _migMatchUnresolved + ' match' + (_migMatchUnresolved === 1 ? '' : 'es')
-						: 'Resolve duplicate matches';
+					confirmBtn.textContent =
+						_migMatchUnresolved > 0
+							? 'Resolve ' + _migMatchUnresolved + ' match' + (_migMatchUnresolved === 1 ? '' : 'es')
+							: 'Resolve duplicate matches';
 					confirmBtn.classList.remove('confirm-anyway');
 					confirmBtn.classList.remove('confirm-danger');
 					if (cancelBtn) {
@@ -502,7 +608,8 @@ cancelBtn.textContent = 'Cancel';
 				} else if (_migActive && _migBlocked > 0) {
 					confirmBtn.style.display = '';
 					confirmBtn.disabled = true;
-					confirmBtn.textContent = 'Resolve ' + _migBlocked + ' blocked record' + (_migBlocked === 1 ? '' : 's');
+					confirmBtn.textContent =
+						'Resolve ' + _migBlocked + ' blocked record' + (_migBlocked === 1 ? '' : 's');
 					confirmBtn.classList.remove('confirm-anyway');
 					confirmBtn.classList.remove('confirm-danger');
 					if (cancelBtn) {
@@ -512,23 +619,26 @@ cancelBtn.textContent = 'Cancel';
 					confirmBtn.style.display = 'none';
 					confirmBtn.disabled = false;
 					if (cancelBtn) {
-cancelBtn.textContent = 'Close';
-}
+						cancelBtn.textContent = 'Close';
+					}
 				} else {
 					confirmBtn.disabled = false;
 					confirmBtn.style.display = '';
 					if (cancelBtn) {
-cancelBtn.textContent = 'Cancel';
-}
+						cancelBtn.textContent = 'Cancel';
+					}
 					const scopeLabel = _uploadScopeSelected ? 'selected' : '';
 					const deletesOnly = willUploadCount === 0 && willDeleteCount > 0;
 					if (errorCount > 0) {
 						confirmBtn.textContent = deletesOnly
 							? 'Delete anyway'
-							: (scopeLabel ? 'Upload selected anyway' : 'Upload anyway');
+							: scopeLabel
+								? 'Upload selected anyway'
+								: 'Upload anyway';
 						confirmBtn.classList.add('confirm-anyway');
 					} else if (deletesOnly) {
-						confirmBtn.textContent = 'Delete ' + willDeleteCount + ' record' + (willDeleteCount === 1 ? '' : 's');
+						confirmBtn.textContent =
+							'Delete ' + willDeleteCount + ' record' + (willDeleteCount === 1 ? '' : 's');
 						confirmBtn.classList.remove('confirm-anyway');
 						confirmBtn.classList.add('confirm-danger');
 					} else {
@@ -538,39 +648,35 @@ cancelBtn.textContent = 'Cancel';
 					}
 				}
 			}
-			
+
 			let _pendingUploadCleanup = null;
 			let _pendingCsvImportMeta = null;
 			function _runPendingUploadCleanup() {
 				_pendingCsvImportMeta = null;
 				if (!_pendingUploadCleanup) {
-return;
-}
+					return;
+				}
 				const cb = _pendingUploadCleanup;
 				_pendingUploadCleanup = null;
 				try {
- cb(); 
-} catch (e) {
- console.warn('upload cleanup failed:', e); 
-}
+					cb();
+				} catch (e) {
+					console.warn('upload cleanup failed:', e);
+				}
 			}
 			function closeUploadModal() {
 				uploadModal.classList.add('hidden');
 				_runPendingUploadCleanup();
 			}
-			
+
 			let _preflightOverride = false;
 			let _bulkSwitchAcknowledged = false;
 			let _uploadScopeSelected = false;
-			
+
 			function _scopedRealRecords() {
-				return scopeUploadRecords(
-					canvasState.bulkRecords,
-					canvasState.bulkSelectedIds,
-					_uploadScopeSelected,
-				);
+				return scopeUploadRecords(canvasState.bulkRecords, canvasState.bulkSelectedIds, _uploadScopeSelected);
 			}
-			
+
 			function _scopedExcludedDraftParentLinks() {
 				const scopedIds = new Set(_scopedRealRecords().map((r) => r.id));
 				return excludedDraftParentLinks(
@@ -580,7 +686,7 @@ return;
 					_uploadScopeSelected,
 				);
 			}
-			
+
 			function _migrateUploadValues(r) {
 				const base = (r && r.values) || {};
 				const mig = window.Orgloom && window.Orgloom.canvasMigrate;
@@ -599,12 +705,12 @@ return;
 			async function confirmUpload() {
 				const realRecords = _scopedRealRecords();
 				if (realRecords.length === 0) {
-return;
-}
+					return;
+				}
 				const migrateApi = window.Orgloom && window.Orgloom.canvasMigrate;
 				if (migrateApi && migrateApi.isActive()) {
-					const unresolvedMatches = realRecords.filter((r) =>
-						r._migrateMatchAmbiguous && !r._migrateMatchResolution,
+					const unresolvedMatches = realRecords.filter(
+						(r) => r._migrateMatchAmbiguous && !r._migrateMatchResolution,
 					);
 					const claimed = new Set();
 					let duplicateTarget = false;
@@ -630,85 +736,101 @@ return;
 				}
 				const userRecords = realRecords.filter((r) => r.objectName === 'User' && !r.loadedFromId);
 				if (userRecords.length > 0) {
-					const orgLabel = (_meInfo && _meInfo.orgType === 'production') ? 'PRODUCTION' : (_meInfo && _meInfo.orgType) || 'this org';
-					const msg = 'You\'re about to create ' + userRecords.length + ' User record' + (userRecords.length === 1 ? '' : 's') + ' in ' + orgLabel + '.\n\n' +
+					const orgLabel =
+						_meInfo && _meInfo.orgType === 'production'
+							? 'PRODUCTION'
+							: (_meInfo && _meInfo.orgType) || 'this org';
+					const msg =
+						"You're about to create " +
+						userRecords.length +
+						' User record' +
+						(userRecords.length === 1 ? '' : 's') +
+						' in ' +
+						orgLabel +
+						'.\n\n' +
 						'\u2022 Each new User consumes a Salesforce license.\n' +
-						'\u2022 Users CAN\'T be deleted, only deactivated; these stay in the org forever.\n' +
+						"\u2022 Users CAN'T be deleted, only deactivated; these stay in the org forever.\n" +
 						'\u2022 Salesforce sends a welcome email on insert (suppressed when IsActive=false).\n\n' +
 						'Proceed?';
-					if (!(await showConfirmDialog({ title: 'Create User records?', message: msg, confirmLabel: 'Create users', cancelLabel: 'Cancel', danger: true }))) {
-return;
-}
+					if (
+						!(await showConfirmDialog({
+							title: 'Create User records?',
+							message: msg,
+							confirmLabel: 'Create users',
+							cancelLabel: 'Cancel',
+							danger: true,
+						}))
+					) {
+						return;
+					}
 				}
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
 				const cancelBtn = uploadModal.querySelector('[data-upload-close]');
 				const content = uploadModal.querySelector('#upload-modal-content');
-			
+
 				const skipTempIds = realRecords
 					.filter((r) => r.loadedFromId && !isRecordModified(r) && !r.pendingDelete)
 					.map((r) => r.id);
 				const recordsForPayload = realRecords.filter((r) => !r.pendingDelete);
 				const deletesForPayload = realRecords.filter((r) => isRecordPendingDelete(r));
-				const excludedDraftLinksForPayload = _uploadScopeSelected
-					? _scopedExcludedDraftParentLinks()
-					: [];
+				const excludedDraftLinksForPayload = _uploadScopeSelected ? _scopedExcludedDraftParentLinks() : [];
 
+				// Build one immutable request snapshot so later canvas edits cannot change this attempt.
 				const scopedIds = new Set(recordsForPayload.map((r) => r.id));
 				const payload = {
-					records: recordsForPayload.map(r => ({
+					records: recordsForPayload.map((r) => ({
 						tempId: r.id,
 						objectName: r.objectName,
-						values: scopeUploadValues(
-							r,
-							_migrateUploadValues(r),
-							excludedDraftLinksForPayload,
-						),
+						values: scopeUploadValues(r, _migrateUploadValues(r), excludedDraftLinksForPayload),
 						loadedFromId: r.loadedFromId || null,
-						loadedValues: (r.loadedFromId && r.loadedValues) ? r.loadedValues : undefined,
+						loadedValues: r.loadedFromId && r.loadedValues ? r.loadedValues : undefined,
 						_csvOperation: r._csvOperation || undefined,
 						_csvExternalIdField: r._csvExternalIdField || undefined,
 					})),
-					deletes: deletesForPayload.map(r => ({
+					deletes: deletesForPayload.map((r) => ({
 						tempId: r.id,
 						sfId: r.loadedFromId,
 						objectName: r.objectName,
 					})),
-					associations: scopeUploadAssociations(canvasState.bulkAssociations, scopedIds)
-						.map((a) => ({
-							fromId: a.fromId,
-							toId: a.toId,
-							fieldName: a.fieldName,
-						})),
+					associations: scopeUploadAssociations(canvasState.bulkAssociations, scopedIds).map((a) => ({
+						fromId: a.fromId,
+						toId: a.toId,
+						fieldName: a.fieldName,
+					})),
 					skipTempIds,
 					directUpload: _isLinkedCsvQuickUploadMode(),
 				};
+				// Retries reuse this ID so the server can distinguish a retry from a new transaction.
 				if (!_uploadAttemptId) {
-					_uploadAttemptId = (window.crypto && typeof crypto.randomUUID === 'function')
-						? crypto.randomUUID()
-						: ('att-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+					_uploadAttemptId =
+						window.crypto && typeof crypto.randomUUID === 'function'
+							? crypto.randomUUID()
+							: 'att-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 				}
 				payload.attemptId = _uploadAttemptId;
 				if (_allowDuplicates) {
 					payload.allowDuplicates = true;
 				}
-			
+
 				const uploadingCountForGate = recordsForPayload.length - skipTempIds.length;
 				const PER_COMPONENT_CAP = 75;
 				const TOTAL_NODES_CAP = 500;
 				const BYTE_CAP = 5 * 1024 * 1024; // 5 MB, leaves room under the 6 MB hard ceiling
 				const components = (() => {
-					const submitted = new Set(recordsForPayload
-						.filter((r) => !(r.loadedFromId && skipTempIds.indexOf(r.id) !== -1))
-						.map((r) => r.id));
+					const submitted = new Set(
+						recordsForPayload
+							.filter((r) => !(r.loadedFromId && skipTempIds.indexOf(r.id) !== -1))
+							.map((r) => r.id),
+					);
 					const adj = new Map();
 					submitted.forEach((id) => adj.set(id, new Set()));
 					canvasState.bulkAssociations.forEach((a) => {
 						if (!a) {
-return;
-}
+							return;
+						}
 						if (!submitted.has(a.fromId) || !submitted.has(a.toId)) {
-return;
-}
+							return;
+						}
 						adj.get(a.fromId).add(a.toId);
 						adj.get(a.toId).add(a.fromId);
 					});
@@ -716,22 +838,22 @@ return;
 					const groups = [];
 					for (const seed of submitted) {
 						if (seen.has(seed)) {
-continue;
-}
+							continue;
+						}
 						const group = [];
 						const queue = [seed];
 						while (queue.length) {
 							const cur = queue.shift();
 							if (seen.has(cur)) {
-continue;
-}
+								continue;
+							}
 							seen.add(cur);
 							group.push(cur);
-							for (const n of (adj.get(cur) || [])) {
-if (!seen.has(n)) {
-queue.push(n);
-}
-}
+							for (const n of adj.get(cur) || []) {
+								if (!seen.has(n)) {
+									queue.push(n);
+								}
+							}
 						}
 						groups.push(group);
 					}
@@ -741,10 +863,13 @@ queue.push(n);
 				const _UPLOAD_SYSTEM_FIELDS = new Set([
 					'attributes',
 					'Id',
-					'CreatedDate', 'CreatedById',
-					'LastModifiedDate', 'LastModifiedById',
+					'CreatedDate',
+					'CreatedById',
+					'LastModifiedDate',
+					'LastModifiedById',
 					'SystemModstamp',
-					'LastReferencedDate', 'LastViewedDate',
+					'LastReferencedDate',
+					'LastViewedDate',
 					'IsDeleted',
 					'OwnerId',
 					'RecordTypeId',
@@ -755,19 +880,19 @@ queue.push(n);
 				if (Array.isArray(payload.records)) {
 					payload.records.forEach((r) => {
 						if (!r || !r.values || !r.objectName) {
-return;
-}
+							return;
+						}
 						const desc = canvasState.describeCache && canvasState.describeCache[r.objectName];
 						if (!desc || !Array.isArray(desc.fields)) {
-return;
-}
+							return;
+						}
 						const known = new Set(desc.fields.map((f) => f.name));
 						const isCrossOrgCarryover = !!r._wasLoadedFromOrgId;
 						let stripped = 0;
 						Object.keys(r.values).forEach((k) => {
 							if (!k || k.startsWith('_')) {
-return;
-}
+								return;
+							}
 							if (_UPLOAD_SYSTEM_FIELDS.has(k)) {
 								delete r.values[k];
 								return;
@@ -775,8 +900,8 @@ return;
 							if (!known.has(k)) {
 								delete r.values[k];
 								if (isCrossOrgCarryover) {
-stripped++;
-}
+									stripped++;
+								}
 							}
 						});
 						if (stripped > 0) {
@@ -787,9 +912,13 @@ stripped++;
 				}
 				if (_orphanStrippedCount > 0 && typeof window.olToast === 'function') {
 					window.olToast(
-						'Skipped ' + _orphanStrippedCount + ' unavailable field value' +
+						'Skipped ' +
+							_orphanStrippedCount +
+							' unavailable field value' +
 							(_orphanStrippedCount === 1 ? '' : 's') +
-							' across ' + _orphanStrippedRecordCount + ' record' +
+							' across ' +
+							_orphanStrippedRecordCount +
+							' record' +
 							(_orphanStrippedRecordCount === 1 ? '' : 's') +
 							'. They may not exist in the destination org, or Salesforce permissions may hide them.',
 						'warn',
@@ -798,40 +927,60 @@ stripped++;
 
 				const payloadJson = JSON.stringify(payload);
 				const hasUpsert = realRecords.some((r) => r._csvOperation === 'upsert');
-				const fitsGraph = uploadingCountForGate > 0
-					&& maxComponentSize <= PER_COMPONENT_CAP
-					&& uploadingCountForGate <= TOTAL_NODES_CAP
-					&& payloadJson.length <= BYTE_CAP;
+				const fitsGraph =
+					uploadingCountForGate > 0 &&
+					maxComponentSize <= PER_COMPONENT_CAP &&
+					uploadingCountForGate <= TOTAL_NODES_CAP &&
+					payloadJson.length <= BYTE_CAP;
 				if (!_preflightOverride && !payload.directUpload && !fitsGraph && uploadingCountForGate > 0) {
 					confirmBtn.disabled = false;
 					confirmBtn.textContent = 'Upload';
 					const reasons = [];
 					if (maxComponentSize > PER_COMPONENT_CAP) {
-						reasons.push('one connected cluster has ' + maxComponentSize + ' records (canvas cap is ' + PER_COMPONENT_CAP + ' per cluster)');
+						reasons.push(
+							'one connected cluster has ' +
+								maxComponentSize +
+								' records (canvas cap is ' +
+								PER_COMPONENT_CAP +
+								' per cluster)',
+						);
 					}
 					if (uploadingCountForGate > TOTAL_NODES_CAP) {
 						reasons.push(uploadingCountForGate + ' total records (canvas cap is ' + TOTAL_NODES_CAP + ')');
 					}
 					if (payloadJson.length > BYTE_CAP) {
-						reasons.push('payload is ' + (payloadJson.length / 1024 / 1024).toFixed(1) + ' MB (canvas cap is ' + (BYTE_CAP / 1024 / 1024).toFixed(0) + ' MB)');
+						reasons.push(
+							'payload is ' +
+								(payloadJson.length / 1024 / 1024).toFixed(1) +
+								' MB (canvas cap is ' +
+								(BYTE_CAP / 1024 / 1024).toFixed(0) +
+								' MB)',
+						);
 					}
 					content.innerHTML =
 						'<div class="banner error">' +
-							'<strong>Upload too large for the canvas path.</strong> ' +
-							(reasons.length ? '<ul style="margin:0.4em 0 0 1.2em">' + reasons.map((r) => '<li>' + escapeHtml(r) + '</li>').join('') + '</ul>' : '') +
-							'<p style="margin-top:0.5em">Split this upload into smaller batches, or use Direct CSV upload.</p>' +
+						'<strong>Upload too large for the canvas path.</strong> ' +
+						(reasons.length
+							? '<ul style="margin:0.4em 0 0 1.2em">' +
+								reasons.map((r) => '<li>' + escapeHtml(r) + '</li>').join('') +
+								'</ul>'
+							: '') +
+						'<p style="margin-top:0.5em">Split this upload into smaller batches, or use Direct CSV upload.</p>' +
 						'</div>';
 					return;
 				}
 				if (!_preflightOverride && fitsGraph && !hasUpsert) {
 					confirmBtn.disabled = true;
 					confirmBtn.textContent = 'Uploading\u2026';
-					const uploadingRecords = recordsForPayload.filter((record) =>
-						skipTempIds.indexOf(record.id) === -1);
+					const uploadingRecords = recordsForPayload.filter(
+						(record) => skipTempIds.indexOf(record.id) === -1,
+					);
 					content.innerHTML =
 						'<p class="center busy-row" style="justify-content:center">' +
-							'<span class="busy-spinner lg"></span>' +
-							'<span>' + escapeHtml(formatUploadProgress(uploadingRecords, canvasState.describeCache)) + '</span>' +
+						'<span class="busy-spinner lg"></span>' +
+						'<span>' +
+						escapeHtml(formatUploadProgress(uploadingRecords, canvasState.describeCache)) +
+						'</span>' +
 						'</p>';
 					let body;
 					try {
@@ -845,33 +994,47 @@ stripped++;
 						if (r.status === 401) {
 							content.innerHTML =
 								'<div class="banner error">Your Salesforce session expired. ' +
-									'<a href="' + safeLoginHref(body && body.loginUrl) + '">Sign in again</a> ' +
-									'and retry the upload.' +
+								'<a href="' +
+								safeLoginHref(body && body.loginUrl) +
+								'">Sign in again</a> ' +
+								'and retry the upload.' +
 								'</div>';
 							confirmBtn.disabled = true;
 							return;
 						}
 						if (r.status === 402 && body && body.code === 'upload_cap_reached') {
 							content.innerHTML =
-								'<div class="banner error">' + escapeHtml(body.error || 'Upload cap reached.') + '</div>' +
+								'<div class="banner error">' +
+								escapeHtml(body.error || 'Upload cap reached.') +
+								'</div>' +
 								(body.uploadsUsed != null && body.uploadCap != null
-									? '<p class="tag" style="margin-top:0.4em">Used <strong>' + body.uploadsUsed + '</strong> of ' + body.uploadCap + ' uploads this month.</p>'
+									? '<p class="tag" style="margin-top:0.4em">Used <strong>' +
+										body.uploadsUsed +
+										'</strong> of ' +
+										body.uploadCap +
+										' uploads this month.</p>'
 									: '') +
 								'<div style="display:flex;gap:0.5em;align-items:center;margin-top:0.7em;flex-wrap:wrap">' +
-									'<a class="button" href="/workspace/upgrade">Upgrade to Pro &rarr;</a>' +
-									'<a class="tag" href="/pricing" target="_blank" rel="noopener">Compare plans</a>' +
+								'<a class="button" href="/workspace/upgrade">Upgrade to Pro &rarr;</a>' +
+								'<a class="tag" href="/pricing" target="_blank" rel="noopener">Compare plans</a>' +
 								'</div>';
 							confirmBtn.disabled = true;
 							return;
 						}
 						if (r.status === 409 && body && body.error === 'upload-attempt-incomplete') {
+							// The server owns recovery guidance when an earlier attempt has an uncertain outcome.
 							renderAttemptIncomplete(body);
 							return;
 						}
 						const allResults = (body && body.results) || [];
 						const hasCommitted = allResults.some((r) => r && r.success && r.mode !== 'unchanged');
 						if (body && (body.atomicSuccess || hasCommitted)) {
-							displayUploadResults(allResults, body.instanceUrl || '', body.deletes || [], body.canonicalValues || {});
+							displayUploadResults(
+								allResults,
+								body.instanceUrl || '',
+								body.deletes || [],
+								body.canonicalValues || {},
+							);
 							return;
 						}
 						const errors = allResults
@@ -879,7 +1042,9 @@ stripped++;
 							.map((r) => {
 								const rec = canvasState.bulkRecords.find((br) => br.id === r.tempId);
 								return {
-									recordLabel: rec ? ((rec.label || rec.objectName) + ' #' + recordOrdinal(rec)) : (r.objectName + ' #' + r.tempId),
+									recordLabel: rec
+										? (rec.label || rec.objectName) + ' #' + recordOrdinal(rec)
+										: r.objectName + ' #' + r.tempId,
 									message: r.error,
 									errorCode: r.errorCode,
 									fields: r.fields,
@@ -895,21 +1060,40 @@ stripped++;
 					} catch (err) {
 						console.warn('[graph upload] failed, falling back:', err);
 						try {
- await reconcileLostUpload(payload.records); 
-} catch (_e) { /* best-effort */ }
+							await reconcileLostUpload(payload.records);
+						} catch (_e) {
+							/* best-effort */
+						}
 					}
 				}
-			
+
 				if (!_bulkSwitchAcknowledged && !fitsGraph && realRecords.length > BULK_THRESHOLD) {
 					const reasons = [];
 					if (maxComponentSize > PER_COMPONENT_CAP) {
-						reasons.push('one connected group has ' + maxComponentSize + ' records (Composite Graph caps a group at ' + PER_COMPONENT_CAP + ')');
+						reasons.push(
+							'one connected group has ' +
+								maxComponentSize +
+								' records (Composite Graph caps a group at ' +
+								PER_COMPONENT_CAP +
+								')',
+						);
 					}
 					if (uploadingCountForGate > TOTAL_NODES_CAP) {
-						reasons.push(uploadingCountForGate + ' total records (Composite Graph caps total at ' + TOTAL_NODES_CAP + ')');
+						reasons.push(
+							uploadingCountForGate +
+								' total records (Composite Graph caps total at ' +
+								TOTAL_NODES_CAP +
+								')',
+						);
 					}
 					if (payloadJson.length > BYTE_CAP) {
-						reasons.push('payload is ' + (payloadJson.length / 1024 / 1024).toFixed(1) + ' MB (Composite Graph caps payload at ' + (BYTE_CAP / 1024 / 1024).toFixed(0) + ' MB)');
+						reasons.push(
+							'payload is ' +
+								(payloadJson.length / 1024 / 1024).toFixed(1) +
+								' MB (Composite Graph caps payload at ' +
+								(BYTE_CAP / 1024 / 1024).toFixed(0) +
+								' MB)',
+						);
 					}
 					const ok = await showBulkSwitchWarning({
 						recordCount: uploadingCountForGate,
@@ -923,11 +1107,12 @@ stripped++;
 					}
 					_bulkSwitchAcknowledged = true;
 				}
-			
+
 				if (!_preflightOverride && !hasUpsert) {
 					confirmBtn.disabled = true;
 					confirmBtn.textContent = 'Validating\u2026';
-					content.innerHTML = '<p class="center">Sending a sample to Salesforce to validate the schema, validation rules, and triggers\u2026</p>';
+					content.innerHTML =
+						'<p class="center">Sending a sample to Salesforce to validate the schema, validation rules, and triggers\u2026</p>';
 					let pf;
 					try {
 						const r = await csrfFetch('/api/upload/preflight', {
@@ -940,8 +1125,10 @@ stripped++;
 						if (r.status === 401) {
 							content.innerHTML =
 								'<div class="banner error">Your Salesforce session expired. ' +
-									'<a href="' + safeLoginHref(pf && pf.loginUrl) + '">Sign in again</a> ' +
-									'and retry the upload.' +
+								'<a href="' +
+								safeLoginHref(pf && pf.loginUrl) +
+								'">Sign in again</a> ' +
+								'and retry the upload.' +
 								'</div>';
 							confirmBtn.disabled = true;
 							return;
@@ -956,13 +1143,18 @@ stripped++;
 					}
 					const skippedNote = pf.skipped
 						? ' <span class="tag">(no new records to validate)</span>'
-						: ' <span class="tag">(' + pf.sampled + ' record' + (pf.sampled === 1 ? '' : 's') + ' sampled)</span>';
-					content.innerHTML = '<p class="center">Pre-flight passed' + skippedNote + ': starting upload\u2026</p>';
+						: ' <span class="tag">(' +
+							pf.sampled +
+							' record' +
+							(pf.sampled === 1 ? '' : 's') +
+							' sampled)</span>';
+					content.innerHTML =
+						'<p class="center">Pre-flight passed' + skippedNote + ': starting upload\u2026</p>';
 				}
-			
+
 				confirmBtn.disabled = true;
 				confirmBtn.textContent = 'Uploading\u2026';
-			
+
 				const useBulk = hasUpsert || realRecords.length > BULK_THRESHOLD;
 				if (useBulk) {
 					try {
@@ -970,36 +1162,61 @@ stripped++;
 					} catch (err) {
 						let recovered = 0;
 						try {
- recovered = await reconcileLostUpload(payload.records); 
-} catch (_e) {
- recovered = 0; 
-}
+							recovered = await reconcileLostUpload(payload.records);
+						} catch (_e) {
+							recovered = 0;
+						}
 						if (recovered > 0) {
-							content.innerHTML = '<div class="banner">Connection dropped mid-upload, but ' + recovered + ' record' + (recovered === 1 ? '' : 's') + ' had already saved to Salesforce. ' + (recovered === 1 ? 'It\u2019s' : 'They\u2019re') + ' now marked as uploaded, so retrying won\u2019t create duplicates. Click Retry to finish any records that didn\u2019t save.</div>';
+							content.innerHTML =
+								'<div class="banner">Connection dropped mid-upload, but ' +
+								recovered +
+								' record' +
+								(recovered === 1 ? '' : 's') +
+								' had already saved to Salesforce. ' +
+								(recovered === 1 ? 'It\u2019s' : 'They\u2019re') +
+								' now marked as uploaded, so retrying won\u2019t create duplicates. Click Retry to finish any records that didn\u2019t save.</div>';
 						} else {
-							content.innerHTML = '<div class="banner error">Upload failed: ' + escapeHtml(err.message || String(err)) + '</div>';
+							content.innerHTML =
+								'<div class="banner error">Upload failed: ' +
+								escapeHtml(err.message || String(err)) +
+								'</div>';
 						}
 						confirmBtn.disabled = false;
 						confirmBtn.textContent = 'Retry';
 					}
 					return;
 				}
-			
+
 				const uploadingCount = recordsForPayload.length - skipTempIds.length;
 				const deleteCount = deletesForPayload.length;
-				const skippedNote = skipTempIds.length > 0
-					? '<p class="tag center">' + skipTempIds.length + ' unchanged record' + (skipTempIds.length === 1 ? '' : 's') + ' skipped.</p>'
-					: '';
-				const headerMsg = (uploadingCount === 0 && deleteCount > 0)
-					? 'Deleting ' + deleteCount + ' record' + (deleteCount === 1 ? '' : 's') + ' in Salesforce\u2026'
-					: 'Uploading ' + uploadingCount + ' record' + (uploadingCount === 1 ? '' : 's') +
-						(deleteCount > 0 ? ' (and deleting ' + deleteCount + ')' : '') +
-						' to Salesforce\u2026';
+				const skippedNote =
+					skipTempIds.length > 0
+						? '<p class="tag center">' +
+							skipTempIds.length +
+							' unchanged record' +
+							(skipTempIds.length === 1 ? '' : 's') +
+							' skipped.</p>'
+						: '';
+				const headerMsg =
+					uploadingCount === 0 && deleteCount > 0
+						? 'Deleting ' +
+							deleteCount +
+							' record' +
+							(deleteCount === 1 ? '' : 's') +
+							' in Salesforce\u2026'
+						: 'Uploading ' +
+							uploadingCount +
+							' record' +
+							(uploadingCount === 1 ? '' : 's') +
+							(deleteCount > 0 ? ' (and deleting ' + deleteCount + ')' : '') +
+							' to Salesforce\u2026';
 				content.innerHTML =
 					'<p class="center busy-row" style="justify-content:center">' +
-						'<span class="busy-spinner lg"></span>' +
-						'<span>' + headerMsg + '</span>' +
-						'<span class="busy-elapsed" id="rest-elapsed"></span>' +
+					'<span class="busy-spinner lg"></span>' +
+					'<span>' +
+					headerMsg +
+					'</span>' +
+					'<span class="busy-elapsed" id="rest-elapsed"></span>' +
 					'</p>' +
 					'<p class="tag center">Records upload one at a time: expect ~5\u201310 records per second.</p>' +
 					skippedNote;
@@ -1016,8 +1233,10 @@ stripped++;
 					if (r.status === 401) {
 						content.innerHTML =
 							'<div class="banner error">Your Salesforce session expired. ' +
-								'<a href="' + safeLoginHref(body && body.loginUrl) + '">Sign in again</a> ' +
-								'and retry the upload.' +
+							'<a href="' +
+							safeLoginHref(body && body.loginUrl) +
+							'">Sign in again</a> ' +
+							'and retry the upload.' +
 							'</div>';
 						confirmBtn.disabled = true;
 						return;
@@ -1027,9 +1246,14 @@ stripped++;
 						return;
 					}
 					if (!r.ok) {
-throw new Error((body && body.error) || 'Upload failed');
-}
-					displayUploadResults(body.results || [], body.instanceUrl || '', body.deletes || [], body.canonicalValues || {});
+						throw new Error((body && body.error) || 'Upload failed');
+					}
+					displayUploadResults(
+						body.results || [],
+						body.instanceUrl || '',
+						body.deletes || [],
+						body.canonicalValues || {},
+					);
 				} catch (err) {
 					stopElapsed();
 					let recovered = 0;
@@ -1039,91 +1263,129 @@ throw new Error((body && body.error) || 'Upload failed');
 						recovered = 0;
 					}
 					if (recovered > 0) {
-						content.innerHTML = '<div class="banner">Connection dropped mid-upload, but ' + recovered + ' record' + (recovered === 1 ? '' : 's') + ' had already saved to Salesforce. ' + (recovered === 1 ? 'It\u2019s' : 'They\u2019re') + ' now marked as uploaded, so retrying won\u2019t create duplicates. Click Retry to finish any records that didn\u2019t save.</div>';
+						content.innerHTML =
+							'<div class="banner">Connection dropped mid-upload, but ' +
+							recovered +
+							' record' +
+							(recovered === 1 ? '' : 's') +
+							' had already saved to Salesforce. ' +
+							(recovered === 1 ? 'It\u2019s' : 'They\u2019re') +
+							' now marked as uploaded, so retrying won\u2019t create duplicates. Click Retry to finish any records that didn\u2019t save.</div>';
 					} else {
-						content.innerHTML = '<div class="banner error">Upload failed: ' + escapeHtml(err.message || String(err)) + '</div>';
+						content.innerHTML =
+							'<div class="banner error">Upload failed: ' +
+							escapeHtml(err.message || String(err)) +
+							'</div>';
 					}
 					confirmBtn.disabled = false;
 					confirmBtn.textContent = 'Retry';
 				}
 			}
-			
+
 			const BULK_THRESHOLD = 150;
-			
+
 			function humanizeState(s) {
 				if (!s) {
-return '';
-}
+					return '';
+				}
 				const out = String(s).replace(/([a-z])([A-Z])/g, '$1 $2');
 				return out.charAt(0).toUpperCase() + out.slice(1).toLowerCase();
 			}
-			
-			
+
 			async function runBulkUploadSSE(payload, contentEl) {
 				contentEl.innerHTML =
 					'<div class="bulk-progress">' +
-						'<div class="bp-head">' +
-							'<span class="busy-row"><span class="busy-spinner"></span><strong>Bulk upload</strong></span> ' +
-							'<span class="tag" id="bp-summary">starting\u2026</span>' +
-							'<span class="busy-elapsed" id="bp-elapsed"></span>' +
-						'</div>' +
-						'<div class="bp-levels" id="bp-levels"></div>' +
+					'<div class="bp-head">' +
+					'<span class="busy-row"><span class="busy-spinner"></span><strong>Bulk upload</strong></span> ' +
+					'<span class="tag" id="bp-summary">starting\u2026</span>' +
+					'<span class="busy-elapsed" id="bp-elapsed"></span>' +
+					'</div>' +
+					'<div class="bp-levels" id="bp-levels"></div>' +
 					'</div>';
 				const summaryEl = contentEl.querySelector('#bp-summary');
 				const levelsEl = contentEl.querySelector('#bp-levels');
 				const stopElapsed = startElapsedTicker(contentEl.querySelector('#bp-elapsed'));
-			
+
 				let plan = null; // start-event payload
 				const jobState = new Map();
 				function jobKey(level, operation, objectName) {
- return level + '|' + operation + '|' + objectName; 
-}
-			
+					return level + '|' + operation + '|' + objectName;
+				}
+
 				function renderLevels() {
 					if (!plan) {
-return;
-}
-					const html = plan.levels.map((lvl) => {
-						const groups = lvl.groups.map((g) => {
-							const k = jobKey(lvl.level, g.operation, g.objectName);
-							const st = jobState.get(k) || {};
-							const processed = st.processed || 0;
-							const failed = st.failed || 0;
-							const total = g.count;
-							const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
-							const rawState = st.state || st.phase || 'queued';
-							const stateLabel = humanizeState(rawState);
-							const terminal = rawState === 'JobComplete' || rawState === 'Failed' || rawState === 'Aborted' || rawState === 'done';
-							const active = !terminal && rawState !== 'queued';
-							const indeterminate = active && processed === 0;
-							const spinnerHtml = active ? '<span class="busy-spinner"></span>' : '';
-							return (
-								'<div class="bp-job">' +
-									'<div class="bp-job-head">' +
-										'<span class="bp-obj">' + escapeHtml(g.objectName) + '</span> ' +
-										'<span class="tag">' + escapeHtml(g.operation) + ' \u00b7 ' + total + '</span>' +
-										'<span class="bp-state tag">' + spinnerHtml + escapeHtml(stateLabel) + '</span>' +
-									'</div>' +
-									'<div class="bp-bar' + (indeterminate ? ' indeterminate' : '') + '"><div class="bp-bar-fill" style="width:' + pct + '%"></div></div>' +
-									'<div class="bp-counts"><span>' + processed + ' / ' + total + ' processed</span>' +
+						return;
+					}
+					const html = plan.levels
+						.map((lvl) => {
+							const groups = lvl.groups
+								.map((g) => {
+									const k = jobKey(lvl.level, g.operation, g.objectName);
+									const st = jobState.get(k) || {};
+									const processed = st.processed || 0;
+									const failed = st.failed || 0;
+									const total = g.count;
+									const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+									const rawState = st.state || st.phase || 'queued';
+									const stateLabel = humanizeState(rawState);
+									const terminal =
+										rawState === 'JobComplete' ||
+										rawState === 'Failed' ||
+										rawState === 'Aborted' ||
+										rawState === 'done';
+									const active = !terminal && rawState !== 'queued';
+									const indeterminate = active && processed === 0;
+									const spinnerHtml = active ? '<span class="busy-spinner"></span>' : '';
+									return (
+										'<div class="bp-job">' +
+										'<div class="bp-job-head">' +
+										'<span class="bp-obj">' +
+										escapeHtml(g.objectName) +
+										'</span> ' +
+										'<span class="tag">' +
+										escapeHtml(g.operation) +
+										' \u00b7 ' +
+										total +
+										'</span>' +
+										'<span class="bp-state tag">' +
+										spinnerHtml +
+										escapeHtml(stateLabel) +
+										'</span>' +
+										'</div>' +
+										'<div class="bp-bar' +
+										(indeterminate ? ' indeterminate' : '') +
+										'"><div class="bp-bar-fill" style="width:' +
+										pct +
+										'%"></div></div>' +
+										'<div class="bp-counts"><span>' +
+										processed +
+										' / ' +
+										total +
+										' processed</span>' +
 										(failed > 0 ? '<span class="bp-failed">' + failed + ' failed</span>' : '') +
-									'</div>' +
+										'</div>' +
+										'</div>'
+									);
+								})
+								.join('');
+							return (
+								'<div class="bp-level">' +
+								'<div class="bp-level-head">Level ' +
+								(lvl.level + 1) +
+								' of ' +
+								plan.totalLevels +
+								'</div>' +
+								groups +
 								'</div>'
 							);
-						}).join('');
-						return (
-							'<div class="bp-level">' +
-								'<div class="bp-level-head">Level ' + (lvl.level + 1) + ' of ' + plan.totalLevels + '</div>' +
-								groups +
-							'</div>'
-						);
-					}).join('');
+						})
+						.join('');
 					levelsEl.innerHTML = html;
 				}
-			
+
 				const resp = await csrfFetch('/api/upload/bulk', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+					headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
 					body: JSON.stringify(payload),
 					credentials: 'same-origin',
 				});
@@ -1131,29 +1393,37 @@ return;
 					const body = await resp.json().catch(() => ({}));
 					contentEl.innerHTML =
 						'<div class="banner error">Your Salesforce session expired. ' +
-							'<a href="' + safeLoginHref(body && body.loginUrl) + '">Sign in again</a> ' +
-							'and retry the upload.' +
+						'<a href="' +
+						safeLoginHref(body && body.loginUrl) +
+						'">Sign in again</a> ' +
+						'and retry the upload.' +
 						'</div>';
 					return;
 				}
 				if (resp.status === 402) {
 					const body = await resp.json().catch(() => ({}));
 					contentEl.innerHTML =
-						'<div class="banner error">' + escapeHtml((body && body.error) || 'Upload cap reached.') + '</div>' +
+						'<div class="banner error">' +
+						escapeHtml((body && body.error) || 'Upload cap reached.') +
+						'</div>' +
 						(body && body.uploadsUsed != null && body.uploadCap != null
-							? '<p class="tag" style="margin-top:0.4em">Used <strong>' + body.uploadsUsed + '</strong> of ' + body.uploadCap + ' uploads this month.</p>'
+							? '<p class="tag" style="margin-top:0.4em">Used <strong>' +
+								body.uploadsUsed +
+								'</strong> of ' +
+								body.uploadCap +
+								' uploads this month.</p>'
 							: '') +
 						'<div style="display:flex;gap:0.5em;align-items:center;margin-top:0.7em;flex-wrap:wrap">' +
-							'<a class="button" href="/workspace/upgrade">Upgrade to Pro &rarr;</a>' +
-							'<a class="tag" href="/pricing" target="_blank" rel="noopener">Compare plans</a>' +
+						'<a class="button" href="/workspace/upgrade">Upgrade to Pro &rarr;</a>' +
+						'<a class="tag" href="/pricing" target="_blank" rel="noopener">Compare plans</a>' +
 						'</div>';
 					return;
 				}
 				if (!resp.ok || !resp.body) {
 					const t = await resp.text().catch(() => '');
-					throw new Error(t || ('HTTP ' + resp.status));
+					throw new Error(t || 'HTTP ' + resp.status);
 				}
-			
+
 				const reader = resp.body.getReader();
 				const decoder = new TextDecoder();
 				let buffer = '';
@@ -1165,38 +1435,45 @@ return;
 				while (true) {
 					const { done, value } = await reader.read();
 					if (done) {
-break;
-}
+						break;
+					}
 					buffer += decoder.decode(value, { stream: true });
 					let sep;
 					while ((sep = buffer.indexOf('\n\n')) !== -1) {
 						const raw = buffer.slice(0, sep);
 						buffer = buffer.slice(sep + 2);
 						if (!raw.trim()) {
-continue;
-}
+							continue;
+						}
 						let evName = 'message';
 						let dataStr = '';
 						raw.split('\n').forEach((line) => {
 							if (line.startsWith('event: ')) {
-evName = line.slice(7).trim();
-} else if (line.startsWith('data: ')) {
-dataStr += (dataStr ? '\n' : '') + line.slice(6);
-}
+								evName = line.slice(7).trim();
+							} else if (line.startsWith('data: ')) {
+								dataStr += (dataStr ? '\n' : '') + line.slice(6);
+							}
 						});
 						let data;
 						try {
- data = JSON.parse(dataStr); 
-} catch (e) {
- continue; 
-}
+							data = JSON.parse(dataStr);
+						} catch (e) {
+							continue;
+						}
 						if (evName === 'start') {
 							plan = data;
 							const willUpload = data.willUploadCount != null ? data.willUploadCount : data.totalRecords;
-							let txt = willUpload + ' record' + (willUpload === 1 ? '' : 's') + ' across ' + data.totalLevels + ' level' + (data.totalLevels === 1 ? '' : 's');
+							let txt =
+								willUpload +
+								' record' +
+								(willUpload === 1 ? '' : 's') +
+								' across ' +
+								data.totalLevels +
+								' level' +
+								(data.totalLevels === 1 ? '' : 's');
 							if (data.unchangedCount > 0) {
-txt += ' \u00b7 ' + data.unchangedCount + ' unchanged (skipped)';
-}
+								txt += ' \u00b7 ' + data.unchangedCount + ' unchanged (skipped)';
+							}
 							summaryEl.textContent = txt;
 							renderLevels();
 						} else if (evName === 'level-start') {
@@ -1204,22 +1481,24 @@ txt += ' \u00b7 ' + data.unchangedCount + ' unchanged (skipped)';
 						} else if (evName === 'job-event') {
 							if (plan) {
 								for (const lvl of plan.levels) {
-									const match = lvl.groups.find((g) => g.objectName === data.objectName && g.operation === data.operation);
+									const match = lvl.groups.find(
+										(g) => g.objectName === data.objectName && g.operation === data.operation,
+									);
 									if (match) {
 										const k = jobKey(lvl.level, data.operation, data.objectName);
 										const st = jobState.get(k) || {};
 										if (data.phase) {
-st.phase = data.phase;
-}
+											st.phase = data.phase;
+										}
 										if (data.state) {
-st.state = data.state;
-}
+											st.state = data.state;
+										}
 										if (data.processed != null) {
-st.processed = data.processed;
-}
+											st.processed = data.processed;
+										}
 										if (data.failed != null) {
-st.failed = data.failed;
-}
+											st.failed = data.failed;
+										}
 										jobState.set(k, st);
 										break;
 									}
@@ -1240,14 +1519,14 @@ st.failed = data.failed;
 				}
 				stopElapsed();
 				if (streamErr) {
-throw streamErr;
-}
+					throw streamErr;
+				}
 				if (!finalResults) {
-throw new Error('Bulk upload ended without results.');
-}
+					throw new Error('Bulk upload ended without results.');
+				}
 				displayUploadResults(finalResults, finalInstanceUrl, finalDeletes, finalCanonicalValues);
 			}
-			
+
 			function renderPreflightFailure(pf) {
 				_uploadAttemptId = null;
 				const content = uploadModal.querySelector('#upload-modal-content');
@@ -1258,51 +1537,77 @@ throw new Error('Bulk upload ended without results.');
 					const key = e.recordLabel || 'Unknown record';
 					let bucket = grouped.get(key);
 					if (!bucket) {
- bucket = []; grouped.set(key, bucket); 
-}
+						bucket = [];
+						grouped.set(key, bucket);
+					}
 					bucket.push(e);
 				});
-				const sections = Array.from(grouped.entries()).map(([label, list]) => {
-					const items = list.map((e) => {
-						const fieldsHtml = (e.fields && e.fields.length > 0)
-							? '<span class="pf-field"><code>' + e.fields.map(escapeHtml).join(', ') + '</code></span> '
-							: '';
-						const code = e.errorCode ? ' <span class="pf-rec-counts">' + escapeHtml(e.errorCode) + '</span>' : '';
+				const sections = Array.from(grouped.entries())
+					.map(([label, list]) => {
+						const items = list
+							.map((e) => {
+								const fieldsHtml =
+									e.fields && e.fields.length > 0
+										? '<span class="pf-field"><code>' +
+											e.fields.map(escapeHtml).join(', ') +
+											'</code></span> '
+										: '';
+								const code = e.errorCode
+									? ' <span class="pf-rec-counts">' + escapeHtml(e.errorCode) + '</span>'
+									: '';
+								return (
+									'<li class="pf-item pf-error">' +
+									fieldsHtml +
+									'<span class="pf-msg-text">' +
+									escapeHtml(e.message || 'Unknown error') +
+									'</span>' +
+									code +
+									'</li>'
+								);
+							})
+							.join('');
 						return (
-							'<li class="pf-item pf-error">' +
-								fieldsHtml +
-								'<span class="pf-msg-text">' + escapeHtml(e.message || 'Unknown error') + '</span>' +
-								code +
-							'</li>'
-						);
-					}).join('');
-					return (
-						'<details class="pf-record" open>' +
+							'<details class="pf-record" open>' +
 							'<summary>' +
-								'<span class="pf-rec-label">' + escapeHtml(label) + '</span>' +
-								'<span class="pf-rec-counts">' + list.length + ' SF error' + (list.length === 1 ? '' : 's') + '</span>' +
+							'<span class="pf-rec-label">' +
+							escapeHtml(label) +
+							'</span>' +
+							'<span class="pf-rec-counts">' +
+							list.length +
+							' SF error' +
+							(list.length === 1 ? '' : 's') +
+							'</span>' +
 							'</summary>' +
-							'<ul class="pf-issues">' + items + '</ul>' +
-						'</details>'
-					);
-				}).join('');
+							'<ul class="pf-issues">' +
+							items +
+							'</ul>' +
+							'</details>'
+						);
+					})
+					.join('');
 				content.innerHTML =
 					'<div class="preflight has-errors">' +
-						'<div class="pf-head">' +
-							'<span class="pf-icon">\u26A0</span>' +
-							'<span class="pf-msg">' +
-								'<strong>Salesforce rejected the sample.</strong> ' +
-								'These errors come from a real validation pass against ' + (pf.sampled || 0) + ' sample record' + (pf.sampled === 1 ? '' : 's') + ' (rolled back; nothing was committed). Fix them and retry, or upload anyway to see the same errors per-record.' +
-							'</span>' +
-						'</div>' +
-						'<div class="pf-body">' + sections + '</div>' +
+					'<div class="pf-head">' +
+					'<span class="pf-icon">\u26A0</span>' +
+					'<span class="pf-msg">' +
+					'<strong>Salesforce rejected the sample.</strong> ' +
+					'These errors come from a real validation pass against ' +
+					(pf.sampled || 0) +
+					' sample record' +
+					(pf.sampled === 1 ? '' : 's') +
+					' (rolled back; nothing was committed). Fix them and retry, or upload anyway to see the same errors per-record.' +
+					'</span>' +
+					'</div>' +
+					'<div class="pf-body">' +
+					sections +
+					'</div>' +
 					'</div>';
 				confirmBtn.disabled = false;
 				confirmBtn.textContent = 'Upload anyway';
 				confirmBtn.classList.add('confirm-anyway');
 				_preflightOverride = true; // next click bypasses preflight
 			}
-			
+
 			function _clearCommittedMigrationMatch(rec) {
 				delete rec._migrateMatchedId;
 				delete rec._migrateMatchKey;
@@ -1330,6 +1635,7 @@ throw new Error('Bulk upload ended without results.');
 			}
 
 			async function reconcileLostUpload(attemptedRecords) {
+				// Recover a committed response lost to navigation or transport failure without re-uploading.
 				try {
 					const wantObjByTempId = new Map();
 					(attemptedRecords || []).forEach((r) => {
@@ -1356,17 +1662,25 @@ throw new Error('Bulk upload ended without results.');
 						: batches.filter((b) => b && b.id && !(b.createdAt && b.createdAt < cutoff));
 					const realIdByTempId = new Map();
 					for (const b of candidates) {
-						const detR = await csrfFetch('/api/upload-batches/' + encodeURIComponent(b.id), { credentials: 'same-origin' });
+						const detR = await csrfFetch('/api/upload-batches/' + encodeURIComponent(b.id), {
+							credentials: 'same-origin',
+						});
 						if (!detR.ok) {
 							continue;
 						}
 						const detBody = await detR.json().catch(() => ({}));
-						const inserted = (detBody.batch && Array.isArray(detBody.batch.insertedIds)) ? detBody.batch.insertedIds : [];
+						const inserted =
+							detBody.batch && Array.isArray(detBody.batch.insertedIds) ? detBody.batch.insertedIds : [];
 						if (inserted.length === 0) {
 							continue;
 						}
-						if (!byToken
-							&& !inserted.every((ins) => ins && ins.tempId != null && wantObjByTempId.get(ins.tempId) === ins.objectName)) {
+						if (
+							!byToken &&
+							!inserted.every(
+								(ins) =>
+									ins && ins.tempId != null && wantObjByTempId.get(ins.tempId) === ins.objectName,
+							)
+						) {
 							continue;
 						}
 						inserted.forEach((ins) => {
@@ -1399,16 +1713,19 @@ throw new Error('Bulk upload ended without results.');
 				if (content) {
 					content.innerHTML =
 						'<div class="banner">' +
-							'<strong>Upload paused to prevent duplicate records.</strong> ' +
-							escapeHtml((body && body.message) || 'Org Loom could not confirm whether Salesforce saved the previous attempt.') +
+						'<strong>Upload paused to prevent duplicate records.</strong> ' +
+						escapeHtml(
+							(body && body.message) ||
+								'Org Loom could not confirm whether Salesforce saved the previous attempt.',
+						) +
 						'</div>' +
 						'<div style="margin-top:0.75em">' +
-							'<strong>Before uploading these drafts again:</strong>' +
-							'<ol style="margin:0.45em 0 0 1.3em;padding:0">' +
-								'<li>Open <strong>Upload History</strong> using the ↻ toolbar button and find the entry marked <strong>Outcome unknown</strong>.</li>' +
-								'<li>Check Salesforce to see whether the affected records were saved.</li>' +
-								'<li>If they were saved, refresh or replace the matching drafts on the canvas. If they were not saved, close this message and start the upload again.</li>' +
-							'</ol>' +
+						'<strong>Before uploading these drafts again:</strong>' +
+						'<ol style="margin:0.45em 0 0 1.3em;padding:0">' +
+						'<li>Open <strong>Upload History</strong> using the ↻ toolbar button and find the entry marked <strong>Outcome unknown</strong>.</li>' +
+						'<li>Check Salesforce to see whether the affected records were saved.</li>' +
+						'<li>If they were saved, refresh or replace the matching drafts on the canvas. If they were not saved, close this message and start the upload again.</li>' +
+						'</ol>' +
 						'</div>';
 				}
 				_uploadAttemptId = null;
@@ -1420,13 +1737,14 @@ throw new Error('Bulk upload ended without results.');
 			}
 
 			function displayUploadResults(results, instanceUrl, deletesResults, canonicalValues) {
+				// Only successful rows become existing records; failed rows remain editable drafts.
 				_uploadAttemptId = null;
 				_allowDuplicates = false;
 				const content = uploadModal.querySelector('#upload-modal-content');
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
-				const synced = results.filter(r => r.success && r.mode !== 'unchanged');
-				const unchanged = results.filter(r => r.success && r.mode === 'unchanged');
-				const failed = results.filter(r => !r.success);
+				const synced = results.filter((r) => r.success && r.mode !== 'unchanged');
+				const unchanged = results.filter((r) => r.success && r.mode === 'unchanged');
+				const failed = results.filter((r) => !r.success);
 				const deletesArr = Array.isArray(deletesResults) ? deletesResults : [];
 				const deleted = deletesArr.filter((d) => d && d.success);
 				const deleteFailed = deletesArr.filter((d) => d && !d.success);
@@ -1436,7 +1754,7 @@ throw new Error('Bulk upload ended without results.');
 				if (_pendingCsvImportMeta) {
 					const _csvMeta = _pendingCsvImportMeta;
 					_pendingCsvImportMeta = null;
-					const _csvStatus = failed.length === 0 ? 'ok' : (synced.length > 0 ? 'partial' : 'failed');
+					const _csvStatus = failed.length === 0 ? 'ok' : synced.length > 0 ? 'partial' : 'failed';
 					pingAuditEvent('csv_import', {
 						recordCount: _csvMeta.recordCount,
 						status: _csvStatus,
@@ -1452,22 +1770,28 @@ throw new Error('Bulk upload ended without results.');
 					});
 				}
 				const sfBase = (instanceUrl || '').replace(/\/+$/, '');
-				const recordUrl = (objectName, id) => sfBase
-					? sfBase + '/lightning/r/' + encodeURIComponent(objectName) + '/' + encodeURIComponent(id) + '/view'
-					: null;
-			
+				const recordUrl = (objectName, id) =>
+					sfBase
+						? sfBase +
+							'/lightning/r/' +
+							encodeURIComponent(objectName) +
+							'/' +
+							encodeURIComponent(id) +
+							'/view'
+						: null;
+
 				const summaryParts = [];
 				if (synced.length > 0) {
-summaryParts.push(synced.length + ' synced');
-}
+					summaryParts.push(synced.length + ' synced');
+				}
 				if (unchanged.length > 0) {
-summaryParts.push(unchanged.length + ' unchanged');
-}
+					summaryParts.push(unchanged.length + ' unchanged');
+				}
 				if (failed.length > 0) {
-summaryParts.push(failed.length + ' failed');
-}
+					summaryParts.push(failed.length + ' failed');
+				}
 				const summaryText = summaryParts.join(', ') || 'No records to sync';
-			
+
 				let html = '';
 				if (failed.length === 0 && synced.length > 0) {
 					html += '<div class="banner success">' + escapeHtml(summaryText) + '.</div>';
@@ -1479,34 +1803,66 @@ summaryParts.push(failed.length + ' failed');
 					html += '<div class="banner">' + escapeHtml(summaryText) + '.</div>';
 				}
 				if (synced.length > 0) {
-					html += '<div class="upload-section-head upload-section-head--ok">Synced</div>' +
+					html +=
+						'<div class="upload-section-head upload-section-head--ok">Synced</div>' +
 						'<div class="upload-summary" style="grid-template-columns: auto 1fr auto auto;">' +
-							synced.map((r, i) => {
+						synced
+							.map((r, i) => {
 								const url = recordUrl(r.objectName, r.id);
 								const idHtml = url
-									? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener"><code>' + escapeHtml(r.id) + '</code></a>'
+									? '<a href="' +
+										escapeHtml(url) +
+										'" target="_blank" rel="noopener"><code>' +
+										escapeHtml(r.id) +
+										'</code></a>'
 									: '<code>' + escapeHtml(r.id) + '</code>';
 								const modeLabel = r.mode === 'update' ? 'updated' : 'created';
-								return '<div>#' + (i + 1) + '</div>' +
-									'<div>' + escapeHtml(r.objectName) + '</div>' +
-									'<div>' + idHtml + '</div>' +
-									'<div class="tag">' + modeLabel + '</div>';
-							}).join('') +
+								return (
+									'<div>#' +
+									(i + 1) +
+									'</div>' +
+									'<div>' +
+									escapeHtml(r.objectName) +
+									'</div>' +
+									'<div>' +
+									idHtml +
+									'</div>' +
+									'<div class="tag">' +
+									modeLabel +
+									'</div>'
+								);
+							})
+							.join('') +
 						'</div>';
 				}
 				if (unchanged.length > 0) {
-					html += '<div class="upload-section-head upload-section-head--ok">Unchanged (skipped)</div>' +
+					html +=
+						'<div class="upload-section-head upload-section-head--ok">Unchanged (skipped)</div>' +
 						'<p class="tag" style="margin-top:-0.4em">These records were already in Salesforce and had no local edits, so we didn\u2019t touch them.</p>' +
 						'<div class="upload-summary" style="grid-template-columns: auto 1fr auto;">' +
-							unchanged.map((r, i) => {
+						unchanged
+							.map((r, i) => {
 								const url = recordUrl(r.objectName, r.id);
 								const idHtml = url
-									? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener"><code>' + escapeHtml(r.id) + '</code></a>'
+									? '<a href="' +
+										escapeHtml(url) +
+										'" target="_blank" rel="noopener"><code>' +
+										escapeHtml(r.id) +
+										'</code></a>'
 									: '<code>' + escapeHtml(r.id) + '</code>';
-								return '<div>#' + (i + 1) + '</div>' +
-									'<div>' + escapeHtml(r.objectName) + '</div>' +
-									'<div>' + idHtml + '</div>';
-							}).join('') +
+								return (
+									'<div>#' +
+									(i + 1) +
+									'</div>' +
+									'<div>' +
+									escapeHtml(r.objectName) +
+									'</div>' +
+									'<div>' +
+									idHtml +
+									'</div>'
+								);
+							})
+							.join('') +
 						'</div>';
 				}
 				const dupFailed = failed.filter((r) => r && r.errorCode === 'DUPLICATES_DETECTED');
@@ -1514,39 +1870,70 @@ summaryParts.push(failed.length + ' failed');
 					html += '<div class="upload-section-head upload-section-head--fail">Failed</div>';
 					failed.forEach((r, i) => {
 						const isDup = r && r.errorCode === 'DUPLICATES_DETECTED';
-						html += '<div class="upload-failure-block">' +
-							'<strong>#' + (i + 1) + ' ' + escapeHtml(r.objectName) + '</strong>' +
-							'<div class="upload-failure-msg">' + escapeHtml(r.error || 'Unknown error') +
-								(isDup ? ': a Salesforce duplicate rule matched an existing record.' : '') +
+						html +=
+							'<div class="upload-failure-block">' +
+							'<strong>#' +
+							(i + 1) +
+							' ' +
+							escapeHtml(r.objectName) +
+							'</strong>' +
+							'<div class="upload-failure-msg">' +
+							escapeHtml(r.error || 'Unknown error') +
+							(isDup ? ': a Salesforce duplicate rule matched an existing record.' : '') +
 							'</div>' +
-						'</div>';
+							'</div>';
 					});
 					if (dupFailed.length > 0) {
-						html += '<div class="banner" style="margin-top:0.6em">' +
-							'<strong>' + dupFailed.length + ' record' + (dupFailed.length === 1 ? '' : 's') + ' blocked by Salesforce duplicate rules.</strong> ' +
-							'If ' + (dupFailed.length === 1 ? 'this is' : 'these are') + ' intentional (not accidental duplicates), you can upload anyway; Salesforce will record the duplicate alert but accept the save. ' +
+						html +=
+							'<div class="banner" style="margin-top:0.6em">' +
+							'<strong>' +
+							dupFailed.length +
+							' record' +
+							(dupFailed.length === 1 ? '' : 's') +
+							' blocked by Salesforce duplicate rules.</strong> ' +
+							'If ' +
+							(dupFailed.length === 1 ? 'this is' : 'these are') +
+							' intentional (not accidental duplicates), you can upload anyway; Salesforce will record the duplicate alert but accept the save. ' +
 							'<button type="button" class="button secondary" id="upload-allow-dups" style="margin-left:0.4em;font-size:0.82rem;padding:0.2em 0.6em">Upload anyway</button>' +
-						'</div>';
+							'</div>';
 					}
 				}
 				if (deleted.length > 0) {
-					html += '<div class="upload-section-head upload-section-head--danger">Deleted in Salesforce</div>' +
+					html +=
+						'<div class="upload-section-head upload-section-head--danger">Deleted in Salesforce</div>' +
 						'<p class="tag" style="margin-top:-0.4em">These records are gone. Org Loom can’t undelete them; restore from the Salesforce recycle bin within 15 days if needed.</p>' +
 						'<div class="upload-summary" style="grid-template-columns: auto 1fr auto;">' +
-							deleted.map((d, i) => {
-								return '<div>#' + (i + 1) + '</div>' +
-									'<div>' + escapeHtml(d.objectName || '') + '</div>' +
-									'<div><code>' + escapeHtml(d.sfId || '') + '</code></div>';
-							}).join('') +
+						deleted
+							.map((d, i) => {
+								return (
+									'<div>#' +
+									(i + 1) +
+									'</div>' +
+									'<div>' +
+									escapeHtml(d.objectName || '') +
+									'</div>' +
+									'<div><code>' +
+									escapeHtml(d.sfId || '') +
+									'</code></div>'
+								);
+							})
+							.join('') +
 						'</div>';
 				}
 				if (deleteFailed.length > 0) {
 					html += '<div class="upload-section-head upload-section-head--fail">Delete failed</div>';
 					deleteFailed.forEach((d, i) => {
-						html += '<div class="upload-failure-block">' +
-							'<strong>#' + (i + 1) + ' ' + escapeHtml(d.objectName || '') + '</strong>' +
-							'<div class="upload-failure-msg">' + escapeHtml(d.error || 'Unknown error') + '</div>' +
-						'</div>';
+						html +=
+							'<div class="upload-failure-block">' +
+							'<strong>#' +
+							(i + 1) +
+							' ' +
+							escapeHtml(d.objectName || '') +
+							'</strong>' +
+							'<div class="upload-failure-msg">' +
+							escapeHtml(d.error || 'Unknown error') +
+							'</div>' +
+							'</div>';
 					});
 				}
 				content.innerHTML = html;
@@ -1566,13 +1953,13 @@ summaryParts.push(failed.length + ' failed');
 				if (deleted.length > 0) {
 					const deletedTempIds = new Set(deleted.map((d) => d.tempId));
 					canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => !deletedTempIds.has(r.id));
-					canvasState.bulkAssociations = canvasState.bulkAssociations.filter((a) =>
-						!deletedTempIds.has(a.fromId) && !deletedTempIds.has(a.toId)
+					canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
+						(a) => !deletedTempIds.has(a.fromId) && !deletedTempIds.has(a.toId),
 					);
 					deletedTempIds.forEach((id) => canvasState.bulkSelectedIds.delete(id));
 				}
-			
-				const realIdByTempId = new Map(synced.map(r => [r.tempId, r.id]));
+
+				const realIdByTempId = new Map(synced.map((r) => [r.tempId, r.id]));
 				const realIdByRuntimeId = new Map(realIdByTempId);
 				canvasState.bulkRecords.forEach((rec) => {
 					if (!realIdByRuntimeId.has(rec.id) && rec.loadedFromId) {
@@ -1581,20 +1968,21 @@ summaryParts.push(failed.length + ' failed');
 				});
 				(canvasState.bulkAssociations || []).forEach((a) => {
 					if (!a || !a.fieldName) {
-return;
-}
+						return;
+					}
 					const child = canvasState.bulkRecords.find((r) => r.id === a.fromId);
 					if (!child || !child.values) {
-return;
-}
+						return;
+					}
 					const parentRealId = realIdByRuntimeId.get(a.toId);
 					if (!parentRealId) {
-return;
-}
+						return;
+					}
 					child.values[a.fieldName] = parentRealId;
 				});
+				// Salesforce canonical values win over submitted values after a successful write.
 				const canonicalMap = canonicalValues && typeof canonicalValues === 'object' ? canonicalValues : {};
-				canvasState.bulkRecords.forEach(rec => {
+				canvasState.bulkRecords.forEach((rec) => {
 					if (realIdByTempId.has(rec.id)) {
 						rec.loadedFromId = realIdByTempId.get(rec.id);
 						rec.values = rec.values || {};
@@ -1603,8 +1991,8 @@ return;
 						if (canonical && typeof canonical === 'object') {
 							for (const fieldName of Object.keys(canonical)) {
 								if (!fieldName || fieldName.startsWith('_')) {
-continue;
-}
+									continue;
+								}
 								rec.values[fieldName] = canonical[fieldName];
 							}
 						}
@@ -1621,18 +2009,21 @@ continue;
 							(r) => r && !r.isTypeNode && !r.pendingDelete && !r.loadedFromId,
 						);
 						if (!_remaining) {
-							if (window.Orgloom.canvasOrgSwitch &&
-								window.Orgloom.canvasOrgSwitch.migrationClear) {
+							if (window.Orgloom.canvasOrgSwitch && window.Orgloom.canvasOrgSwitch.migrationClear) {
 								window.Orgloom.canvasOrgSwitch.migrationClear();
 							}
 							if (_mig.exit) {
 								_mig.exit();
 							}
 							const _n = synced.length;
-							const _doneMsg = _n > 0
-								? 'Migration complete: ' + _n + ' record' + (_n === 1 ? '' : 's') +
-									' now live in this org. You’re back to a normal canvas.'
-								: 'Migration complete: everything was already up to date. You’re back to a normal canvas.';
+							const _doneMsg =
+								_n > 0
+									? 'Migration complete: ' +
+										_n +
+										' record' +
+										(_n === 1 ? '' : 's') +
+										' now live in this org. You’re back to a normal canvas.'
+									: 'Migration complete: everything was already up to date. You’re back to a normal canvas.';
 							showBulkToast(_doneMsg);
 						}
 					}
@@ -1640,16 +2031,17 @@ continue;
 
 				confirmBtn.disabled = false;
 				confirmBtn.textContent = failed.length > 0 ? 'Retry failed' : 'Close';
-				confirmBtn.onclick = failed.length > 0
-					? (() => {
-						confirmBtn.onclick = confirmUpload;
-						confirmUpload();
-					})
-					: closeUploadModal;
+				confirmBtn.onclick =
+					failed.length > 0
+						? () => {
+								confirmBtn.onclick = confirmUpload;
+								confirmUpload();
+							}
+						: closeUploadModal;
 				const cancelBtn = uploadModal.querySelector('#upload-cancel');
 				if (cancelBtn) {
-cancelBtn.style.display = failed.length === 0 ? 'none' : '';
-}
+					cancelBtn.style.display = failed.length === 0 ? 'none' : '';
+				}
 			}
 
 			return {
@@ -1658,11 +2050,11 @@ cancelBtn.style.display = failed.length === 0 ? 'none' : '';
 				confirmUpload: confirmUpload,
 				_runPendingUploadCleanup: _runPendingUploadCleanup,
 				setPendingUploadCleanup: function (fn) {
- _pendingUploadCleanup = fn; 
-},
+					_pendingUploadCleanup = fn;
+				},
 				setPendingCsvImportMeta: function (meta) {
- _pendingCsvImportMeta = meta; 
-},
+					_pendingCsvImportMeta = meta;
+				},
 			};
 		},
 	};

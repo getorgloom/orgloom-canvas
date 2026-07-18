@@ -1,14 +1,13 @@
-
-
 (function () {
 	'use strict';
+	// Serves live canvas reads to the authenticated MCP relay without persisting canvas data there.
 
 	if (!document.getElementById('app-root')) {
-return;
-}
+		return;
+	}
 	if (window.ORGLOOM_MOCK) {
-return;
-}
+		return;
+	}
 
 	function csrfFetch(url, options) {
 		options = options || {};
@@ -22,8 +21,8 @@ return;
 			});
 		}
 		if (!('credentials' in options)) {
-options.credentials = 'same-origin';
-}
+			options.credentials = 'same-origin';
+		}
 		return globalThis.fetch(url, options);
 	}
 
@@ -37,13 +36,15 @@ options.credentials = 'same-origin';
 			if (localStorage.getItem('orgloomRelayDebug') === '1') {
 				console.log('[mcp-relay]', ...args);
 			}
-		} catch (e) { /* private mode etc. */ }
+		} catch (e) {
+			/* private mode etc. */
+		}
 	}
 
 	function _connect() {
 		if (_eventSource) {
-return;
-}
+			return;
+		}
 		_connectAttempts++;
 		_log('opening SSE (attempt ' + _connectAttempts + ')');
 		_eventSource = new EventSource('/api/mcp/relay/listen', { withCredentials: true });
@@ -55,16 +56,17 @@ return;
 				_log('connected, connectionId=' + _connectionId);
 				_maybeRegisterCurrent();
 			} catch (e) {
- _log('bad ready payload:', e); 
-}
+				_log('bad ready payload:', e);
+			}
 		});
 		_eventSource.addEventListener('request', (ev) => {
 			let data;
 			try {
- data = JSON.parse(ev.data); 
-} catch (e) {
- _log('bad request payload:', e); return; 
-}
+				data = JSON.parse(ev.data);
+			} catch (e) {
+				_log('bad request payload:', e);
+				return;
+			}
 			_handleRequest(data);
 		});
 		_eventSource.onerror = (err) => {
@@ -77,6 +79,7 @@ return;
 	}
 
 	async function _handleRequest({ requestId, method, canvasId, params }) {
+		// Reject reads for canvases that are not registered in this visible browser session.
 		_log('handle request:', method, canvasId, requestId);
 		try {
 			let result;
@@ -107,22 +110,22 @@ return;
 
 	async function _postResponse(requestId, result, error) {
 		if (!_connectionId) {
-return;
-}
+			return;
+		}
 		try {
 			await csrfFetch('/api/mcp/relay/respond', {
 				method: 'POST',
 				body: JSON.stringify({ connectionId: _connectionId, requestId, result, error }),
 			});
 		} catch (e) {
- _log('respond POST failed:', e); 
-}
+			_log('respond POST failed:', e);
+		}
 	}
 
 	async function _register(canvasId, meta) {
 		if (!_connectionId) {
-return;
-}
+			return;
+		}
 		_registeredCanvasId = canvasId;
 		try {
 			await csrfFetch('/api/mcp/relay/register', {
@@ -131,17 +134,17 @@ return;
 			});
 			_log('registered canvas', canvasId);
 		} catch (e) {
- _log('register POST failed:', e); 
-}
+			_log('register POST failed:', e);
+		}
 	}
 
 	async function _unregister(canvasId) {
 		if (!_connectionId || !canvasId) {
-return;
-}
+			return;
+		}
 		if (_registeredCanvasId === canvasId) {
-_registeredCanvasId = null;
-}
+			_registeredCanvasId = null;
+		}
 		try {
 			await csrfFetch('/api/mcp/relay/unregister', {
 				method: 'POST',
@@ -149,15 +152,16 @@ _registeredCanvasId = null;
 			});
 			_log('unregistered canvas', canvasId);
 		} catch (e) {
- _log('unregister POST failed:', e); 
-}
+			_log('unregister POST failed:', e);
+		}
 	}
 
 	let _pendingLoad = null;
 	function _maybeRegisterCurrent() {
+		// Hidden tabs do not advertise a canvas as the active MCP client.
 		if (document.visibilityState !== 'visible') {
-return;
-}
+			return;
+		}
 		if (_pendingLoad) {
 			_register(_pendingLoad.canvasId, _pendingLoad.meta);
 			_pendingLoad = null;
@@ -167,16 +171,16 @@ return;
 		if (cs && typeof cs.getCurrentCanvas === 'function') {
 			const c = cs.getCurrentCanvas();
 			if (c && c.canvasId) {
-_register(c.canvasId, c.meta || {});
-}
+				_register(c.canvasId, c.meta || {});
+			}
 		}
 	}
 
 	window.addEventListener('orgloom:canvas-loaded', (ev) => {
 		const detail = ev.detail || {};
 		if (!detail.canvasId) {
-return;
-}
+			return;
+		}
 		_syncRegistration(detail.canvasId, detail.meta || {});
 	});
 
@@ -184,16 +188,16 @@ return;
 		const detail = ev.detail || {};
 		const cid = detail.canvasId || _registeredCanvasId;
 		if (cid) {
-_unregister(cid);
-}
+			_unregister(cid);
+		}
 		_pendingLoad = null;
 	});
 
 	function _syncRegistration(canvasId, meta) {
 		if (document.visibilityState !== 'visible') {
 			if (_registeredCanvasId) {
-_unregister(_registeredCanvasId);
-}
+				_unregister(_registeredCanvasId);
+			}
 			return;
 		}
 		if (_registeredCanvasId && _registeredCanvasId !== canvasId) {
@@ -211,8 +215,8 @@ _unregister(_registeredCanvasId);
 	document.addEventListener('visibilitychange', () => {
 		const cs = window.Orgloom && window.Orgloom.canvasState;
 		if (!cs || typeof cs.getCurrentCanvas !== 'function') {
-return;
-}
+			return;
+		}
 		if (document.visibilityState === 'visible') {
 			const current = cs.getCurrentCanvas();
 			if (current && current.canvasId) {
@@ -226,12 +230,12 @@ return;
 	setInterval(() => {
 		const cs = window.Orgloom && window.Orgloom.canvasState;
 		if (!cs || typeof cs.getCurrentCanvas !== 'function') {
-return;
-}
+			return;
+		}
 		if (document.visibilityState !== 'visible') {
 			if (_registeredCanvasId) {
-_unregister(_registeredCanvasId);
-}
+				_unregister(_registeredCanvasId);
+			}
 			return;
 		}
 		const current = cs.getCurrentCanvas();

@@ -1,15 +1,18 @@
-
 (function () {
 	'use strict';
+	// Searches values already present on the canvas and focuses the selected result.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	const SYSTEM_FIELDS = new Set([
 		'Id',
-		'CreatedDate', 'CreatedById',
-		'LastModifiedDate', 'LastModifiedById',
+		'CreatedDate',
+		'CreatedById',
+		'LastModifiedDate',
+		'LastModifiedById',
 		'SystemModstamp',
-		'LastReferencedDate', 'LastViewedDate',
+		'LastReferencedDate',
+		'LastViewedDate',
 		'IsDeleted',
 	]);
 
@@ -19,8 +22,8 @@
 		mount: function mount(deps) {
 			const required = ['canvasState', 'getCyInstance', 'escapeHtml'];
 			if (!deps) {
-throw new Error('canvas-search.mount: missing deps object');
-}
+				throw new Error('canvas-search.mount: missing deps object');
+			}
 			for (const k of required) {
 				if (deps[k] === undefined || deps[k] === null) {
 					throw new Error('canvas-search.mount: missing dep ' + k);
@@ -35,21 +38,21 @@ throw new Error('canvas-search.mount: missing deps object');
 			modal.innerHTML =
 				'<div class="modal-overlay" data-csr-close></div>' +
 				'<div class="modal-body" style="max-width:640px">' +
-					'<div class="modal-header">' +
-						'<h3>Search canvas</h3>' +
-						'<button class="modal-close" data-csr-close>&times;</button>' +
-					'</div>' +
-					'<div class="modal-content">' +
-						'<input type="search" id="csr-input" class="csr-input" ' +
-							'placeholder="Search field values across all cards on the canvas…" ' +
-							'autocomplete="off" spellcheck="false">' +
-						'<div class="csr-stats" id="csr-stats"></div>' +
-						'<div class="csr-results" id="csr-results"></div>' +
-					'</div>' +
-					'<div class="modal-footer">' +
-						'<span class="tag csr-hint">Click a result to jump to the card. <kbd>Esc</kbd> to close.</span>' +
-						'<button class="button secondary" data-csr-close>Close</button>' +
-					'</div>' +
+				'<div class="modal-header">' +
+				'<h3>Search canvas</h3>' +
+				'<button class="modal-close" data-csr-close>&times;</button>' +
+				'</div>' +
+				'<div class="modal-content">' +
+				'<input type="search" id="csr-input" class="csr-input" ' +
+				'placeholder="Search field values across all cards on the canvas…" ' +
+				'autocomplete="off" spellcheck="false">' +
+				'<div class="csr-stats" id="csr-stats"></div>' +
+				'<div class="csr-results" id="csr-results"></div>' +
+				'</div>' +
+				'<div class="modal-footer">' +
+				'<span class="tag csr-hint">Click a result to jump to the card. <kbd>Esc</kbd> to close.</span>' +
+				'<button class="button secondary" data-csr-close>Close</button>' +
+				'</div>' +
 				'</div>';
 			document.body.appendChild(modal);
 
@@ -86,37 +89,39 @@ throw new Error('canvas-search.mount: missing deps object');
 			function recordLabel(rec) {
 				const v = (rec && rec.values) || {};
 				if (v.Name) {
-return String(v.Name);
-}
+					return String(v.Name);
+				}
 				const fn = v.FirstName || '';
 				const ln = v.LastName || '';
 				if (fn || ln) {
-return (fn + ' ' + ln).trim();
-}
+					return (fn + ' ' + ln).trim();
+				}
 				if (v.Subject) {
-return String(v.Subject);
-}
+					return String(v.Subject);
+				}
 				if (v.Title) {
-return String(v.Title);
-}
+					return String(v.Title);
+				}
 				if (v.CaseNumber) {
-return String(v.CaseNumber);
-}
+					return String(v.CaseNumber);
+				}
 				return rec && rec.objectName ? '(unnamed ' + rec.objectName + ')' : '(unnamed)';
 			}
 
 			function search(query) {
-				const q = String(query || '').trim().toLowerCase();
+				const q = String(query || '')
+					.trim()
+					.toLowerCase();
 				if (!q) {
-return { matches: [], recordsScanned: 0 };
-}
+					return { matches: [], recordsScanned: 0 };
+				}
 				const recs = Array.isArray(canvasState.bulkRecords) ? canvasState.bulkRecords : [];
 				const matches = [];
 				let recordsScanned = 0;
 				for (const rec of recs) {
 					if (!rec || rec.isTypeNode || rec.isPending) {
-continue;
-}
+						continue;
+					}
 					recordsScanned++;
 					const label = recordLabel(rec);
 					const labelLower = label.toLowerCase();
@@ -125,24 +130,24 @@ continue;
 					const values = (rec && rec.values) || {};
 					for (const k of Object.keys(values)) {
 						if (matches.length >= MAX_RESULTS) {
-break;
-}
+							break;
+						}
 						if (!k || k.startsWith('_')) {
-continue;
-}
+							continue;
+						}
 						if (SYSTEM_FIELDS.has(k)) {
-continue;
-}
+							continue;
+						}
 						const v = values[k];
 						if (v == null || v === '') {
-continue;
-}
+							continue;
+						}
 						const sv = String(v);
 						const svLower = sv.toLowerCase();
 						const idx = svLower.indexOf(q);
 						if (idx === -1) {
-continue;
-}
+							continue;
+						}
 						matches.push({
 							recordId: rec.id,
 							objectName: rec.objectName,
@@ -185,22 +190,20 @@ continue;
 						}
 					}
 					if (matches.length >= MAX_RESULTS) {
-break;
-}
+						break;
+					}
 				}
 				return { matches, recordsScanned };
 			}
 
 			function renderMatchedValue(value, matchStart, matchLen) {
 				if (matchStart < 0) {
-return escapeHtml(value);
-}
+					return escapeHtml(value);
+				}
 				const before = value.slice(0, matchStart);
 				const hit = value.slice(matchStart, matchStart + matchLen);
 				const after = value.slice(matchStart + matchLen);
-				return escapeHtml(before) +
-					'<mark class="csr-mark">' + escapeHtml(hit) + '</mark>' +
-					escapeHtml(after);
+				return escapeHtml(before) + '<mark class="csr-mark">' + escapeHtml(hit) + '</mark>' + escapeHtml(after);
 			}
 
 			function renderResults() {
@@ -208,44 +211,65 @@ return escapeHtml(value);
 				const { matches, recordsScanned } = search(query);
 				if (!query.trim()) {
 					statsEl.textContent = '';
-					resultsEl.innerHTML = '<div class="csr-empty">Start typing to find records by field value or name.</div>';
+					resultsEl.innerHTML =
+						'<div class="csr-empty">Start typing to find records by field value or name.</div>';
 					return;
 				}
 				if (matches.length === 0) {
-					statsEl.textContent = 'No matches in ' + recordsScanned + ' record' + (recordsScanned === 1 ? '' : 's') + '.';
+					statsEl.textContent =
+						'No matches in ' + recordsScanned + ' record' + (recordsScanned === 1 ? '' : 's') + '.';
 					resultsEl.innerHTML = '<div class="csr-empty">No field values or record names contain that.</div>';
 					return;
 				}
-				const cap = matches.length >= MAX_RESULTS
-					? ' (showing first ' + MAX_RESULTS + ' - refine to narrow)'
-					: '';
-				statsEl.textContent = matches.length + ' match' + (matches.length === 1 ? '' : 'es') +
-					' across ' + recordsScanned + ' record' + (recordsScanned === 1 ? '' : 's') + cap + '.';
-				resultsEl.innerHTML = matches.map((m, i) => {
-					const valueHtml = renderMatchedValue(m.value, m.matchStart, m.matchLen);
-					const fieldChip = m.fieldName
-						? '<span class="csr-field"><code>' + escapeHtml(m.fieldName) + '</code></span>'
-						: (m.kind === 'id'
-							? '<span class="csr-field csr-field--label">Salesforce Id</span>'
-							: '<span class="csr-field csr-field--label">name</span>');
-					return '<button type="button" class="csr-result" data-csr-idx="' + i + '">' +
-						'<div class="csr-result-head">' +
-							'<span class="csr-result-label">' + escapeHtml(m.label) + '</span>' +
-							'<span class="csr-result-obj tag">' + escapeHtml(m.objectName || '') + '</span>' +
-						'</div>' +
-						'<div class="csr-result-body">' +
+				const cap =
+					matches.length >= MAX_RESULTS ? ' (showing first ' + MAX_RESULTS + ' - refine to narrow)' : '';
+				statsEl.textContent =
+					matches.length +
+					' match' +
+					(matches.length === 1 ? '' : 'es') +
+					' across ' +
+					recordsScanned +
+					' record' +
+					(recordsScanned === 1 ? '' : 's') +
+					cap +
+					'.';
+				resultsEl.innerHTML = matches
+					.map((m, i) => {
+						const valueHtml = renderMatchedValue(m.value, m.matchStart, m.matchLen);
+						const fieldChip = m.fieldName
+							? '<span class="csr-field"><code>' + escapeHtml(m.fieldName) + '</code></span>'
+							: m.kind === 'id'
+								? '<span class="csr-field csr-field--label">Salesforce Id</span>'
+								: '<span class="csr-field csr-field--label">name</span>';
+						return (
+							'<button type="button" class="csr-result" data-csr-idx="' +
+							i +
+							'">' +
+							'<div class="csr-result-head">' +
+							'<span class="csr-result-label">' +
+							escapeHtml(m.label) +
+							'</span>' +
+							'<span class="csr-result-obj tag">' +
+							escapeHtml(m.objectName || '') +
+							'</span>' +
+							'</div>' +
+							'<div class="csr-result-body">' +
 							fieldChip +
-							'<span class="csr-result-value">' + valueHtml + '</span>' +
-						'</div>' +
-					'</button>';
-				}).join('');
+							'<span class="csr-result-value">' +
+							valueHtml +
+							'</span>' +
+							'</div>' +
+							'</button>'
+						);
+					})
+					.join('');
 				resultsEl.querySelectorAll('[data-csr-idx]').forEach((btn) => {
 					btn.addEventListener('click', () => {
 						const i = parseInt(btn.dataset.csrIdx, 10);
 						const m = matches[i];
 						if (!m) {
-return;
-}
+							return;
+						}
 						jumpToRecord(m.recordId);
 						closeModal();
 					});
@@ -255,41 +279,41 @@ return;
 			let _debounce = null;
 			input.addEventListener('input', () => {
 				if (_debounce) {
-clearTimeout(_debounce);
-}
+					clearTimeout(_debounce);
+				}
 				_debounce = setTimeout(renderResults, 60);
 			});
 			input.addEventListener('keydown', (e) => {
 				if (e.key !== 'Enter') {
-return;
-}
+					return;
+				}
 				const first = resultsEl.querySelector('[data-csr-idx]');
 				if (first) {
-first.click();
-}
+					first.click();
+				}
 			});
 
 			function jumpToRecord(recordId) {
 				const cy = getCyInstance && getCyInstance();
 				if (!cy) {
-return;
-}
+					return;
+				}
 				const node = cy.getElementById('r' + recordId);
 				if (!node || !node.length) {
-return;
-}
+					return;
+				}
 				cy.animate({
 					center: { eles: node },
 					duration: 380,
 					easing: 'ease-out',
 				});
 				try {
- node.addClass('csr-flash'); 
-} catch (_) {}
+					node.addClass('csr-flash');
+				} catch (_) {}
 				setTimeout(() => {
 					try {
- node.removeClass('csr-flash'); 
-} catch (_) {}
+						node.removeClass('csr-flash');
+					} catch (_) {}
 				}, 1400);
 			}
 

@@ -1,12 +1,20 @@
-
 (function () {
 	'use strict';
+	// Compares source canvas values with destination describe metadata to identify migration gaps.
 
 	var SYSTEM_KEYS = {
 		attributes: 1,
-		id: 1, createddate: 1, createdbyid: 1, lastmodifieddate: 1,
-		lastmodifiedbyid: 1, systemmodstamp: 1, isdeleted: 1, ownerid: 1,
-		recordtypeid: 1, masterrecordid: 1, lastreferenceddate: 1,
+		id: 1,
+		createddate: 1,
+		createdbyid: 1,
+		lastmodifieddate: 1,
+		lastmodifiedbyid: 1,
+		systemmodstamp: 1,
+		isdeleted: 1,
+		ownerid: 1,
+		recordtypeid: 1,
+		masterrecordid: 1,
+		lastreferenceddate: 1,
 		lastvieweddate: 1,
 	};
 
@@ -76,6 +84,7 @@
 	}
 
 	function computeMigrationStatus(record, targetDescribe) {
+		// Treat missing fields as ambiguous: they may not exist or may be hidden by destination FLS.
 		var issues = [];
 		var resolvedRecordTypeId = null;
 		var values = (record && record.values) || {};
@@ -103,7 +112,10 @@
 					kind: 'missing-field',
 					severity: 'warning',
 					field: key,
-					message: '“' + key + '” is unavailable through the destination connection and will be skipped. It may not exist in the destination org, or Salesforce permissions may hide it.',
+					message:
+						'“' +
+						key +
+						'” is unavailable through the destination connection and will be skipped. It may not exist in the destination org, or Salesforce permissions may hide it.',
 				});
 			}
 		}
@@ -143,8 +155,11 @@
 			if (_isEmpty(pv)) {
 				continue;
 			}
-			if ((pf.type === 'picklist' || pf.type === 'multipicklist') &&
-				Array.isArray(pf.picklistValues) && pf.picklistValues.length) {
+			if (
+				(pf.type === 'picklist' || pf.type === 'multipicklist') &&
+				Array.isArray(pf.picklistValues) &&
+				pf.picklistValues.length
+			) {
 				var active = {};
 				for (var a = 0; a < pf.picklistValues.length; a++) {
 					var opt = pf.picklistValues[a];
@@ -152,9 +167,7 @@
 						active[String(opt.value)] = 1;
 					}
 				}
-				var parts = pf.type === 'multipicklist'
-					? String(pv).split(';')
-					: [String(pv)];
+				var parts = pf.type === 'multipicklist' ? String(pv).split(';') : [String(pv)];
 				var fieldRemap = _picklistRemapFor(record, pkey);
 				var bad = [];
 				for (var b = 0; b < parts.length; b++) {
@@ -162,8 +175,7 @@
 					if (part === '' || active[part] === 1) {
 						continue; // empty or already valid
 					}
-					if (fieldRemap &&
-						Object.prototype.hasOwnProperty.call(fieldRemap, part)) {
+					if (fieldRemap && Object.prototype.hasOwnProperty.call(fieldRemap, part)) {
 						continue;
 					}
 					bad.push(part);
@@ -174,15 +186,16 @@
 						severity: 'warning',
 						field: pkey,
 						invalidValues: bad,
-						message: '“' + pkey + '”: ' + bad.join(', ') + ' not a valid picklist value in the destination org.',
+						message:
+							'“' + pkey + '”: ' + bad.join(', ') + ' not a valid picklist value in the destination org.',
 					});
 				}
 			}
 		}
 
-		var srcRtDevName = record &&
-			(record._sourceRecordTypeDeveloperName ||
-				(record.values && record.values._sourceRecordTypeDeveloperName));
+		var srcRtDevName =
+			record &&
+			(record._sourceRecordTypeDeveloperName || (record.values && record.values._sourceRecordTypeDeveloperName));
 		if (record && record._migrateClearRecordType) {
 			resolvedRecordTypeId = null; // user chose to drop it
 		} else if (record && record._migrateRecordTypeId) {
@@ -195,7 +208,10 @@
 					severity: 'blocked',
 					field: 'RecordTypeId',
 					developerName: srcRtDevName,
-					message: 'Record type “' + srcRtDevName + '” doesn’t exist in the destination org. Pick a record type or clear it.',
+					message:
+						'Record type “' +
+						srcRtDevName +
+						'” doesn’t exist in the destination org. Pick a record type or clear it.',
 				});
 			}
 		}
@@ -209,7 +225,7 @@
 				hasWarning = true;
 			}
 		}
-		var status = hasBlocked ? 'blocked' : (hasWarning ? 'warning' : 'ready');
+		var status = hasBlocked ? 'blocked' : hasWarning ? 'warning' : 'ready';
 
 		return {
 			status: status,
@@ -272,7 +288,8 @@
 			return {
 				status: 'blocked',
 				label: 'fix required',
-				title: 'This record cannot be migrated yet. Open it to resolve ' +
+				title:
+					'This record cannot be migrated yet. Open it to resolve ' +
 					(issueCount === 1 ? '1 migration issue.' : issueCount + ' migration issues.'),
 			};
 		}
@@ -284,7 +301,8 @@
 			return {
 				status: 'warning',
 				label: issueCount === 1 ? '1 field unavailable' : issueCount + ' fields unavailable',
-				title: 'The current Salesforce connection cannot provide ' +
+				title:
+					'The current Salesforce connection cannot provide ' +
 					(issueCount === 1 ? 'this field' : 'these fields') +
 					(issueCount === 1
 						? '. The field may not exist in the destination org, or Salesforce permissions may hide it. Open the record to map the value or leave it out of the migration.'
@@ -304,20 +322,25 @@
 			return {
 				status: 'warning',
 				label: valueCount === 1 ? '1 value needs mapping' : valueCount + ' values need mapping',
-				title: 'Open this record to map or leave out ' +
-					(valueCount === 1 ? '1 destination-incompatible picklist value.' : valueCount + ' destination-incompatible picklist values.'),
+				title:
+					'Open this record to map or leave out ' +
+					(valueCount === 1
+						? '1 destination-incompatible picklist value.'
+						: valueCount + ' destination-incompatible picklist values.'),
 			};
 		}
 
 		return {
 			status: 'warning',
 			label: issueCount === 1 ? '1 migration issue' : issueCount + ' migration issues',
-			title: 'Open this record to review ' +
+			title:
+				'Open this record to review ' +
 				(issueCount === 1 ? '1 migration issue.' : issueCount + ' migration issues.'),
 		};
 	}
 
 	function prepareMigrationValues(record, annotation) {
+		// Apply reviewed omissions and remaps to an upload copy, leaving source canvas values intact.
 		var out = Object.assign({}, (record && record.values) || {});
 		var issues = (annotation && annotation.issues) || [];
 		for (var i = 0; i < issues.length; i++) {
@@ -338,9 +361,11 @@
 				(issue.invalidValues || []).forEach(function (v) {
 					invalid[String(v)] = true;
 				});
-				var parts = String(out[key]).split(';').filter(function (v) {
-					return !invalid[v];
-				});
+				var parts = String(out[key])
+					.split(';')
+					.filter(function (v) {
+						return !invalid[v];
+					});
 				if (parts.length) {
 					out[key] = parts.join(';');
 				} else {
@@ -361,11 +386,14 @@
 					return;
 				}
 				var map = remap[field] || {};
-				var parts = String(out[key]).split(';').map(function (part) {
-					return Object.prototype.hasOwnProperty.call(map, part) ? map[part] : part;
-				}).filter(function (part) {
-					return part !== '';
-				});
+				var parts = String(out[key])
+					.split(';')
+					.map(function (part) {
+						return Object.prototype.hasOwnProperty.call(map, part) ? map[part] : part;
+					})
+					.filter(function (part) {
+						return part !== '';
+					});
 				if (parts.length) {
 					out[key] = parts.join(';');
 				} else {

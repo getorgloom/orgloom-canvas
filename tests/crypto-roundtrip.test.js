@@ -1,4 +1,3 @@
-
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -65,7 +64,7 @@ describe('crypto round-trip', () => {
 	test('swapping the IV between two ciphertexts throws', () => {
 		const a = encrypt('alpha');
 		const b = encrypt('beta');
-		const [ivA, , ] = a.split(':');
+		const [ivA, ,] = a.split(':');
 		const [, bodyB, tagB] = b.split(':');
 		assert.throws(() => decrypt(ivA + ':' + bodyB + ':' + tagB));
 	});

@@ -1,12 +1,12 @@
-
+// Bulk API v2 CSV serialization, result parsing, polling, and normalized row outcomes.
 function csvEscape(value) {
 	if (value === null || value === undefined) {
-return '';
-}
+		return '';
+	}
 	const s = String(value);
 	if (/[",\r\n]/.test(s)) {
-return '"' + s.replace(/"/g, '""') + '"';
-}
+		return '"' + s.replace(/"/g, '""') + '"';
+	}
 	return s;
 }
 
@@ -20,8 +20,8 @@ export function buildCsv(rows, columns) {
 
 export function parseResultsCsv(text) {
 	if (!text) {
-return [];
-}
+		return [];
+	}
 	const rows = [];
 	let i = 0;
 	const len = text.length;
@@ -34,53 +34,79 @@ return [];
 			if (inQuotes) {
 				if (c === '"') {
 					if (text[i + 1] === '"') {
- cell += '"'; i += 2; continue; 
-}
-					inQuotes = false; i++; continue;
+						cell += '"';
+						i += 2;
+						continue;
+					}
+					inQuotes = false;
+					i++;
+					continue;
 				}
-				cell += c; i++; continue;
+				cell += c;
+				i++;
+				continue;
 			}
 			if (c === '"') {
- inQuotes = true; i++; continue; 
-}
+				inQuotes = true;
+				i++;
+				continue;
+			}
 			if (c === ',') {
- cells.push(cell); cell = ''; i++; continue; 
-}
+				cells.push(cell);
+				cell = '';
+				i++;
+				continue;
+			}
 			if (c === '\r') {
- i++; continue; 
-}
+				i++;
+				continue;
+			}
 			if (c === '\n') {
- i++; cells.push(cell); return cells; 
-}
-			cell += c; i++;
+				i++;
+				cells.push(cell);
+				return cells;
+			}
+			cell += c;
+			i++;
 		}
 		if (cell.length > 0 || cells.length > 0) {
- cells.push(cell); return cells; 
-}
+			cells.push(cell);
+			return cells;
+		}
 		return null;
 	}
 	const header = nextRow();
 	if (!header) {
-return [];
-}
+		return [];
+	}
 	while (i < len) {
 		const r = nextRow();
 		if (!r) {
-break;
-}
+			break;
+		}
 		const obj = {};
 		header.forEach((h, idx) => {
- obj[h] = r[idx] !== undefined ? r[idx] : ''; 
-});
+			obj[h] = r[idx] !== undefined ? r[idx] : '';
+		});
 		rows.push(obj);
 	}
 	return rows;
 }
 
-export async function runBulkJob({ conn, apiBase, objectName, operation, records, columns, onEvent, externalIdFieldName }) {
+export async function runBulkJob({
+	// Job creation may accept the request before later processing fails; always inspect final job state.
+	conn,
+	apiBase,
+	objectName,
+	operation,
+	records,
+	columns,
+	onEvent,
+	externalIdFieldName,
+}) {
 	if (records.length === 0) {
-return { successes: [], failures: [] };
-}
+		return { successes: [], failures: [] };
+	}
 	if (operation === 'upsert' && !externalIdFieldName) {
 		throw new Error('runBulkJob upsert requires externalIdFieldName');
 	}
@@ -102,13 +128,16 @@ return { successes: [], failures: [] };
 	});
 	const jobId = job && job.id;
 	if (!jobId) {
-throw new Error('Bulk job creation returned no id for ' + objectName);
-}
+		throw new Error('Bulk job creation returned no id for ' + objectName);
+	}
 	if (onEvent) {
-onEvent({ phase: 'created', jobId, objectName, operation, count: records.length });
-}
+		onEvent({ phase: 'created', jobId, objectName, operation, count: records.length });
+	}
 
-	const csv = buildCsv(records.map((r) => r.values), columns);
+	const csv = buildCsv(
+		records.map((r) => r.values),
+		columns,
+	);
 	await conn.request({
 		method: 'PUT',
 		url: apiBase + '/jobs/ingest/' + jobId + '/batches',
@@ -140,11 +169,13 @@ onEvent({ phase: 'created', jobId, objectName, operation, count: records.length 
 			});
 		}
 		if (status.state === 'JobComplete' || status.state === 'Failed' || status.state === 'Aborted') {
-break;
-}
+			break;
+		}
 	}
 	if (!status || (status.state !== 'JobComplete' && status.state !== 'Failed')) {
-		throw new Error('Bulk job ' + jobId + ' (' + objectName + ') did not complete in time. State=' + (status && status.state));
+		throw new Error(
+			'Bulk job ' + jobId + ' (' + objectName + ') did not complete in time. State=' + (status && status.state),
+		);
 	}
 
 	async function fetchCsv(path) {
@@ -163,37 +194,41 @@ break;
 		return await resp.text();
 	}
 	const successCsv = await fetchCsv('/successfulResults/').catch((e) => {
- console.warn('[bulk] success CSV fetch error:', e && e.message); return ''; 
-});
+		console.warn('[bulk] success CSV fetch error:', e && e.message);
+		return '';
+	});
 	const failedCsv = await fetchCsv('/failedResults/').catch((e) => {
- console.warn('[bulk] failed CSV fetch error:', e && e.message); return ''; 
-});
+		console.warn('[bulk] failed CSV fetch error:', e && e.message);
+		return '';
+	});
 	const successRows = parseResultsCsv(successCsv);
 	const failedRows = parseResultsCsv(failedCsv);
 
 	function looseEq(a, b) {
-		const aN = (a == null || a === '') ? '' : String(a).trim();
-		const bN = (b == null || b === '') ? '' : String(b).trim();
+		const aN = a == null || a === '' ? '' : String(a).trim();
+		const bN = b == null || b === '' ? '' : String(b).trim();
 		if (aN === bN) {
-return true;
-}
-		const aNum = Number(aN), bNum = Number(bN);
+			return true;
+		}
+		const aNum = Number(aN),
+			bNum = Number(bN);
 		if (!isNaN(aNum) && !isNaN(bNum) && aNum === bNum) {
-return true;
-}
-		const aDate = Date.parse(aN), bDate = Date.parse(bN);
+			return true;
+		}
+		const aDate = Date.parse(aN),
+			bDate = Date.parse(bN);
 		if (!isNaN(aDate) && !isNaN(bDate) && aDate === bDate) {
-return true;
-}
+			return true;
+		}
 		return false;
 	}
 	function rowsLooksLike(input, result) {
 		let hits = 0;
 		for (const c of columns) {
-if (looseEq(input[c], result[c])) {
-hits++;
-}
-}
+			if (looseEq(input[c], result[c])) {
+				hits++;
+			}
+		}
 		return hits;
 	}
 
@@ -206,15 +241,15 @@ hits++;
 		successRows.forEach((r) => {
 			const id = r['sf__Id'] || r.Id;
 			if (id) {
-successById.set(id, r);
-}
+				successById.set(id, r);
+			}
 		});
 		const failedById = new Map();
 		failedRows.forEach((r) => {
 			const id = r['sf__Id'] || r.Id;
 			if (id) {
-failedById.set(id, r);
-}
+				failedById.set(id, r);
+			}
 		});
 		records.forEach((rec, i) => {
 			const inputId = inputs[i].Id;
@@ -237,15 +272,15 @@ failedById.set(id, r);
 		successRows.forEach((r) => {
 			const k = r[externalIdFieldName];
 			if (k) {
-successByExtId.set(k, r);
-}
+				successByExtId.set(k, r);
+			}
 		});
 		const failedByExtId = new Map();
 		failedRows.forEach((r) => {
 			const k = r[externalIdFieldName];
 			if (k) {
-failedByExtId.set(k, r);
-}
+				failedByExtId.set(k, r);
+			}
 		});
 		records.forEach((rec, i) => {
 			const extKey = inputs[i][externalIdFieldName];
@@ -269,7 +304,8 @@ failedByExtId.set(k, r);
 			failures.push({ tempId: rec.tempId, error: 'No result row returned by Salesforce for upsert.' });
 		});
 	} else {
-		let sIdx = 0, fIdx = 0;
+		let sIdx = 0,
+			fIdx = 0;
 		for (let i = 0; i < inputs.length; i++) {
 			const input = inputs[i];
 			const successHead = sIdx < successRows.length ? successRows[sIdx] : null;

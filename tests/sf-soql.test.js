@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -31,18 +30,12 @@ describe('validateSoqlFilterField: app-generated WHERE fields', () => {
 	});
 
 	test('can additionally require a lookup or External ID field', () => {
-		assert.equal(
-			validateSoqlFilterField(describeFixture, 'Parent__c', { requireReference: true }).ok,
-			true,
-		);
+		assert.equal(validateSoqlFilterField(describeFixture, 'Parent__c', { requireReference: true }).ok, true);
 		assert.equal(
 			validateSoqlFilterField(describeFixture, 'Name', { requireReference: true }).reason,
 			'field-not-reference',
 		);
-		assert.equal(
-			validateSoqlFilterField(describeFixture, 'External_Key__c', { requireExternalId: true }).ok,
-			true,
-		);
+		assert.equal(validateSoqlFilterField(describeFixture, 'External_Key__c', { requireExternalId: true }).ok, true);
 		assert.equal(
 			validateSoqlFilterField(describeFixture, 'Name', { requireExternalId: true }).reason,
 			'field-not-external-id',
@@ -79,15 +72,12 @@ describe('escapeSoqlLiteral: backslash', () => {
 });
 
 describe('escapeSoqlLiteral: combined', () => {
-	test('escapes backslash before quote (order matters: \\ first, then \')', () => {
+	test("escapes backslash before quote (order matters: \\ first, then ')", () => {
 		assert.equal(escapeSoqlLiteral("a\\'b"), "a\\\\\\'b");
 	});
 
 	test('mix of quotes, backslashes, and plain text', () => {
-		assert.equal(
-			escapeSoqlLiteral("Path: C:\\Users\\O'Brien\\file"),
-			"Path: C:\\\\Users\\\\O\\'Brien\\\\file",
-		);
+		assert.equal(escapeSoqlLiteral("Path: C:\\Users\\O'Brien\\file"), "Path: C:\\\\Users\\\\O\\'Brien\\\\file");
 	});
 
 	test('idempotent on already-escaped input doubles the escapes (NOT a no-op)', () => {
@@ -148,7 +138,7 @@ describe('escapeSoqlLiteral: defends against the classic injection attempts', ()
 	});
 
 	test('UNION injection attempt with terminating backslash + quote', () => {
-		const malicious = "a\\";
+		const malicious = 'a\\';
 		const out = escapeSoqlLiteral(malicious);
 		assert.equal(out, 'a\\\\');
 		const literal = "'" + out + "'";
@@ -170,10 +160,7 @@ describe('formatSoqlFieldLiteral: destination field types', () => {
 	});
 
 	test('rejects nonnumeric input rather than interpolating it into a numeric predicate', () => {
-		assert.throws(
-			() => formatSoqlFieldLiteral("100) OR Name != ''", 'double'),
-			/invalid numeric SOQL value/,
-		);
+		assert.throws(() => formatSoqlFieldLiteral("100) OR Name != ''", 'double'), /invalid numeric SOQL value/);
 		assert.throws(() => formatSoqlFieldLiteral('1.5', 'int'), /invalid integer SOQL value/);
 	});
 });

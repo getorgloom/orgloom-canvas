@@ -6,14 +6,8 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const uploadModalSource = fs.readFileSync(
-	path.resolve(here, '../src/public/js/upload-modal.js'),
-	'utf8',
-);
-const preflightSource = fs.readFileSync(
-	path.resolve(here, '../src/public/js/preflight.js'),
-	'utf8',
-);
+const uploadModalSource = fs.readFileSync(path.resolve(here, '../src/public/js/upload-modal.js'), 'utf8');
+const preflightSource = fs.readFileSync(path.resolve(here, '../src/public/js/preflight.js'), 'utf8');
 
 function evaluateUploadModal() {
 	const context = { window: { OrgLoom: {} } };
@@ -27,19 +21,10 @@ function summarize(row) {
 	const records = row.records || [];
 	const associations = row.associations || [];
 	const selectedIds = new Set(row.selectedIds || []);
-	const scopedRecords = uploadModal.scopeUploadRecords(
-		records,
-		selectedIds,
-		row.selectedOnly,
-	);
+	const scopedRecords = uploadModal.scopeUploadRecords(records, selectedIds, row.selectedOnly);
 	const scopedIds = new Set(Array.from(scopedRecords, (r) => r.id));
 	const scopedAssociations = uploadModal.scopeUploadAssociations(associations, scopedIds);
-	const excludedDraftLinks = uploadModal.excludedDraftParentLinks(
-		records,
-		associations,
-		scopedIds,
-		row.selectedOnly,
-	);
+	const excludedDraftLinks = uploadModal.excludedDraftParentLinks(records, associations, scopedIds, row.selectedOnly);
 	const requiredExcludedLinks = uploadModal.requiredExcludedDraftParentLinks(
 		records,
 		excludedDraftLinks,
@@ -94,8 +79,12 @@ const matrix = [
 		selectedIds: ['c'],
 		selectedOnly: false,
 		expect: {
-			recordIds: ['a', 'c'], associationFields: ['AccountId'], excludedFields: [],
-			requiredExcludedFields: [], createOrder: ['Account', 'Contact'], deleteOrder: [],
+			recordIds: ['a', 'c'],
+			associationFields: ['AccountId'],
+			excludedFields: [],
+			requiredExcludedFields: [],
+			createOrder: ['Account', 'Contact'],
+			deleteOrder: [],
 		},
 	},
 	{
@@ -105,8 +94,12 @@ const matrix = [
 		selectedIds: ['selected'],
 		selectedOnly: true,
 		expect: {
-			recordIds: ['selected'], associationFields: [], excludedFields: [],
-			requiredExcludedFields: [], createOrder: ['Account'], deleteOrder: [],
+			recordIds: ['selected'],
+			associationFields: [],
+			excludedFields: [],
+			requiredExcludedFields: [],
+			createOrder: ['Account'],
+			deleteOrder: [],
 		},
 	},
 	{
@@ -116,8 +109,12 @@ const matrix = [
 		selectedIds: ['c'],
 		selectedOnly: true,
 		expect: {
-			recordIds: ['c'], associationFields: [], excludedFields: ['AccountId'],
-			requiredExcludedFields: [], createOrder: ['Contact'], deleteOrder: [],
+			recordIds: ['c'],
+			associationFields: [],
+			excludedFields: ['AccountId'],
+			requiredExcludedFields: [],
+			createOrder: ['Contact'],
+			deleteOrder: [],
 		},
 	},
 	{
@@ -130,8 +127,12 @@ const matrix = [
 		selectedIds: ['c'],
 		selectedOnly: true,
 		expect: {
-			recordIds: ['c'], associationFields: [], excludedFields: [],
-			requiredExcludedFields: [], createOrder: ['Contact'], deleteOrder: [],
+			recordIds: ['c'],
+			associationFields: [],
+			excludedFields: [],
+			requiredExcludedFields: [],
+			createOrder: ['Contact'],
+			deleteOrder: [],
 		},
 	},
 	{
@@ -141,8 +142,12 @@ const matrix = [
 		selectedIds: ['a', 'c'],
 		selectedOnly: true,
 		expect: {
-			recordIds: ['a', 'c'], associationFields: ['AccountId'], excludedFields: [],
-			requiredExcludedFields: [], createOrder: ['Account', 'Contact'], deleteOrder: [],
+			recordIds: ['a', 'c'],
+			associationFields: ['AccountId'],
+			excludedFields: [],
+			requiredExcludedFields: [],
+			createOrder: ['Account', 'Contact'],
+			deleteOrder: [],
 		},
 	},
 	{
@@ -152,22 +157,27 @@ const matrix = [
 		selectedIds: ['a'],
 		selectedOnly: true,
 		expect: {
-			recordIds: ['a'], associationFields: [], excludedFields: [],
-			requiredExcludedFields: [], createOrder: ['Account'], deleteOrder: [],
+			recordIds: ['a'],
+			associationFields: [],
+			excludedFields: [],
+			requiredExcludedFields: [],
+			createOrder: ['Account'],
+			deleteOrder: [],
 		},
 	},
 	{
 		name: 'multi-level selection keeps its internal link and omits only the direct unselected ancestor link',
 		records: [accountDraft('grand'), accountDraft('parent'), contactDraft('child')],
-		associations: [
-			link('parent', 'grand', 'ParentId'),
-			link('child', 'parent', 'AccountId'),
-		],
+		associations: [link('parent', 'grand', 'ParentId'), link('child', 'parent', 'AccountId')],
 		selectedIds: ['parent', 'child'],
 		selectedOnly: true,
 		expect: {
-			recordIds: ['parent', 'child'], associationFields: ['AccountId'], excludedFields: ['ParentId'],
-			requiredExcludedFields: [], createOrder: ['Account', 'Contact'], deleteOrder: [],
+			recordIds: ['parent', 'child'],
+			associationFields: ['AccountId'],
+			excludedFields: ['ParentId'],
+			requiredExcludedFields: [],
+			createOrder: ['Account', 'Contact'],
+			deleteOrder: [],
 		},
 	},
 	{
@@ -181,15 +191,25 @@ const matrix = [
 		selectedOnly: true,
 		describeCache: {
 			Work_Item__c: {
-				fields: [{
-					name: 'Project__c', label: 'Project', type: 'reference',
-					createable: true, required: true, defaultedOnCreate: false,
-				}],
+				fields: [
+					{
+						name: 'Project__c',
+						label: 'Project',
+						type: 'reference',
+						createable: true,
+						required: true,
+						defaultedOnCreate: false,
+					},
+				],
 			},
 		},
 		expect: {
-			recordIds: ['work'], associationFields: [], excludedFields: ['Project__c'],
-			requiredExcludedFields: ['Project__c'], createOrder: ['Work_Item__c'], deleteOrder: [],
+			recordIds: ['work'],
+			associationFields: [],
+			excludedFields: ['Project__c'],
+			requiredExcludedFields: ['Project__c'],
+			createOrder: ['Work_Item__c'],
+			deleteOrder: [],
 		},
 	},
 	{
@@ -205,8 +225,12 @@ const matrix = [
 		selectedIds: ['draft', 'modified', 'deleted', 'type'],
 		selectedOnly: true,
 		expect: {
-			recordIds: ['draft', 'modified', 'deleted'], associationFields: ['AccountId'], excludedFields: [],
-			requiredExcludedFields: [], createOrder: ['Account', 'Contact'], deleteOrder: ['Case'],
+			recordIds: ['draft', 'modified', 'deleted'],
+			associationFields: ['AccountId'],
+			excludedFields: [],
+			requiredExcludedFields: [],
+			createOrder: ['Account', 'Contact'],
+			deleteOrder: ['Case'],
 		},
 	},
 ];
@@ -221,11 +245,7 @@ test('upload scope matrix: omitted draft links strip stale literal lookup values
 	const contact = contactDraft('c', {
 		values: { LastName: 'User', AccountId: '001-stale' },
 	});
-	const values = uploadModal.scopeUploadValues(
-		contact,
-		contact.values,
-		[link('c', 'draft-account', 'AccountId')],
-	);
+	const values = uploadModal.scopeUploadValues(contact, contact.values, [link('c', 'draft-account', 'AccountId')]);
 
 	assert.deepEqual({ ...values }, { LastName: 'User' });
 	assert.equal(contact.values.AccountId, '001-stale', 'canvas state is not mutated');

@@ -22,7 +22,13 @@ test('quoted commas, escaped quotes, embedded newlines, BOM and Unicode preserve
 test('CRLF, LF and bare CR produce the same rows', () => {
 	for (const eol of ['\r\n', '\n', '\r']) {
 		const out = parse(`Name,City${eol}A,Phoenix${eol}B,Tucson${eol}`);
-		assert.equal(JSON.stringify(out.rows), JSON.stringify([['A', 'Phoenix'], ['B', 'Tucson']]));
+		assert.equal(
+			JSON.stringify(out.rows),
+			JSON.stringify([
+				['A', 'Phoenix'],
+				['B', 'Tucson'],
+			]),
+		);
 	}
 });
 
@@ -33,10 +39,13 @@ test('duplicate headers and malformed or unclosed quotes are explicit structural
 });
 
 test('readable but unwritable fields stay mapped for operation-aware import review', () => {
-	const mapping = csvImport.csvAutoMapHeaders(['Name', 'YearStarted'], [
-		{ name: 'Name', label: 'Account Name', createable: true },
-		{ name: 'YearStarted', label: 'Year Started', createable: false },
-	]);
+	const mapping = csvImport.csvAutoMapHeaders(
+		['Name', 'YearStarted'],
+		[
+			{ name: 'Name', label: 'Account Name', createable: true },
+			{ name: 'YearStarted', label: 'Year Started', createable: false },
+		],
+	);
 	assert.equal(mapping[0], 'Name');
 	assert.equal(mapping[1], 'YearStarted');
 });

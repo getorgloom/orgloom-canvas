@@ -5,10 +5,7 @@ import vm from 'node:vm';
 
 const sandbox = { window: { OrgLoom: {} } };
 vm.createContext(sandbox);
-vm.runInContext(
-	readFileSync(new URL('../src/public/js/value-compare.js', import.meta.url), 'utf8'),
-	sandbox,
-);
+vm.runInContext(readFileSync(new URL('../src/public/js/value-compare.js', import.meta.url), 'utf8'), sandbox);
 const { isRecordModified } = sandbox.window.OrgLoom.valueCompare;
 
 test('a cross-org matched record uploads once even without local source edits', () => {

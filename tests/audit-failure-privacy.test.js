@@ -18,7 +18,8 @@ describe('Activity History failure privacy', () => {
 				payload: { objectName: 'Contact', returnedRows: 0 },
 			},
 		);
-		const row = await ext.getDb()
+		const row = await ext
+			.getDb()
 			.selectFrom('audit_log')
 			.select(['status', 'error_code', 'payload_json'])
 			.executeTakeFirstOrThrow();
@@ -37,7 +38,8 @@ describe('Activity History failure privacy', () => {
 		const err = new Error('sensitive response');
 		err.errorCode = 'bad code containing customer value';
 		await audit.recordFailure(null, 'upload', err);
-		const row = await ext.getDb()
+		const row = await ext
+			.getDb()
 			.selectFrom('audit_log')
 			.select(['error_code', 'payload_json'])
 			.executeTakeFirstOrThrow();

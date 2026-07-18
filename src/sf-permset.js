@@ -1,4 +1,3 @@
-
 export const ORGLOOM_PERMISSION_SET_NAMES = Object.freeze([
 	'Orgloom_User',
 	'Orgloom_Admin',
@@ -19,15 +18,24 @@ export async function hasAssignedOrgloomPermissionSet(conn, sfUserId) {
 
 	const names = ORGLOOM_PERMISSION_SET_NAMES.map((name) => `'${name}'`).join(',');
 	const result = await conn.query(
-		"SELECT Id, PermissionSet.Name, PermissionSet.NamespacePrefix "
-		+ "FROM PermissionSetAssignment WHERE AssigneeId = '" + userId + "' "
-		+ "AND PermissionSet.NamespacePrefix = 'orgloom' "
-		+ 'AND PermissionSet.Name IN (' + names + ')'
+		'SELECT Id, PermissionSet.Name, PermissionSet.NamespacePrefix ' +
+			"FROM PermissionSetAssignment WHERE AssigneeId = '" +
+			userId +
+			"' " +
+			"AND PermissionSet.NamespacePrefix = 'orgloom' " +
+			'AND PermissionSet.Name IN (' +
+			names +
+			')',
 	);
 
-	return Array.isArray(result?.records) && result.records.some((record) => {
-		const permissionSet = record?.PermissionSet;
-		return permissionSet?.NamespacePrefix === 'orgloom'
-			&& ORGLOOM_PERMISSION_SET_NAMES.includes(permissionSet?.Name);
-	});
+	return (
+		Array.isArray(result?.records) &&
+		result.records.some((record) => {
+			const permissionSet = record?.PermissionSet;
+			return (
+				permissionSet?.NamespacePrefix === 'orgloom' &&
+				ORGLOOM_PERMISSION_SET_NAMES.includes(permissionSet?.Name)
+			);
+		})
+	);
 }

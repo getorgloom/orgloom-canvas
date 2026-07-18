@@ -3,22 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const source = readFileSync(
-	new URL('../src/public/js/migrate-match.js', import.meta.url),
-	'utf8',
-);
-const cssSource = readFileSync(
-	new URL('../src/public/css/app.css', import.meta.url),
-	'utf8',
-);
-const appSource = readFileSync(
-	new URL('../src/public/js/app.js', import.meta.url),
-	'utf8',
-);
-const uploadSource = readFileSync(
-	new URL('../src/public/js/upload-modal.js', import.meta.url),
-	'utf8',
-);
+const source = readFileSync(new URL('../src/public/js/migrate-match.js', import.meta.url), 'utf8');
+const cssSource = readFileSync(new URL('../src/public/css/app.css', import.meta.url), 'utf8');
+const appSource = readFileSync(new URL('../src/public/js/app.js', import.meta.url), 'utf8');
+const uploadSource = readFileSync(new URL('../src/public/js/upload-modal.js', import.meta.url), 'utf8');
 const sandbox = { window: { OrgLoom: {} } };
 vm.createContext(sandbox);
 vm.runInContext(source, sandbox);
@@ -38,7 +26,10 @@ describe('cross-org match resolution', () => {
 			],
 		});
 
-		assert.deepEqual(Array.from(candidates, (field) => field.name), ['LastName']);
+		assert.deepEqual(
+			Array.from(candidates, (field) => field.name),
+			['LastName'],
+		);
 	});
 
 	test('records of the same object can select different identifying fields', () => {
@@ -202,7 +193,6 @@ describe('cross-org match resolution', () => {
 		assert.equal(rec._migrateMatchResolution, undefined);
 		assert.equal(rec._migrateMatchIntent, undefined);
 	});
-
 });
 
 describe('destination field mapping compatibility', () => {
@@ -227,23 +217,38 @@ describe('destination field mapping compatibility', () => {
 		assert.equal(match.fieldMapDisposition('not-a-number', { name: 'Amount', type: 'currency' }), 'incompatible');
 		assert.equal(match.fieldMapDisposition('2026-02-31', { name: 'StartDate__c', type: 'date' }), 'incompatible');
 		assert.equal(match.fieldMapDisposition('3.5', { name: 'Count__c', type: 'int' }), 'incompatible');
-		assert.equal(match.fieldMapDisposition('too long', { name: 'Code__c', type: 'string', length: 4 }), 'incompatible');
+		assert.equal(
+			match.fieldMapDisposition('too long', { name: 'Code__c', type: 'string', length: 4 }),
+			'incompatible',
+		);
 	});
 
 	test('compatible scalar and multi-select values map directly without another choice', () => {
 		assert.equal(match.fieldMapDisposition('100.50', { name: 'Amount', type: 'currency' }), 'direct');
 		assert.equal(match.fieldMapDisposition('2026-07-16', { name: 'StartDate__c', type: 'date' }), 'direct');
 		assert.equal(match.fieldMapDisposition('true', { name: 'Active__c', type: 'boolean' }), 'direct');
-		assert.equal(match.fieldMapDisposition('A;B', {
-			name: 'Tags__c',
-			type: 'multipicklist',
-			picklistValues: [{ value: 'A', active: true }, { value: 'B', active: true }],
-		}), 'direct');
-		assert.equal(match.fieldMapDisposition('A;C', {
-			name: 'Tags__c',
-			type: 'multipicklist',
-			picklistValues: [{ value: 'A', active: true }, { value: 'B', active: true }],
-		}), 'incompatible');
+		assert.equal(
+			match.fieldMapDisposition('A;B', {
+				name: 'Tags__c',
+				type: 'multipicklist',
+				picklistValues: [
+					{ value: 'A', active: true },
+					{ value: 'B', active: true },
+				],
+			}),
+			'direct',
+		);
+		assert.equal(
+			match.fieldMapDisposition('A;C', {
+				name: 'Tags__c',
+				type: 'multipicklist',
+				picklistValues: [
+					{ value: 'A', active: true },
+					{ value: 'B', active: true },
+				],
+			}),
+			'incompatible',
+		);
 	});
 });
 
@@ -267,7 +272,7 @@ test('the guided modal owns matching, destination differences, and final review'
 	assert.match(source, /_renderDifferences\(\)[\s\S]*_differenceRecordLabel\(rec\)/);
 	assert.doesNotMatch(source, /_differenceRecordLabel\(rec\)\) \+ '<\/strong><span>'/);
 	assert.match(source, /Change how matches are found/);
-	assert.match(source, /const matchOptions = action === 'existing'/);
+	assert.match(source, /const matchOptions\s*=\s*action === 'existing'/);
 	assert.match(source, /_initializeRecordDecisions\(\)/);
 	assert.match(source, /_markCreate\(rec\)/);
 	assert.match(source, /This changes suggestions for this record only/);
@@ -287,7 +292,7 @@ test('the guided modal owns matching, destination differences, and final review'
 	assert.match(source, /Don\\'t map leaves that source field out of this migration/);
 	assert.match(source, /it does not clear or overwrite destination data/);
 	assert.doesNotMatch(source, />Drop<\/button>/);
-	assert.match(source, /Don\\'t map \(destination unchanged\)/);
+	assert.match(source, /Don't map \(destination unchanged\)/);
 	assert.match(source, /Map to a destination field/);
 	assert.match(source, /value selection required/);
 	assert.match(source, /data-mm-map-value/);
@@ -318,5 +323,8 @@ test('the guided modal owns matching, destination differences, and final review'
 	assert.match(appSource, /_migrationResumed\.justArrived[\s\S]*migrateMatch\.open\(\{ autoOpened: true \}\)/);
 	assert.match(appSource, /data-mmb-review>Review migration/);
 	assert.match(appSource, /function exitMigrateMode\(\)[\s\S]*delete record\._migrateFieldResolutions/);
-	assert.match(uploadSource, /function _clearCommittedMigrationMatch\(rec\)[\s\S]*delete rec\._migrateFieldResolutions/);
+	assert.match(
+		uploadSource,
+		/function _clearCommittedMigrationMatch\(rec\)[\s\S]*delete rec\._migrateFieldResolutions/,
+	);
 });

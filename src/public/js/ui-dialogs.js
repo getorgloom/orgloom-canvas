@@ -1,22 +1,26 @@
 (function () {
 	if (window.olConfirm) {
-return;
-} // idempotent if included twice
+		return;
+	} // idempotent if included twice
 
 	function esc(s) {
 		return String(s == null ? '' : s)
-			.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;');
 	}
 
 	let _toastHost = null;
 	function _ensureToastHost() {
 		if (_toastHost && document.body.contains(_toastHost)) {
-return _toastHost;
-}
+			return _toastHost;
+		}
 		_toastHost = document.createElement('div');
 		_toastHost.className = 'ol-toast-host';
-		_toastHost.style.cssText = 'position:fixed;bottom:1.25rem;left:50%;transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;gap:0.5rem;align-items:center;pointer-events:none;max-width:min(92vw,560px)';
+		_toastHost.style.cssText =
+			'position:fixed;bottom:1.25rem;left:50%;transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;gap:0.5rem;align-items:center;pointer-events:none;max-width:min(92vw,560px)';
 		document.body.appendChild(_toastHost);
 		return _toastHost;
 	}
@@ -26,58 +30,83 @@ return _toastHost;
 			const t = document.createElement('div');
 			const bg = variant === 'error' ? '#b3261e' : variant === 'success' ? '#2e7d32' : '#2a2a2a';
 			t.setAttribute('role', variant === 'error' ? 'alert' : 'status');
-			t.style.cssText = 'pointer-events:auto;background:' + bg + ';color:#fff;padding:0.6rem 0.9rem;border-radius:6px;font-size:0.9rem;box-shadow:0 4px 14px rgba(0,0,0,0.3);display:flex;gap:0.6rem;align-items:flex-start;max-width:100%;line-height:1.35;cursor:default';
+			t.style.cssText =
+				'pointer-events:auto;background:' +
+				bg +
+				';color:#fff;padding:0.6rem 0.9rem;border-radius:6px;font-size:0.9rem;box-shadow:0 4px 14px rgba(0,0,0,0.3);display:flex;gap:0.6rem;align-items:flex-start;max-width:100%;line-height:1.35;cursor:default';
 			const span = document.createElement('span');
 			span.textContent = String(message == null ? '' : message);
 			const x = document.createElement('button');
-			x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'Dismiss');
-			x.style.cssText = 'background:none;border:none;color:#fff;opacity:0.8;cursor:pointer;font-size:0.95em;line-height:1;padding:0;margin-left:auto';
+			x.type = 'button';
+			x.textContent = '✕';
+			x.setAttribute('aria-label', 'Dismiss');
+			x.style.cssText =
+				'background:none;border:none;color:#fff;opacity:0.8;cursor:pointer;font-size:0.95em;line-height:1;padding:0;margin-left:auto';
 			const remove = () => {
- t.remove(); if (_toastHost && !_toastHost.children.length) {
- _toastHost.remove(); _toastHost = null; 
-} 
-};
+				t.remove();
+				if (_toastHost && !_toastHost.children.length) {
+					_toastHost.remove();
+					_toastHost = null;
+				}
+			};
 			x.addEventListener('click', remove);
-			t.appendChild(span); t.appendChild(x);
+			t.appendChild(span);
+			t.appendChild(x);
 			host.appendChild(t);
 			setTimeout(remove, variant === 'error' ? 8000 : 4500);
-		} catch (e) { /* last-resort: never throw from a notice */ }
+		} catch (e) {
+			/* last-resort: never throw from a notice */
+		}
 	}
 
-	function _modal({ title, message, confirmLabel, cancelLabel, danger, withInput, inputValue, placeholder, showCancel }, done) {
+	function _modal(
+		{ title, message, confirmLabel, cancelLabel, danger, withInput, inputValue, placeholder, showCancel },
+		done,
+	) {
 		document.querySelectorAll('.ol-dialog-modal').forEach((el) => el.remove());
 		const modal = document.createElement('div');
 		modal.className = 'modal ol-dialog-modal';
 		const confirmClass = danger ? 'button danger' : 'button';
 		const inputHtml = withInput
-			? '<input type="text" class="ol-dialog-input" value="' + esc(inputValue || '') + '" placeholder="' + esc(placeholder || '') + '" autocomplete="off" style="width:100%;margin-top:0.6em;padding:0.5em 0.65em;border:1px solid var(--border,#444);border-radius:4px;background:var(--bg-inset,#1c1c1c);color:var(--ink,#eee);font-size:0.95rem">'
+			? '<input type="text" class="ol-dialog-input" value="' +
+				esc(inputValue || '') +
+				'" placeholder="' +
+				esc(placeholder || '') +
+				'" autocomplete="off" style="width:100%;margin-top:0.6em;padding:0.5em 0.65em;border:1px solid var(--border,#444);border-radius:4px;background:var(--bg-inset,#1c1c1c);color:var(--ink,#eee);font-size:0.95rem">'
 			: '';
-		const cancelBtn = (showCancel === false)
-			? ''
-			: '<button class="button secondary" data-ol-cancel>' + esc(cancelLabel || 'Cancel') + '</button>';
+		const cancelBtn =
+			showCancel === false
+				? ''
+				: '<button class="button secondary" data-ol-cancel>' + esc(cancelLabel || 'Cancel') + '</button>';
 		modal.innerHTML =
 			'<div class="modal-overlay" data-ol-cancel></div>' +
 			'<div class="modal-body" style="max-width:460px">' +
-				'<div class="modal-header">' +
-					'<h3>' + esc(title || 'Confirm') + '</h3>' +
-					'<button class="modal-close" data-ol-cancel aria-label="Close">&times;</button>' +
-				'</div>' +
-				'<div class="modal-content">' +
-					(message ? '<p>' + esc(message) + '</p>' : '') +
-					inputHtml +
-				'</div>' +
-				'<div class="modal-footer">' +
-					cancelBtn +
-					'<button class="' + confirmClass + '" data-ol-confirm>' + esc(confirmLabel || 'Confirm') + '</button>' +
-				'</div>' +
+			'<div class="modal-header">' +
+			'<h3>' +
+			esc(title || 'Confirm') +
+			'</h3>' +
+			'<button class="modal-close" data-ol-cancel aria-label="Close">&times;</button>' +
+			'</div>' +
+			'<div class="modal-content">' +
+			(message ? '<p>' + esc(message) + '</p>' : '') +
+			inputHtml +
+			'</div>' +
+			'<div class="modal-footer">' +
+			cancelBtn +
+			'<button class="' +
+			confirmClass +
+			'" data-ol-confirm>' +
+			esc(confirmLabel || 'Confirm') +
+			'</button>' +
+			'</div>' +
 			'</div>';
 		document.body.appendChild(modal);
 		const input = modal.querySelector('.ol-dialog-input');
 		let settled = false;
 		const finish = (value) => {
 			if (settled) {
-return;
-}
+				return;
+			}
 			settled = true;
 			document.removeEventListener('keydown', onKey, true);
 			modal.remove();
@@ -87,44 +116,54 @@ return;
 		const onCancel = () => finish(withInput ? null : false);
 		const onKey = (e) => {
 			if (e.key === 'Escape') {
- e.preventDefault(); onCancel(); 
-} else if (e.key === 'Enter' && (!withInput || document.activeElement === input)) {
- e.preventDefault(); onConfirm(); 
-}
+				e.preventDefault();
+				onCancel();
+			} else if (e.key === 'Enter' && (!withInput || document.activeElement === input)) {
+				e.preventDefault();
+				onConfirm();
+			}
 		};
 		document.addEventListener('keydown', onKey, true);
 		modal.querySelectorAll('[data-ol-cancel]').forEach((el) => el.addEventListener('click', onCancel));
 		modal.querySelector('[data-ol-confirm]').addEventListener('click', onConfirm);
 		setTimeout(() => {
- (input || modal.querySelector('[data-ol-confirm]')).focus(); if (input) {
-input.select();
-} 
-}, 0);
+			(input || modal.querySelector('[data-ol-confirm]')).focus();
+			if (input) {
+				input.select();
+			}
+		}, 0);
 	}
 
 	function olConfirm(opts) {
-		const o = (typeof opts === 'string') ? { message: opts } : (opts || {});
+		const o = typeof opts === 'string' ? { message: opts } : opts || {};
 		return new Promise((resolve) => _modal({ ...o, withInput: false }, resolve));
 	}
 	function olPrompt(opts) {
-		const o = (typeof opts === 'string') ? { message: opts } : (opts || {});
-		return new Promise((resolve) => _modal({ confirmLabel: 'OK', ...o, withInput: true, inputValue: o.defaultValue || o.value || '' }, resolve));
+		const o = typeof opts === 'string' ? { message: opts } : opts || {};
+		return new Promise((resolve) =>
+			_modal({ confirmLabel: 'OK', ...o, withInput: true, inputValue: o.defaultValue || o.value || '' }, resolve),
+		);
 	}
 	function olAlert(message, opts) {
 		const o = opts || {};
-		return new Promise((resolve) => _modal({ title: o.title || 'Heads up', message, confirmLabel: o.confirmLabel || 'OK', showCancel: false }, () => resolve()));
+		return new Promise((resolve) =>
+			_modal(
+				{ title: o.title || 'Heads up', message, confirmLabel: o.confirmLabel || 'OK', showCancel: false },
+				() => resolve(),
+			),
+		);
 	}
 
 	function olConfirmSubmit(ev, message, opts) {
 		if (!ev) {
-return false;
-}
+			return false;
+		}
 		ev.preventDefault();
 		const form = ev.target && ev.target.closest ? ev.target.closest('form') : ev.target;
 		olConfirm({ message: message, danger: true, ...(opts || {}) }).then((ok) => {
 			if (ok && form) {
-form.submit();
-}
+				form.submit();
+			}
 		});
 		return false;
 	}

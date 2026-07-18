@@ -1,8 +1,8 @@
-
+// Contributor-slot projection and server-side field allowlisting.
 export function slotKind(slot) {
 	if (!slot) {
-return null;
-}
+		return null;
+	}
 	return slot.kind || 'whole-record';
 }
 
@@ -12,53 +12,55 @@ export function stripDraftValuesForSave(payload) {
 
 export function payloadContainsSlots(payload) {
 	if (!payload || typeof payload !== 'object') {
-return false;
-}
+		return false;
+	}
 	for (const key of ['loadedRecords', 'drafts']) {
 		const records = Array.isArray(payload[key]) ? payload[key] : [];
-		if (records.some((record) => record && typeof record === 'object'
-			&& record.slot && record.slot.slotId != null)) {
-return true;
-}
+		if (
+			records.some((record) => record && typeof record === 'object' && record.slot && record.slot.slotId != null)
+		) {
+			return true;
+		}
 	}
 	return false;
 }
 
 export function stripDraftsForNonOwner(payload) {
+	// Non-owners receive only drafts intentionally exposed through assigned slots.
 	const safeDrafts = Array.isArray(payload && payload.drafts)
 		? payload.drafts.map((d) => {
-			if (!d || typeof d !== 'object') {
-return d;
-}
-			const out = {
-				tempId: d.tempId,
-				objectName: d.objectName,
-				x: typeof d.x === 'number' ? d.x : 0,
-				y: typeof d.y === 'number' ? d.y : 0,
-				values: d.values || {},
-			};
-			if (d.slot) {
-out.slot = d.slot;
-}
-			return out;
-		})
+				if (!d || typeof d !== 'object') {
+					return d;
+				}
+				const out = {
+					tempId: d.tempId,
+					objectName: d.objectName,
+					x: typeof d.x === 'number' ? d.x : 0,
+					y: typeof d.y === 'number' ? d.y : 0,
+					values: d.values || {},
+				};
+				if (d.slot) {
+					out.slot = d.slot;
+				}
+				return out;
+			})
 		: [];
 	const safeLoaded = Array.isArray(payload && payload.loadedRecords)
 		? payload.loadedRecords.map((l) => {
-			if (!l.slot) {
-return l;
-}
-			const kind = slotKind(l.slot);
-			if (kind === 'fields') {
-				return l;
-			}
-			return {
-				objectName: l.objectName,
-				x: typeof l.x === 'number' ? l.x : 0,
-				y: typeof l.y === 'number' ? l.y : 0,
-				slot: l.slot,
-			};
-		})
+				if (!l.slot) {
+					return l;
+				}
+				const kind = slotKind(l.slot);
+				if (kind === 'fields') {
+					return l;
+				}
+				return {
+					objectName: l.objectName,
+					x: typeof l.x === 'number' ? l.x : 0,
+					y: typeof l.y === 'number' ? l.y : 0,
+					slot: l.slot,
+				};
+			})
 		: [];
 	return Object.assign({}, payload || {}, {
 		drafts: safeDrafts,
@@ -68,8 +70,8 @@ return l;
 
 export function slotProgress(rec) {
 	if (!rec || !rec.slot || rec.slot.slotId == null) {
-return null;
-}
+		return null;
+	}
 	const kind = slotKind(rec.slot);
 	if (kind === 'fields') {
 		const fields = Array.isArray(rec.slot.fields) ? rec.slot.fields : [];
@@ -79,8 +81,8 @@ return null;
 		for (const f of fields) {
 			const x = v[f];
 			if (x != null && x !== '') {
-filled++;
-}
+				filled++;
+			}
 		}
 		return { filled, total };
 	}
@@ -89,25 +91,28 @@ filled++;
 	const v = rec.values || {};
 	for (const k in v) {
 		if (v[k] != null && v[k] !== '') {
- hasValue = true; break; 
-}
+			hasValue = true;
+			break;
+		}
 	}
-	return { filled: (loaded || hasValue) ? 1 : 0, total: 1 };
+	return { filled: loaded || hasValue ? 1 : 0, total: 1 };
 }
 
 export function aggregateSlotProgress(records) {
-	let filled = 0, total = 0, recordCount = 0;
+	let filled = 0,
+		total = 0,
+		recordCount = 0;
 	if (!Array.isArray(records)) {
-return { filled, total, recordCount };
-}
+		return { filled, total, recordCount };
+	}
 	for (const r of records) {
 		if (!r || r.isTypeNode || r.isPending) {
-continue;
-}
+			continue;
+		}
 		const p = slotProgress(r);
 		if (!p) {
-continue;
-}
+			continue;
+		}
 		filled += p.filled;
 		total += p.total;
 		recordCount++;
@@ -117,14 +122,14 @@ continue;
 
 export function slotProgressClass(progress) {
 	if (!progress || progress.total === 0) {
-return 'slot-progress-empty';
-}
+		return 'slot-progress-empty';
+	}
 	if (progress.filled >= progress.total) {
-return 'slot-progress-full';
-}
+		return 'slot-progress-full';
+	}
 	if (progress.filled === 0) {
-return 'slot-progress-empty';
-}
+		return 'slot-progress-empty';
+	}
 	return 'slot-progress-partial';
 }
 
@@ -145,8 +150,8 @@ export function mergeSlotFills({ records, fills, recipientSfUserId }) {
 
 	for (const fill of safeFills) {
 		if (!fill || typeof fill !== 'object') {
-continue;
-}
+			continue;
+		}
 		const slotId = fill.slotId;
 		if (slotId == null || !slotIndexById.has(slotId)) {
 			skipped.push({ slotId, reason: 'unknown_slot' });
@@ -154,22 +159,20 @@ continue;
 		}
 		const idx = slotIndexById.get(slotId);
 		const rec = safeRecords[idx];
-		const assigneeSfUserId = rec.slot && rec.slot.assigneeSfUserId
-			? String(rec.slot.assigneeSfUserId)
-			: null;
+		const assigneeSfUserId = rec.slot && rec.slot.assigneeSfUserId ? String(rec.slot.assigneeSfUserId) : null;
 		if (assigneeSfUserId && assigneeSfUserId !== recipientSfUserId) {
 			skipped.push({ slotId, reason: 'not_assigned_to_you', assignee: assigneeSfUserId });
 			continue;
 		}
 		const kind = slotKind(rec.slot);
-		const incoming = (fill.values && typeof fill.values === 'object') ? fill.values : {};
+		const incoming = fill.values && typeof fill.values === 'object' ? fill.values : {};
 		const merged = Object.assign({}, rec.values || {});
 		if (kind === 'fields') {
 			const allowed = new Set(Array.isArray(rec.slot.fields) ? rec.slot.fields : []);
 			for (const k of Object.keys(incoming)) {
 				if (allowed.has(k)) {
-merged[k] = incoming[k];
-}
+					merged[k] = incoming[k];
+				}
 			}
 		} else {
 			Object.assign(merged, incoming);
@@ -183,6 +186,7 @@ merged[k] = incoming[k];
 }
 
 export function planSlotFills({ records, fills, recipientSfUserId }) {
+	// Treat client fills as requests: derive writable fields from the saved slot manifest, not the payload.
 	const safeRecords = Array.isArray(records) ? records : [];
 	const safeFills = Array.isArray(fills) ? fills : [];
 
@@ -197,12 +201,12 @@ export function planSlotFills({ records, fills, recipientSfUserId }) {
 	const skipped = [];
 	let appliedCount = 0;
 
-	const updateByRecordId = new Map();  // recordId → { objectName, fields }
+	const updateByRecordId = new Map(); // recordId → { objectName, fields }
 
 	for (const fill of safeFills) {
 		if (!fill || typeof fill !== 'object') {
-continue;
-}
+			continue;
+		}
 		const slotId = fill.slotId;
 		if (slotId == null || !slotIndexById.has(slotId)) {
 			skipped.push({ slotId, reason: 'unknown_slot' });
@@ -210,9 +214,7 @@ continue;
 		}
 		const idx = slotIndexById.get(slotId);
 		const rec = safeRecords[idx];
-		const assigneeSfUserId = rec.slot && rec.slot.assigneeSfUserId
-			? String(rec.slot.assigneeSfUserId)
-			: null;
+		const assigneeSfUserId = rec.slot && rec.slot.assigneeSfUserId ? String(rec.slot.assigneeSfUserId) : null;
 		if (assigneeSfUserId && assigneeSfUserId !== recipientSfUserId) {
 			skipped.push({ slotId, reason: 'not_assigned_to_you', assignee: assigneeSfUserId });
 			continue;
@@ -222,16 +224,14 @@ continue;
 			continue;
 		}
 		const kind = slotKind(rec.slot);
-		const incoming = (fill.values && typeof fill.values === 'object') ? fill.values : {};
+		const incoming = fill.values && typeof fill.values === 'object' ? fill.values : {};
 
-		const allowedKeys = kind === 'fields'
-			? new Set(Array.isArray(rec.slot.fields) ? rec.slot.fields : [])
-			: null;
+		const allowedKeys = kind === 'fields' ? new Set(Array.isArray(rec.slot.fields) ? rec.slot.fields : []) : null;
 		const accepted = {};
 		for (const k of Object.keys(incoming)) {
 			if (allowedKeys && !allowedKeys.has(k)) {
-continue;
-}
+				continue;
+			}
 			accepted[k] = incoming[k];
 		}
 
@@ -255,8 +255,8 @@ continue;
 	const recordPlan = {};
 	for (const [recordId, { objectName, fields }] of updateByRecordId) {
 		if (!recordPlan[objectName]) {
-recordPlan[objectName] = [];
-}
+			recordPlan[objectName] = [];
+		}
 		recordPlan[objectName].push(Object.assign({ Id: recordId }, fields));
 	}
 
@@ -264,20 +264,21 @@ recordPlan[objectName] = [];
 }
 
 export function applySlotFieldFilter(records) {
+	// Remove values outside the slot allowlist before any Salesforce DML is built.
 	if (!Array.isArray(records)) {
-return;
-}
+		return;
+	}
 	for (const r of records) {
 		if (!r || !r.values || !r.slot) {
-continue;
-}
+			continue;
+		}
 		const kind = slotKind(r.slot);
 		if (kind !== 'fields') {
-continue;
-}
+			continue;
+		}
 		if (!r.loadedFromId) {
-continue;
-}
+			continue;
+		}
 		const allow = new Set(Array.isArray(r.slot.fields) ? r.slot.fields : []);
 		const dropped = [];
 		for (const k of Object.keys(r.values)) {
@@ -287,8 +288,15 @@ continue;
 			}
 		}
 		if (dropped.length) {
-			console.warn('[slot-filter] dropped non-allowlisted fields',
-				'tempId=', r.tempId, 'object=', r.objectName, 'dropped=', dropped);
+			console.warn(
+				'[slot-filter] dropped non-allowlisted fields',
+				'tempId=',
+				r.tempId,
+				'object=',
+				r.objectName,
+				'dropped=',
+				dropped,
+			);
 		}
 	}
 }

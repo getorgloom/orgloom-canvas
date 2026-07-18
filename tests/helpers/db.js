@@ -1,4 +1,3 @@
-
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -13,12 +12,9 @@ let _rawClient = null;
 
 export async function initTestDb() {
 	if (_ready) {
-return;
-}
-	const tmpFile = path.join(
-		os.tmpdir(),
-		`orgloom-canvas-test-${process.pid}-${Date.now()}.db`,
-	);
+		return;
+	}
+	const tmpFile = path.join(os.tmpdir(), `orgloom-canvas-test-${process.pid}-${Date.now()}.db`);
 	process.env.DATABASE_URL = `sqlite:${tmpFile}`;
 	if (!process.env.ENCRYPTION_KEY) {
 		process.env.ENCRYPTION_KEY = '0123456789abcdef'.repeat(4); // gitleaks:allow
@@ -34,9 +30,7 @@ return;
 		provider: {
 			async getMigrations() {
 				const migrations = {};
-				const files = (await fs.promises.readdir(canvasMigrationsDir))
-					.filter((f) => f.endsWith('.js'))
-					.sort();
+				const files = (await fs.promises.readdir(canvasMigrationsDir)).filter((f) => f.endsWith('.js')).sort();
 				for (const file of files) {
 					const name = file.replace(/\.js$/, '');
 					const url = pathToFileURL(path.join(canvasMigrationsDir, file)).href;
@@ -48,21 +42,21 @@ return;
 	});
 	const { error } = await migrator.migrateToLatest();
 	if (error) {
-throw error;
-}
+		throw error;
+	}
 	ext.registerDbProvider(() => _db);
 	ext.registerRawClientProvider(() => ({ dialect: 'sqlite', client: _rawClient }));
 	_ready = true;
 	process.on('exit', () => {
 		try {
- fs.unlinkSync(tmpFile); 
-} catch (_) {}
+			fs.unlinkSync(tmpFile);
+		} catch (_) {}
 		try {
- fs.unlinkSync(tmpFile + '-shm'); 
-} catch (_) {}
+			fs.unlinkSync(tmpFile + '-shm');
+		} catch (_) {}
 		try {
- fs.unlinkSync(tmpFile + '-wal'); 
-} catch (_) {}
+			fs.unlinkSync(tmpFile + '-wal');
+		} catch (_) {}
 	});
 }
 
@@ -90,9 +84,7 @@ const TABLES_IN_DELETE_ORDER = [
 
 export async function clearTestDb() {
 	const db = ext.getDb();
-	const existingTables = new Set(
-		(await db.introspection.getTables()).map((table) => table.name),
-	);
+	const existingTables = new Set((await db.introspection.getTables()).map((table) => table.name));
 	for (const t of TABLES_IN_DELETE_ORDER) {
 		if (!existingTables.has(t)) {
 			continue;

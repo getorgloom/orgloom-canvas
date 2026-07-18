@@ -1,4 +1,3 @@
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -20,13 +19,15 @@ async function writeN(workspaceId, actorAccountId, n) {
 	const { audit } = await import('../src/database/index.js');
 	const ids = [];
 	for (let i = 0; i < n; i++) {
-		ids.push(await audit.record({
-			chained: true,
-			workspaceId,
-			actorAccountId,
-			action: 'test_event_' + i,
-			payload: { i },
-		}));
+		ids.push(
+			await audit.record({
+				chained: true,
+				workspaceId,
+				actorAccountId,
+				action: 'test_event_' + i,
+				payload: { i },
+			}),
+		);
 		await new Promise((r) => setTimeout(r, 2));
 	}
 	return ids;
@@ -70,12 +71,13 @@ describe('verifyChain: clean chain', () => {
 });
 
 describe('verifyChain: tamper detection', () => {
-	test('mutating a row\'s payload_json after insert is detected at that row', async () => {
+	test("mutating a row's payload_json after insert is detected at that row", async () => {
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
 		const ids = await writeN(ws.id, a.id, 5);
-		await ext.getDb()
+		await ext
+			.getDb()
 			.updateTable('audit_log')
 			.set({ payload_json: JSON.stringify({ i: 99, tampered: true }) })
 			.where('id', '=', ids[2])
@@ -88,12 +90,13 @@ describe('verifyChain: tamper detection', () => {
 		assert.equal(result.breakAt.action, 'test_event_2');
 	});
 
-	test('mutating a row\'s chain_hash directly is detected', async () => {
+	test("mutating a row's chain_hash directly is detected", async () => {
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
 		const ids = await writeN(ws.id, a.id, 4);
-		await ext.getDb()
+		await ext
+			.getDb()
 			.updateTable('audit_log')
 			.set({ chain_hash: '00'.repeat(32) })
 			.where('id', '=', ids[1])
@@ -122,7 +125,8 @@ describe('verifyChain: tamper detection', () => {
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
 		const ids = await writeN(ws.id, a.id, 3);
-		await ext.getDb()
+		await ext
+			.getDb()
 			.updateTable('audit_log')
 			.set({ action: 'workspace_renamed_evil' })
 			.where('id', '=', ids[0])
@@ -138,7 +142,8 @@ describe('verifyChain: tamper detection', () => {
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
 		const ids = await writeN(ws.id, a.id, 4);
-		await ext.getDb()
+		await ext
+			.getDb()
 			.updateTable('audit_log')
 			.set({ payload_json: JSON.stringify({ rewritten: true }) })
 			.where('id', '=', ids[1])

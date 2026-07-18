@@ -1,4 +1,3 @@
-
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -44,25 +43,20 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 		await cleanupTestRules(conn, OBJECT_NAME).catch(() => {});
 	});
 
-	async function runRulePattern({
-		ruleName,
-		formula,
-		failingValues,
-		passingValues,
-		opts,
-	}) {
+	async function runRulePattern({ ruleName, formula, failingValues, passingValues, opts }) {
 		const errorMessage = sentinelErrorMessage(ruleName);
 		const rule = { id: null, name: ruleName, formula, errorMessage, active: true };
 
 		const predFail = evaluateRule(rule, failingValues, opts);
-		assert.equal(predFail, 'fail',
-			`Engine predicted ${predFail} for failing values; expected 'fail'`);
+		assert.equal(predFail, 'fail', `Engine predicted ${predFail} for failing values; expected 'fail'`);
 		const predPass = evaluateRule(rule, passingValues, opts);
-		assert.equal(predPass, 'pass',
-			`Engine predicted ${predPass} for passing values; expected 'pass'`);
+		assert.equal(predPass, 'pass', `Engine predicted ${predPass} for passing values; expected 'pass'`);
 
 		const ruleId = await deployValidationRule(conn, {
-			objectName: OBJECT_NAME, ruleName, formula, errorMessage,
+			objectName: OBJECT_NAME,
+			ruleName,
+			formula,
+			errorMessage,
 		});
 		trackedRuleIds.push(ruleId);
 		rule.id = ruleId;
@@ -75,25 +69,30 @@ if (!RUN_LIVE || !ORG_ALIAS) {
 				trackedRecordIds.push(failResult.id);
 				assert.fail(
 					`SF accepted a record the engine predicted would fail. ` +
-					`Rule: ${ruleName}, formula: ${formula}, values: ${JSON.stringify(failingValues)}`,
+						`Rule: ${ruleName}, formula: ${formula}, values: ${JSON.stringify(failingValues)}`,
 				);
 			}
 			const hasSentinel = failResult.errors.some((e) => (e.message || '').includes(errorMessage));
-			assert.equal(hasSentinel, true,
+			assert.equal(
+				hasSentinel,
+				true,
 				`SF rejected but not with our sentinel error. ` +
-				`Rule: ${ruleName}. Errors: ${JSON.stringify(failResult.errors)}`);
+					`Rule: ${ruleName}. Errors: ${JSON.stringify(failResult.errors)}`,
+			);
 
 			const passResult = await tryInsert(conn, OBJECT_NAME, passingValues);
-			assert.equal(passResult.ok, true,
+			assert.equal(
+				passResult.ok,
+				true,
 				`SF rejected a record the engine predicted would pass. ` +
-				`Rule: ${ruleName}, errors: ${JSON.stringify(passResult.errors || [])}`);
+					`Rule: ${ruleName}, errors: ${JSON.stringify(passResult.errors || [])}`,
+			);
 			trackedRecordIds.push(passResult.id);
 			await deleteRecord(conn, OBJECT_NAME, passResult.id);
 		} finally {
 			await deleteValidationRule(conn, ruleId).catch(() => {});
 		}
 	}
-
 
 	describe('validation engine: live SF integration', () => {
 		test('LEN comparison: Description over 50 chars fires the rule', async () => {

@@ -1,4 +1,3 @@
-
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { initTestDb, clearTestDb } from './helpers/db.js';
@@ -34,11 +33,15 @@ describe('connectionsDb.upsertFromOauth', () => {
 		const { connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const first = await connections.upsertFromOauth({
-			accountId: a.id, sfUserId: '005xx', sfOrgId: '00Dxx',
+			accountId: a.id,
+			sfUserId: '005xx',
+			sfOrgId: '00Dxx',
 			instanceUrl: 'https://acme.my.salesforce.com',
 		});
 		const second = await connections.upsertFromOauth({
-			accountId: a.id, sfUserId: '005xx', sfOrgId: '00Dxx',
+			accountId: a.id,
+			sfUserId: '005xx',
+			sfOrgId: '00Dxx',
 			instanceUrl: 'https://acme.my.salesforce.com',
 			displayUsername: 'alice@acme.com',
 		});
@@ -50,8 +53,18 @@ describe('connectionsDb.upsertFromOauth', () => {
 	test('different sfUserId on same account creates a new row', async () => {
 		const { connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
-		await connections.upsertFromOauth({ accountId: a.id, sfUserId: '005a', sfOrgId: '00Da', instanceUrl: 'https://x.salesforce.com' });
-		await connections.upsertFromOauth({ accountId: a.id, sfUserId: '005b', sfOrgId: '00Db', instanceUrl: 'https://y.salesforce.com' });
+		await connections.upsertFromOauth({
+			accountId: a.id,
+			sfUserId: '005a',
+			sfOrgId: '00Da',
+			instanceUrl: 'https://x.salesforce.com',
+		});
+		await connections.upsertFromOauth({
+			accountId: a.id,
+			sfUserId: '005b',
+			sfOrgId: '00Db',
+			instanceUrl: 'https://y.salesforce.com',
+		});
 		const list = await connections.listForAccount(a.id);
 		assert.equal(list.length, 2);
 	});
@@ -62,8 +75,18 @@ describe('connectionsDb.listForAccount', () => {
 		const { connections } = await import('../src/database/index.js');
 		const a1 = await makeAccount('a1@x.com');
 		const a2 = await makeAccount('a2@x.com');
-		await connections.upsertFromOauth({ accountId: a1.id, sfUserId: 's1', sfOrgId: '00D1', instanceUrl: 'https://x.salesforce.com' });
-		await connections.upsertFromOauth({ accountId: a2.id, sfUserId: 's2', sfOrgId: '00D2', instanceUrl: 'https://y.salesforce.com' });
+		await connections.upsertFromOauth({
+			accountId: a1.id,
+			sfUserId: 's1',
+			sfOrgId: '00D1',
+			instanceUrl: 'https://x.salesforce.com',
+		});
+		await connections.upsertFromOauth({
+			accountId: a2.id,
+			sfUserId: 's2',
+			sfOrgId: '00D2',
+			instanceUrl: 'https://y.salesforce.com',
+		});
 		const list1 = await connections.listForAccount(a1.id);
 		const list2 = await connections.listForAccount(a2.id);
 		assert.equal(list1.length, 1);
@@ -75,7 +98,9 @@ describe('connectionsDb.listForAccount', () => {
 		const { connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const { connection } = await connections.upsertFromOauth({
-			accountId: a.id, sfUserId: 's1', sfOrgId: '00D1',
+			accountId: a.id,
+			sfUserId: 's1',
+			sfOrgId: '00D1',
 			instanceUrl: 'https://x.salesforce.com',
 		});
 		await connections.disable(connection.id);
@@ -91,7 +116,9 @@ describe('connectionsDb.disable', () => {
 		const { connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const { connection } = await connections.upsertFromOauth({
-			accountId: a.id, sfUserId: 's1', sfOrgId: '00D1',
+			accountId: a.id,
+			sfUserId: 's1',
+			sfOrgId: '00D1',
 			instanceUrl: 'https://x.salesforce.com',
 		});
 		await connections.disable(connection.id);
@@ -103,4 +130,3 @@ describe('connectionsDb.disable', () => {
 		assert.equal(all.length, 1, 'but is retained for history / audit references');
 	});
 });
-

@@ -20,8 +20,14 @@ function api(records, associations) {
 
 test('upload preview identifies every member of a two-record reference cycle', () => {
 	const pf = api(
-		[{ id: 1, objectName: 'Account' }, { id: 2, objectName: 'Account' }],
-		[{ fromId: 1, toId: 2, fieldName: 'ParentId' }, { fromId: 2, toId: 1, fieldName: 'ParentId' }],
+		[
+			{ id: 1, objectName: 'Account' },
+			{ id: 2, objectName: 'Account' },
+		],
+		[
+			{ fromId: 1, toId: 2, fieldName: 'ParentId' },
+			{ fromId: 2, toId: 1, fieldName: 'ParentId' },
+		],
 	);
 	const result = pf.computeUploadOrder(new Set(), new Set([1, 2]), new Set());
 	assert.deepEqual([...result.cycleIds].sort(), [1, 2]);
@@ -29,7 +35,10 @@ test('upload preview identifies every member of a two-record reference cycle', (
 
 test('an acyclic parent-child chain reports no cycle', () => {
 	const pf = api(
-		[{ id: 1, objectName: 'Account' }, { id: 2, objectName: 'Contact' }],
+		[
+			{ id: 1, objectName: 'Account' },
+			{ id: 2, objectName: 'Contact' },
+		],
 		[{ fromId: 2, toId: 1, fieldName: 'AccountId' }],
 	);
 	const result = pf.computeUploadOrder(new Set(), new Set([1, 2]), new Set());

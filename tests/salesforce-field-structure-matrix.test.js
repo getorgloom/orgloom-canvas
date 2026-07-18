@@ -12,13 +12,62 @@ import { loadDescribeForObject } from '../src/sf-describe.js';
 
 describe('Salesforce field-structure matrix', () => {
 	const rows = [
-		['Contact compound Name', { name: 'Name', type: 'string', createable: false, updateable: false, nillable: false }, false],
-		['Contact LastName', { name: 'LastName', type: 'string', createable: true, updateable: true, nillable: false }, true],
-		['compound address', { name: 'BillingAddress', type: 'address', createable: true, updateable: true, nillable: false }, false],
-		['compound geolocation', { name: 'Location__c', type: 'location', createable: true, updateable: true, nillable: false }, false],
-		['defaulted field', { name: 'Status', type: 'picklist', createable: true, updateable: true, nillable: false, defaultedOnCreate: true }, false],
-		['formula field', { name: 'Score__c', type: 'double', createable: true, updateable: false, nillable: false, calculated: true }, false],
-		['auto number', { name: 'Sequence__c', type: 'string', createable: true, updateable: false, nillable: false, autoNumber: true }, false],
+		[
+			'Contact compound Name',
+			{ name: 'Name', type: 'string', createable: false, updateable: false, nillable: false },
+			false,
+		],
+		[
+			'Contact LastName',
+			{ name: 'LastName', type: 'string', createable: true, updateable: true, nillable: false },
+			true,
+		],
+		[
+			'compound address',
+			{ name: 'BillingAddress', type: 'address', createable: true, updateable: true, nillable: false },
+			false,
+		],
+		[
+			'compound geolocation',
+			{ name: 'Location__c', type: 'location', createable: true, updateable: true, nillable: false },
+			false,
+		],
+		[
+			'defaulted field',
+			{
+				name: 'Status',
+				type: 'picklist',
+				createable: true,
+				updateable: true,
+				nillable: false,
+				defaultedOnCreate: true,
+			},
+			false,
+		],
+		[
+			'formula field',
+			{
+				name: 'Score__c',
+				type: 'double',
+				createable: true,
+				updateable: false,
+				nillable: false,
+				calculated: true,
+			},
+			false,
+		],
+		[
+			'auto number',
+			{
+				name: 'Sequence__c',
+				type: 'string',
+				createable: true,
+				updateable: false,
+				nillable: false,
+				autoNumber: true,
+			},
+			false,
+		],
 	];
 
 	for (const [label, field, required] of rows) {
@@ -30,14 +79,36 @@ describe('Salesforce field-structure matrix', () => {
 	test('compound containers are never writable, but their constituents are', () => {
 		const fields = [
 			{ name: 'BillingAddress', type: 'address', createable: true, updateable: true },
-			{ name: 'BillingStreet', type: 'string', compoundFieldName: 'BillingAddress', createable: true, updateable: true },
+			{
+				name: 'BillingStreet',
+				type: 'string',
+				compoundFieldName: 'BillingAddress',
+				createable: true,
+				updateable: true,
+			},
 			{ name: 'Location__c', type: 'location', createable: true, updateable: true },
-			{ name: 'Location__Latitude__s', type: 'double', compoundFieldName: 'Location__c', createable: true, updateable: true },
+			{
+				name: 'Location__Latitude__s',
+				type: 'double',
+				compoundFieldName: 'Location__c',
+				createable: true,
+				updateable: true,
+			},
 		];
 		assert.equal(isCompoundContainer(fields[0]), true);
-		assert.deepEqual(stripUnwritableFields({
-			BillingAddress: {}, BillingStreet: '1 Main', Location__c: {}, Location__Latitude__s: 33.4,
-		}, { fields }, false), { BillingStreet: '1 Main', Location__Latitude__s: 33.4 });
+		assert.deepEqual(
+			stripUnwritableFields(
+				{
+					BillingAddress: {},
+					BillingStreet: '1 Main',
+					Location__c: {},
+					Location__Latitude__s: 33.4,
+				},
+				{ fields },
+				false,
+			),
+			{ BillingStreet: '1 Main', Location__Latitude__s: 33.4 },
+		);
 	});
 
 	test('create/update/upsert respect asymmetric FLS', () => {
@@ -53,13 +124,27 @@ describe('Salesforce field-structure matrix', () => {
 
 	test('polymorphic references accept listed target types and reject all others', () => {
 		const describes = [
-			{ name: 'Task', describe: { fields: [
-				{ name: 'Subject', type: 'string', createable: true, nillable: false },
-				{ name: 'WhoId', type: 'reference', createable: true, referenceTo: ['Contact', 'Lead'] },
-			] } },
-			{ name: 'Contact', describe: { fields: [{ name: 'LastName', type: 'string', createable: true, nillable: false }] } },
-			{ name: 'Lead', describe: { fields: [{ name: 'LastName', type: 'string', createable: true, nillable: false }] } },
-			{ name: 'Account', describe: { fields: [{ name: 'Name', type: 'string', createable: true, nillable: false }] } },
+			{
+				name: 'Task',
+				describe: {
+					fields: [
+						{ name: 'Subject', type: 'string', createable: true, nillable: false },
+						{ name: 'WhoId', type: 'reference', createable: true, referenceTo: ['Contact', 'Lead'] },
+					],
+				},
+			},
+			{
+				name: 'Contact',
+				describe: { fields: [{ name: 'LastName', type: 'string', createable: true, nillable: false }] },
+			},
+			{
+				name: 'Lead',
+				describe: { fields: [{ name: 'LastName', type: 'string', createable: true, nillable: false }] },
+			},
+			{
+				name: 'Account',
+				describe: { fields: [{ name: 'Name', type: 'string', createable: true, nillable: false }] },
+			},
 		];
 		assert.equal(isPolymorphicReference(describes[0].describe.fields[1]), true);
 		const baseRecords = [
@@ -68,11 +153,17 @@ describe('Salesforce field-structure matrix', () => {
 			{ tempId: 3, objectName: 'Lead', values: { LastName: 'L' } },
 			{ tempId: 4, objectName: 'Account', values: { Name: 'A' } },
 		];
-		const result = validateAiPlan({ records: baseRecords, associations: [
-			{ fromTempId: 1, toTempId: 2, fieldName: 'WhoId' },
-			{ fromTempId: 1, toTempId: 3, fieldName: 'WhoId' },
-			{ fromTempId: 1, toTempId: 4, fieldName: 'WhoId' },
-		] }, describes);
+		const result = validateAiPlan(
+			{
+				records: baseRecords,
+				associations: [
+					{ fromTempId: 1, toTempId: 2, fieldName: 'WhoId' },
+					{ fromTempId: 1, toTempId: 3, fieldName: 'WhoId' },
+					{ fromTempId: 1, toTempId: 4, fieldName: 'WhoId' },
+				],
+			},
+			describes,
+		);
 		assert.equal(result.associations.length, 2);
 		assert.match(result.warnings.join('\n'), /target type mismatch/);
 	});
@@ -91,24 +182,66 @@ describe('Salesforce field-structure matrix', () => {
 
 	test('projected describes preserve record-type, dependency, indirect-lookup, and master-detail metadata', async () => {
 		const fields = [
-			{ name: 'Controller__c', type: 'picklist', createable: true, updateable: true, nillable: true,
-				filterable: true, picklistValues: [{ label: 'A', value: 'A', active: true }] },
-			{ name: 'Dependent__c', type: 'picklist', createable: true, updateable: true, nillable: true,
-				dependentPicklist: true, controllerName: 'Controller__c', restrictedPicklist: true,
-				picklistValues: [{ label: 'A1', value: 'A1', active: true, validFor: 'gA==' }] },
-			{ name: 'Description__c', type: 'textarea', createable: true, updateable: true, nillable: true,
-				filterable: false },
-			{ name: 'ExternalParent__c', type: 'reference', createable: true, updateable: true, nillable: true,
-				referenceTo: ['ExternalParent__x'], referenceTargetField: 'External_Key__c' },
-			{ name: 'Master__c', type: 'reference', createable: true, updateable: false, nillable: false,
-				referenceTo: ['Account'], reparentableMasterDetail: false },
+			{
+				name: 'Controller__c',
+				type: 'picklist',
+				createable: true,
+				updateable: true,
+				nillable: true,
+				filterable: true,
+				picklistValues: [{ label: 'A', value: 'A', active: true }],
+			},
+			{
+				name: 'Dependent__c',
+				type: 'picklist',
+				createable: true,
+				updateable: true,
+				nillable: true,
+				dependentPicklist: true,
+				controllerName: 'Controller__c',
+				restrictedPicklist: true,
+				picklistValues: [{ label: 'A1', value: 'A1', active: true, validFor: 'gA==' }],
+			},
+			{
+				name: 'Description__c',
+				type: 'textarea',
+				createable: true,
+				updateable: true,
+				nillable: true,
+				filterable: false,
+			},
+			{
+				name: 'ExternalParent__c',
+				type: 'reference',
+				createable: true,
+				updateable: true,
+				nillable: true,
+				referenceTo: ['ExternalParent__x'],
+				referenceTargetField: 'External_Key__c',
+			},
+			{
+				name: 'Master__c',
+				type: 'reference',
+				createable: true,
+				updateable: false,
+				nillable: false,
+				referenceTo: ['Account'],
+				reparentableMasterDetail: false,
+			},
 		];
 		const conn = {
 			version: '60.0',
-			sobject: () => ({ describe: async () => ({
-				name: 'Fixture__c', label: 'Fixture', createable: true, updateable: true, queryable: true,
-				fields, recordTypeInfos: [],
-			}) }),
+			sobject: () => ({
+				describe: async () => ({
+					name: 'Fixture__c',
+					label: 'Fixture',
+					createable: true,
+					updateable: true,
+					queryable: true,
+					fields,
+					recordTypeInfos: [],
+				}),
+			}),
 			request: async () => ({ defaultRecordTypeId: null, fields: {}, recordTypeInfos: {} }),
 		};
 		const projected = await loadDescribeForObject(conn, 'Fixture__c');

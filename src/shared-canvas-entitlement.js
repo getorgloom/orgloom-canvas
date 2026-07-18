@@ -18,22 +18,17 @@ export function recipientRequiresPlan(grant) {
 }
 
 export function canvasEntryStartsTrial(kind) {
-	return kind === SHARED_CANVAS_ENTRY.OWNER
-		|| kind === SHARED_CANVAS_ENTRY.PAID_RECIPIENT;
+	return kind === SHARED_CANVAS_ENTRY.OWNER || kind === SHARED_CANVAS_ENTRY.PAID_RECIPIENT;
 }
 
-export async function classifySharedCanvasEntry({
-	canvasId,
-	sfOrgId,
-	sfUserId,
-	getCanvas,
-	getGrant,
-}) {
-	if (!CANVAS_ID_RE.test(String(canvasId || ''))
-		|| !sfOrgId
-		|| !sfUserId
-		|| typeof getCanvas !== 'function'
-		|| typeof getGrant !== 'function') {
+export async function classifySharedCanvasEntry({ canvasId, sfOrgId, sfUserId, getCanvas, getGrant }) {
+	if (
+		!CANVAS_ID_RE.test(String(canvasId || '')) ||
+		!sfOrgId ||
+		!sfUserId ||
+		typeof getCanvas !== 'function' ||
+		typeof getGrant !== 'function'
+	) {
 		return { kind: SHARED_CANVAS_ENTRY.INVALID, item: null, grant: null };
 	}
 

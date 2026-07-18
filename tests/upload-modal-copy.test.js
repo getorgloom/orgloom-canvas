@@ -82,21 +82,12 @@ test('upload progress uses a plain object-aware record summary', () => {
 		Account: { label: 'Account', labelPlural: 'Accounts' },
 	};
 	assert.equal(
-		uploadModal.formatUploadProgress(
-			[{ objectName: 'Contact' }, { objectName: 'Contact' }],
-			describes,
-		),
+		uploadModal.formatUploadProgress([{ objectName: 'Contact' }, { objectName: 'Contact' }], describes),
 		'Uploading 2 Contacts…',
 	);
+	assert.equal(uploadModal.formatUploadProgress([{ objectName: 'Account' }], describes), 'Uploading 1 Account…');
 	assert.equal(
-		uploadModal.formatUploadProgress([{ objectName: 'Account' }], describes),
-		'Uploading 1 Account…',
-	);
-	assert.equal(
-		uploadModal.formatUploadProgress(
-			[{ objectName: 'Account' }, { objectName: 'Contact' }],
-			describes,
-		),
+		uploadModal.formatUploadProgress([{ objectName: 'Account' }, { objectName: 'Contact' }], describes),
 		'Uploading 2 records…',
 	);
 	assert.doesNotMatch(source, /atomically|Validation and commit happen in one step/);
@@ -116,7 +107,10 @@ test('required omitted draft relationships become record-level preflight errors'
 });
 
 test('client preflight distinguishes the field label from its API name', () => {
-	assert.match(source, /escapeHtml\(iss\.fieldLabel\) \+ ' \(<code>' \+ escapeHtml\(iss\.field\) \+ '<\/code>\)/);
+	assert.match(
+		source,
+		/escapeHtml\(iss\.fieldLabel\)\s*\+\s*' \(<code>'\s*\+\s*escapeHtml\(iss\.field\)\s*\+\s*'<\/code>\)/,
+	);
 });
 
 test('cross-org ambiguity is a hard upload gate', () => {
@@ -150,7 +144,10 @@ test('successful recall reconciles the live canvas without converting refresh fa
 });
 
 test('post-recall reconciliation refreshes every clean loaded record and preserves newer canvas edits', () => {
-	assert.match(appSource, /async function refreshCanvasAfterRecall\(\)[\s\S]*const loaded = canvasState\.bulkRecords\.filter/);
+	assert.match(
+		appSource,
+		/async function refreshCanvasAfterRecall\(\)[\s\S]*const loaded = canvasState\.bulkRecords\.filter/,
+	);
 	assert.match(appSource, /const dirty = loaded\.filter\(\(r\) => isRecordModified\(r\)\)/);
 	assert.match(appSource, /const clean = loaded\.filter\(\(r\) => !isRecordModified\(r\)\)/);
 	assert.match(appSource, /await refreshLoadedCanvasRecords\(clean\)/);
@@ -165,9 +162,15 @@ test('recall review omits recovery promises and legacy pre-value-revert messagin
 test('recall review restores the cached history list and never renders a zero-record action', () => {
 	assert.match(historySource, /const historyListHtml = content\.innerHTML/);
 	assert.match(historySource, /data-uh-back[^\n]+restoreHistoryList/);
-	assert.match(historySource, /data-uh-list[^\n]+restoreHistoryList\(body\.status\)/);
+	assert.match(
+		historySource,
+		/querySelector\(\s*'\[data-uh-list\]'\s*\)\s*\.addEventListener\(\s*'click',\s*\(\) => restoreHistoryList\(body\.status\)\s*\)/,
+	);
 	assert.match(historySource, /updatedStatus === 'recalled'[\s\S]*?recallButton\.remove\(\)/);
-	assert.doesNotMatch(historySource, /data-uh-list[^\n]+_renderUploadHistoryList/);
+	assert.doesNotMatch(
+		historySource,
+		/querySelector\(\s*'\[data-uh-list\]'\s*\)\s*\.addEventListener\(\s*'click',\s*(?:\(\) =>\s*)?_renderUploadHistoryList/,
+	);
 	assert.match(historySource, /const recallAction = hasPotentialRecallWork/);
 	assert.match(historySource, /Nothing from this upload is available to recall/);
 	assert.doesNotMatch(historySource, /Recall <span data-uh-recall-count>/);

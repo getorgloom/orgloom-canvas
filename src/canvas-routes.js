@@ -1,4 +1,5 @@
-
+// Canvas API boundary: authentication, workspace policy, audit, and Salesforce orchestration.
+// Lower-level modules own Salesforce mechanics; routes validate and gate before invoking them.
 import { ext as defaultExt } from 'orgloom-canvas/extensions';
 let ext = defaultExt;
 import { connections as connectionsDb } from './database/index.js';
@@ -29,18 +30,18 @@ let sendCanvasShareInvite = null;
 let sendCanvasFillNotification = null;
 let sendDirectCanvasShareNotification = null;
 let _saasAvailable = false;
+// Hosted-only services are optional so this package still boots as the standalone canvas.
 try {
 	workspacesDb = await import('orgloom-saas/database/workspaces');
 	usageDb = await import('orgloom-saas/database/usage');
 	magicLinkTokensDb = await import('orgloom-saas/database/magic-link-tokens');
 	workspaceCreditsDb = await import('orgloom-saas/database/workspace-credits');
 	({ buildCapabilityMap } = await import('orgloom-saas/policy'));
-	({ sendCanvasShareInvite, sendCanvasFillNotification, sendDirectCanvasShareNotification }
-		= await import('orgloom-saas/email'));
+	({ sendCanvasShareInvite, sendCanvasFillNotification, sendDirectCanvasShareNotification } = await import(
+		'orgloom-saas/email'
+	));
 	_saasAvailable = true;
-} catch (_e) {
-}
-
+} catch (_e) {}
 
 import { isEnabled as anthropicEnabled, getClient as getAnthropicClient, ANTHROPIC_MODEL } from './anthropic-client.js';
 import {
@@ -67,7 +68,13 @@ import {
 	GRAPH_TOTAL_NODES_CAP,
 } from './sf-upload.js';
 import { applySlotFieldFilter } from './slot-helpers.js';
-import { executeRecall, classifyBatchDrift, classifyValueDrift, detectCascadeConflicts, planDeleteOrder } from './upload-recall.js';
+import {
+	executeRecall,
+	classifyBatchDrift,
+	classifyValueDrift,
+	detectCascadeConflicts,
+	planDeleteOrder,
+} from './upload-recall.js';
 import { runBulkJob } from './sf-bulk.js';
 import { listObjects, loadDescribeForObject, getQueryableSObjects, cleanLabel, isNoiseSObject } from './sf-describe.js';
 import {
@@ -110,26 +117,27 @@ function _rejectUploadLedgerUnavailable(res, err, mode) {
 	console.warn('[two-phase unavailable/' + mode + ']:', err && (err.message || err));
 	return res.status(503).json({
 		error: 'upload-ledger-unavailable',
-		message: 'Org Loom could not establish the encrypted upload intent. No Salesforce records were written; retry when the connection is healthy.',
+		message:
+			'Org Loom could not establish the encrypted upload intent. No Salesforce records were written; retry when the connection is healthy.',
 	});
 }
 
 export function _claimUploadAttemptForTests(req, res, attemptId) {
 	if (!attemptId) {
-return true;
-}
+		return true;
+	}
 	const accountId = req.account && req.account.id ? req.account.id : 'anonymous';
 	const sfUserId = req.sf && req.sf.sfUserId ? req.sf.sfUserId : 'no-sf-user';
 	const key = accountId + ':' + sfUserId + ':' + attemptId;
 	if (_activeUploadAttempts.has(key)) {
-return false;
-}
+		return false;
+	}
 	_activeUploadAttempts.add(key);
 	let released = false;
 	const release = () => {
 		if (released) {
-return;
-}
+			return;
+		}
 		released = true;
 		_activeUploadAttempts.delete(key);
 	};
@@ -139,6 +147,7 @@ return;
 }
 const _claimUploadAttempt = _claimUploadAttemptForTests;
 
+// A deterministic rollback must become terminal even when deleting its ledger file is forbidden.
 export async function _settleKnownNoCommitForTests(store, batchId, details = {}) {
 	if (!store || !batchId) {
 		return { settled: true, method: 'none' };
@@ -148,25 +157,34 @@ export async function _settleKnownNoCommitForTests(store, batchId, details = {})
 		await store.markFailed(batchId, details);
 		terminal = true;
 	} catch (rewriteErr) {
-		console.warn('[upload-ledger] failed to mark known rollback terminal:', rewriteErr && (rewriteErr.message || rewriteErr));
+		console.warn(
+			'[upload-ledger] failed to mark known rollback terminal:',
+			rewriteErr && (rewriteErr.message || rewriteErr),
+		);
 	}
 	try {
 		await store.remove(batchId);
 		return { settled: true, method: 'removed' };
 	} catch (removeErr) {
 		if (!terminal) {
-			console.warn('[upload-ledger] failed to remove known rollback intent:', removeErr && (removeErr.message || removeErr));
+			console.warn(
+				'[upload-ledger] failed to remove known rollback intent:',
+				removeErr && (removeErr.message || removeErr),
+			);
 			return { settled: false, method: 'pending' };
 		}
-		console.warn('[upload-ledger] terminal rollback retained because file cleanup failed:', removeErr && (removeErr.message || removeErr));
+		console.warn(
+			'[upload-ledger] terminal rollback retained because file cleanup failed:',
+			removeErr && (removeErr.message || removeErr),
+		);
 		return { settled: true, method: 'failed-row' };
 	}
 }
 
 const _settleKnownNoCommit = _settleKnownNoCommitForTests;
 export function _countCommittedMutationsForTests(results) {
-	return (Array.isArray(results) ? results : []).filter((result) =>
-		result && result.success && result.mode !== 'unchanged' && result.id,
+	return (Array.isArray(results) ? results : []).filter(
+		(result) => result && result.success && result.mode !== 'unchanged' && result.id,
 	).length;
 }
 const _countCommittedMutations = _countCommittedMutationsForTests;
@@ -176,8 +194,8 @@ export function _resetUploadAttemptClaimsForTests() {
 	_activeUploadAttempts.clear();
 }
 
-
 function _summarizeCanvasPayload(payload) {
+	// Audit structural metadata only; Salesforce field values never belong in this summary.
 	if (!payload || typeof payload !== 'object') {
 		return { cardCount: 0, draftCount: 0, objectCounts: {} };
 	}
@@ -204,9 +222,10 @@ function _summarizeCanvasPayload(payload) {
 }
 
 async function _findCanvasShareGrant(req, canvasId) {
+	// A role row supplements Salesforce file access; it never grants canvas access by itself.
 	if (!req.sf || !req.sf.sfUserId || !req.sf.sfOrgId) {
-return null;
-}
+		return null;
+	}
 	try {
 		const grant = await canvasRoleGrantsDb.get({
 			sfOrgId: req.sf.sfOrgId,
@@ -214,8 +233,8 @@ return null;
 			recipientSfUserId: req.sf.sfUserId,
 		});
 		if (!grant) {
-return null;
-}
+			return null;
+		}
 		return {
 			canvasId,
 			role: grant.role,
@@ -233,7 +252,7 @@ async function _removeSfShareForRecipient(store, canvasId, recipientSfUserId) {
 		return 0;
 	}
 	const listed = await store.listShares(canvasId);
-	const rows = Array.isArray(listed) ? listed : (listed && Array.isArray(listed.shares) ? listed.shares : []);
+	const rows = Array.isArray(listed) ? listed : listed && Array.isArray(listed.shares) ? listed.shares : [];
 	const matching = rows.filter((r) => r && r.entityId === recipientSfUserId);
 	let removed = 0;
 	for (const row of matching) {
@@ -255,6 +274,7 @@ async function requireSfConnection(req, res, next) {
 				message: 'Connect or activate a Salesforce org to continue.',
 			});
 		}
+		// Recheck package assignment before writes because Salesforce cannot notify us of revocation.
 		if (ext.saasMounted && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
 			try {
 				const assigned = await hasAssignedOrgloomPermissionSet(bundle.conn, bundle.sfUserId);
@@ -290,8 +310,8 @@ async function requireSfConnection(req, res, next) {
 		req.sf = bundle;
 		next();
 	} catch (err) {
- next(err); 
-}
+		next(err);
+	}
 }
 
 async function requireSfConnectionUnlessDraft(req, res, next) {
@@ -301,7 +321,6 @@ async function requireSfConnectionUnlessDraft(req, res, next) {
 	}
 	return requireSfConnection(req, res, next);
 }
-
 
 let _envWriteTail = Promise.resolve();
 
@@ -316,44 +335,51 @@ async function _writeEnvUpdates(updates) {
 	const envPath = path.resolve(process.cwd(), '.env');
 	let existing = '';
 	try {
- existing = await fs.readFile(envPath, 'utf8'); 
-} catch (_) { /* file may not exist yet */ }
+		existing = await fs.readFile(envPath, 'utf8');
+	} catch (_) {
+		/* file may not exist yet */
+	}
 	const lines = existing.split(/\r?\n/);
 	const seen = new Set();
 	const encode = (value) => JSON.stringify(String(value));
 	const updated = lines.map((line) => {
 		const m = line.match(/^([A-Z_][A-Z0-9_]*)\s*=/);
 		if (!m) {
-return line;
-}
+			return line;
+		}
 		const key = m[1];
 		if (!(key in updates)) {
-return line;
-}
+			return line;
+		}
 		seen.add(key);
 		return key + '=' + encode(updates[key]);
 	});
 	for (const key of Object.keys(updates)) {
 		if (seen.has(key)) {
-continue;
-}
+			continue;
+		}
 		updated.push(key + '=' + encode(updates[key]));
 	}
 	const out = updated.join('\n').replace(/\n+$/, '') + '\n';
 	await fs.writeFile(envPath, out, 'utf8');
 }
 
-
 export function mountSetupWizard(app) {
+	// Standalone deployments remain locked to setup until OAuth credentials exist.
 	const _setupNeeded = () => !ext.saasMounted && !process.env.SF_CLIENT_ID;
 	app.use((req, res, next) => {
 		if (!_setupNeeded()) {
-return next();
-}
+			return next();
+		}
 		const p = req.path;
-		if (p === '/setup' || p.startsWith('/css/') || p.startsWith('/js/')
-			|| p.startsWith('/img/') || p.startsWith('/vendor/')
-			|| p === '/favicon.ico') {
+		if (
+			p === '/setup' ||
+			p.startsWith('/css/') ||
+			p.startsWith('/js/') ||
+			p.startsWith('/img/') ||
+			p.startsWith('/vendor/') ||
+			p === '/favicon.ico'
+		) {
 			return next();
 		}
 		if (p.startsWith('/api/') || p === '/mcp/v1') {
@@ -364,14 +390,14 @@ return next();
 
 	app.get('/setup', (req, res) => {
 		if (process.env.SF_CLIENT_ID) {
-return res.redirect('/');
-}
-		const appUrl = (process.env.APP_URL || ('http://localhost:' + (process.env.PORT || '3000'))).replace(/\/$/, '');
+			return res.redirect('/');
+		}
+		const appUrl = (process.env.APP_URL || 'http://localhost:' + (process.env.PORT || '3000')).replace(/\/$/, '');
 		res.render('setup', { appUrl, submitError: null, submitted: false });
 	});
 
 	app.post('/setup', async (req, res) => {
-		const appUrl = (process.env.APP_URL || ('http://localhost:' + (process.env.PORT || '3000'))).replace(/\/$/, '');
+		const appUrl = (process.env.APP_URL || 'http://localhost:' + (process.env.PORT || '3000')).replace(/\/$/, '');
 		const body = req.body || {};
 		const sfClientId = String(body.sf_client_id || '').trim();
 		const sfClientSecret = String(body.sf_client_secret || '').trim();
@@ -386,12 +412,19 @@ return res.redirect('/');
 		if (!/^[A-Za-z0-9._-]{20,200}$/.test(sfClientId)) {
 			return res.status(400).render('setup', {
 				appUrl,
-				submitError: 'Consumer Key doesn\'t look right (got ' + sfClientId.length + ' chars; expected ~85). Double-check you copied the Consumer Key and not the Secret.',
+				submitError:
+					"Consumer Key doesn't look right (got " +
+					sfClientId.length +
+					' chars; expected ~85). Double-check you copied the Consumer Key and not the Secret.',
 				submitted: false,
 			});
 		}
-		if (sfClientSecret.length > 1000 || anthropicKey.length > 1000
-			|| /[\r\n]/.test(sfClientSecret) || /[\r\n]/.test(anthropicKey)) {
+		if (
+			sfClientSecret.length > 1000 ||
+			anthropicKey.length > 1000 ||
+			/[\r\n]/.test(sfClientSecret) ||
+			/[\r\n]/.test(anthropicKey)
+		) {
 			return res.status(400).render('setup', {
 				appUrl,
 				submitError: 'Secrets must be single-line values of at most 1000 characters.',
@@ -412,14 +445,16 @@ return res.redirect('/');
 			console.error('[setup] .env write failed:', err);
 			return res.status(500).render('setup', {
 				appUrl,
-				submitError: 'Could not write to .env: ' + (err.message || String(err)) + '. You can paste the values into .env manually and restart.',
+				submitError:
+					'Could not write to .env: ' +
+					(err.message || String(err)) +
+					'. You can paste the values into .env manually and restart.',
 				submitted: false,
 			});
 		}
 		res.render('setup', { appUrl, submitError: null, submitted: true });
 	});
 }
-
 
 export async function requireAccount(req, res, next) {
 	try {
@@ -434,8 +469,8 @@ export async function requireAccount(req, res, next) {
 		req.account = account;
 		next();
 	} catch (err) {
- next(err); 
-}
+		next(err);
+	}
 }
 
 async function _auditWorkspaceAccessDenied(req, attemptedWorkspaceId, errorCode, actualRole, requiredRole) {
@@ -482,17 +517,17 @@ export function requireWorkspaceAdmin(extractWorkspaceId = (req) => req.params.i
 			if (!role) {
 				await _auditWorkspaceAccessDenied(req, workspaceId, 'not-a-member', null, 'admin');
 				return res.status(403).json({ error: 'not-a-member' });
-}
+			}
 			if (role !== 'admin') {
 				await _auditWorkspaceAccessDenied(req, workspaceId, 'admin-only', role, 'admin');
 				return res.status(403).json({ error: 'admin-only' });
-}
+			}
 			req.workspaceId = workspaceId;
 			req.workspaceRole = role;
 			next();
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	};
 }
 
@@ -507,13 +542,13 @@ export function requireWorkspaceMember(extractWorkspaceId = (req) => req.params.
 			if (!role) {
 				await _auditWorkspaceAccessDenied(req, workspaceId, 'not-a-member', null, 'member');
 				return res.status(403).json({ error: 'not-a-member' });
-}
+			}
 			req.workspaceId = workspaceId;
 			req.workspaceRole = role;
 			next();
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	};
 }
 
@@ -529,9 +564,10 @@ async function _gateCapability(req, res, capability, auditAction, opts = {}) {
 			error: cap.reason || 'permission-denied',
 			capability,
 			approvalStatus: cap.approvalStatus,
-			message: (opts.messages && opts.messages[cap.reason])
-				|| opts.message
-				|| `You don't have permission to ${auditAction.replace(/_/g, ' ')}. Ask a workspace admin to grant the '${capability}' permission.`,
+			message:
+				(opts.messages && opts.messages[cap.reason]) ||
+				opts.message ||
+				`You don't have permission to ${auditAction.replace(/_/g, ' ')}. Ask a workspace admin to grant the '${capability}' permission.`,
 		});
 		return false;
 	}
@@ -552,8 +588,8 @@ async function _auditCrossAccountConnAccess(req, attemptedConnectionId, ownerAcc
 			payload: { attemptedConnectionId, ownerAccountId, route },
 		});
 	} catch (e) {
- console.warn('[audit] cross-account conn access failed:', e && e.message);
-}
+		console.warn('[audit] cross-account conn access failed:', e && e.message);
+	}
 }
 
 async function _auditConnectionActivated(req, c, mode) {
@@ -576,7 +612,6 @@ async function _auditConnectionActivated(req, c, mode) {
 		console.warn('[audit] connection_activated failed:', e && e.message);
 	}
 }
-
 
 const _SF_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_.]*$/;
 
@@ -632,17 +667,46 @@ function _maskSoqlSkeleton(soql) {
 }
 
 const SOQL_OBJECT_DENYLIST = new Set([
-	'apexclass', 'apextrigger', 'apexcomponent', 'apexpage',
-	'apexlog', 'apextestresult', 'apexcodecoverage', 'apexcodecoverageaggregate',
-	'apextestqueueitem', 'apexemailnotification', 'apexpageinfo',
-	'staticresource', 'entitydefinition', 'fielddefinition', 'flowdefinitionview',
-	'userlogin', 'profile', 'permissionset', 'permissionsetassignment',
-	'permissionsetgroup', 'permissionsetlicense', 'permissionsetlicenseassign',
-	'objectpermissions', 'fieldpermissions', 'setupentityaccess',
-	'organization', 'authsession', 'authconfig', 'authconfigproviders',
-	'authprovider', 'oauthtoken', 'connectedapplication', 'samlssoconfig',
-	'loginhistory', 'loginip', 'logingeo', 'sessionpermsetactivation',
-	'setupaudittrail', 'apianomalyeventstore', 'credentialstuffingeventstore',
+	'apexclass',
+	'apextrigger',
+	'apexcomponent',
+	'apexpage',
+	'apexlog',
+	'apextestresult',
+	'apexcodecoverage',
+	'apexcodecoverageaggregate',
+	'apextestqueueitem',
+	'apexemailnotification',
+	'apexpageinfo',
+	'staticresource',
+	'entitydefinition',
+	'fielddefinition',
+	'flowdefinitionview',
+	'userlogin',
+	'profile',
+	'permissionset',
+	'permissionsetassignment',
+	'permissionsetgroup',
+	'permissionsetlicense',
+	'permissionsetlicenseassign',
+	'objectpermissions',
+	'fieldpermissions',
+	'setupentityaccess',
+	'organization',
+	'authsession',
+	'authconfig',
+	'authconfigproviders',
+	'authprovider',
+	'oauthtoken',
+	'connectedapplication',
+	'samlssoconfig',
+	'loginhistory',
+	'loginip',
+	'logingeo',
+	'sessionpermsetactivation',
+	'setupaudittrail',
+	'apianomalyeventstore',
+	'credentialstuffingeventstore',
 ]);
 
 export const SF_READ_RATE_LIMIT = { windowMs: 60_000, max: 60 };
@@ -666,24 +730,24 @@ export function _resetSfReadRateLimitForTests() {
 export async function _fetchCanonicalValuesForUpload({ conn, results, recordsById }) {
 	const out = new Map();
 	if (!conn || !Array.isArray(results) || results.length === 0) {
-return out;
-}
+		return out;
+	}
 	const byObject = new Map();
 	for (const r of results) {
 		if (!r || !r.success || !r.id || !r.objectName) {
-continue;
-}
+			continue;
+		}
 		if (r.mode === 'unchanged') {
-continue;
-}
+			continue;
+		}
 		const rec = recordsById.get(r.tempId);
 		if (!rec) {
-continue;
-}
+			continue;
+		}
 		const objName = r.objectName;
 		if (!_SF_NAME_RE.test(objName)) {
-continue;
-}
+			continue;
+		}
 		if (!byObject.has(objName)) {
 			byObject.set(objName, { rows: [], fields: new Set() });
 		}
@@ -692,50 +756,49 @@ continue;
 		if (rec.values && typeof rec.values === 'object') {
 			for (const k of Object.keys(rec.values)) {
 				if (k && !k.startsWith('_') && _SF_NAME_RE.test(k)) {
-entry.fields.add(k);
-}
+					entry.fields.add(k);
+				}
 			}
 		}
 		if (rec.loadedValues && typeof rec.loadedValues === 'object') {
 			for (const k of Object.keys(rec.loadedValues)) {
 				if (k && !k.startsWith('_') && _SF_NAME_RE.test(k)) {
-entry.fields.add(k);
-}
+					entry.fields.add(k);
+				}
 			}
 		}
 	}
 	for (const [objName, entry] of byObject) {
 		if (entry.fields.size === 0) {
-continue;
-}
+			continue;
+		}
 		const fieldList = ['Id', ...Array.from(entry.fields)].join(', ');
 		const ids = entry.rows.map((r) => r.sfId);
 		for (let i = 0; i < ids.length; i += 200) {
 			const slice = ids.slice(i, i + 200);
 			const inList = slice.map((id) => "'" + escapeSoqlLiteral(id) + "'").join(',');
-			const soql = 'SELECT ' + fieldList + ' FROM ' + objName +
-				' WHERE Id IN (' + inList + ')';
+			const soql = 'SELECT ' + fieldList + ' FROM ' + objName + ' WHERE Id IN (' + inList + ')';
 			try {
 				const result = await conn.query(soql);
 				const records = result.records || [];
 				const sfById = new Map();
 				for (const sfRec of records) {
 					if (!sfRec || !sfRec.Id) {
-continue;
-}
+						continue;
+					}
 					sfById.set(String(sfRec.Id).slice(0, 15), sfRec);
 					sfById.set(sfRec.Id, sfRec);
 				}
 				for (const row of entry.rows.slice(i, i + 200)) {
 					const sfRec = sfById.get(row.sfId) || sfById.get(String(row.sfId).slice(0, 15));
 					if (!sfRec) {
-continue;
-}
+						continue;
+					}
 					const canonical = {};
 					for (const k of Object.keys(sfRec)) {
 						if (k === 'attributes' || k === 'Id') {
-continue;
-}
+							continue;
+						}
 						canonical[k] = sfRec[k];
 					}
 					out.set(row.tempId, {
@@ -744,8 +807,7 @@ continue;
 						values: canonical,
 					});
 				}
-			} catch (e) {
-			}
+			} catch (e) {}
 		}
 	}
 	return out;
@@ -785,18 +847,16 @@ export function _buildBatchEntryFromResult(r, rec, canonical) {
 		const canonicalValues = canonical && canonical.values ? canonical.values : null;
 		for (const k of Object.keys(rec.values)) {
 			if (!k || k.startsWith('_')) {
-continue;
-}
+				continue;
+			}
 			const cur = rec.values[k];
 			const prior = rec.loadedValues[k];
-			 
+
 			if (cur == prior) {
-continue;
-}
+				continue;
+			}
 			priorValues[k] = prior == null ? null : prior;
-			uploadedValues[k] = canonicalValues && k in canonicalValues
-				? canonicalValues[k]
-				: cur;
+			uploadedValues[k] = canonicalValues && k in canonicalValues ? canonicalValues[k] : cur;
 		}
 		if (Object.keys(uploadedValues).length > 0) {
 			entry.priorValues = priorValues;
@@ -807,20 +867,21 @@ continue;
 }
 
 export function mountCanvasRoutes(app, options = {}) {
+	// Hosted callers inject their configured registry; standalone callers retain safe defaults.
 	if (options.ext) {
 		ext = options.ext;
 	}
 
-
-
 	app.get('/api/canvas', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
-			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const result = await store.list();
 			res.json(result);
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.get('/api/canvas/:id', requireAccount, requireSfConnection, async (req, res, next) => {
@@ -829,15 +890,21 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
 				return res.status(400).json({ error: 'invalid-id' });
 			}
-			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const item = await store.get(id);
 			if (!item) {
-return res.status(404).json({ error: 'not-found' });
-}
+				return res.status(404).json({ error: 'not-found' });
+			}
 			if (item.ownedByMe) {
-				if (!await _gateCapability(req, res, 'open-saved-canvas', 'open_saved_canvas', { auditPayload: { canvasId: id } })) {
-return;
-}
+				if (
+					!(await _gateCapability(req, res, 'open-saved-canvas', 'open_saved_canvas', {
+						auditPayload: { canvasId: id },
+					}))
+				) {
+					return;
+				}
 			}
 
 			let grant = null;
@@ -852,7 +919,8 @@ return;
 					if (!cap.allowed) {
 						return res.status(402).json({
 							error: cap.reason || 'upgrade-required',
-							message: 'Contributor and Editor access requires an active Pro trial, Pro subscription, or Team seat. If your trial is unused, open Your workspace to start it. Otherwise, upgrade or ask the owner to share this canvas as Viewer.',
+							message:
+								'Contributor and Editor access requires an active Pro trial, Pro subscription, or Team seat. If your trial is unused, open Your workspace to start it. Otherwise, upgrade or ask the owner to share this canvas as Viewer.',
 							required: cap.required,
 							currentPlan: cap.plan,
 						});
@@ -879,16 +947,16 @@ return;
 					const byObject = new Map();
 					for (const r of loadedRecs) {
 						if (!byObject.has(r.objectName)) {
-byObject.set(r.objectName, new Set());
-}
+							byObject.set(r.objectName, new Set());
+						}
 						byObject.get(r.objectName).add(r.recordId);
 					}
 					const apiVersion = req.sf.conn.version || '60.0';
 					const _STALE_OBJ_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 					for (const [objName, idSet] of byObject) {
 						if (!_STALE_OBJ_NAME_RE.test(objName)) {
-continue;
-}
+							continue;
+						}
 						const ids = Array.from(idSet);
 						const liveIds = new Set();
 						const idKey = (i) => (i ? String(i).slice(0, 15) : '');
@@ -901,7 +969,11 @@ continue;
 								const r = await req.sf.conn.request({ method: 'GET', url });
 								(r.records || []).forEach((rec) => liveIds.add(idKey(rec.Id)));
 							} catch (e) {
-								console.warn('[canvas-load] stale-ref probe failed for', objName + ':', (e && e.message) || String(e));
+								console.warn(
+									'[canvas-load] stale-ref probe failed for',
+									objName + ':',
+									(e && e.message) || String(e),
+								);
 								slice.forEach((id) => liveIds.add(idKey(id))); // treat as live
 							}
 						}
@@ -917,44 +989,62 @@ continue;
 					const _ownerCanDistinguishDeletion = !!item.ownedByMe;
 					const _classify = async (ref) => {
 						try {
-							const url = '/services/data/v' + apiVersion
-								+ '/sobjects/' + encodeURIComponent(ref.objectName)
-								+ '/' + encodeURIComponent(ref.sfId);
+							const url =
+								'/services/data/v' +
+								apiVersion +
+								'/sobjects/' +
+								encodeURIComponent(ref.objectName) +
+								'/' +
+								encodeURIComponent(ref.sfId);
 							await req.sf.conn.request({ method: 'GET', url });
 							return null;
 						} catch (e) {
 							const codes = [];
 							const codeFrom = (v) => {
 								if (typeof v === 'string') {
-codes.push(v);
-} else if (v && typeof v === 'object' && typeof v.errorCode === 'string') {
-codes.push(v.errorCode);
-}
+									codes.push(v);
+								} else if (v && typeof v === 'object' && typeof v.errorCode === 'string') {
+									codes.push(v.errorCode);
+								}
 							};
 							codeFrom(e && e.errorCode);
 							codeFrom(e && e.name);
 							if (Array.isArray(e && e.body)) {
-e.body.forEach(codeFrom);
-}
+								e.body.forEach(codeFrom);
+							}
 							if (e && e.body && typeof e.body === 'object') {
-codeFrom(e.body);
-}
+								codeFrom(e.body);
+							}
 							const status = (e && (e.statusCode || e.status)) || 0;
 							const has = (c) => codes.indexOf(c) >= 0;
-							if (has('INSUFFICIENT_ACCESS')
-								|| has('INSUFFICIENT_ACCESS_OR_READONLY')
-								|| has('INVALID_FIELD_FOR_INSERT_UPDATE')
-								|| status === 403) {
+							if (
+								has('INSUFFICIENT_ACCESS') ||
+								has('INSUFFICIENT_ACCESS_OR_READONLY') ||
+								has('INVALID_FIELD_FOR_INSERT_UPDATE') ||
+								status === 403
+							) {
 								return 'no-access';
 							}
-							if (has('NOT_FOUND')
-								|| has('INVALID_CROSS_REFERENCE_KEY')
-								|| has('ENTITY_IS_DELETED')
-								|| has('MALFORMED_ID')
-								|| status === 404) {
+							if (
+								has('NOT_FOUND') ||
+								has('INVALID_CROSS_REFERENCE_KEY') ||
+								has('ENTITY_IS_DELETED') ||
+								has('MALFORMED_ID') ||
+								status === 404
+							) {
 								return _ownerCanDistinguishDeletion ? 'deleted' : 'no-access';
 							}
-							console.warn('[stale-classify] unrecognized error shape for', ref.objectName, ref.sfId, '- status:', status, 'codes:', codes, 'message:', (e && e.message) || String(e));
+							console.warn(
+								'[stale-classify] unrecognized error shape for',
+								ref.objectName,
+								ref.sfId,
+								'- status:',
+								status,
+								'codes:',
+								codes,
+								'message:',
+								(e && e.message) || String(e),
+							);
 							return 'unknown';
 						}
 					};
@@ -966,14 +1056,16 @@ codeFrom(e.body);
 						for (let j = 0; j < slice.length; j++) {
 							const reason = reasons[j];
 							if (reason === null) {
-continue;
-} // probe contradicts initial query - drop
+								continue;
+							} // probe contradicts initial query - drop
 							refined.push(Object.assign({}, slice[j], { reason }));
 						}
 					}
 					staleRefs = refined;
 				}
-			} catch (_eProbe) { /* best-effort */ }
+			} catch (_eProbe) {
+				/* best-effort */
+			}
 
 			res.json({
 				id: item.id,
@@ -989,59 +1081,72 @@ continue;
 				staleRefs,
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/canvas', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
-			if (!await _gateCapability(req, res, 'save-canvas', 'save_canvas')) {
-return;
-}
+			if (!(await _gateCapability(req, res, 'save-canvas', 'save_canvas'))) {
+				return;
+			}
 			const name = String((req.body && req.body.name) || '').trim();
 			const payload = req.body && req.body.payload;
 			if (!name) {
-return res.status(400).json({ error: 'name-required' });
-}
+				return res.status(400).json({ error: 'name-required' });
+			}
 			if (!payload || typeof payload !== 'object') {
 				return res.status(400).json({ error: 'payload-required' });
 			}
-			if (payloadContainsSlots(payload)
-				&& !await _gateCapability(req, res, 'create-slot-canvas', 'save_slot_canvas')) {
+			if (
+				payloadContainsSlots(payload) &&
+				!(await _gateCapability(req, res, 'create-slot-canvas', 'save_slot_canvas'))
+			) {
 				return;
 			}
-			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 
 			if (_saasAvailable && workspacesDb && viewStateDb) {
 				try {
 					const view = await viewStateDb.get(req.account.id);
 					const workspaceId = view && view.current_workspace_id;
-					const plan = workspaceId
-						? ((await workspacesDb.getPlan(workspaceId)) || planById(null))
-						: null;
+					const plan = workspaceId ? (await workspacesDb.getPlan(workspaceId)) || planById(null) : null;
 					const cap = plan && plan.saved_canvas_cap;
 					if (cap != null && typeof store.countOwned === 'function') {
 						const used = await store.countOwned();
 						if (used >= cap) {
-							await auditDb.record({
-								req,
-								action: 'canvas_save_cap_reached',
-								status: 'denied',
-								errorCode: 'saved-canvas-cap-reached',
-								targetObject: 'canvas',
-								targetSfOrgId: req.sf.sfOrgId,
-								payload: { used, cap, plan: plan.id, attemptedName: name },
-							}).catch(() => {});
+							await auditDb
+								.record({
+									req,
+									action: 'canvas_save_cap_reached',
+									status: 'denied',
+									errorCode: 'saved-canvas-cap-reached',
+									targetObject: 'canvas',
+									targetSfOrgId: req.sf.sfOrgId,
+									payload: { used, cap, plan: plan.id, attemptedName: name },
+								})
+								.catch(() => {});
 							return res.status(402).json({
 								error: 'saved-canvas-cap-reached',
-								message: "You've saved " + used + ' of your ' + cap + ' canvases on the ' + plan.label + ' plan. Delete a saved canvas or upgrade to Pro for unlimited saves.',
+								message:
+									"You've saved " +
+									used +
+									' of your ' +
+									cap +
+									' canvases on the ' +
+									plan.label +
+									' plan. Delete a saved canvas or upgrade to Pro for unlimited saves.',
 								savedCount: used,
 								savedCap: cap,
 								currentPlan: plan.id,
 							});
 						}
 					}
-				} catch (_e) { /* don't block save on cap-check failure */ }
+				} catch (_e) {
+					/* don't block save on cap-check failure */
+				}
 			}
 
 			const result = await store.save({ name, payload });
@@ -1053,14 +1158,16 @@ return res.status(400).json({ error: 'name-required' });
 				targetSfOrgId: req.sf.sfOrgId,
 				payload: { name, ..._summarizeCanvasPayload(payload) },
 			});
-			auditDb.recordFirstTime(req, {
-				actorAccountId: req.account.id,
-				action: 'canvas_first_save',
-				targetObject: 'canvas',
-				targetId: result.id,
-				targetSfOrgId: req.sf.sfOrgId,
-				payload: { name },
-			}).catch(() => {});
+			auditDb
+				.recordFirstTime(req, {
+					actorAccountId: req.account.id,
+					action: 'canvas_first_save',
+					targetObject: 'canvas',
+					targetId: result.id,
+					targetSfOrgId: req.sf.sfOrgId,
+					payload: { name },
+				})
+				.catch(() => {});
 			res.status(201).json(result);
 		} catch (err) {
 			await auditDb.recordFailure(req, 'canvas_created', err, {
@@ -1084,26 +1191,32 @@ return res.status(400).json({ error: 'name-required' });
 			if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
 				return res.status(400).json({ error: 'invalid-id' });
 			}
-			if (!await _gateCapability(req, res, 'save-canvas', 'save_canvas', { auditPayload: { canvasId: id } })) {
-return;
-}
+			if (!(await _gateCapability(req, res, 'save-canvas', 'save_canvas', { auditPayload: { canvasId: id } }))) {
+				return;
+			}
 			const payload = req.body && req.body.payload;
 			const expectedVersionId = req.body && req.body.expectedVersionId;
 			if (!payload || typeof payload !== 'object') {
 				return res.status(400).json({ error: 'payload-required' });
 			}
-			if (payloadContainsSlots(payload)
-				&& !await _gateCapability(req, res, 'create-slot-canvas', 'save_slot_canvas', { auditPayload: { canvasId: id } })) {
+			if (
+				payloadContainsSlots(payload) &&
+				!(await _gateCapability(req, res, 'create-slot-canvas', 'save_slot_canvas', {
+					auditPayload: { canvasId: id },
+				}))
+			) {
 				return;
 			}
-			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			if (typeof store.update !== 'function') {
 				return res.status(501).json({ error: 'in-place-update-not-supported' });
 			}
 			const existing = await store.get(id);
 			if (!existing) {
-return res.status(404).json({ error: 'not-found' });
-}
+				return res.status(404).json({ error: 'not-found' });
+			}
 			if (!existing.ownedByMe) {
 				const grant = await _findCanvasShareGrant(req, id);
 				if (!grant || grant.role !== 'editor') {
@@ -1134,13 +1247,13 @@ return res.status(404).json({ error: 'not-found' });
 				canvasPresence.broadcastCanvasSaved({
 					canvasId: id,
 					savedByAccountId: me.id || null,
-					savedByDisplayName: me.display_name
-						|| (me.email && me.email.split('@')[0])
-						|| 'Someone',
+					savedByDisplayName: me.display_name || (me.email && me.email.split('@')[0]) || 'Someone',
 					versionId: (result && result.versionId) || existing.versionId,
 					title: existing.title || null,
 				});
-			} catch (_eBroadcast) { /* presence is best-effort */ }
+			} catch (_eBroadcast) {
+				/* presence is best-effort */
+			}
 			res.json(Object.assign({ ok: true, backend: store.backend }, result));
 		} catch (err) {
 			await auditDb.recordFailure(req, 'canvas_updated', err, {
@@ -1166,11 +1279,13 @@ return res.status(404).json({ error: 'not-found' });
 			if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
 				return res.status(400).json({ error: 'invalid-id' });
 			}
-			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const existing = await store.get(id);
 			if (!existing) {
-return res.status(404).json({ error: 'not-found' });
-}
+				return res.status(404).json({ error: 'not-found' });
+			}
 			if (!existing.ownedByMe) {
 				return res.status(403).json({ error: 'not-owner' });
 			}
@@ -1222,15 +1337,15 @@ return res.status(404).json({ error: 'not-found' });
 				return res.status(400).json({ error: 'recipient-sf-user-id-required' });
 			}
 			const rawRole = String((req.body && req.body.role) || '').trim();
-			const role = rawRole === 'editor' ? 'editor'
-				: rawRole === 'contributor' ? 'contributor'
-				: 'viewer';
+			const role = rawRole === 'editor' ? 'editor' : rawRole === 'contributor' ? 'contributor' : 'viewer';
 
-			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const item = await store.get(id);
 			if (!item) {
-return res.status(404).json({ error: 'canvas-not-found' });
-}
+				return res.status(404).json({ error: 'canvas-not-found' });
+			}
 			if (!item.ownedByMe) {
 				return res.status(403).json({
 					error: 'share-owner-only',
@@ -1292,15 +1407,19 @@ return res.status(404).json({ error: 'canvas-not-found' });
 					const conns = await connectionsDb.listForAccount(acct.id);
 					recipientHasConnection = (conns || []).some((c) => c.sf_org_id === req.sf.sfOrgId);
 				}
-			} catch (_eLookup) { /* leave flags false; email uses generic copy */ }
+			} catch (_eLookup) {
+				/* leave flags false; email uses generic copy */
+			}
 
 			let sfOrgLabel = null;
 			try {
-				const u = new URL(req.sf.instanceUrl || (req.sf.connectionRow && req.sf.connectionRow.instance_url) || '');
+				const u = new URL(
+					req.sf.instanceUrl || (req.sf.connectionRow && req.sf.connectionRow.instance_url) || '',
+				);
 				sfOrgLabel = u.hostname;
 			} catch (_eUrl) {
- sfOrgLabel = null; 
-}
+				sfOrgLabel = null;
+			}
 
 			const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
 			const host = req.get('host');
@@ -1337,12 +1456,15 @@ return res.status(404).json({ error: 'canvas-not-found' });
 							error: (e && e.message) || String(e),
 						},
 					});
-				} catch (_eAudit) { /* best-effort */ }
+				} catch (_eAudit) {
+					/* best-effort */
+				}
 				return res.status(200).json({
 					ok: true,
 					mechanism: 'direct',
 					emailDeliverFailed: true,
-					message: 'Canvas access was granted, but the notification email failed to send. The recipient can still find the canvas in their Saved Canvases.',
+					message:
+						'Canvas access was granted, but the notification email failed to send. The recipient can still find the canvas in their Saved Canvases.',
 				});
 			}
 
@@ -1391,14 +1513,16 @@ return res.status(404).json({ error: 'canvas-not-found' });
 			if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
 				return res.status(400).json({ error: 'invalid-canvas-id' });
 			}
-			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const item = await store.get(id);
 			if (!item) {
-return res.status(404).json({ error: 'canvas-not-found' });
-}
+				return res.status(404).json({ error: 'canvas-not-found' });
+			}
 			if (!item.ownedByMe) {
-return res.json({ shares: [], directShares: [] });
-}
+				return res.json({ shares: [], directShares: [] });
+			}
 
 			let directShares = [];
 			let roleByRecipient = {};
@@ -1431,68 +1555,74 @@ return res.json({ shares: [], directShares: [] });
 
 			res.json({ shares: [], directShares });
 		} catch (err) {
- next(err); 
-}
-	});
-
-	app.delete('/api/canvas/:id/direct-shares/:sfUserId', requireAccount, requireSfConnection, async (req, res, next) => {
-		try {
-			const id = req.params.id;
-			const recipientSfUserId = req.params.sfUserId;
-			if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
-				return res.status(400).json({ error: 'invalid-canvas-id' });
-			}
-			if (!/^[a-zA-Z0-9]{15,18}$/.test(recipientSfUserId)) {
-				return res.status(400).json({ error: 'invalid-recipient-sf-user-id' });
-			}
-			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
-			const item = await store.get(id);
-			if (!item) {
-return res.status(404).json({ error: 'canvas-not-found' });
-}
-			if (!item.ownedByMe) {
-				return res.status(403).json({ error: 'revoke-owner-only' });
-			}
-			if (recipientSfUserId === req.sf.sfUserId) {
-				return res.status(400).json({ error: 'cannot-revoke-self' });
-			}
-			let removed = 0;
-			try {
-				removed = await _removeSfShareForRecipient(store, id, recipientSfUserId);
-			} catch (e) {
-				return res.status(e.statusCode || 500).json({
-					error: 'sf-share-revoke-failed',
-					message: (e && e.message) || String(e),
-				});
-			}
-			try {
-				await canvasRoleGrantsDb.remove({
-					sfOrgId: req.sf.sfOrgId,
-					canvasId: id,
-					recipientSfUserId,
-				});
-			} catch (e) {
-				console.warn('[canvas-direct-share] role-grant remove failed:', e.message || e);
-			}
-			await ext.auditWrite({
-				req,
-				action: 'canvas_share_revoked',
-				targetObject: 'canvas',
-				targetId: id,
-				targetSfOrgId: req.sf.sfOrgId,
-				payload: { mechanism: 'direct', recipientSfUserId, sfGrantsRemoved: removed },
-			});
-			res.json({ ok: true, sfGrantsRemoved: removed });
-		} catch (err) {
-			await auditDb.recordFailure(req, 'canvas_share_revoked', err, {
-				targetObject: 'canvas',
-				targetId: req.params.id,
-				targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
-			});
 			next(err);
 		}
 	});
 
+	app.delete(
+		'/api/canvas/:id/direct-shares/:sfUserId',
+		requireAccount,
+		requireSfConnection,
+		async (req, res, next) => {
+			try {
+				const id = req.params.id;
+				const recipientSfUserId = req.params.sfUserId;
+				if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
+					return res.status(400).json({ error: 'invalid-canvas-id' });
+				}
+				if (!/^[a-zA-Z0-9]{15,18}$/.test(recipientSfUserId)) {
+					return res.status(400).json({ error: 'invalid-recipient-sf-user-id' });
+				}
+				const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+					sessionId: req.session && req.session.id,
+				});
+				const item = await store.get(id);
+				if (!item) {
+					return res.status(404).json({ error: 'canvas-not-found' });
+				}
+				if (!item.ownedByMe) {
+					return res.status(403).json({ error: 'revoke-owner-only' });
+				}
+				if (recipientSfUserId === req.sf.sfUserId) {
+					return res.status(400).json({ error: 'cannot-revoke-self' });
+				}
+				let removed = 0;
+				try {
+					removed = await _removeSfShareForRecipient(store, id, recipientSfUserId);
+				} catch (e) {
+					return res.status(e.statusCode || 500).json({
+						error: 'sf-share-revoke-failed',
+						message: (e && e.message) || String(e),
+					});
+				}
+				try {
+					await canvasRoleGrantsDb.remove({
+						sfOrgId: req.sf.sfOrgId,
+						canvasId: id,
+						recipientSfUserId,
+					});
+				} catch (e) {
+					console.warn('[canvas-direct-share] role-grant remove failed:', e.message || e);
+				}
+				await ext.auditWrite({
+					req,
+					action: 'canvas_share_revoked',
+					targetObject: 'canvas',
+					targetId: id,
+					targetSfOrgId: req.sf.sfOrgId,
+					payload: { mechanism: 'direct', recipientSfUserId, sfGrantsRemoved: removed },
+				});
+				res.json({ ok: true, sfGrantsRemoved: removed });
+			} catch (err) {
+				await auditDb.recordFailure(req, 'canvas_share_revoked', err, {
+					targetObject: 'canvas',
+					targetId: req.params.id,
+					targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
+				});
+				next(err);
+			}
+		},
+	);
 
 	app.post('/api/canvas/:id/slot-fill', requireAccount, async (req, res, next) => {
 		try {
@@ -1518,13 +1648,17 @@ return res.status(404).json({ error: 'canvas-not-found' });
 			if (grant.role === 'viewer') {
 				return res.status(403).json({
 					error: 'role-read-only',
-					message: 'This canvas was shared with you as view-only. Ask the owner for contributor access to fill slots.',
+					message:
+						'This canvas was shared with you as view-only. Ask the owner for contributor access to fill slots.',
 				});
 			}
-			if (!await _gateCapability(req, res, 'receive-canvas', 'fill_shared_canvas', {
-				auditPayload: { canvasId: id, recipientRole: grant.role },
-				message: 'Contributor and Editor access requires an active Pro trial, Pro subscription, or Team seat. If your trial is unused, open Your workspace to start it. Otherwise, upgrade or ask the owner for Viewer access.',
-			})) {
+			if (
+				!(await _gateCapability(req, res, 'receive-canvas', 'fill_shared_canvas', {
+					auditPayload: { canvasId: id, recipientRole: grant.role },
+					message:
+						'Contributor and Editor access requires an active Pro trial, Pro subscription, or Team seat. If your trial is unused, open Your workspace to start it. Otherwise, upgrade or ask the owner for Viewer access.',
+				}))
+			) {
 				return;
 			}
 
@@ -1533,13 +1667,15 @@ return res.status(404).json({ error: 'canvas-not-found' });
 				return res.status(400).json({ error: 'fills-required' });
 			}
 
-			const store = await canvasStoreFromSfConnection(sfBundle.conn, sfBundle.sfUserId, sfBundle.sfOrgId, { sessionId: req.session && req.session.id });
+			const store = await canvasStoreFromSfConnection(sfBundle.conn, sfBundle.sfUserId, sfBundle.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const item = await store.get(id);
 			if (!item) {
-return res.status(404).json({ error: 'canvas-not-found' });
-}
+				return res.status(404).json({ error: 'canvas-not-found' });
+			}
 
-			const payload = (item.payload && typeof item.payload === 'object') ? item.payload : {};
+			const payload = item.payload && typeof item.payload === 'object' ? item.payload : {};
 			const unifiedRecords = [].concat(
 				Array.isArray(payload.loadedRecords) ? payload.loadedRecords : [],
 				Array.isArray(payload.drafts) ? payload.drafts : [],
@@ -1551,17 +1687,20 @@ return res.status(404).json({ error: 'canvas-not-found' });
 			});
 
 			if (appliedCount === 0) {
-				const allBlockedByAssignment = skipped.length > 0 && skipped.every((s) => s.reason === 'not_assigned_to_you');
+				const allBlockedByAssignment =
+					skipped.length > 0 && skipped.every((s) => s.reason === 'not_assigned_to_you');
 				if (allBlockedByAssignment) {
 					return res.status(403).json({
 						error: 'all-slots-assigned-elsewhere',
-						message: 'These slots are assigned to a different teammate. Ask the canvas owner to share with you for those specific slots.',
+						message:
+							'These slots are assigned to a different teammate. Ask the canvas owner to share with you for those specific slots.',
 						skipped,
 					});
 				}
 				return res.status(400).json({
 					error: 'no-matching-slots',
-					message: 'None of the submitted fills matched a slot on this canvas. The canvas may have been edited since the link was created.',
+					message:
+						'None of the submitted fills matched a slot on this canvas. The canvas may have been edited since the link was created.',
 					skipped,
 				});
 			}
@@ -1571,8 +1710,8 @@ return res.status(404).json({ error: 'canvas-not-found' });
 			for (const [objectName, updates] of Object.entries(recordPlan)) {
 				const nonEmpty = updates.filter((u) => Object.keys(u).length > 1);
 				if (nonEmpty.length === 0) {
-continue;
-}
+					continue;
+				}
 				try {
 					const results = await sfBundle.conn.sobject(objectName).update(nonEmpty);
 					const arr = Array.isArray(results) ? results : [results];
@@ -1619,9 +1758,11 @@ continue;
 					try {
 						const owner = await req.sf.conn.sobject('User').retrieve(item.ownerId);
 						if (owner && owner.Email) {
-ownerEmail = String(owner.Email).trim();
-}
-					} catch (_eOwner) { /* owner lookup failed - skip notification */ }
+							ownerEmail = String(owner.Email).trim();
+						}
+					} catch (_eOwner) {
+						/* owner lookup failed - skip notification */
+					}
 				}
 				if (ownerEmail) {
 					const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
@@ -1657,7 +1798,6 @@ ownerEmail = String(owner.Email).trim();
 			next(err);
 		}
 	});
-
 
 	app.get('/api/ai/status', async (req, res) => {
 		const base = {
@@ -1704,14 +1844,19 @@ ownerEmail = String(owner.Email).trim();
 						: 'AI generation is not enabled on this server. Set ANTHROPIC_API_KEY and restart to enable.',
 				});
 			}
-			if (!await _gateCapability(req, res, 'generate-records-with-ai', 'generate records with AI', {
-				messages: {
-					'plan-insufficient': 'Generate with AI is available on Pro and Team plans. Upgrade the active workspace to use it.',
-					'member-grant-required': 'Generate with AI is not enabled for your account in this workspace. Ask a workspace admin to grant the Generate with AI permission.',
-					'no-workspace': 'Select or create a workspace before using Generate with AI.',
-					'not-a-member': 'Your account is not a member of the active workspace. Switch workspaces or ask a workspace admin to add you.',
-				},
-			})) {
+			if (
+				!(await _gateCapability(req, res, 'generate-records-with-ai', 'generate records with AI', {
+					messages: {
+						'plan-insufficient':
+							'Generate with AI is available on Pro and Team plans. Upgrade the active workspace to use it.',
+						'member-grant-required':
+							'Generate with AI is not enabled for your account in this workspace. Ask a workspace admin to grant the Generate with AI permission.',
+						'no-workspace': 'Select or create a workspace before using Generate with AI.',
+						'not-a-member':
+							'Your account is not a member of the active workspace. Switch workspaces or ask a workspace admin to add you.',
+					},
+				}))
+			) {
 				return;
 			}
 			const { text, objectNames, fkFields } = req.body || {};
@@ -1764,10 +1909,17 @@ ownerEmail = String(owner.Email).trim();
 						errorCode: 'quota-exceeded',
 						payload: { tokensUsed: quota.used, tokenCap: quota.cap, plan: quota.planId, objectNames },
 					});
-				} catch (_eAudit) { /* best-effort */ }
+				} catch (_eAudit) {
+					/* best-effort */
+				}
 				return res.status(402).json({
 					error: 'cap-reached',
-					message: "You've reached your " + quota.cap.toLocaleString() + ' tokens monthly AI quota on the ' + quota.planLabel + ' plan. Wait for the cap to reset, ask your admin to top up workspace AI credits, or upgrade for unlimited generations.',
+					message:
+						"You've reached your " +
+						quota.cap.toLocaleString() +
+						' tokens monthly AI quota on the ' +
+						quota.planLabel +
+						' plan. Wait for the cap to reset, ask your admin to top up workspace AI credits, or upgrade for unlimited generations.',
 					tokensUsed: quota.used,
 					tokenCap: quota.cap,
 					creditsRemaining: 0,
@@ -1778,17 +1930,22 @@ ownerEmail = String(owner.Email).trim();
 			const conn = req.sf.conn;
 			let describes;
 			try {
-				describes = await Promise.all(objectNames.map(async (name) => ({
-					name,
-					describe: await conn.sobject(name).describe(),
-				})));
+				describes = await Promise.all(
+					objectNames.map(async (name) => ({
+						name,
+						describe: await conn.sobject(name).describe(),
+					})),
+				);
 			} catch (sfErr) {
 				const code = sfErr && (sfErr.errorCode || sfErr.name);
 				const msg = String((sfErr && sfErr.message) || '');
-				const isSfAuth = code === 'INVALID_SESSION_ID'
-					|| code === 'INVALID_OAUTH_TOKEN'
-					|| (sfErr && sfErr.statusCode === 401)
-					|| /URL No Longer Exists|Session expired|Invalid Session|invalid_grant|authentication failure/i.test(msg);
+				const isSfAuth =
+					code === 'INVALID_SESSION_ID' ||
+					code === 'INVALID_OAUTH_TOKEN' ||
+					(sfErr && sfErr.statusCode === 401) ||
+					/URL No Longer Exists|Session expired|Invalid Session|invalid_grant|authentication failure/i.test(
+						msg,
+					);
 				if (isSfAuth) {
 					try {
 						await ext.auditWrite({
@@ -1801,7 +1958,9 @@ ownerEmail = String(owner.Email).trim();
 							errorCode: 'sf-session-expired',
 							payload: { objectNames },
 						});
-					} catch (_eAudit) { /* best-effort */ }
+					} catch (_eAudit) {
+						/* best-effort */
+					}
 					return res.status(401).json({
 						error: 'sf-session-expired',
 						message: 'Your Salesforce session has expired. Reconnect Salesforce and try again.',
@@ -1815,9 +1974,11 @@ ownerEmail = String(owner.Email).trim();
 				fkFieldsByObject = {};
 				for (const [obj, fields] of Object.entries(fkFields)) {
 					if (!Array.isArray(fields)) {
-continue;
-}
-					fkFieldsByObject[obj] = fields.filter((f) => typeof f === 'string' && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(f));
+						continue;
+					}
+					fkFieldsByObject[obj] = fields.filter(
+						(f) => typeof f === 'string' && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(f),
+					);
 				}
 			}
 			const summary = buildAiDescribeSummary(describes, fkFieldsByObject);
@@ -1845,7 +2006,9 @@ continue;
 						errorCode: 'no-plan',
 						payload: { objectNames, promptLength: text.length },
 					});
-				} catch (_eAudit) { /* best-effort */ }
+				} catch (_eAudit) {
+					/* best-effort */
+				}
 				return res.status(502).json({ error: 'no-plan', message: 'Model returned no plan. Try rephrasing.' });
 			}
 			const validated = validateAiPlan(toolUse.input || {}, describes);
@@ -1853,7 +2016,9 @@ continue;
 				console.warn('[ai/plan] empty plan after validation', {
 					promptLength: typeof text === 'string' ? text.length : 0,
 					objectNames,
-					rawRecordCount: Array.isArray(toolUse.input && toolUse.input.records) ? toolUse.input.records.length : 0,
+					rawRecordCount: Array.isArray(toolUse.input && toolUse.input.records)
+						? toolUse.input.records.length
+						: 0,
 					warnings: validated.warnings,
 				});
 			}
@@ -1867,8 +2032,8 @@ continue;
 					generations: 1,
 				});
 			} catch (e) {
- console.warn('[usage] chargeQuota failed:', e.message || e); 
-}
+				console.warn('[usage] chargeQuota failed:', e.message || e);
+			}
 
 			if (chargeResult.chargedToCredits > 0) {
 				try {
@@ -1887,8 +2052,8 @@ continue;
 						},
 					});
 				} catch (e) {
- console.warn('[credits] audit failed:', e.message || e); 
-}
+					console.warn('[credits] audit failed:', e.message || e);
+				}
 			}
 
 			await ext.auditWrite({
@@ -1924,7 +2089,9 @@ continue;
 				try {
 					const _view = await viewStateDb.get(req.account.id);
 					_wsId = (_view && _view.current_workspace_id) || null;
-				} catch (_eVs) { /* leave _wsId null */ }
+				} catch (_eVs) {
+					/* leave _wsId null */
+				}
 				await ext.auditWrite({
 					req,
 					workspaceId: _wsId,
@@ -1935,7 +2102,9 @@ continue;
 					errorCode: (err && (err.errorCode || err.name)) || 'ai-error',
 					payload: null,
 				});
-			} catch (_eAudit) { /* best-effort */ }
+			} catch (_eAudit) {
+				/* best-effort */
+			}
 			next(err);
 		}
 	});
@@ -1943,11 +2112,11 @@ continue;
 	app.post('/api/upload', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
-return;
-}
-			if (!await _gateCapability(req, res, 'upload-records', 'upload')) {
-return;
-}
+				return;
+			}
+			if (!(await _gateCapability(req, res, 'upload-records', 'upload'))) {
+				return;
+			}
 
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
 				sfOrgId: req.sf.sfOrgId,
@@ -1960,9 +2129,10 @@ return;
 				return res.status(403).json({
 					error: orgGate.reason,
 					approvalStatus: orgGate.approvalStatus,
-					message: orgGate.reason === 'approval-required'
-						? 'Writes to this production org are pending admin approval.'
-						: 'This action is blocked by workspace policy.',
+					message:
+						orgGate.reason === 'approval-required'
+							? 'Writes to this production org are pending admin approval.'
+							: 'This action is blocked by workspace policy.',
 				});
 			}
 
@@ -1990,18 +2160,35 @@ return;
 			if (!_claimUploadAttempt(req, res, _attemptId)) {
 				return res.status(409).json({
 					error: 'upload-attempt-in-progress',
-					message: 'This upload attempt is already running. Wait for it to finish, then reconcile before retrying.',
+					message:
+						'This upload attempt is already running. Wait for it to finish, then reconcile before retrying.',
 				});
 			}
 			let _twoPhaseStore = null;
 			let _pendingBatchId = null;
 			try {
-				_twoPhaseStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+				_twoPhaseStore = await uploadBatchesStoreFromSfConnection(
+					req.sf.conn,
+					req.sf.sfUserId,
+					req.sf.sfOrgId,
+					{ sessionId: req.session && req.session.id },
+				);
 				const prior = await _twoPhaseStore.findByAttemptId(_attemptId);
 				if (prior && prior.status === 'uploaded') {
 					return res.json({
-						results: (prior.insertedIds || []).map((i) => ({ success: true, tempId: i.tempId, id: i.sfId, objectName: i.objectName, mode: i.mode === 'update' ? 'update' : 'create' })),
-						deletes: (prior.deletedIds || []).map((d) => ({ success: true, tempId: d.tempId, id: d.sfId, objectName: d.objectName })),
+						results: (prior.insertedIds || []).map((i) => ({
+							success: true,
+							tempId: i.tempId,
+							id: i.sfId,
+							objectName: i.objectName,
+							mode: i.mode === 'update' ? 'update' : 'create',
+						})),
+						deletes: (prior.deletedIds || []).map((d) => ({
+							success: true,
+							tempId: d.tempId,
+							id: d.sfId,
+							objectName: d.objectName,
+						})),
 						instanceUrl: req.sf.conn.instanceUrl,
 						batchId: prior.id,
 						canonicalValues: {},
@@ -2022,15 +2209,22 @@ return;
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
-return res.status(409).json({ error: 'no-active-workspace' });
-}
+				return res.status(409).json({ error: 'no-active-workspace' });
+			}
 
 			if (!directUpload) {
 				const uploadQuota = await ext.getQuota(req.account, 'uploads');
 				if (uploadQuota.blocked) {
 					return res.status(402).json({
 						error: 'upload-cap-reached',
-						message: "You've used " + uploadQuota.used + ' of your ' + uploadQuota.cap + ' monthly uploads on the ' + uploadQuota.planLabel + ' plan. Upgrade for unlimited uploads, or wait for the cap to reset.',
+						message:
+							"You've used " +
+							uploadQuota.used +
+							' of your ' +
+							uploadQuota.cap +
+							' monthly uploads on the ' +
+							uploadQuota.planLabel +
+							' plan. Upgrade for unlimited uploads, or wait for the cap to reset.',
 						uploadsUsed: uploadQuota.used,
 						uploadCap: uploadQuota.cap,
 						currentPlan: uploadQuota.planId,
@@ -2041,7 +2235,7 @@ return res.status(409).json({ error: 'no-active-workspace' });
 			try {
 				const pendingB = await _twoPhaseStore.createPending({
 					source: directUpload ? 'csv-direct' : 'canvas',
-					note: (req.body && typeof req.body.note === 'string') ? req.body.note : null,
+					note: req.body && typeof req.body.note === 'string' ? req.body.note : null,
 					attemptId: _attemptId,
 					intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
 				});
@@ -2053,10 +2247,10 @@ return res.status(409).json({ error: 'no-active-workspace' });
 			const conn = req.sf.conn;
 			const recordsById = new Map();
 			records.forEach((r) => {
- if (r && r.tempId != null) {
-recordsById.set(r.tempId, r);
-} 
-});
+				if (r && r.tempId != null) {
+					recordsById.set(r.tempId, r);
+				}
+			});
 			const { order, cycleIds, deps } = topoSortRecords(records, associations);
 
 			const realIdByTempId = new Map();
@@ -2065,28 +2259,45 @@ recordsById.set(r.tempId, r);
 			for (const tempId of order) {
 				const rec = recordsById.get(tempId);
 				if (!rec || !rec.objectName) {
-continue;
-}
+					continue;
+				}
 
 				if (cycleIds.has(tempId)) {
-					results.push({ tempId, objectName: rec.objectName, success: false, error: 'Record is part of a reference cycle - upload it manually or break the cycle.' });
+					results.push({
+						tempId,
+						objectName: rec.objectName,
+						success: false,
+						error: 'Record is part of a reference cycle - upload it manually or break the cycle.',
+					});
 					continue;
 				}
 
 				if (skipTempIds.has(tempId) && rec.loadedFromId) {
 					realIdByTempId.set(tempId, rec.loadedFromId);
-					results.push({ tempId, objectName: rec.objectName, success: true, id: rec.loadedFromId, mode: 'unchanged' });
+					results.push({
+						tempId,
+						objectName: rec.objectName,
+						success: true,
+						id: rec.loadedFromId,
+						mode: 'unchanged',
+					});
 					continue;
 				}
 
 				let parentFailure = null;
-				for (const pid of (deps.get(tempId) || [])) {
+				for (const pid of deps.get(tempId) || []) {
 					if (!realIdByTempId.has(pid)) {
- parentFailure = pid; break; 
-}
+						parentFailure = pid;
+						break;
+					}
 				}
 				if (parentFailure != null) {
-					results.push({ tempId, objectName: rec.objectName, success: false, error: 'Skipped: parent record #' + parentFailure + ' did not upload.' });
+					results.push({
+						tempId,
+						objectName: rec.objectName,
+						success: false,
+						error: 'Skipped: parent record #' + parentFailure + ' did not upload.',
+					});
 					continue;
 				}
 
@@ -2100,29 +2311,61 @@ continue;
 						const sf = await conn.sobject(rec.objectName).update(updatePayload, _writeOpts);
 						if (sf && sf.success) {
 							realIdByTempId.set(tempId, rec.loadedFromId);
-							results.push({ tempId, objectName: rec.objectName, success: true, id: rec.loadedFromId, mode: 'update' });
+							results.push({
+								tempId,
+								objectName: rec.objectName,
+								success: true,
+								id: rec.loadedFromId,
+								mode: 'update',
+							});
 						} else {
-							const msg = (sf && Array.isArray(sf.errors) && sf.errors.length)
-								? formatUploadError({ errors: sf.errors })
-								: 'Update returned no success';
-							results.push({ tempId, objectName: rec.objectName, success: false, error: msg, errorCode: extractUploadErrorCode({ errors: sf && sf.errors }) });
+							const msg =
+								sf && Array.isArray(sf.errors) && sf.errors.length
+									? formatUploadError({ errors: sf.errors })
+									: 'Update returned no success';
+							results.push({
+								tempId,
+								objectName: rec.objectName,
+								success: false,
+								error: msg,
+								errorCode: extractUploadErrorCode({ errors: sf && sf.errors }),
+							});
 						}
 					} else {
 						const cleanValues = stripUnwritableFields(values, describe, false);
 						const sf = await conn.sobject(rec.objectName).create(cleanValues, _writeOpts);
 						if (sf && sf.success) {
 							realIdByTempId.set(tempId, sf.id);
-							results.push({ tempId, objectName: rec.objectName, success: true, id: sf.id, mode: 'create' });
+							results.push({
+								tempId,
+								objectName: rec.objectName,
+								success: true,
+								id: sf.id,
+								mode: 'create',
+							});
 						} else {
-							const msg = (sf && Array.isArray(sf.errors) && sf.errors.length)
-								? formatUploadError({ errors: sf.errors })
-								: 'Create returned no id';
-							results.push({ tempId, objectName: rec.objectName, success: false, error: msg, errorCode: extractUploadErrorCode({ errors: sf && sf.errors }) });
+							const msg =
+								sf && Array.isArray(sf.errors) && sf.errors.length
+									? formatUploadError({ errors: sf.errors })
+									: 'Create returned no id';
+							results.push({
+								tempId,
+								objectName: rec.objectName,
+								success: false,
+								error: msg,
+								errorCode: extractUploadErrorCode({ errors: sf && sf.errors }),
+							});
 						}
 					}
 				} catch (err) {
 					console.error('[upload] error for', rec.objectName, '#' + tempId, ':', err);
-					results.push({ tempId, objectName: rec.objectName, success: false, error: formatUploadError(err), errorCode: extractUploadErrorCode(err) });
+					results.push({
+						tempId,
+						objectName: rec.objectName,
+						success: false,
+						error: formatUploadError(err),
+						errorCode: extractUploadErrorCode(err),
+					});
 				}
 			}
 
@@ -2156,9 +2399,10 @@ continue;
 							mode: 'delete',
 						});
 					} else {
-						const errMsg = sf && sf.errors && sf.errors.length
-							? sf.errors.map((e) => e.message || e.errorCode).join('; ')
-							: 'Salesforce refused the delete (no error message returned).';
+						const errMsg =
+							sf && sf.errors && sf.errors.length
+								? sf.errors.map((e) => e.message || e.errorCode).join('; ')
+								: 'Salesforce refused the delete (no error message returned).';
 						deleteResults.push({
 							tempId: d.tempId || null,
 							sfId: d.sfId,
@@ -2184,8 +2428,8 @@ continue;
 				try {
 					await ext.chargeQuota(req.account, 'uploads', 1);
 				} catch (e) {
- console.warn('[usage] upload increment failed:', e.message || e); 
-}
+					console.warn('[usage] upload increment failed:', e.message || e);
+				}
 			}
 
 			try {
@@ -2193,14 +2437,14 @@ continue;
 				const objects = Array.from(new Set(records.map((r) => r && r.objectName).filter(Boolean)));
 				for (const r of orderedResults) {
 					if (!r) {
-continue;
-}
+						continue;
+					}
 					await ext.auditWrite({
 						req,
 						workspaceId,
 						action: 'record_upserted',
 						targetObject: r.objectName || null,
-						targetId: r.success ? (r.id || null) : null,
+						targetId: r.success ? r.id || null : null,
 						targetSfOrgId: req.sf.sfOrgId,
 						requestId: uploadRequestId,
 						status: r.success ? 'ok' : 'failed',
@@ -2213,8 +2457,8 @@ continue;
 				}
 				for (const d of deleteResults) {
 					if (!d) {
-continue;
-}
+						continue;
+					}
 					await ext.auditWrite({
 						req,
 						workspaceId,
@@ -2238,7 +2482,9 @@ continue;
 					}
 					const rec = recordsById && r.tempId != null ? recordsById.get(r.tempId) : null;
 					const obj = (rec && rec.objectName) || r.objectName || 'unknown';
-					const bucket = uploadObjectBreakdown[obj] || (uploadObjectBreakdown[obj] = { created: 0, updated: 0, unchanged: 0, failed: 0 });
+					const bucket =
+						uploadObjectBreakdown[obj] ||
+						(uploadObjectBreakdown[obj] = { created: 0, updated: 0, unchanged: 0, failed: 0 });
 					if (!r.success) {
 						bucket.failed += 1;
 						const code = (r.errorCode || 'sf-write-failed').toString();
@@ -2259,7 +2505,9 @@ continue;
 						continue;
 					}
 					const obj = d.objectName || 'unknown';
-					const bucket = uploadObjectBreakdown[obj] || (uploadObjectBreakdown[obj] = { created: 0, updated: 0, unchanged: 0, failed: 0, deleted: 0 });
+					const bucket =
+						uploadObjectBreakdown[obj] ||
+						(uploadObjectBreakdown[obj] = { created: 0, updated: 0, unchanged: 0, failed: 0, deleted: 0 });
 					if (d.success) {
 						bucket.deleted = (bucket.deleted || 0) + 1;
 					} else {
@@ -2298,17 +2546,19 @@ continue;
 					},
 				});
 				if (mutationSuccessCount > 0) {
-					auditDb.recordFirstTime(req, {
-						actorAccountId: req.account.id,
-						action: 'records_first_upload',
-						workspaceId,
-						targetSfOrgId: req.sf.sfOrgId,
-						payload: { successCount: mutationSuccessCount, objects },
-					}).catch(() => {});
+					auditDb
+						.recordFirstTime(req, {
+							actorAccountId: req.account.id,
+							action: 'records_first_upload',
+							workspaceId,
+							targetSfOrgId: req.sf.sfOrgId,
+							payload: { successCount: mutationSuccessCount, objects },
+						})
+						.catch(() => {});
 				}
 			} catch (e) {
- console.warn('[audit] upload log failed:', e.message || e); 
-}
+				console.warn('[audit] upload log failed:', e.message || e);
+			}
 
 			let batchId = null;
 			let canonicalByTempId;
@@ -2327,14 +2577,20 @@ continue;
 				try {
 					const insertedIds = orderedResults
 						.filter((r) => r && r.success && r.id && r.mode !== 'unchanged')
-						.map((r) => _buildBatchEntryFromResult(r, recordsById.get(r.tempId), canonicalByTempId.get(r.tempId)));
+						.map((r) =>
+							_buildBatchEntryFromResult(r, recordsById.get(r.tempId), canonicalByTempId.get(r.tempId)),
+						);
 					const deletedIds = successfulDeletes.map((d) => ({
 						tempId: d.tempId,
 						sfId: d.sfId,
 						objectName: d.objectName,
 					}));
 					if (insertedIds.length > 0 || deletedIds.length > 0) {
-						const batchStore = _twoPhaseStore || await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+						const batchStore =
+							_twoPhaseStore ||
+							(await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+								sessionId: req.session && req.session.id,
+							}));
 						const _assoc = associations.map((a) => ({
 							fromTempId: a.fromId,
 							toTempId: a.toId,
@@ -2362,12 +2618,12 @@ continue;
 						}
 					}
 				} catch (e) {
- console.warn('[upload-batches] persist failed:', e.message || e);
-}
+					console.warn('[upload-batches] persist failed:', e.message || e);
+				}
 			}
 			if (_pendingBatchId && mutationSuccessCount === 0 && successfulDeletes.length === 0) {
-				const firstFailure = orderedResults.find((r) => r && !r.success)
-					|| deleteResults.find((r) => r && !r.success);
+				const firstFailure =
+					orderedResults.find((r) => r && !r.success) || deleteResults.find((r) => r && !r.success);
 				await _settleKnownNoCommit(_twoPhaseStore, _pendingBatchId, {
 					errorCode: firstFailure && (firstFailure.errorCode || 'sf-write-failed'),
 					message: firstFailure && firstFailure.error,
@@ -2386,27 +2642,28 @@ continue;
 				canonicalValues: canonicalForResponse,
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
-
 
 	app.post('/api/upload-batches', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
-			if (!await _gateCapability(req, res, 'upload-records', 'upload_batch_record')) {
-return;
-}
+			if (!(await _gateCapability(req, res, 'upload-records', 'upload_batch_record'))) {
+				return;
+			}
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
-return res.status(409).json({ error: 'no-active-workspace' });
-}
+				return res.status(409).json({ error: 'no-active-workspace' });
+			}
 			const { source, recordCount, insertedIds, deletedIds, associations, note } = req.body || {};
 			if (!Array.isArray(insertedIds)) {
 				return res.status(400).json({ error: 'insertedIds must be an array' });
 			}
 			const _deletedIds = Array.isArray(deletedIds) ? deletedIds : [];
-			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const created = await batchStore.create({
 				source: source || 'canvas',
 				recordCount: typeof recordCount === 'number' ? recordCount : insertedIds.length + _deletedIds.length,
@@ -2423,49 +2680,64 @@ return res.status(409).json({ error: 'no-active-workspace' });
 					targetObject: 'upload_batches',
 					targetId: created.id,
 					targetSfOrgId: req.sf.sfOrgId,
-					payload: { source: source || 'canvas', recordCount: typeof recordCount === 'number' ? recordCount : insertedIds.length },
+					payload: {
+						source: source || 'canvas',
+						recordCount: typeof recordCount === 'number' ? recordCount : insertedIds.length,
+					},
 				});
-			} catch (e) { /* audit best-effort */ }
+			} catch (e) {
+				/* audit best-effort */
+			}
 			res.json(created);
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.get('/api/upload-batches', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
-			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const batches = await batchStore.list({ limit });
 			res.json({ batches });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.get('/api/upload-batches/:id', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
-			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const batch = await batchStore.get(req.params.id);
 			if (!batch) {
-return res.status(404).json({ error: 'not-found' });
-}
+				return res.status(404).json({ error: 'not-found' });
+			}
 			res.json({ batch });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/upload-batches/:id/recall', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
-			if (!await _gateCapability(req, res, 'recall-upload', 'recall_upload', { auditPayload: { batchId: req.params.id } })) {
-return;
-}
-			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			if (
+				!(await _gateCapability(req, res, 'recall-upload', 'recall_upload', {
+					auditPayload: { batchId: req.params.id },
+				}))
+			) {
+				return;
+			}
+			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			const batch = await batchStore.get(req.params.id);
 			if (!batch) {
-return res.status(404).json({ error: 'not-found' });
-}
+				return res.status(404).json({ error: 'not-found' });
+			}
 			if (batch.recalledAt) {
 				return res.status(409).json({ error: 'already-recalled' });
 			}
@@ -2493,16 +2765,18 @@ return res.status(404).json({ error: 'not-found' });
 			const skipAtExecution = new Set(skipSfIds.map(String));
 			for (const row of [...(executionCreateDrift.drifted || []), ...(executionCreateDrift.unverified || [])]) {
 				if (row && row.sfId) {
-skipAtExecution.add(String(row.sfId));
-}
+					skipAtExecution.add(String(row.sfId));
+				}
 			}
 			skipSfIds.splice(0, skipSfIds.length, ...skipAtExecution);
 			const revertSelections = Array.isArray(req.body && req.body.revertSelections)
 				? req.body.revertSelections
 				: [];
 			try {
- await batchStore.markRecalling(batch.id); 
-} catch (_e) { /* best-effort */ }
+				await batchStore.markRecalling(batch.id);
+			} catch (_e) {
+				/* best-effort */
+			}
 			let recallResult;
 			try {
 				recallResult = await executeRecall({
@@ -2524,13 +2798,17 @@ skipAtExecution.add(String(row.sfId));
 			const preservedUpdatesCount = recallResult.preservedUpdatesCount || 0;
 			const status = recallResult.status || 'recalled';
 			try {
- await batchStore.markRecallResult(batch.id, { status, recallResult }); 
-} catch (_e) { /* best-effort */ }
+				await batchStore.markRecallResult(batch.id, { status, recallResult });
+			} catch (_e) {
+				/* best-effort */
+			}
 			let _recallWorkspaceId = null;
 			try {
 				const _view = await viewStateDb.get(req.account.id);
 				_recallWorkspaceId = (_view && _view.current_workspace_id) || null;
-			} catch (_eVs) { /* leave null */ }
+			} catch (_eVs) {
+				/* leave null */
+			}
 			const recallObjectBreakdown = {};
 			const recallErrorCodes = {};
 			for (const r of Array.isArray(recallResult.results) ? recallResult.results : []) {
@@ -2538,7 +2816,9 @@ skipAtExecution.add(String(row.sfId));
 					continue;
 				}
 				const obj = r.objectName || 'unknown';
-				const bucket = recallObjectBreakdown[obj] || (recallObjectBreakdown[obj] = { deleted: 0, alreadyDeleted: 0, failed: 0 });
+				const bucket =
+					recallObjectBreakdown[obj] ||
+					(recallObjectBreakdown[obj] = { deleted: 0, alreadyDeleted: 0, failed: 0 });
 				if (r.success) {
 					if (r.note === 'Already deleted') {
 						bucket.alreadyDeleted += 1;
@@ -2586,18 +2866,18 @@ skipAtExecution.add(String(row.sfId));
 				results: recallResult.results,
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/upload/graph', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
-return;
-}
-			if (!await _gateCapability(req, res, 'upload-records', 'upload_graph')) {
-return;
-}
+				return;
+			}
+			if (!(await _gateCapability(req, res, 'upload-records', 'upload_graph'))) {
+				return;
+			}
 
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
 				sfOrgId: req.sf.sfOrgId,
@@ -2635,18 +2915,35 @@ return;
 			if (!_claimUploadAttempt(req, res, _attemptId)) {
 				return res.status(409).json({
 					error: 'upload-attempt-in-progress',
-					message: 'This upload attempt is already running. Wait for it to finish, then reconcile before retrying.',
+					message:
+						'This upload attempt is already running. Wait for it to finish, then reconcile before retrying.',
 				});
 			}
 			let _twoPhaseStore = null;
 			let _pendingBatchId = null;
 			try {
-				_twoPhaseStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+				_twoPhaseStore = await uploadBatchesStoreFromSfConnection(
+					req.sf.conn,
+					req.sf.sfUserId,
+					req.sf.sfOrgId,
+					{ sessionId: req.session && req.session.id },
+				);
 				const prior = await _twoPhaseStore.findByAttemptId(_attemptId);
 				if (prior && prior.status === 'uploaded') {
 					return res.json({
-						results: (prior.insertedIds || []).map((i) => ({ success: true, tempId: i.tempId, id: i.sfId, objectName: i.objectName, mode: i.mode === 'update' ? 'update' : 'create' })),
-						deletes: (prior.deletedIds || []).map((d) => ({ success: true, tempId: d.tempId, id: d.sfId, objectName: d.objectName })),
+						results: (prior.insertedIds || []).map((i) => ({
+							success: true,
+							tempId: i.tempId,
+							id: i.sfId,
+							objectName: i.objectName,
+							mode: i.mode === 'update' ? 'update' : 'create',
+						})),
+						deletes: (prior.deletedIds || []).map((d) => ({
+							success: true,
+							tempId: d.tempId,
+							id: d.sfId,
+							objectName: d.objectName,
+						})),
 						instanceUrl: req.sf.conn.instanceUrl,
 						mode: 'graph',
 						atomicSuccess: true,
@@ -2669,14 +2966,21 @@ return;
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
-return res.status(409).json({ error: 'no-active-workspace' });
-}
+				return res.status(409).json({ error: 'no-active-workspace' });
+			}
 			if (!directUpload) {
 				const uploadQuota = await ext.getQuota(req.account, 'uploads');
 				if (uploadQuota.blocked) {
 					return res.status(402).json({
 						error: 'upload-cap-reached',
-						message: "You've used " + uploadQuota.used + ' of your ' + uploadQuota.cap + ' monthly uploads on the ' + uploadQuota.planLabel + ' plan. Upgrade for unlimited uploads, or wait for the cap to reset.',
+						message:
+							"You've used " +
+							uploadQuota.used +
+							' of your ' +
+							uploadQuota.cap +
+							' monthly uploads on the ' +
+							uploadQuota.planLabel +
+							' plan. Upgrade for unlimited uploads, or wait for the cap to reset.',
 						uploadsUsed: uploadQuota.used,
 						uploadCap: uploadQuota.cap,
 						currentPlan: uploadQuota.planId,
@@ -2691,24 +2995,24 @@ return res.status(409).json({ error: 'no-active-workspace' });
 
 			const recordsById = new Map();
 			records.forEach((r) => {
- if (r && r.tempId != null) {
-recordsById.set(r.tempId, r);
-} 
-});
+				if (r && r.tempId != null) {
+					recordsById.set(r.tempId, r);
+				}
+			});
 			const { order, cycleIds } = topoSortRecords(records, associations);
 
 			const submittedIds = new Set();
 			for (const id of order) {
 				if (cycleIds.has(id)) {
-continue;
-}
+					continue;
+				}
 				const rec = recordsById.get(id);
 				if (!rec || !rec.objectName) {
-continue;
-}
+					continue;
+				}
 				if (skipTempIds.has(id) && rec.loadedFromId) {
-continue;
-}
+					continue;
+				}
 				submittedIds.add(id);
 			}
 
@@ -2717,7 +3021,10 @@ continue;
 			if (maxComponentSize > GRAPH_PER_GRAPH_CAP) {
 				return res.status(400).json({
 					error: 'graph-component-too-large',
-					message: 'A connected record component exceeds ' + GRAPH_PER_GRAPH_CAP + ' nodes; fall back to REST or Bulk.',
+					message:
+						'A connected record component exceeds ' +
+						GRAPH_PER_GRAPH_CAP +
+						' nodes; fall back to REST or Bulk.',
 				});
 			}
 			const totalSubmitted = components.reduce((n, c) => n + c.length, 0);
@@ -2731,7 +3038,7 @@ continue;
 			try {
 				const pendingB = await _twoPhaseStore.createPending({
 					source: directUpload ? 'csv-direct' : 'canvas-graph',
-					note: (req.body && typeof req.body.note === 'string') ? req.body.note : null,
+					note: req.body && typeof req.body.note === 'string' ? req.body.note : null,
 					attemptId: _attemptId,
 					intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
 				});
@@ -2744,8 +3051,8 @@ continue;
 			submittedIds.forEach((id) => {
 				const rec = recordsById.get(id);
 				if (rec && rec.objectName) {
-objNamesToDescribe.add(rec.objectName);
-}
+					objNamesToDescribe.add(rec.objectName);
+				}
 			});
 			const describesByObject = new Map();
 			for (const name of objNamesToDescribe) {
@@ -2757,21 +3064,25 @@ objNamesToDescribe.add(rec.objectName);
 							where: 'canvas-routes/upload/buildDescribesMap',
 							objectName: name,
 						});
-					} catch (_) { /* never break the upload prep on a telemetry failure */ }
+					} catch (_) {
+						/* never break the upload prep on a telemetry failure */
+					}
 				}
 			}
 
 			const graphsPayload = components.map((tempIds, i) => ({
 				graphId: 'g' + i,
-				compositeRequest: tempIds.map((tempId) => buildGraphSubRequest({
-					rec: recordsById.get(tempId),
-					tempId,
-					apiBase,
-					associations,
-					submittedIds,
-					recordsById,
-					describesByObject,
-				})),
+				compositeRequest: tempIds.map((tempId) =>
+					buildGraphSubRequest({
+						rec: recordsById.get(tempId),
+						tempId,
+						apiBase,
+						associations,
+						submittedIds,
+						recordsById,
+						describesByObject,
+					}),
+				),
 			}));
 
 			let graphResp;
@@ -2798,8 +3109,8 @@ objNamesToDescribe.add(rec.objectName);
 						payload: { mode: 'graph', requested: records.length },
 					});
 				} catch (e) {
- console.warn('[audit] graph error log failed:', e.message || e); 
-}
+					console.warn('[audit] graph error log failed:', e.message || e);
+				}
 				return res.status(409).json({
 					error: 'upload-attempt-incomplete',
 					batchId: _pendingBatchId,
@@ -2825,12 +3136,12 @@ objNamesToDescribe.add(rec.objectName);
 			});
 			skipTempIds.forEach((id) => {
 				if (cycleIds.has(id)) {
-return;
-}
+					return;
+				}
 				const rec = recordsById.get(id);
 				if (!rec || !rec.loadedFromId) {
-return;
-}
+					return;
+				}
 				results.push({
 					tempId: id,
 					objectName: rec.objectName,
@@ -2845,32 +3156,39 @@ return;
 				const graphId = respGraph && respGraph.graphId;
 				const isSuccessful = !!(respGraph && respGraph.isSuccessful);
 				if (!isSuccessful) {
-allAtomicSuccess = false;
-}
-				const responses = (respGraph && respGraph.graphResponse && respGraph.graphResponse.compositeResponse) || [];
-				const componentIdx = typeof graphId === 'string' && graphId.startsWith('g')
-					? parseInt(graphId.slice(1), 10) : NaN;
+					allAtomicSuccess = false;
+				}
+				const responses =
+					(respGraph && respGraph.graphResponse && respGraph.graphResponse.compositeResponse) || [];
+				const componentIdx =
+					typeof graphId === 'string' && graphId.startsWith('g') ? parseInt(graphId.slice(1), 10) : NaN;
 				const componentTempIds = (Number.isInteger(componentIdx) && components[componentIdx]) || [];
 				const tempIdByRefId = new Map();
 				componentTempIds.forEach((tempId) => tempIdByRefId.set(graphRefIdFor(tempId), tempId));
 
 				responses.forEach((r) => {
 					if (!r || !r.referenceId) {
-return;
-}
+						return;
+					}
 					const tempId = tempIdByRefId.get(r.referenceId);
 					if (tempId == null) {
-return;
-}
+						return;
+					}
 					const rec = recordsById.get(tempId);
 					if (!rec) {
-return;
-}
+						return;
+					}
 					const status = r.httpStatusCode || 0;
 					if (isSuccessful) {
 						const isUpdate = !!rec.loadedFromId;
 						const id = isUpdate ? rec.loadedFromId : (r.body && r.body.id) || null;
-						results.push({ tempId, objectName: rec.objectName, success: true, id, mode: isUpdate ? 'update' : 'create' });
+						results.push({
+							tempId,
+							objectName: rec.objectName,
+							success: true,
+							id,
+							mode: isUpdate ? 'update' : 'create',
+						});
 						return;
 					}
 					if (status < 400) {
@@ -2882,7 +3200,7 @@ return;
 						});
 						return;
 					}
-					const bodies = Array.isArray(r.body) ? r.body : (r.body ? [r.body] : []);
+					const bodies = Array.isArray(r.body) ? r.body : r.body ? [r.body] : [];
 					if (bodies.length === 0) {
 						results.push({ tempId, objectName: rec.objectName, success: false, error: 'HTTP ' + status });
 						return;
@@ -2892,7 +3210,7 @@ return;
 							tempId,
 							objectName: rec.objectName,
 							success: false,
-							error: (b && b.message) || ('HTTP ' + status),
+							error: (b && b.message) || 'HTTP ' + status,
 							errorCode: b && b.errorCode,
 							fields: Array.isArray(b && b.fields) ? b.fields : [],
 						});
@@ -2907,10 +3225,10 @@ return;
 
 			if (!directUpload && mutationSuccessCount > 0) {
 				try {
- await ext.chargeQuota(req.account, 'uploads', 1); 
-} catch (e) {
- console.warn('[usage]:', e.message || e); 
-}
+					await ext.chargeQuota(req.account, 'uploads', 1);
+				} catch (e) {
+					console.warn('[usage]:', e.message || e);
+				}
 			}
 			const deleteResults = [];
 			const someGraphCommitted = mutationSuccessCount > 0;
@@ -2937,9 +3255,10 @@ return;
 								mode: 'delete',
 							});
 						} else {
-							const errMsg = sf && sf.errors && sf.errors.length
-								? sf.errors.map((e) => e.message || e.errorCode).join('; ')
-								: 'Salesforce refused the delete.';
+							const errMsg =
+								sf && sf.errors && sf.errors.length
+									? sf.errors.map((e) => e.message || e.errorCode).join('; ')
+									: 'Salesforce refused the delete.';
 							deleteResults.push({
 								tempId: d.tempId || null,
 								sfId: d.sfId,
@@ -2977,18 +3296,18 @@ return;
 				const objects = Array.from(new Set(records.map((r) => r && r.objectName).filter(Boolean)));
 				for (const r of orderedResults) {
 					if (!r) {
-continue;
-}
+						continue;
+					}
 					await ext.auditWrite({
 						req,
 						workspaceId,
 						action: 'record_upserted',
 						targetObject: r.objectName || null,
-						targetId: r.success ? (r.id || null) : null,
+						targetId: r.success ? r.id || null : null,
 						targetSfOrgId: req.sf.sfOrgId,
 						requestId: uploadRequestId,
 						status: r.success ? 'ok' : 'failed',
-						errorCode: r.success ? null : (r.errorCode || 'sf-write-failed'),
+						errorCode: r.success ? null : r.errorCode || 'sf-write-failed',
 						payload: {
 							tempId: r.tempId != null ? r.tempId : null,
 							mode: r.mode || (r.success ? 'create' : null),
@@ -2997,8 +3316,8 @@ continue;
 				}
 				for (const d of deleteResults) {
 					if (!d) {
-continue;
-}
+						continue;
+					}
 					await ext.auditWrite({
 						req,
 						workspaceId,
@@ -3022,7 +3341,9 @@ continue;
 					}
 					const rec = recordsById && r.tempId != null ? recordsById.get(r.tempId) : null;
 					const obj = (rec && rec.objectName) || r.objectName || 'unknown';
-					const bucket = graphObjectBreakdown[obj] || (graphObjectBreakdown[obj] = { created: 0, updated: 0, unchanged: 0, failed: 0 });
+					const bucket =
+						graphObjectBreakdown[obj] ||
+						(graphObjectBreakdown[obj] = { created: 0, updated: 0, unchanged: 0, failed: 0 });
 					if (!r.success) {
 						bucket.failed += 1;
 						const code = (r.errorCode || 'sf-write-failed').toString();
@@ -3043,7 +3364,9 @@ continue;
 						continue;
 					}
 					const obj = d.objectName || 'unknown';
-					const bucket = graphObjectBreakdown[obj] || (graphObjectBreakdown[obj] = { created: 0, updated: 0, unchanged: 0, failed: 0, deleted: 0 });
+					const bucket =
+						graphObjectBreakdown[obj] ||
+						(graphObjectBreakdown[obj] = { created: 0, updated: 0, unchanged: 0, failed: 0, deleted: 0 });
 					if (d.success) {
 						bucket.deleted = (bucket.deleted || 0) + 1;
 					} else {
@@ -3084,8 +3407,8 @@ continue;
 					},
 				});
 			} catch (e) {
- console.warn('[audit]:', e.message || e); 
-}
+				console.warn('[audit]:', e.message || e);
+			}
 
 			let batchId = null;
 			let canonicalByTempId;
@@ -3104,14 +3427,20 @@ continue;
 				try {
 					const insertedIds = orderedResults
 						.filter((r) => r && r.success && r.id && r.mode !== 'unchanged')
-						.map((r) => _buildBatchEntryFromResult(r, recordsById.get(r.tempId), canonicalByTempId.get(r.tempId)));
+						.map((r) =>
+							_buildBatchEntryFromResult(r, recordsById.get(r.tempId), canonicalByTempId.get(r.tempId)),
+						);
 					const deletedIds = successfulDeletes.map((d) => ({
 						tempId: d.tempId,
 						sfId: d.sfId,
 						objectName: d.objectName,
 					}));
 					if (insertedIds.length > 0 || deletedIds.length > 0) {
-						const batchStore = _twoPhaseStore || await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+						const batchStore =
+							_twoPhaseStore ||
+							(await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+								sessionId: req.session && req.session.id,
+							}));
 						const _assoc = associations.map((a) => ({
 							fromTempId: a.fromId,
 							toTempId: a.toId,
@@ -3139,12 +3468,12 @@ continue;
 						}
 					}
 				} catch (e) {
- console.warn('[upload-batches]:', e.message || e);
-}
+					console.warn('[upload-batches]:', e.message || e);
+				}
 			}
 			if (_pendingBatchId && mutationSuccessCount === 0 && successfulDeletes.length === 0) {
-				const firstFailure = orderedResults.find((r) => r && !r.success)
-					|| deleteResults.find((r) => r && !r.success);
+				const firstFailure =
+					orderedResults.find((r) => r && !r.success) || deleteResults.find((r) => r && !r.success);
 				await _settleKnownNoCommit(_twoPhaseStore, _pendingBatchId, {
 					errorCode: firstFailure && (firstFailure.errorCode || 'graph-rolled-back'),
 					message: firstFailure && firstFailure.error,
@@ -3166,18 +3495,18 @@ continue;
 				canonicalValues: canonicalForResponse,
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/upload/preflight', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
-return;
-}
-			if (!await _gateCapability(req, res, 'upload-records', 'upload_preflight')) {
-return;
-}
+				return;
+			}
+			if (!(await _gateCapability(req, res, 'upload-records', 'upload_preflight'))) {
+				return;
+			}
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
 				sfOrgId: req.sf.sfOrgId,
 				orgType: req.sf.orgType || 'unknown',
@@ -3202,40 +3531,40 @@ return;
 
 			const recordsById = new Map();
 			records.forEach((r) => {
- if (r && r.tempId != null) {
-recordsById.set(r.tempId, r);
-} 
-});
+				if (r && r.tempId != null) {
+					recordsById.set(r.tempId, r);
+				}
+			});
 
 			const deps = new Map();
 			recordsById.forEach((_, id) => deps.set(id, new Set()));
 			associations.forEach((a) => {
 				if (!a) {
-return;
-}
+					return;
+				}
 				if (deps.has(a.fromId) && recordsById.has(a.toId)) {
-deps.get(a.fromId).add(a.toId);
-}
+					deps.get(a.fromId).add(a.toId);
+				}
 			});
 
 			const sampleIds = new Set();
 			const seenObjs = new Set();
 			for (const r of records) {
 				if (!r || !r.objectName || r.loadedFromId) {
-continue;
-}
+					continue;
+				}
 				if (seenObjs.has(r.objectName)) {
-continue;
-}
+					continue;
+				}
 				seenObjs.add(r.objectName);
 				sampleIds.add(r.tempId);
 			}
 			function pullAncestors(id) {
-				for (const p of (deps.get(id) || new Set())) {
+				for (const p of deps.get(id) || new Set()) {
 					const parentRec = recordsById.get(p);
 					if (!parentRec || parentRec.loadedFromId || sampleIds.has(p)) {
-continue;
-}
+						continue;
+					}
 					sampleIds.add(p);
 					pullAncestors(p);
 				}
@@ -3251,26 +3580,29 @@ continue;
 				const reverseDeps = new Map();
 				associations.forEach((a) => {
 					if (!a || !sampleIds.has(a.toId) || !sampleIds.has(a.fromId)) {
-return;
-}
+						return;
+					}
 					let s = reverseDeps.get(a.toId);
 					if (!s) {
- s = new Set(); reverseDeps.set(a.toId, s); 
-}
+						s = new Set();
+						reverseDeps.set(a.toId, s);
+					}
 					s.add(a.fromId);
 				});
 				const dropped = new Set();
 				while (sampleArr.length - dropped.size > SAMPLE_CAP) {
-					const leaf = sampleArr.find((r) => !dropped.has(r.tempId) && !(reverseDeps.get(r.tempId) || new Set()).size);
+					const leaf = sampleArr.find(
+						(r) => !dropped.has(r.tempId) && !(reverseDeps.get(r.tempId) || new Set()).size,
+					);
 					if (!leaf) {
-break;
-}
+						break;
+					}
 					dropped.add(leaf.tempId);
 					(deps.get(leaf.tempId) || new Set()).forEach((parentId) => {
 						const s = reverseDeps.get(parentId);
 						if (s) {
-s.delete(leaf.tempId);
-}
+							s.delete(leaf.tempId);
+						}
 					});
 				}
 				sampleArr = sampleArr.filter((r) => !dropped.has(r.tempId));
@@ -3284,17 +3616,18 @@ s.delete(leaf.tempId);
 			(function topo() {
 				function visit(id) {
 					if (visited.has(id)) {
-return;
-}
+						return;
+					}
 					if (stack.has(id)) {
- cycleDetected = true; return; 
-}
+						cycleDetected = true;
+						return;
+					}
 					stack.add(id);
 					(deps.get(id) || []).forEach((p) => {
- if (sampleSet.has(p)) {
-visit(p);
-} 
-});
+						if (sampleSet.has(p)) {
+							visit(p);
+						}
+					});
 					stack.delete(id);
 					visited.add(id);
 					order.push(id);
@@ -3314,10 +3647,10 @@ visit(p);
 			const compositeRequest = orderedSample.map((rec) => {
 				const values = Object.assign({}, rec.values || {});
 				Object.keys(values).forEach((k) => {
- if (values[k] === FAKE_REF_ID) {
-delete values[k];
-} 
-});
+					if (values[k] === FAKE_REF_ID) {
+						delete values[k];
+					}
+				});
 				Object.keys(values).forEach((k) => {
 					if (typeof values[k] === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(values[k])) {
 						values[k] = values[k] + ':00.000Z';
@@ -3325,27 +3658,27 @@ delete values[k];
 				});
 				Object.keys(values).forEach((k) => {
 					if (!k.endsWith('Code')) {
-return;
-}
+						return;
+					}
 					if (values[k] == null || values[k] === '') {
-return;
-}
+						return;
+					}
 					const textField = k.slice(0, -'Code'.length);
 					if (Object.prototype.hasOwnProperty.call(values, textField)) {
-delete values[textField];
-}
+						delete values[textField];
+					}
 				});
 				associations.forEach((a) => {
 					if (a.fromId !== rec.tempId) {
-return;
-}
+						return;
+					}
 					if (sampleSet.has(a.toId)) {
 						values[a.fieldName] = '@{' + refIdFor(a.toId) + '.id}';
 					} else {
 						const parent = recordsById.get(a.toId);
 						if (parent && parent.loadedFromId) {
-values[a.fieldName] = parent.loadedFromId;
-}
+							values[a.fieldName] = parent.loadedFromId;
+						}
 					}
 				});
 				return {
@@ -3398,8 +3731,8 @@ values[a.fieldName] = parent.loadedFromId;
 						payload: { sampled: orderedSample.length, total: records.length },
 					});
 				} catch (e) {
- console.warn('[audit]:', e.message || e); 
-}
+					console.warn('[audit]:', e.message || e);
+				}
 				return res.json({ ok: true, sampled: orderedSample.length, total: records.length });
 			}
 
@@ -3408,23 +3741,23 @@ values[a.fieldName] = parent.loadedFromId;
 			const errors = [];
 			responses.forEach((r) => {
 				if (!r || !r.referenceId) {
-return;
-}
+					return;
+				}
 				const tempId = tempIdByRefId.get(r.referenceId);
 				const rec = tempId != null ? recordsById.get(tempId) : null;
 				const status = r.httpStatusCode || 0;
 				if (status < 400) {
-return;
-}
-				const bodies = Array.isArray(r.body) ? r.body : (r.body ? [r.body] : []);
+					return;
+				}
+				const bodies = Array.isArray(r.body) ? r.body : r.body ? [r.body] : [];
 				bodies.forEach((b) => {
 					errors.push({
 						recordId: tempId != null ? tempId : null,
 						objectName: rec ? rec.objectName : null,
-						recordLabel: rec ? ((rec.label || rec.objectName) + ' #' + rec.tempId) : 'Unknown record',
+						recordLabel: rec ? (rec.label || rec.objectName) + ' #' + rec.tempId : 'Unknown record',
 						fields: Array.isArray(b && b.fields) ? b.fields : [],
 						errorCode: b && b.errorCode,
-						message: (b && b.message) || ('HTTP ' + status),
+						message: (b && b.message) || 'HTTP ' + status,
 					});
 				});
 			});
@@ -3437,28 +3770,28 @@ return;
 					action: 'preflight',
 					targetSfOrgId: req.sf.sfOrgId,
 					payload: {
-							sampled: orderedSample.length,
-							total: records.length,
-							errorCount: errors.length,
-						},
+						sampled: orderedSample.length,
+						total: records.length,
+						errorCount: errors.length,
+					},
 				});
 			} catch (e) {
- console.warn('[audit]:', e.message || e); 
-}
+				console.warn('[audit]:', e.message || e);
+			}
 			res.json({ ok: false, errors, sampled: orderedSample.length });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/upload/bulk', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
-return;
-}
-			if (!await _gateCapability(req, res, 'upload-records', 'upload_bulk')) {
-return;
-}
+				return;
+			}
+			if (!(await _gateCapability(req, res, 'upload-records', 'upload_bulk'))) {
+				return;
+			}
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
 				sfOrgId: req.sf.sfOrgId,
 				orgType: req.sf.orgType || 'unknown',
@@ -3511,7 +3844,8 @@ return;
 						field: externalIdField,
 						objectName,
 						message: fieldCheck.ok
-							? (fieldCheck.field.label || externalIdField) + ' is not createable for this Salesforce user.'
+							? (fieldCheck.field.label || externalIdField) +
+								' is not createable for this Salesforce user.'
 							: fieldCheck.message,
 					});
 				}
@@ -3521,14 +3855,21 @@ return;
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
-return res.status(409).json({ error: 'no-active-workspace' });
-}
+				return res.status(409).json({ error: 'no-active-workspace' });
+			}
 			if (!directUpload) {
 				const uploadQuota = await ext.getQuota(req.account, 'uploads');
 				if (uploadQuota.blocked) {
 					return res.status(402).json({
 						error: 'upload-cap-reached',
-						message: "You've used " + uploadQuota.used + ' of your ' + uploadQuota.cap + ' monthly uploads on the ' + uploadQuota.planLabel + ' plan. Upgrade for unlimited uploads, or wait for the cap to reset.',
+						message:
+							"You've used " +
+							uploadQuota.used +
+							' of your ' +
+							uploadQuota.cap +
+							' monthly uploads on the ' +
+							uploadQuota.planLabel +
+							' plan. Upgrade for unlimited uploads, or wait for the cap to reset.',
 						uploadsUsed: uploadQuota.used,
 						uploadCap: uploadQuota.cap,
 						currentPlan: uploadQuota.planId,
@@ -3543,13 +3884,19 @@ return res.status(409).json({ error: 'no-active-workspace' });
 			if (!_claimUploadAttempt(req, res, _attemptId)) {
 				return res.status(409).json({
 					error: 'upload-attempt-in-progress',
-					message: 'This upload attempt is already running. Wait for it to finish, then reconcile before retrying.',
+					message:
+						'This upload attempt is already running. Wait for it to finish, then reconcile before retrying.',
 				});
 			}
 			let _twoPhaseStore = null;
 			let _pendingBatchId = null;
 			try {
-				_twoPhaseStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+				_twoPhaseStore = await uploadBatchesStoreFromSfConnection(
+					req.sf.conn,
+					req.sf.sfUserId,
+					req.sf.sfOrgId,
+					{ sessionId: req.session && req.session.id },
+				);
 			} catch (e) {
 				return _rejectUploadLedgerUnavailable(res, e, 'bulk-prepare');
 			}
@@ -3561,9 +3908,10 @@ return res.status(409).json({ error: 'no-active-workspace' });
 							error: 'upload-attempt-incomplete',
 							batchId: prior.id,
 							status: prior.status,
-							message: prior.status === 'uploaded'
-								? 'This upload attempt already completed. Refresh to reconcile the results.'
-								: UPLOAD_ATTEMPT_UNCERTAIN_MESSAGE,
+							message:
+								prior.status === 'uploaded'
+									? 'This upload attempt already completed. Refresh to reconcile the results.'
+									: UPLOAD_ATTEMPT_UNCERTAIN_MESSAGE,
 						});
 					}
 				} catch (e) {
@@ -3572,7 +3920,7 @@ return res.status(409).json({ error: 'no-active-workspace' });
 				try {
 					const pendingB = await _twoPhaseStore.createPending({
 						source: directUpload ? 'csv-bulk' : 'canvas-bulk',
-						note: (req.body && typeof req.body.note === 'string') ? req.body.note : null,
+						note: req.body && typeof req.body.note === 'string' ? req.body.note : null,
 						attemptId: _attemptId,
 						intendedRecords: records.map((r) => ({ tempId: r.tempId, objectName: r.objectName })),
 					});
@@ -3581,7 +3929,7 @@ return res.status(409).json({ error: 'no-active-workspace' });
 					return _rejectUploadLedgerUnavailable(res, e, 'bulk-intent');
 				}
 			}
-						res.setHeader('Content-Type', 'text/event-stream');
+			res.setHeader('Content-Type', 'text/event-stream');
 			res.setHeader('Cache-Control', 'no-cache, no-transform');
 			res.setHeader('Connection', 'keep-alive');
 			res.setHeader('X-Accel-Buffering', 'no');
@@ -3598,47 +3946,47 @@ return res.status(409).json({ error: 'no-active-workspace' });
 
 			const recordsById = new Map();
 			records.forEach((r) => {
- if (r && r.tempId != null) {
-recordsById.set(r.tempId, r);
-} 
-});
+				if (r && r.tempId != null) {
+					recordsById.set(r.tempId, r);
+				}
+			});
 
 			const deps = new Map();
 			recordsById.forEach((_, id) => deps.set(id, new Set()));
 			associations.forEach((a) => {
 				if (!a) {
-return;
-}
+					return;
+				}
 				if (deps.has(a.fromId) && recordsById.has(a.toId)) {
-deps.get(a.fromId).add(a.toId);
-}
+					deps.get(a.fromId).add(a.toId);
+				}
 			});
 
 			const levelByTempId = new Map();
 			const cycleIds = new Set();
 			function computeLevel(id, stackSet, stackArr) {
 				if (levelByTempId.has(id)) {
-return levelByTempId.get(id);
-}
+					return levelByTempId.get(id);
+				}
 				if (stackSet.has(id)) {
 					const entry = stackArr.indexOf(id);
 					for (let i = entry; i < stackArr.length; i++) {
-cycleIds.add(stackArr[i]);
-}
+						cycleIds.add(stackArr[i]);
+					}
 					return 0;
 				}
 				stackSet.add(id);
 				stackArr.push(id);
 				let lvl = 0;
-				for (const parentId of (deps.get(id) || [])) {
+				for (const parentId of deps.get(id) || []) {
 					const parent = recordsById.get(parentId);
 					if (!parent || parent.loadedFromId) {
-continue;
-}
+						continue;
+					}
 					const parentLvl = computeLevel(parentId, stackSet, stackArr);
 					if (parentLvl + 1 > lvl) {
-lvl = parentLvl + 1;
-}
+						lvl = parentLvl + 1;
+					}
 				}
 				stackSet.delete(id);
 				stackArr.pop();
@@ -3650,11 +3998,11 @@ lvl = parentLvl + 1;
 			const byLevel = new Map();
 			recordsById.forEach((rec, tempId) => {
 				if (cycleIds.has(tempId)) {
-return;
-}
+					return;
+				}
 				if (skipTempIds.has(tempId) && rec.loadedFromId) {
-return;
-}
+					return;
+				}
 				const level = levelByTempId.get(tempId) || 0;
 				let operation;
 				let externalIdFieldName = null;
@@ -3669,8 +4017,9 @@ return;
 				const key = operation + '|' + (externalIdFieldName || '') + '|' + rec.objectName;
 				let levelMap = byLevel.get(level);
 				if (!levelMap) {
- levelMap = new Map(); byLevel.set(level, levelMap); 
-}
+					levelMap = new Map();
+					byLevel.set(level, levelMap);
+				}
 				let group = levelMap.get(key);
 				if (!group) {
 					group = { operation, objectName: rec.objectName, externalIdFieldName, records: [] };
@@ -3706,8 +4055,8 @@ return;
 			cycleIds.forEach((id) => {
 				const rec = recordsById.get(id);
 				if (!rec) {
-return;
-}
+					return;
+				}
 				failedTempIds.add(id);
 				allResults.push({
 					tempId: id,
@@ -3719,8 +4068,8 @@ return;
 			skipTempIds.forEach((id) => {
 				const rec = recordsById.get(id);
 				if (!rec || !rec.loadedFromId) {
-return;
-}
+					return;
+				}
 				sfIdByTempId.set(id, rec.loadedFromId);
 				allResults.push({
 					tempId: id,
@@ -3736,7 +4085,11 @@ return;
 					const groups = Array.from(byLevel.get(level).values());
 					send('level-start', {
 						level,
-						groups: groups.map((g) => ({ objectName: g.objectName, operation: g.operation, count: g.records.length })),
+						groups: groups.map((g) => ({
+							objectName: g.objectName,
+							operation: g.operation,
+							count: g.records.length,
+						})),
 					});
 
 					const jobPromises = groups.map(async (group) => {
@@ -3744,16 +4097,17 @@ return;
 						const skippedDueToParent = [];
 						for (const rec of group.records) {
 							let parentFailed = false;
-							for (const pid of (deps.get(rec.tempId) || [])) {
+							for (const pid of deps.get(rec.tempId) || []) {
 								if (failedTempIds.has(pid)) {
- parentFailed = true; break; 
-}
+									parentFailed = true;
+									break;
+								}
 							}
 							if (parentFailed) {
-skippedDueToParent.push(rec);
-} else {
-runnable.push(rec);
-}
+								skippedDueToParent.push(rec);
+							} else {
+								runnable.push(rec);
+							}
 						}
 						skippedDueToParent.forEach((rec) => {
 							failedTempIds.add(rec.tempId);
@@ -3776,17 +4130,29 @@ runnable.push(rec);
 							}
 							const field = fieldCheck.field.name;
 							group.externalIdFieldName = field;
-							const keys = Array.from(new Set(runnable
-								.map((rec) => rec.values && rec.values[field])
-								.filter((value) => value !== undefined && value !== null && value !== '')
-								.map(String)));
+							const keys = Array.from(
+								new Set(
+									runnable
+										.map((rec) => rec.values && rec.values[field])
+										.filter((value) => value !== undefined && value !== null && value !== '')
+										.map(String),
+								),
+							);
 							for (let offset = 0; offset < keys.length; offset += 200) {
-								const inList = keys.slice(offset, offset + 200)
+								const inList = keys
+									.slice(offset, offset + 200)
 									.map((value) => "'" + escapeSoqlLiteral(value) + "'")
 									.join(',');
 								const found = await conn.query(
-									'SELECT ' + field + ' FROM ' + group.objectName +
-									' WHERE ' + field + ' IN (' + inList + ')',
+									'SELECT ' +
+										field +
+										' FROM ' +
+										group.objectName +
+										' WHERE ' +
+										field +
+										' IN (' +
+										inList +
+										')',
 								);
 								(found.records || []).forEach((record) => {
 									if (record[field] !== undefined && record[field] !== null) {
@@ -3798,53 +4164,60 @@ runnable.push(rec);
 						const jobInputs = runnable.map((rec) => {
 							let values = Object.assign({}, rec.values || {});
 							Object.keys(values).forEach((k) => {
- if (values[k] === FAKE_REF_ID) {
-delete values[k];
-} 
-});
+								if (values[k] === FAKE_REF_ID) {
+									delete values[k];
+								}
+							});
 							Object.keys(values).forEach((k) => {
-								if (typeof values[k] === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(values[k])) {
+								if (
+									typeof values[k] === 'string' &&
+									/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(values[k])
+								) {
 									values[k] = values[k] + ':00.000Z';
 								}
 							});
 							Object.keys(values).forEach((k) => {
 								if (!k.endsWith('Code')) {
-return;
-}
+									return;
+								}
 								if (values[k] == null || values[k] === '') {
-return;
-}
+									return;
+								}
 								const textField = k.slice(0, -'Code'.length);
 								if (Object.prototype.hasOwnProperty.call(values, textField)) {
-delete values[textField];
-}
+									delete values[textField];
+								}
 							});
-							const upsertMatchesExisting = group.operation === 'upsert' &&
+							const upsertMatchesExisting =
+								group.operation === 'upsert' &&
 								existingUpsertKeys.has(String(values[group.externalIdFieldName]));
-							values = stripUnwritableFields(values, describe,
-								group.operation === 'update' || upsertMatchesExisting);
+							values = stripUnwritableFields(
+								values,
+								describe,
+								group.operation === 'update' || upsertMatchesExisting,
+							);
 							associations.forEach((a) => {
 								if (a.fromId !== rec.tempId) {
-return;
-}
+									return;
+								}
 								const parent = recordsById.get(a.toId);
 								if (!parent) {
-return;
-}
+									return;
+								}
 								if (parent.loadedFromId) {
-values[a.fieldName] = parent.loadedFromId;
-} else if (sfIdByTempId.has(a.toId)) {
-values[a.fieldName] = sfIdByTempId.get(a.toId);
-}
+									values[a.fieldName] = parent.loadedFromId;
+								} else if (sfIdByTempId.has(a.toId)) {
+									values[a.fieldName] = sfIdByTempId.get(a.toId);
+								}
 							});
 							if (group.operation === 'update' && rec.loadedFromId) {
-values.Id = rec.loadedFromId;
-}
+								values.Id = rec.loadedFromId;
+							}
 							return { tempId: rec.tempId, values };
 						});
 						if (jobInputs.length === 0) {
-return;
-}
+							return;
+						}
 
 						const cols = new Set();
 						jobInputs.forEach((j) => Object.keys(j.values).forEach((k) => cols.add(k)));
@@ -3880,8 +4253,8 @@ return;
 						});
 						result.failures.forEach((f) => {
 							if (f.tempId != null) {
-failedTempIds.add(f.tempId);
-}
+								failedTempIds.add(f.tempId);
+							}
 							allResults.push({
 								tempId: f.tempId,
 								objectName: group.objectName,
@@ -3896,16 +4269,16 @@ failedTempIds.add(f.tempId);
 
 				const byId = new Map();
 				allResults.forEach((r) => {
- if (r.tempId != null) {
-byId.set(r.tempId, r);
-} 
-});
+					if (r.tempId != null) {
+						byId.set(r.tempId, r);
+					}
+				});
 				const orderedResults = records.map((r) => byId.get(r.tempId)).filter(Boolean);
 				allResults.forEach((r) => {
- if (r.tempId == null) {
-orderedResults.push(r);
-} 
-});
+					if (r.tempId == null) {
+						orderedResults.push(r);
+					}
+				});
 
 				const deleteResults = [];
 				for (const d of deletesIn) {
@@ -3930,9 +4303,10 @@ orderedResults.push(r);
 								mode: 'delete',
 							});
 						} else {
-							const errMsg = sf && sf.errors && sf.errors.length
-								? sf.errors.map((e) => e.message || e.errorCode).join('; ')
-								: 'Salesforce refused the delete.';
+							const errMsg =
+								sf && sf.errors && sf.errors.length
+									? sf.errors.map((e) => e.message || e.errorCode).join('; ')
+									: 'Salesforce refused the delete.';
 							deleteResults.push({
 								tempId: d.tempId || null,
 								sfId: d.sfId,
@@ -3981,24 +4355,24 @@ orderedResults.push(r);
 				const mutationSuccessCount = _countCommittedMutations(orderedResults);
 				if (!directUpload && mutationSuccessCount > 0) {
 					try {
- await ext.chargeQuota(req.account, 'uploads', 1); 
-} catch (e) {
- console.warn('[usage]:', e.message || e); 
-}
+						await ext.chargeQuota(req.account, 'uploads', 1);
+					} catch (e) {
+						console.warn('[usage]:', e.message || e);
+					}
 				}
 				try {
 					const uploadRequestId = auditDb.newRequestId();
 					const objects = Array.from(new Set(records.map((r) => r && r.objectName).filter(Boolean)));
 					for (const r of orderedResults) {
 						if (!r) {
-continue;
-}
+							continue;
+						}
 						await ext.auditWrite({
 							req,
 							workspaceId,
 							action: 'record_upserted',
 							targetObject: r.objectName || null,
-							targetId: r.success ? (r.id || null) : null,
+							targetId: r.success ? r.id || null : null,
 							targetSfOrgId: req.sf.sfOrgId,
 							requestId: uploadRequestId,
 							status: r.success ? 'ok' : 'failed',
@@ -4037,7 +4411,9 @@ continue;
 						}
 						const rec = recordsById && r.tempId != null ? recordsById.get(r.tempId) : null;
 						const objName = (rec && rec.objectName) || r.objectName || 'unknown';
-						const bucket = objectBreakdown[objName] || (objectBreakdown[objName] = { created: 0, updated: 0, unchanged: 0, failed: 0 });
+						const bucket =
+							objectBreakdown[objName] ||
+							(objectBreakdown[objName] = { created: 0, updated: 0, unchanged: 0, failed: 0 });
 						if (!r.success) {
 							bucket.failed += 1;
 							const code = (r.errorCode || 'sf-write-failed').toString();
@@ -4082,44 +4458,66 @@ continue;
 						},
 					});
 				} catch (e) {
- console.warn('[audit]:', e.message || e); 
-}
+					console.warn('[audit]:', e.message || e);
+				}
 
 				const successfulDeletes = deleteResults.filter((d) => d && d.success);
 				if (mutationSuccessCount > 0 || successfulDeletes.length > 0) {
 					try {
 						const insertedIds = orderedResults
 							.filter((r) => r && r.success && r.id && r.mode !== 'unchanged')
-							.map((r) => _buildBatchEntryFromResult(r, recordsById.get(r.tempId), canonicalByTempId.get(r.tempId)));
+							.map((r) =>
+								_buildBatchEntryFromResult(
+									r,
+									recordsById.get(r.tempId),
+									canonicalByTempId.get(r.tempId),
+								),
+							);
 						const deletedIds = successfulDeletes.map((d) => ({
 							tempId: d.tempId,
 							sfId: d.sfId,
 							objectName: d.objectName,
 						}));
 						if (insertedIds.length > 0 || deletedIds.length > 0) {
-							const batchStore = _twoPhaseStore || await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
-								const _assoc = associations.map((a) => ({ fromTempId: a.fromId, toTempId: a.toId, fieldName: a.fieldName }));
-								if (_pendingBatchId) {
-									await batchStore.finalize(_pendingBatchId, { insertedIds, deletedIds, recordCount: insertedIds.length + deletedIds.length, associations: _assoc });
-								} else {
-									await batchStore.create({
-										source: directUpload ? 'csv-bulk' : 'canvas-bulk',
-										recordCount: insertedIds.length + deletedIds.length,
-										note: req.body && typeof req.body.note === 'string' ? req.body.note : null,
-										attemptId: null,
-										insertedIds,
-										deletedIds,
-										associations: _assoc,
-									});
-								}
+							const batchStore =
+								_twoPhaseStore ||
+								(await uploadBatchesStoreFromSfConnection(
+									req.sf.conn,
+									req.sf.sfUserId,
+									req.sf.sfOrgId,
+									{ sessionId: req.session && req.session.id },
+								));
+							const _assoc = associations.map((a) => ({
+								fromTempId: a.fromId,
+								toTempId: a.toId,
+								fieldName: a.fieldName,
+							}));
+							if (_pendingBatchId) {
+								await batchStore.finalize(_pendingBatchId, {
+									insertedIds,
+									deletedIds,
+									recordCount: insertedIds.length + deletedIds.length,
+									associations: _assoc,
+								});
+							} else {
+								await batchStore.create({
+									source: directUpload ? 'csv-bulk' : 'canvas-bulk',
+									recordCount: insertedIds.length + deletedIds.length,
+									note: req.body && typeof req.body.note === 'string' ? req.body.note : null,
+									attemptId: null,
+									insertedIds,
+									deletedIds,
+									associations: _assoc,
+								});
+							}
 						}
 					} catch (e) {
- console.warn('[upload-batches]:', e.message || e);
-}
+						console.warn('[upload-batches]:', e.message || e);
+					}
 				}
 				if (_pendingBatchId && mutationSuccessCount === 0 && successfulDeletes.length === 0) {
-					const firstFailure = orderedResults.find((r) => r && !r.success)
-						|| deleteResults.find((r) => r && !r.success);
+					const firstFailure =
+						orderedResults.find((r) => r && !r.success) || deleteResults.find((r) => r && !r.success);
 					await _settleKnownNoCommit(_twoPhaseStore, _pendingBatchId, {
 						errorCode: firstFailure && (firstFailure.errorCode || 'bulk-write-failed'),
 						message: firstFailure && firstFailure.error,
@@ -4139,84 +4537,103 @@ continue;
 						payload: { requested: records.length },
 					});
 				} catch (e) {
- console.warn('[audit]:', e.message || e); 
-}
+					console.warn('[audit]:', e.message || e);
+				}
 			} finally {
 				res.end();
 			}
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
-	app.post('/api/upload-batches/:id/recall-preflight', requireAccount, requireSfConnection, async (req, res, next) => {
-		try {
-			if (!await _gateCapability(req, res, 'recall-upload', 'recall_preflight', { auditPayload: { batchId: req.params.id } })) {
-return;
-}
-			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
-			const batch = await batchStore.get(req.params.id);
-			if (!batch) {
-return res.status(404).json({ error: 'not-found' });
-}
-			if (batch.recalledAt) {
-				return res.status(409).json({ error: 'already-recalled' });
+	app.post(
+		'/api/upload-batches/:id/recall-preflight',
+		requireAccount,
+		requireSfConnection,
+		async (req, res, next) => {
+			try {
+				if (
+					!(await _gateCapability(req, res, 'recall-upload', 'recall_preflight', {
+						auditPayload: { batchId: req.params.id },
+					}))
+				) {
+					return;
+				}
+				const batchStore = await uploadBatchesStoreFromSfConnection(
+					req.sf.conn,
+					req.sf.sfUserId,
+					req.sf.sfOrgId,
+					{ sessionId: req.session && req.session.id },
+				);
+				const batch = await batchStore.get(req.params.id);
+				if (!batch) {
+					return res.status(404).json({ error: 'not-found' });
+				}
+				if (batch.recalledAt) {
+					return res.status(409).json({ error: 'already-recalled' });
+				}
+				const classification = await classifyBatchDrift({
+					conn: req.sf.conn,
+					batch: { insertedIds: batch.insertedIds, associations: batch.associations },
+					uploaderSfUserId: req.sf.sfUserId,
+					uploadTimeMs: batch.createdAt,
+				});
+				const cascade = await detectCascadeConflicts({
+					conn: req.sf.conn,
+					batch: { insertedIds: batch.insertedIds, associations: batch.associations },
+					classification,
+				});
+				const valueDrift = await classifyValueDrift({
+					conn: req.sf.conn,
+					batch: { insertedIds: batch.insertedIds },
+				});
+				res.json({
+					clean: classification.clean || [],
+					drifted: classification.drifted || [],
+					alreadyDeleted: classification.alreadyDeleted || [],
+					updates: classification.updates || [],
+					unverified: classification.unverified || [],
+					cascadeConflicts: cascade || [],
+					valueDrift: valueDrift || { records: [], summary: {} },
+					batch: {
+						id: batch.id,
+						createdAt: batch.createdAt,
+						recordCount: batch.recordCount,
+						sfOrgId: batch.sfOrgId,
+					},
+				});
+			} catch (err) {
+				next(err);
 			}
-			const classification = await classifyBatchDrift({
-				conn: req.sf.conn,
-				batch: { insertedIds: batch.insertedIds, associations: batch.associations },
-				uploaderSfUserId: req.sf.sfUserId,
-				uploadTimeMs: batch.createdAt,
-			});
-			const cascade = await detectCascadeConflicts({
-				conn: req.sf.conn,
-				batch: { insertedIds: batch.insertedIds, associations: batch.associations },
-				classification,
-			});
-			const valueDrift = await classifyValueDrift({
-				conn: req.sf.conn,
-				batch: { insertedIds: batch.insertedIds },
-			});
-			res.json({
-				clean: classification.clean || [],
-				drifted: classification.drifted || [],
-				alreadyDeleted: classification.alreadyDeleted || [],
-				updates: classification.updates || [],
-				unverified: classification.unverified || [],
-				cascadeConflicts: cascade || [],
-				valueDrift: valueDrift || { records: [], summary: {} },
-				batch: {
-					id: batch.id,
-					createdAt: batch.createdAt,
-					recordCount: batch.recordCount,
-					sfOrgId: batch.sfOrgId,
-				},
-			});
-		} catch (err) {
- next(err); 
-}
-	});
+		},
+	);
 
 	app.delete('/api/upload-batches/:id', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
-			if (!await _gateCapability(req, res, 'recall-upload', 'delete_upload_batch', { auditPayload: { batchId: req.params.id } })) {
-return;
-}
-			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
+			if (
+				!(await _gateCapability(req, res, 'recall-upload', 'delete_upload_batch', {
+					auditPayload: { batchId: req.params.id },
+				}))
+			) {
+				return;
+			}
+			const batchStore = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
 			try {
 				await batchStore.remove(req.params.id);
 			} catch (err) {
 				if (err && err.statusCode === 404) {
-return res.status(404).json({ error: 'not-found' });
-}
+					return res.status(404).json({ error: 'not-found' });
+				}
 				throw err;
 			}
 			res.json({ ok: true });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
-
 
 	const _loggedLimitsFailFor = new Set();
 	app.get('/api/limits', requireAccount, requireSfConnection, async (req, res) => {
@@ -4241,7 +4658,12 @@ return res.status(404).json({ error: 'not-found' });
 			const key = orgId + '|' + (isNotEnabled ? 'not-enabled' : 'other');
 			if (!_loggedLimitsFailFor.has(key)) {
 				_loggedLimitsFailFor.add(key);
-				console.warn('[limits] fetch failed for org', orgId + ':', msg, isNotEnabled ? '(suppressing subsequent identical warnings this process)' : '');
+				console.warn(
+					'[limits] fetch failed for org',
+					orgId + ':',
+					msg,
+					isNotEnabled ? '(suppressing subsequent identical warnings this process)' : '',
+				);
 			}
 			res.json({ daily: null });
 		}
@@ -4250,13 +4672,12 @@ return res.status(404).json({ error: 'not-found' });
 	app.get('/api/objects', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const list = await listObjects(req.sf.conn, req.sf.sfOrgId);
-			const out = req.query.raw === '1'
-				? list
-				: list.filter((o) => o.queryable !== false && !isNoiseSObject(o.name));
+			const out =
+				req.query.raw === '1' ? list : list.filter((o) => o.queryable !== false && !isNoiseSObject(o.name));
 			res.json(out);
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.get('/api/objects/:name/describe', requireAccount, requireSfConnection, async (req, res, next) => {
@@ -4268,8 +4689,8 @@ return res.status(404).json({ error: 'not-found' });
 			const out = await loadDescribeForObject(req.sf.conn, objectName);
 			res.json(out);
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.get('/api/objects/:name/records/:id', requireAccount, requireSfConnection, async (req, res, next) => {
@@ -4282,7 +4703,7 @@ return res.status(404).json({ error: 'not-found' });
 			if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
 				return res.status(400).json({ error: 'invalid-record-id' });
 			}
-			if (!await _gateCapability(req, res, 'browse-records', 'record_retrieve')) {
+			if (!(await _gateCapability(req, res, 'browse-records', 'record_retrieve'))) {
 				return;
 			}
 			const record = await req.sf.conn.sobject(name).retrieve(id);
@@ -4295,11 +4716,13 @@ return res.status(404).json({ error: 'not-found' });
 					targetSfOrgId: req.sf.sfOrgId,
 					payload: { sfRecordId: id },
 				});
-			} catch (e) { /* logging is best-effort */ }
+			} catch (e) {
+				/* logging is best-effort */
+			}
 			res.json(record);
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.get('/api/objects/:name/lookup', requireAccount, requireSfConnection, async (req, res, next) => {
@@ -4325,15 +4748,17 @@ return res.status(404).json({ error: 'not-found' });
 				if (fieldMeta && Array.isArray(fieldMeta.referenceTo)) {
 					referenceTargets = fieldMeta.referenceTo;
 				}
-			} catch (_e) { /* describe failures fall through */ }
+			} catch (_e) {
+				/* describe failures fall through */
+			}
 
 			const params = new URLSearchParams();
 			if (q) {
-params.set('q', q);
-}
+				params.set('q', q);
+			}
 			if (recordTypeId) {
-params.set('recordTypeId', recordTypeId);
-}
+				params.set('recordTypeId', recordTypeId);
+			}
 			if (targetApiNameParam) {
 				params.set('targetApiName', targetApiNameParam);
 			} else if (referenceTargets && referenceTargets.length > 1) {
@@ -4343,10 +4768,16 @@ params.set('recordTypeId', recordTypeId);
 				params.set('sourceRecordId', sourceRecordId);
 			}
 			if (q) {
-params.set('searchType', 'Search');
-}
+				params.set('searchType', 'Search');
+			}
 
-			const url = apiBase + '/ui-api/lookups/' + encodeURIComponent(name) + '/' + encodeURIComponent(fieldName) + (params.toString() ? '?' + params.toString() : '');
+			const url =
+				apiBase +
+				'/ui-api/lookups/' +
+				encodeURIComponent(name) +
+				'/' +
+				encodeURIComponent(fieldName) +
+				(params.toString() ? '?' + params.toString() : '');
 			try {
 				const data = await conn.request(url);
 				let rawRecords = [];
@@ -4354,8 +4785,8 @@ params.set('searchType', 'Search');
 					for (const groupKey of Object.keys(data.lookupResults)) {
 						const group = data.lookupResults[groupKey];
 						if (group && Array.isArray(group.records)) {
-rawRecords = rawRecords.concat(group.records);
-}
+							rawRecords = rawRecords.concat(group.records);
+						}
 					}
 				} else if (data && Array.isArray(data.records)) {
 					rawRecords = data.records; // legacy v50 shape
@@ -4381,11 +4812,16 @@ rawRecords = rawRecords.concat(group.records);
 						}
 					}
 					if (!title) {
-title = r.apiName || r.id;
-}
-					const subtitle = (r.fields && r.fields.RecordType && r.fields.RecordType.value
-						&& r.fields.RecordType.value.fields && r.fields.RecordType.value.fields.Name
-						&& r.fields.RecordType.value.fields.Name.value) || null;
+						title = r.apiName || r.id;
+					}
+					const subtitle =
+						(r.fields &&
+							r.fields.RecordType &&
+							r.fields.RecordType.value &&
+							r.fields.RecordType.value.fields &&
+							r.fields.RecordType.value.fields.Name &&
+							r.fields.RecordType.value.fields.Name.value) ||
+						null;
 					return {
 						id: r.id,
 						apiName: r.apiName,
@@ -4397,7 +4833,15 @@ title = r.apiName || r.id;
 				const filteredRecords = sourceRecordId
 					? records.filter((r) => r.id && r.id.slice(0, 15) !== sourceRecordId.slice(0, 15))
 					: records;
-				console.log('[lookup] url=' + url + ' rawCount=' + rawRecords.length + ' mappedCount=' + records.length + (sourceRecordId ? ' afterSelfFilter=' + filteredRecords.length : ''));
+				console.log(
+					'[lookup] url=' +
+						url +
+						' rawCount=' +
+						rawRecords.length +
+						' mappedCount=' +
+						records.length +
+						(sourceRecordId ? ' afterSelfFilter=' + filteredRecords.length : ''),
+				);
 				const out = { records: filteredRecords, available: true, source: 'ui-api' };
 				if (debug) {
 					out._debug = {
@@ -4414,13 +4858,18 @@ title = r.apiName || r.id;
 				console.warn('[lookup] failed url=' + url + ' err=' + (err && err.message));
 				const out = { records: [], available: false, reason: (err && err.message) || 'Lookup unavailable' };
 				if (debug) {
-out._debug = { requestUrl: url, error: (err && err.message) || String(err), referenceTargets, apiVersion };
-}
+					out._debug = {
+						requestUrl: url,
+						error: (err && err.message) || String(err),
+						referenceTargets,
+						apiVersion,
+					};
+				}
 				res.json(out);
 			}
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/query', requireAccount, _rateLimitSfReads, requireSfConnection, async (req, res, next) => {
@@ -4429,15 +4878,18 @@ out._debug = { requestUrl: url, error: (err && err.message) || String(err), refe
 		const FULL_FIELDS_RETRIEVE_BATCH = 200;
 		const fullFields = req.body && req.body.fullFields === false ? false : true;
 		try {
-			if (!await _gateCapability(req, res, 'soql-import', 'soql_import')) {
-return;
-}
+			if (!(await _gateCapability(req, res, 'soql-import', 'soql_import'))) {
+				return;
+			}
 			const soqlRaw = String((req.body && req.body.soql) || '').trim();
 			if (!soqlRaw) {
-return res.status(400).json({ error: 'soql-required' });
-}
+				return res.status(400).json({ error: 'soql-required' });
+			}
 			if (soqlRaw.length > SOQL_LEN_CAP) {
-				return res.status(400).json({ error: 'soql-too-long', message: 'Query exceeds the ' + SOQL_LEN_CAP + '-character limit.' });
+				return res.status(400).json({
+					error: 'soql-too-long',
+					message: 'Query exceeds the ' + SOQL_LEN_CAP + '-character limit.',
+				});
 			}
 			if (!/^SELECT\b/i.test(soqlRaw)) {
 				return res.status(400).json({ error: 'select-only', message: 'Only SELECT queries are supported.' });
@@ -4459,7 +4911,10 @@ return res.status(400).json({ error: 'soql-required' });
 			if (SOQL_OBJECT_DENYLIST.has(objectName.toLowerCase())) {
 				return res.status(400).json({
 					error: 'object-not-allowed',
-					message: 'Querying ' + objectName + ' is not allowed here: SOQL import is for business records, not code, metadata, or security/setup objects.',
+					message:
+						'Querying ' +
+						objectName +
+						' is not allowed here: SOQL import is for business records, not code, metadata, or security/setup objects.',
 				});
 			}
 
@@ -4491,18 +4946,21 @@ return res.status(400).json({ error: 'soql-required' });
 			const getDescribe = makeDescribeCache(conn);
 			let parentDescribe;
 			try {
- parentDescribe = await getDescribe(objectName); 
-} catch (err) {
-				return res.status(400).json({ error: 'describe-failed', message: 'Could not describe ' + objectName + ': ' + (err && err.message) });
+				parentDescribe = await getDescribe(objectName);
+			} catch (err) {
+				return res.status(400).json({
+					error: 'describe-failed',
+					message: 'Could not describe ' + objectName + ': ' + (err && err.message),
+				});
 			}
 			if (parentDescribe && parentDescribe.name) {
-objectName = parentDescribe.name;
-}
+				objectName = parentDescribe.name;
+			}
 			const childRelByName = new Map();
 			(parentDescribe.childRelationships || []).forEach((cr) => {
 				if (cr && cr.relationshipName) {
-childRelByName.set(cr.relationshipName.toLowerCase(), cr);
-}
+					childRelByName.set(cr.relationshipName.toLowerCase(), cr);
+				}
 			});
 
 			const subqueryFromMatches = soqlRaw.match(/\(\s*SELECT\b[\s\S]+?\bFROM\s+(\w+)\s*[\s\S]*?\)/gi) || [];
@@ -4512,20 +4970,28 @@ childRelByName.set(cr.relationshipName.toLowerCase(), cr);
 				}
 				const innerFromMatch = subq.match(/\bFROM\s+(\w+)/i);
 				if (!innerFromMatch) {
-continue;
-}
+					continue;
+				}
 				const relName = innerFromMatch[1];
 				const childRel = childRelByName.get(relName.toLowerCase());
 				if (!childRel) {
 					return res.status(400).json({
 						error: 'unknown-subquery-relationship',
-						message: 'Subquery relationship "' + relName + '" is not a child relationship on ' + objectName + '. Use the relationship name (e.g., "Contacts" for Account → Contact).',
+						message:
+							'Subquery relationship "' +
+							relName +
+							'" is not a child relationship on ' +
+							objectName +
+							'. Use the relationship name (e.g., "Contacts" for Account → Contact).',
 					});
 				}
 				if (childRel.childSObject && SOQL_OBJECT_DENYLIST.has(childRel.childSObject.toLowerCase())) {
 					return res.status(400).json({
 						error: 'object-not-allowed',
-						message: 'Subquery on ' + childRel.childSObject + ' is not allowed here - SOQL import is for business records, not code, metadata, or security/setup objects.',
+						message:
+							'Subquery on ' +
+							childRel.childSObject +
+							' is not allowed here - SOQL import is for business records, not code, metadata, or security/setup objects.',
 					});
 				}
 			}
@@ -4535,7 +5001,9 @@ continue;
 			try {
 				result = await conn.query(cappedSoql);
 			} catch (err) {
-				return res.status(400).json({ error: 'query-failed', message: (err && err.message) || 'Query failed.' });
+				return res
+					.status(400)
+					.json({ error: 'query-failed', message: (err && err.message) || 'Query failed.' });
 			}
 			if (!Array.isArray(result.records)) {
 				return res.status(400).json({ error: 'aggregate-not-supported' });
@@ -4549,7 +5017,7 @@ continue;
 			const records = [];
 			const associations = [];
 			let nextTempId = 1;
-			const tempIdFor = () => 't' + (nextTempId++);
+			const tempIdFor = () => 't' + nextTempId++;
 
 			for (const row of result.records) {
 				const parentTempId = tempIdFor();
@@ -4557,12 +5025,12 @@ continue;
 				const subqueryKeys = [];
 				Object.keys(row).forEach((k) => {
 					if (k === 'attributes') {
-return;
-}
+						return;
+					}
 					if (parentFieldNames.has(k)) {
 						if (row[k] !== null) {
-parentValues[k] = row[k];
-}
+							parentValues[k] = row[k];
+						}
 					} else if (row[k] && typeof row[k] === 'object' && Array.isArray(row[k].records)) {
 						subqueryKeys.push(k);
 					}
@@ -4572,17 +5040,20 @@ parentValues[k] = row[k];
 				for (const key of subqueryKeys) {
 					const childRel = childRelByName.get(key.toLowerCase());
 					if (!childRel) {
-continue;
-}
+						continue;
+					}
 					const childObjectName = childRel.childSObject;
 					if (!childObjectName) {
-continue;
-}
+						continue;
+					}
 					let childDescribe;
 					try {
- childDescribe = await getDescribe(childObjectName); 
-} catch (err) {
-						return res.status(400).json({ error: 'child-describe-failed', message: 'Could not describe ' + childObjectName + ': ' + (err && err.message) });
+						childDescribe = await getDescribe(childObjectName);
+					} catch (err) {
+						return res.status(400).json({
+							error: 'child-describe-failed',
+							message: 'Could not describe ' + childObjectName + ': ' + (err && err.message),
+						});
 					}
 					const childFieldNames = new Set((childDescribe.fields || []).map((f) => f.name));
 
@@ -4598,15 +5069,24 @@ continue;
 						const childValues = {};
 						Object.keys(childRow).forEach((ck) => {
 							if (ck === 'attributes') {
-return;
-}
+								return;
+							}
 							if (childFieldNames.has(ck) && childRow[ck] !== null) {
-childValues[ck] = childRow[ck];
-}
+								childValues[ck] = childRow[ck];
+							}
 						});
-						records.push({ tempId: childTempId, objectName: childObjectName, loadedFromId: childRow.Id, values: childValues });
+						records.push({
+							tempId: childTempId,
+							objectName: childObjectName,
+							loadedFromId: childRow.Id,
+							values: childValues,
+						});
 						if (childRel.field) {
-							associations.push({ fromTempId: childTempId, toTempId: parentTempId, fieldName: childRel.field });
+							associations.push({
+								fromTempId: childTempId,
+								toTempId: parentTempId,
+								fieldName: childRel.field,
+							});
 						}
 					}
 				}
@@ -4614,7 +5094,12 @@ childValues[ck] = childRow[ck];
 				if (records.length > SOQL_ROW_CAP) {
 					return res.status(400).json({
 						error: 'result-exceeds-cap',
-						message: 'Result would add ' + records.length + ' records (canvas cap is ' + SOQL_ROW_CAP + '). Add a LIMIT or narrow your subqueries.',
+						message:
+							'Result would add ' +
+							records.length +
+							' records (canvas cap is ' +
+							SOQL_ROW_CAP +
+							'). Add a LIMIT or narrow your subqueries.',
 					});
 				}
 			}
@@ -4623,8 +5108,8 @@ childValues[ck] = childRow[ck];
 				const idsByObject = new Map();
 				for (const r of records) {
 					if (!idsByObject.has(r.objectName)) {
-idsByObject.set(r.objectName, []);
-}
+						idsByObject.set(r.objectName, []);
+					}
 					idsByObject.get(r.objectName).push(r.loadedFromId);
 				}
 				const fullByKey = new Map();
@@ -4636,27 +5121,32 @@ idsByObject.set(r.objectName, []);
 							const arr = Array.isArray(got) ? got : [got];
 							for (const rec of arr) {
 								if (rec && rec.Id) {
-fullByKey.set(objName + '::' + rec.Id, rec);
-}
+									fullByKey.set(objName + '::' + rec.Id, rec);
+								}
 							}
 						} catch (err) {
-							console.warn('[api/query full-fields] retrieve failed for', objName, '(' + chunk.length + ' ids):', err.message || err);
+							console.warn(
+								'[api/query full-fields] retrieve failed for',
+								objName,
+								'(' + chunk.length + ' ids):',
+								err.message || err,
+							);
 						}
 					}
 				}
 				for (const r of records) {
 					const full = fullByKey.get(r.objectName + '::' + r.loadedFromId);
 					if (!full) {
-continue;
-}
+						continue;
+					}
 					const v = {};
 					Object.keys(full).forEach((k) => {
 						if (k === 'attributes') {
-return;
-}
+							return;
+						}
 						if (full[k] !== null) {
-v[k] = full[k];
-}
+							v[k] = full[k];
+						}
 					});
 					r.values = v;
 				}
@@ -4676,7 +5166,9 @@ v[k] = full[k];
 						fullFields,
 					},
 				});
-			} catch (e) { /* swallow */ }
+			} catch (e) {
+				/* swallow */
+			}
 
 			const hitCap = imposedCap && result.records.length >= SOQL_ROW_CAP;
 			res.json({
@@ -4685,7 +5177,7 @@ v[k] = full[k];
 				associations,
 				totalSize: result.totalSize || result.records.length,
 				returned: result.records.length,
-				truncated: ((result.totalSize || 0) > result.records.length) || hitCap,
+				truncated: (result.totalSize || 0) > result.records.length || hitCap,
 				capped: hitCap,
 				cap: SOQL_ROW_CAP,
 				fullFields,
@@ -4701,11 +5193,12 @@ v[k] = full[k];
 					errorCode: (err && (err.errorCode || err.name)) || 'query-failed',
 					payload: null,
 				});
-			} catch (_eAudit) { /* best-effort */ }
+			} catch (_eAudit) {
+				/* best-effort */
+			}
 			res.status(500).json({ error: 'query-failed', message: (err && err.message) || 'Query failed.' });
 		}
 	});
-
 
 	app.get('/api/objects/:name/graph', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
@@ -4723,20 +5216,20 @@ v[k] = full[k];
 			const parentSeen = new Set();
 			for (const f of describe.fields) {
 				if (f.type !== 'reference' || !f.referenceTo || f.referenceTo.length === 0) {
-continue;
-}
+					continue;
+				}
 				for (const target of f.referenceTo) {
 					const key = target + '|' + f.name;
 					if (parentSeen.has(key)) {
-continue;
-}
+						continue;
+					}
 					parentSeen.add(key);
 					if (queryableSet && !queryableSet.has(target)) {
-continue;
-}
+						continue;
+					}
 					if (isNoise(target)) {
-continue;
-}
+						continue;
+					}
 					parents.push({
 						object: target,
 						field: f.name,
@@ -4751,18 +5244,18 @@ continue;
 			const childSeen = new Set();
 			for (const cr of describe.childRelationships || []) {
 				if (!cr.childSObject) {
-continue;
-}
+					continue;
+				}
 				if (isNoise(cr.childSObject)) {
-continue;
-}
+					continue;
+				}
 				if (queryableSet && !queryableSet.has(cr.childSObject)) {
-continue;
-}
+					continue;
+				}
 				const key = cr.childSObject + '|' + (cr.field || '');
 				if (childSeen.has(key)) {
-continue;
-}
+					continue;
+				}
 				childSeen.add(key);
 				children.push({
 					object: cr.childSObject,
@@ -4777,8 +5270,8 @@ continue;
 				children,
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.get('/api/objects/:name/validation-rules', requireAccount, requireSfConnection, async (req, res) => {
@@ -4798,7 +5291,7 @@ continue;
 	app.post('/api/records/refresh', requireAccount, requireSfConnection, async (req, res, next) => {
 		const MAX_RECORDS = 200;
 		try {
-			if (!await _gateCapability(req, res, 'browse-records', 'records_refresh')) {
+			if (!(await _gateCapability(req, res, 'browse-records', 'records_refresh'))) {
 				return;
 			}
 			const input = Array.isArray(req.body && req.body.records) ? req.body.records : [];
@@ -4856,10 +5349,14 @@ continue;
 				} catch (err) {
 					console.warn('[refresh] retrieve failed for', objectName, ':', err && err.message);
 					const code = err && err.errorCode;
-					objectErrors.set(objectName,
-						code === 'INVALID_TYPE' ? 'invalid-object'
-						: code === 'INSUFFICIENT_ACCESS' ? 'no-access'
-						: 'retrieve-failed');
+					objectErrors.set(
+						objectName,
+						code === 'INVALID_TYPE'
+							? 'invalid-object'
+							: code === 'INSUFFICIENT_ACCESS'
+								? 'no-access'
+								: 'retrieve-failed',
+					);
 				}
 			}
 			const objectCounts = {};
@@ -4910,9 +5407,9 @@ continue;
 		const PREVIEW_MAX = 200;
 		const FILTER_MAX = 12;
 		try {
-			if (!await _gateCapability(req, res, 'browse-records', 'browse_records')) {
-return;
-}
+			if (!(await _gateCapability(req, res, 'browse-records', 'browse_records'))) {
+				return;
+			}
 			const body = req.body || {};
 			const objectName = String(body.objectName || '').trim();
 			if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(objectName)) {
@@ -4932,10 +5429,10 @@ return;
 
 			const describe = await req.sf.conn.sobject(objectName).describe();
 			const fieldByName = new Map();
-			for (const f of (describe.fields || [])) {
+			for (const f of describe.fields || []) {
 				if (f && f.name) {
-fieldByName.set(f.name, f);
-}
+					fieldByName.set(f.name, f);
+				}
 			}
 
 			function _soqlString(v) {
@@ -4944,15 +5441,15 @@ fieldByName.set(f.name, f);
 			function _soqlId(v) {
 				const s = String(v).trim();
 				if (!/^[a-zA-Z0-9]{15,18}$/.test(s)) {
-throw new Error('Invalid Salesforce id: ' + s);
-}
+					throw new Error('Invalid Salesforce id: ' + s);
+				}
 				return "'" + s + "'";
 			}
 			function _soqlDate(v) {
 				const s = String(v).trim();
 				if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-throw new Error('Invalid date (YYYY-MM-DD): ' + s);
-}
+					throw new Error('Invalid date (YYYY-MM-DD): ' + s);
+				}
 				return s;
 			}
 			function _soqlDateTime(v) {
@@ -4965,15 +5462,15 @@ throw new Error('Invalid date (YYYY-MM-DD): ' + s);
 			function _soqlNumber(v) {
 				const n = Number(v);
 				if (!isFinite(n)) {
-throw new Error('Invalid number: ' + v);
-}
+					throw new Error('Invalid number: ' + v);
+				}
 				return String(n);
 			}
 
 			function _compileFilter(filt) {
 				if (!filt || typeof filt !== 'object') {
-return null;
-}
+					return null;
+				}
 				const fieldName = String(filt.field || '').trim();
 				const fieldCheck = validateSoqlFilterField(describe, fieldName);
 				if (!fieldCheck.ok) {
@@ -4983,56 +5480,56 @@ return null;
 				const op = String(filt.op || '').trim();
 				const v = filt.value;
 				if (op === 'isNull') {
-return `${fieldName} = null`;
-}
+					return `${fieldName} = null`;
+				}
 				if (op === 'isNotNull') {
-return `${fieldName} != null`;
-}
+					return `${fieldName} != null`;
+				}
 				const t = field.type;
 				const stringTypes = new Set(['string', 'textarea', 'phone', 'url', 'email', 'encryptedstring']);
 				const numericTypes = new Set(['int', 'double', 'currency', 'percent']);
 				const picklistTypes = new Set(['picklist', 'combobox']);
 				if (stringTypes.has(t)) {
 					if (op === 'equals') {
-return `${fieldName} = ${_soqlString(v)}`;
-}
+						return `${fieldName} = ${_soqlString(v)}`;
+					}
 					if (op === 'notEquals') {
-return `${fieldName} != ${_soqlString(v)}`;
-}
+						return `${fieldName} != ${_soqlString(v)}`;
+					}
 					if (op === 'contains') {
-return `${fieldName} LIKE ${_soqlString('%' + String(v) + '%')}`;
-}
+						return `${fieldName} LIKE ${_soqlString('%' + String(v) + '%')}`;
+					}
 					if (op === 'startsWith') {
-return `${fieldName} LIKE ${_soqlString(String(v) + '%')}`;
-}
+						return `${fieldName} LIKE ${_soqlString(String(v) + '%')}`;
+					}
 				}
 				if (numericTypes.has(t)) {
 					if (op === 'equals') {
-return `${fieldName} = ${_soqlNumber(v)}`;
-}
+						return `${fieldName} = ${_soqlNumber(v)}`;
+					}
 					if (op === 'notEquals') {
-return `${fieldName} != ${_soqlNumber(v)}`;
-}
+						return `${fieldName} != ${_soqlNumber(v)}`;
+					}
 					if (op === 'gt') {
-return `${fieldName} > ${_soqlNumber(v)}`;
-}
+						return `${fieldName} > ${_soqlNumber(v)}`;
+					}
 					if (op === 'gte') {
-return `${fieldName} >= ${_soqlNumber(v)}`;
-}
+						return `${fieldName} >= ${_soqlNumber(v)}`;
+					}
 					if (op === 'lt') {
-return `${fieldName} < ${_soqlNumber(v)}`;
-}
+						return `${fieldName} < ${_soqlNumber(v)}`;
+					}
 					if (op === 'lte') {
-return `${fieldName} <= ${_soqlNumber(v)}`;
-}
+						return `${fieldName} <= ${_soqlNumber(v)}`;
+					}
 				}
 				if (picklistTypes.has(t)) {
 					if (op === 'equals') {
-return `${fieldName} = ${_soqlString(v)}`;
-}
+						return `${fieldName} = ${_soqlString(v)}`;
+					}
 					if (op === 'notEquals') {
-return `${fieldName} != ${_soqlString(v)}`;
-}
+						return `${fieldName} != ${_soqlString(v)}`;
+					}
 					if (op === 'in' && Array.isArray(v) && v.length > 0) {
 						const parts = v.map((x) => _soqlString(x)).join(', ');
 						return `${fieldName} IN (${parts})`;
@@ -5040,48 +5537,48 @@ return `${fieldName} != ${_soqlString(v)}`;
 				}
 				if (t === 'reference') {
 					if (op === 'equals') {
-return `${fieldName} = ${_soqlId(v)}`;
-}
+						return `${fieldName} = ${_soqlId(v)}`;
+					}
 					if (op === 'notEquals') {
-return `${fieldName} != ${_soqlId(v)}`;
-}
+						return `${fieldName} != ${_soqlId(v)}`;
+					}
 				}
 				if (t === 'date') {
 					if (op === 'equals') {
-return `${fieldName} = ${_soqlDate(v)}`;
-}
+						return `${fieldName} = ${_soqlDate(v)}`;
+					}
 					if (op === 'notEquals') {
-return `${fieldName} != ${_soqlDate(v)}`;
-}
+						return `${fieldName} != ${_soqlDate(v)}`;
+					}
 					if (op === 'before') {
-return `${fieldName} < ${_soqlDate(v)}`;
-}
+						return `${fieldName} < ${_soqlDate(v)}`;
+					}
 					if (op === 'after') {
-return `${fieldName} > ${_soqlDate(v)}`;
-}
+						return `${fieldName} > ${_soqlDate(v)}`;
+					}
 					if (op === 'between' && Array.isArray(v) && v.length === 2) {
 						return `(${fieldName} >= ${_soqlDate(v[0])} AND ${fieldName} <= ${_soqlDate(v[1])})`;
 					}
 				}
 				if (t === 'datetime') {
 					if (op === 'equals') {
-return `${fieldName} = ${_soqlDateTime(v)}`;
-}
+						return `${fieldName} = ${_soqlDateTime(v)}`;
+					}
 					if (op === 'notEquals') {
-return `${fieldName} != ${_soqlDateTime(v)}`;
-}
+						return `${fieldName} != ${_soqlDateTime(v)}`;
+					}
 					if (op === 'before') {
-return `${fieldName} < ${_soqlDateTime(v)}`;
-}
+						return `${fieldName} < ${_soqlDateTime(v)}`;
+					}
 					if (op === 'after') {
-return `${fieldName} > ${_soqlDateTime(v)}`;
-}
+						return `${fieldName} > ${_soqlDateTime(v)}`;
+					}
 				}
 				if (t === 'boolean') {
 					const bv = v === true || v === 'true' || v === 1 || v === '1';
 					if (op === 'equals') {
-return `${fieldName} = ${bv ? 'true' : 'false'}`;
-}
+						return `${fieldName} = ${bv ? 'true' : 'false'}`;
+					}
 				}
 				throw new Error('Unsupported operator "' + op + '" for ' + t + ' field "' + fieldName + '"');
 			}
@@ -5105,14 +5602,14 @@ return `${fieldName} = ${bv ? 'true' : 'false'}`;
 			const previewFields = ['Id'];
 			const nameFieldDesc = (describe.fields || []).find((f) => f && f.nameField);
 			if (nameFieldDesc) {
-previewFields.push(nameFieldDesc.name);
-}
+				previewFields.push(nameFieldDesc.name);
+			}
 			for (const f of filters) {
 				if (f && f.field && fieldByName.has(f.field) && !previewFields.includes(f.field)) {
 					previewFields.push(f.field);
 					if (previewFields.length >= 6) {
-break;
-}
+						break;
+					}
 				}
 			}
 			const selectClause = previewFields.join(', ');
@@ -5172,8 +5669,8 @@ break;
 				loadSoql,
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/migrate/match', requireAccount, _rateLimitSfReads, requireSfConnection, async (req, res, next) => {
@@ -5181,7 +5678,7 @@ break;
 		const CHUNK = 200;
 		const RESULT_ROWS_MAX = 10000;
 		try {
-			if (!await _gateCapability(req, res, 'browse-records', 'browse_records')) {
+			if (!(await _gateCapability(req, res, 'browse-records', 'browse_records'))) {
 				return;
 			}
 			const body = req.body || {};
@@ -5221,14 +5718,15 @@ break;
 			const describe = await conn.sobject(objectName).describe();
 			const fieldCheck = validateSoqlFilterField(describe, keyField);
 			if (!fieldCheck.ok) {
-				const error = fieldCheck.reason === 'field-not-filterable'
-					? 'key-field-not-filterable'
-					: 'unknown-key-field';
+				const error =
+					fieldCheck.reason === 'field-not-filterable' ? 'key-field-not-filterable' : 'unknown-key-field';
 				return res.status(400).json({
 					error,
-					message: (fieldCheck.reason === 'field-not-filterable'
-						? (fieldCheck.field.label || keyField) + ' cannot be used to find matching records.'
-						: fieldCheck.message) + ' Choose a different field, preferably an external ID or unique field.',
+					message:
+						(fieldCheck.reason === 'field-not-filterable'
+							? (fieldCheck.field.label || keyField) + ' cannot be used to find matching records.'
+							: fieldCheck.message) +
+						' Choose a different field, preferably an external ID or unique field.',
 					field: keyField,
 				});
 			}
@@ -5238,9 +5736,7 @@ break;
 			const caseInsensitiveTypes = new Set(['string', 'email', 'phone', 'url', 'textarea']);
 			const normalizeValue = (value) => {
 				const s = normalizeSoqlFieldValue(value, fieldType);
-				return caseInsensitiveTypes.has(fieldType)
-					? s.toLowerCase()
-					: s;
+				return caseInsensitiveTypes.has(fieldType) ? s.toLowerCase() : s;
 			};
 			const requestedByNormalized = new Map();
 			try {
@@ -5260,24 +5756,33 @@ break;
 			const nameFieldMeta = (describe.fields || []).find((f) => f && f.nameField);
 			const nameField = nameFieldMeta && nameFieldMeta.name;
 			const hasLastModified = (describe.fields || []).some((f) => f && f.name === 'LastModifiedDate');
-			const selectFields = Array.from(new Set(
-				['Id', keyField, nameField, hasLastModified ? 'LastModifiedDate' : null].filter(Boolean),
-			));
+			const selectFields = Array.from(
+				new Set(['Id', keyField, nameField, hasLastModified ? 'LastModifiedDate' : null].filter(Boolean)),
+			);
 			const candidatesByNormalized = new Map();
 			let resultRows = 0;
 			for (let i = 0; i < values.length; i += CHUNK) {
 				const slice = values.slice(i, i + CHUNK);
 				const inList = slice.map((v) => formatSoqlFieldLiteral(v, fieldType)).join(',');
-				const soql = 'SELECT ' + selectFields.join(', ') + ' FROM ' + objectName +
-					' WHERE ' + keyField + ' IN (' + inList + ')';
+				const soql =
+					'SELECT ' +
+					selectFields.join(', ') +
+					' FROM ' +
+					objectName +
+					' WHERE ' +
+					keyField +
+					' IN (' +
+					inList +
+					')';
 				let page = await conn.query(soql);
 				while (page) {
-					for (const rec of (page.records || [])) {
+					for (const rec of page.records || []) {
 						resultRows++;
 						if (resultRows > RESULT_ROWS_MAX) {
 							return res.status(422).json({
 								error: 'too-many-match-results',
-								message: 'This field returned too many possible matches. Choose a more specific field, such as an external ID or unique field.',
+								message:
+									'This field returned too many possible matches. Choose a more specific field, such as an external ID or unique field.',
 							});
 						}
 						const kv = rec[keyField];
@@ -5366,24 +5871,25 @@ break;
 				records: (result.records || []).map((r) => ({ id: r.Id, name: r[nameField] })),
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
-	const _RELATED_FILTER_SHAPE_RE = /can not be filtered|cannot be filtered|INVALID_FIELD|MALFORMED_QUERY|UNSUPPORTED_API_VERSION|not supported on the/i;
+	const _RELATED_FILTER_SHAPE_RE =
+		/can not be filtered|cannot be filtered|INVALID_FIELD|MALFORMED_QUERY|UNSUPPORTED_API_VERSION|not supported on the/i;
 	app.get('/api/objects/:name/related-count', requireAccount, requireSfConnection, async (req, res, next) => {
 		const name = req.params.name;
 		const field = String(req.query.field || '').trim();
 		const id = String(req.query.id || '').trim();
 		if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-return res.status(400).json({ error: 'invalid-object-name' });
-}
+			return res.status(400).json({ error: 'invalid-object-name' });
+		}
 		if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field)) {
-return res.status(400).json({ error: 'invalid-field' });
-}
+			return res.status(400).json({ error: 'invalid-field' });
+		}
 		if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
-return res.status(400).json({ error: 'invalid-id' });
-}
+			return res.status(400).json({ error: 'invalid-id' });
+		}
 		try {
 			const describe = await req.sf.conn.sobject(name).describe();
 			const fieldCheck = validateSoqlFilterField(describe, field, { requireReference: true });
@@ -5406,11 +5912,11 @@ return res.status(400).json({ error: 'invalid-id' });
 	app.post('/api/related-counts', requireAccount, requireSfConnection, async (req, res, next) => {
 		const probes = Array.isArray(req.body?.probes) ? req.body.probes : [];
 		if (probes.length === 0) {
-return res.json({ counts: [] });
-}
+			return res.json({ counts: [] });
+		}
 		if (probes.length > 200) {
-return res.status(400).json({ error: 'too-many-probes' });
-}
+			return res.status(400).json({ error: 'too-many-probes' });
+		}
 		try {
 			const conn = req.sf.conn;
 			const getDescribe = makeDescribeCache(conn);
@@ -5421,24 +5927,28 @@ return res.status(400).json({ error: 'too-many-probes' });
 				while (true) {
 					const idx = nextProbeIdx++;
 					if (idx >= probes.length) {
-return;
-}
+						return;
+					}
 					const p = probes[idx];
 					if (!p) {
- results[idx] = null; continue; 
-}
+						results[idx] = null;
+						continue;
+					}
 					const name = String(p.name || '').trim();
 					const field = String(p.field || '').trim();
 					const id = String(p.id || '').trim();
 					if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
- results[idx] = { name, field, id, count: 0, skipped: true, reason: 'invalid-name' }; continue; 
-}
+						results[idx] = { name, field, id, count: 0, skipped: true, reason: 'invalid-name' };
+						continue;
+					}
 					if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field)) {
- results[idx] = { name, field, id, count: 0, skipped: true, reason: 'invalid-field' }; continue; 
-}
+						results[idx] = { name, field, id, count: 0, skipped: true, reason: 'invalid-field' };
+						continue;
+					}
 					if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
- results[idx] = { name, field, id, count: 0, skipped: true, reason: 'invalid-id' }; continue; 
-}
+						results[idx] = { name, field, id, count: 0, skipped: true, reason: 'invalid-id' };
+						continue;
+					}
 					try {
 						const describe = await getDescribe(name);
 						const fieldCheck = validateSoqlFilterField(describe, field, { requireReference: true });
@@ -5447,14 +5957,30 @@ return;
 							continue;
 						}
 						const escapedId = escapeSoqlLiteral(id);
-						const soql = 'SELECT COUNT() FROM ' + name + ' WHERE ' + fieldCheck.field.name + " = '" + escapedId + "'";
+						const soql =
+							'SELECT COUNT() FROM ' +
+							name +
+							' WHERE ' +
+							fieldCheck.field.name +
+							" = '" +
+							escapedId +
+							"'";
 						const result = await withSfRetry(() => conn.query(soql));
-						results[idx] = { name, field, id, count: typeof result.totalSize === 'number' ? result.totalSize : 0 };
+						results[idx] = {
+							name,
+							field,
+							id,
+							count: typeof result.totalSize === 'number' ? result.totalSize : 0,
+						};
 					} catch (err) {
 						const msg = (err && (err.errorCode || err.message)) || '';
 						const filterShape = _RELATED_FILTER_SHAPE_RE.test(String(msg));
 						results[idx] = {
-							name, field, id, count: 0, skipped: true,
+							name,
+							field,
+							id,
+							count: 0,
+							skipped: true,
 							reason: filterShape ? 'unsupported' : 'error',
 							error: filterShape ? undefined : String(msg).slice(0, 120),
 						};
@@ -5465,8 +5991,8 @@ return;
 			await Promise.all(workers);
 			res.json({ counts: results.filter(Boolean) });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.get('/api/objects/:name/by-ref', requireAccount, requireSfConnection, async (req, res, next) => {
@@ -5475,14 +6001,14 @@ return;
 		const id = String(req.query.id || '').trim();
 		const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 200);
 		if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-return res.status(400).json({ error: 'invalid-object-name' });
-}
+			return res.status(400).json({ error: 'invalid-object-name' });
+		}
 		if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field)) {
-return res.status(400).json({ error: 'invalid-field' });
-}
+			return res.status(400).json({ error: 'invalid-field' });
+		}
 		if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
-return res.status(400).json({ error: 'invalid-id' });
-}
+			return res.status(400).json({ error: 'invalid-id' });
+		}
 		try {
 			const conn = req.sf.conn;
 			const describe = await conn.sobject(name).describe();
@@ -5490,13 +6016,29 @@ return res.status(400).json({ error: 'invalid-id' });
 			if (!fieldCheck.ok) {
 				return res.json({ records: [], skipped: true, reason: fieldCheck.reason });
 			}
-			const selectable = Array.from(new Set(['Id'].concat(
-				describe.fields
-					.filter((f) => (f.createable || f.nameField) && f.type !== 'address' && f.type !== 'location')
-					.map((f) => f.name),
-			)));
+			const selectable = Array.from(
+				new Set(
+					['Id'].concat(
+						describe.fields
+							.filter(
+								(f) => (f.createable || f.nameField) && f.type !== 'address' && f.type !== 'location',
+							)
+							.map((f) => f.name),
+					),
+				),
+			);
 			const escapedId = escapeSoqlLiteral(id);
-			const soql = 'SELECT ' + selectable.join(', ') + ' FROM ' + name + ' WHERE ' + fieldCheck.field.name + " = '" + escapedId + "' LIMIT " + limit;
+			const soql =
+				'SELECT ' +
+				selectable.join(', ') +
+				' FROM ' +
+				name +
+				' WHERE ' +
+				fieldCheck.field.name +
+				" = '" +
+				escapedId +
+				"' LIMIT " +
+				limit;
 			const result = await conn.query(soql);
 			res.json({ records: result.records || [] });
 		} catch (err) {
@@ -5515,14 +6057,14 @@ return res.status(400).json({ error: 'invalid-id' });
 		const q = String(req.query.q || '').trim();
 		const limit = Math.min(parseInt(req.query.limit || '20', 10) || 20, 50);
 		if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-return res.status(400).json({ error: 'invalid-object-name' });
-}
+			return res.status(400).json({ error: 'invalid-object-name' });
+		}
 		if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field)) {
-return res.status(400).json({ error: 'invalid-field' });
-}
+			return res.status(400).json({ error: 'invalid-field' });
+		}
 		if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
-return res.status(400).json({ error: 'invalid-id' });
-}
+			return res.status(400).json({ error: 'invalid-id' });
+		}
 		try {
 			const conn = req.sf.conn;
 			const describe = await conn.sobject(name).describe();
@@ -5545,11 +6087,19 @@ return res.status(400).json({ error: 'invalid-id' });
 			const escapedQ = escapeSoqlLiteral(q);
 			const filters = [fieldCheck.field.name + " = '" + escapedId + "'"];
 			if (q) {
-filters.push(nameField + " LIKE '%" + escapedQ + "%'");
-}
-			const soql = 'SELECT Id, ' + nameField + ' FROM ' + name +
-				' WHERE ' + filters.join(' AND ') +
-				' ORDER BY ' + nameField + ' LIMIT ' + limit;
+				filters.push(nameField + " LIKE '%" + escapedQ + "%'");
+			}
+			const soql =
+				'SELECT Id, ' +
+				nameField +
+				' FROM ' +
+				name +
+				' WHERE ' +
+				filters.join(' AND ') +
+				' ORDER BY ' +
+				nameField +
+				' LIMIT ' +
+				limit;
 			const result = await conn.query(soql);
 			res.json({
 				nameField,
@@ -5581,21 +6131,26 @@ filters.push(nameField + " LIKE '%" + escapedQ + "%'");
 			} else {
 				url = apiBase + '/ui-api/record-defaults/create/' + encodeURIComponent(name);
 				if (recordTypeId) {
-url += '?recordTypeIds=' + encodeURIComponent(recordTypeId);
-}
+					url += '?recordTypeIds=' + encodeURIComponent(recordTypeId);
+				}
 			}
 			let data;
 			try {
 				data = await conn.request(url);
 			} catch (err) {
-				return res.json({ sections: [], available: false, reason: (err && err.message) || 'Layout not available' });
+				return res.json({
+					sections: [],
+					available: false,
+					reason: (err && err.message) || 'Layout not available',
+				});
 			}
 			let layout = null;
 			let resolvedRecordTypeId = recordTypeId;
 			if (data && data.layouts) {
 				const objKey = Object.keys(data.layouts)[0];
 				const rtMap = (objKey && data.layouts[objKey]) || {};
-				const rtKey = (resolvedRecordTypeId && rtMap[resolvedRecordTypeId]) ? resolvedRecordTypeId : Object.keys(rtMap)[0];
+				const rtKey =
+					resolvedRecordTypeId && rtMap[resolvedRecordTypeId] ? resolvedRecordTypeId : Object.keys(rtMap)[0];
 				resolvedRecordTypeId = rtKey || null;
 				const layoutWrap = rtKey ? rtMap[rtKey] : null;
 				layout = layoutWrap && layoutWrap.Full && layoutWrap.Full.Edit ? layoutWrap.Full.Edit : null;
@@ -5607,21 +6162,27 @@ url += '?recordTypeIds=' + encodeURIComponent(recordTypeId);
 			}
 			const sections = [];
 			(layout.sections || []).forEach((section) => {
-				const rows = (section.layoutRows || []).map((row) =>
-					(row.layoutItems || []).map((item) => {
-						const comp = (item.layoutComponents || []).find((c) => c && c.componentType === 'Field');
-						if (!comp || !comp.apiName) {
-return null;
-}
-						return {
-							apiName: comp.apiName,
-							label: item.label || comp.apiName,
-							required: !!item.required,
-							editableForNew: item.editableForNew !== false,
-							editableForUpdate: item.editableForUpdate !== false,
-						};
-					}).filter(Boolean),
-				).filter((r) => r.length > 0);
+				const rows = (section.layoutRows || [])
+					.map((row) =>
+						(row.layoutItems || [])
+							.map((item) => {
+								const comp = (item.layoutComponents || []).find(
+									(c) => c && c.componentType === 'Field',
+								);
+								if (!comp || !comp.apiName) {
+									return null;
+								}
+								return {
+									apiName: comp.apiName,
+									label: item.label || comp.apiName,
+									required: !!item.required,
+									editableForNew: item.editableForNew !== false,
+									editableForUpdate: item.editableForUpdate !== false,
+								};
+							})
+							.filter(Boolean),
+					)
+					.filter((r) => r.length > 0);
 				if (rows.length > 0) {
 					sections.push({
 						heading: section.heading || '',
@@ -5632,13 +6193,14 @@ return null;
 				}
 			});
 			const defaults = {};
-			const recordSource = data.record || (data.records && (data.records[recordId] || data.records[Object.keys(data.records)[0]]));
+			const recordSource =
+				data.record || (data.records && (data.records[recordId] || data.records[Object.keys(data.records)[0]]));
 			if (recordSource && recordSource.fields) {
 				Object.keys(recordSource.fields).forEach((fname) => {
 					const v = recordSource.fields[fname];
 					if (v && v.value != null) {
-defaults[fname] = v.value;
-}
+						defaults[fname] = v.value;
+					}
 				});
 			}
 			const fieldPerms = {};
@@ -5658,8 +6220,8 @@ defaults[fname] = v.value;
 				Object.keys(plSrc).forEach((fname) => {
 					const entry = plSrc[fname];
 					if (!entry || !Array.isArray(entry.values)) {
-return;
-}
+						return;
+					}
 					picklistValues[fname] = {
 						controllerValues: entry.controllerValues || null,
 						defaultValue: entry.defaultValue ? entry.defaultValue.value : null,
@@ -5681,8 +6243,8 @@ return;
 				picklistValues,
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/objects/:name/duplicates', requireAccount, requireSfConnection, async (req, res, next) => {
@@ -5693,8 +6255,8 @@ return;
 			}
 			const fields = req.body && req.body.fields && typeof req.body.fields === 'object' ? req.body.fields : null;
 			if (!fields) {
-return res.status(400).json({ error: 'fields-required' });
-}
+				return res.status(400).json({ error: 'fields-required' });
+			}
 			const conn = req.sf.conn;
 			const apiVersion = conn.version || '60.0';
 			const apiBase = '/services/data/v' + apiVersion;
@@ -5709,29 +6271,34 @@ return res.status(400).json({ error: 'fields-required' });
 				((data && data.matchResults) || []).forEach((mr) => {
 					((mr && mr.matchRecords) || []).forEach((m) => {
 						if (!m || !m.record) {
-return;
-}
+							return;
+						}
 						matches.push({
 							id: m.record.id,
 							apiName: m.record.apiName,
 							matchEngine: mr.matchEngine || null,
 							matchConfidence: m.matchConfidence || null,
-							title: (m.record.fields && m.record.fields.Name && m.record.fields.Name.value) || m.record.id,
+							title:
+								(m.record.fields && m.record.fields.Name && m.record.fields.Name.value) || m.record.id,
 						});
 					});
 				});
 				res.json({ duplicates: matches, available: true });
 			} catch (err) {
-				res.json({ duplicates: [], available: false, reason: (err && err.message) || 'Duplicate check unavailable' });
+				res.json({
+					duplicates: [],
+					available: false,
+					reason: (err && err.message) || 'Duplicate check unavailable',
+				});
 			}
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/objects/:name/records', requireAccount, requireSfConnection, async (req, res) => {
 		try {
-			if (!await _gateCapability(req, res, 'upload-records', 'record_insert')) {
+			if (!(await _gateCapability(req, res, 'upload-records', 'record_insert'))) {
 				return;
 			}
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
@@ -5745,9 +6312,10 @@ return;
 				return res.status(403).json({
 					error: orgGate.reason,
 					approvalStatus: orgGate.approvalStatus,
-					message: orgGate.reason === 'approval-required'
-						? 'Writes to this production org are pending admin approval.'
-						: 'This action is blocked by workspace policy.',
+					message:
+						orgGate.reason === 'approval-required'
+							? 'Writes to this production org are pending admin approval.'
+							: 'This action is blocked by workspace policy.',
 				});
 			}
 			const result = await req.sf.conn.sobject(req.params.name).create(req.body);
@@ -5759,7 +6327,9 @@ return;
 					targetSfOrgId: req.sf.sfOrgId,
 					payload: { sfRecordId: (result && result.id) || null, success: !!(result && result.success) },
 				});
-			} catch (e) { /* best effort */ }
+			} catch (e) {
+				/* best effort */
+			}
 			res.json(result);
 		} catch (err) {
 			try {
@@ -5772,7 +6342,9 @@ return;
 					errorCode: (err && err.errorCode) || 'record-insert-failed',
 					payload: null,
 				});
-			} catch (e) { /* best effort */ }
+			} catch (e) {
+				/* best effort */
+			}
 			res.status(400).json({
 				error: err.message || String(err),
 				errorCode: err.errorCode,
@@ -5802,13 +6374,9 @@ return;
 				})),
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
-
-
-
-
 
 	app.get('/api/connections', requireAccount, async (req, res, next) => {
 		try {
@@ -5829,15 +6397,16 @@ return;
 					email: c.email,
 					lastUsedAt: c.last_used_at,
 					isActive: c.id === activeId,
-					canResume: activeSfUserId !== null
-						&& activeSfOrgId !== null
-						&& c.sf_user_id === activeSfUserId
-						&& c.sf_org_id === activeSfOrgId,
+					canResume:
+						activeSfUserId !== null &&
+						activeSfOrgId !== null &&
+						c.sf_user_id === activeSfUserId &&
+						c.sf_org_id === activeSfOrgId,
 				})),
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/connections/:id/activate', requireAccount, async (req, res, next) => {
@@ -5845,23 +6414,24 @@ return;
 			const c = await connectionsDb.findById(req.params.id);
 			if (!c || c.account_id !== req.account.id) {
 				if (c) {
-await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'activate');
-}
+					await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'activate');
+				}
 				return res.status(404).json({ error: 'connection-not-found' });
 			}
 			if (c.disabled_at) {
 				return res.status(409).json({ error: 'connection-disabled' });
 			}
 			const sfAuth = req.session && req.session.sfAuth;
-			const identityMatches = sfAuth
-				&& sfAuth.sfUserId === c.sf_user_id
-				&& sfAuth.sfOrgId === c.sf_org_id;
+			const identityMatches = sfAuth && sfAuth.sfUserId === c.sf_user_id && sfAuth.sfOrgId === c.sf_org_id;
 			if (!identityMatches) {
 				const byConn = (req.session && req.session.sfAuthByConnection) || {};
 				const stored = byConn[c.id];
-				if (stored && stored.accessToken
-					&& stored.sfUserId === c.sf_user_id
-					&& stored.sfOrgId === c.sf_org_id) {
+				if (
+					stored &&
+					stored.accessToken &&
+					stored.sfUserId === c.sf_user_id &&
+					stored.sfOrgId === c.sf_org_id
+				) {
 					req.session.sfAuth = stored;
 					req.session.currentConnectionId = c.id;
 					await viewStateDb.setCurrentConnection(req.account.id, c.id);
@@ -5870,8 +6440,10 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'activate')
 					return res.json({ ok: true, connectionId: c.id, switched: 'in-session' });
 				}
 				let loginUrl = '/auth/login?force=1';
-				if (typeof c.instance_url === 'string'
-					&& /^https:\/\/[a-z0-9.-]+(?:\.salesforce\.com|\.lightning\.force\.com)(\/.*)?$/i.test(c.instance_url)) {
+				if (
+					typeof c.instance_url === 'string' &&
+					/^https:\/\/[a-z0-9.-]+(?:\.salesforce\.com|\.lightning\.force\.com)(\/.*)?$/i.test(c.instance_url)
+				) {
 					loginUrl += '&loginUrl=' + encodeURIComponent(c.instance_url.replace(/\/+$/, ''));
 				}
 				return res.status(409).json({ error: 'reauth-required', loginUrl });
@@ -5882,8 +6454,8 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'activate')
 			await _auditConnectionActivated(req, c, 'active-session');
 			res.json({ ok: true, connectionId: c.id });
 		} catch (err) {
- next(err);
-}
+			next(err);
+		}
 	});
 
 	app.delete('/api/connections/:id', requireAccount, async (req, res, next) => {
@@ -5891,8 +6463,8 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'activate')
 			const c = await connectionsDb.findById(req.params.id);
 			if (!c || c.account_id !== req.account.id) {
 				if (c) {
-await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'delete');
-}
+					await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'delete');
+				}
 				return res.status(404).json({ error: 'connection-not-found' });
 			}
 			await connectionsDb.disable(c.id);
@@ -5909,7 +6481,6 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'delete');
 			if (req.session && req.session.sfAuthByConnection) {
 				delete req.session.sfAuthByConnection[c.id];
 			}
-
 
 			await ext.auditWrite({
 				req,
@@ -5937,10 +6508,6 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'delete');
 		}
 	});
 
-
-
-
-
 	app.get('/api/canvas/:id/proposals', requireAccount, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
@@ -5952,533 +6519,576 @@ await _auditCrossAccountConnAccess(req, req.params.id, c.account_id, 'delete');
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
-return res.status(409).json({ error: 'no-active-workspace' });
-}
+				return res.status(409).json({ error: 'no-active-workspace' });
+			}
 			const all = await proposalsDb.listPendingForCanvas(canvasId);
 			const visible = all.filter((p) => p.workspaceId === workspaceId);
 			res.json({ proposals: visible });
 		} catch (err) {
- next(err); 
-}
-	});
-
-	app.post('/api/canvas/:id/proposals/:proposalId/apply', requireAccount, requireSfConnectionUnlessDraft, async (req, res, next) => {
-		try {
-			const canvasId = req.params.id;
-			const proposalId = req.params.proposalId;
-			const isDraft = /^draft-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canvasId);
-			const isSf = /^[a-zA-Z0-9]{15,18}$/.test(canvasId);
-			if (!isDraft && !isSf) {
-				return res.status(400).json({ error: 'invalid-id' });
-			}
-			const proposal = await proposalsDb.findById(proposalId);
-			if (!proposal) {
-return res.status(404).json({ error: 'proposal-not-found' });
-}
-			if (proposal.canvasId !== canvasId) {
-				return res.status(400).json({ error: 'canvas-mismatch' });
-			}
-			if (proposal.status !== 'pending') {
-				return res.status(409).json({ error: 'proposal-not-pending', status: proposal.status });
-			}
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
-			if (workspaceId !== proposal.workspaceId) {
-				return res.status(403).json({ error: 'workspace-mismatch' });
-			}
-
-			if (!await _gateCapability(req, res, 'ai-edit-on-canvas', 'proposal_apply')) {
-				return;
-			}
-
-			const overrides = (req.body && req.body.overrides) || {};
-			const skipIds = new Set(Array.isArray(req.body && req.body.skipRecordIds)
-				? req.body.skipRecordIds.map(String) : []);
-			const skipChangeIndexes = new Set();
-			if (Array.isArray(req.body && req.body.skipChangeIndexes)) {
-				for (const idx of req.body.skipChangeIndexes) {
-					const n = Number(idx);
-					if (Number.isInteger(n) && n >= 0) {
-skipChangeIndexes.add(n);
-}
-				}
-			}
-
-			const results = [];
-
-			let store = null;
-			let payload;
-			let liveRead;
-			try {
-				liveRead = await mcpRelay.dispatchRequest({
-					workspaceId,
-					canvasId,
-					method: 'read_canvas',
-					params: { canvasId },
-					timeoutMs: 5000,
-				});
-			} catch (err) {
-				const code = err && err.message;
-				if (code === 'no-live-browser-for-canvas') {
-					return res.status(404).json({ error: 'canvas-not-open', message: 'This proposal was made against a canvas that is no longer open in any browser. Re-open the canvas in Org Loom and retry.' });
-				}
-				if (code === 'relay-request-timeout') {
-					return res.status(504).json({ error: 'canvas-read-timeout' });
-				}
-				throw err;
-			}
-			payload = (liveRead && liveRead.payload) || {};
-			if (!isDraft) {
-				store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, { sessionId: req.session && req.session.id });
-				const item = await store.get(canvasId);
-				if (!item) {
-					return res.status(404).json({ error: 'canvas-not-found' });
-				}
-				if (!item.ownedByMe) {
-					return res.status(403).json({ error: 'not-canvas-owner' });
-				}
-				if (typeof store.update !== 'function') {
-					return res.status(501).json({ error: 'in-place-update-not-supported' });
-				}
-			}
-			const oldDrafts = Array.isArray(payload.drafts) ? payload.drafts : [];
-			const oldLoadedRecords = Array.isArray(payload.loadedRecords) ? payload.loadedRecords : [];
-
-			const draftChangeByTempId = new Map();
-			const recordChangeById = new Map();
-			const newDraftAdds = [];
-			const newAssociationAdds = [];
-			const deleteAssociationOps = [];
-			const deleteDraftOps = [];
-			const deleteRecordOps = [];
-			const autofillOps = [];
-			const loadRecordOps = [];
-			const allChanges = Array.isArray(proposal.changes) ? proposal.changes : [];
-			for (let idx = 0; idx < allChanges.length; idx++) {
-				const c = allChanges[idx];
-				if (skipChangeIndexes.has(idx)) {
-					results.push({
-						changeIndex: idx,
-						kind: c && c.kind || 'unknown',
-						tempId: c && c.tempId,
-						recordId: c && c.recordId,
-						objectName: c && c.objectName,
-						status: 'skipped',
-					});
-					continue;
-				}
-				if (c.kind === 'new-draft') {
-					newDraftAdds.push(c);
-					continue;
-				}
-				if (c.kind === 'new-association') {
-					newAssociationAdds.push(c);
-					continue;
-				}
-				if (c.kind === 'delete-association') {
-					deleteAssociationOps.push(c);
-					continue;
-				}
-				if (c.kind === 'delete-draft') {
-					deleteDraftOps.push(c);
-					continue;
-				}
-				if (c.kind === 'delete-record') {
-					deleteRecordOps.push(c);
-					continue;
-				}
-				if (c.kind === 'autofill-required') {
-					autofillOps.push(c);
-					continue;
-				}
-				if (c.kind === 'load-record') {
-					loadRecordOps.push(c);
-					continue;
-				}
-				const isDraft = c.kind === 'draft' || c.tempId != null;
-				const targetId = isDraft ? c.tempId : c.recordId;
-				const targetKey = String(targetId);
-				if (skipIds.has(targetKey)) {
-					results.push({ targetId, kind: isDraft ? 'draft' : 'record', status: 'skipped' });
-					continue;
-				}
-				const overrideFields = (overrides[targetId] && overrides[targetId].fields)
-					|| (overrides[targetKey] && overrides[targetKey].fields)
-					|| {};
-				const fields = Object.assign({}, c.fields, overrideFields);
-				if (isDraft) {
-					draftChangeByTempId.set(targetKey, { change: c, fields });
-				} else {
-					recordChangeById.set(targetKey, { change: c, fields });
-				}
-			}
-
-			const deletedDraftTempIds = new Set();
-			for (const op of deleteDraftOps) {
-				if (op.tempId != null) {
-deletedDraftTempIds.add(String(op.tempId));
-}
-			}
-			const newDrafts = oldDrafts
-				.filter((d) => d.tempId == null || !deletedDraftTempIds.has(String(d.tempId)))
-				.map((d) => {
-					const entry = d.tempId != null ? draftChangeByTempId.get(String(d.tempId)) : null;
-					if (!entry) {
-return d;
-}
-					return Object.assign({}, d, {
-						values: Object.assign({}, d.values || {}, entry.fields),
-					});
-				});
-			let nextTempId = 1;
-			for (const d of newDrafts) {
-				if (typeof d.tempId === 'number' && d.tempId >= nextTempId) {
-nextTempId = d.tempId + 1;
-}
-			}
-			const newDraftResults = [];
-			const tempRefToMintedTempId = new Map();
-			for (const c of newDraftAdds) {
-				const mintedTempId = nextTempId++;
-				newDrafts.push({
-					tempId: mintedTempId,
-					objectName: c.objectName,
-					values: Object.assign({}, c.fields || {}),
-				});
-				if (c.tempRef) {
-tempRefToMintedTempId.set(String(c.tempRef), mintedTempId);
-}
-				newDraftResults.push({
-					tempId: mintedTempId,
-					objectName: c.objectName,
-					kind: 'new-draft',
-					fields: Object.assign({}, c.fields || {}),
-					tempRef: c.tempRef || undefined,
-				});
-			}
-			const deletedRecordIds = new Set();
-			for (const op of deleteRecordOps) {
-				if (op.recordId) {
-deletedRecordIds.add(String(op.recordId));
-}
-			}
-			const newLoadedRecords = oldLoadedRecords
-				.filter((r) => {
-					const id = (r.values && r.values.Id) || r.loadedFromId;
-					return !(id && deletedRecordIds.has(String(id)));
-				})
-				.map((r) => {
-					const id = (r.values && r.values.Id) || r.loadedFromId;
-					const entry = id ? recordChangeById.get(String(id)) : null;
-					if (!entry) {
-return r;
-}
-					return Object.assign({}, r, {
-						values: Object.assign({}, r.values || {}, entry.fields),
-					});
-				});
-			function _resolveEndpointForPersist(ep) {
-				if (!ep || typeof ep !== 'object') {
-return null;
-}
-				if (ep.kind === 'loaded') {
-return { kind: 'loaded', ref: String(ep.ref) };
-}
-				if (ep.kind === 'draft') {
-return { kind: 'draft', ref: Number(ep.ref) };
-}
-				if (ep.kind === 'tempRef') {
-					const mintedTempId = tempRefToMintedTempId.get(String(ep.ref));
-					if (mintedTempId == null) {
-return null;
-}
-					return { kind: 'draft', ref: mintedTempId };
-				}
-				return null;
-			}
-			const _assocTouchesDeletedDraft = (a) => {
-				if (!a) {
-return false;
-}
-				const checkSide = (e) => e && e.kind === 'draft' && e.ref != null && deletedDraftTempIds.has(String(e.ref));
-				return checkSide(a.from) || checkSide(a.to);
-			};
-			const _assocTouchesDeletedRecord = (a) => {
-				if (!a) {
-return false;
-}
-				const checkSide = (e) => e && e.kind === 'loaded' && e.ref != null && deletedRecordIds.has(String(e.ref));
-				return checkSide(a.from) || checkSide(a.to);
-			};
-			const cascadedAssocs = (Array.isArray(payload.associations) ? payload.associations : [])
-				.filter((a) => _assocTouchesDeletedDraft(a) || _assocTouchesDeletedRecord(a));
-			let newAssociations = (Array.isArray(payload.associations) ? payload.associations : [])
-				.filter((a) => !_assocTouchesDeletedDraft(a) && !_assocTouchesDeletedRecord(a));
-			const newAssociationResults = [];
-			const deleteAssociationResults = [];
-			for (const c of newAssociationAdds) {
-				const from = _resolveEndpointForPersist(c.from);
-				const to = _resolveEndpointForPersist(c.to);
-				if (!from || !to) {
-					newAssociationResults.push({
-						kind: 'new-association',
-						fieldName: c.fieldName,
-						status: 'failed',
-						error: 'endpoint-resolve-failed',
-					});
-					continue;
-				}
-				const dup = newAssociations.some((a) =>
-					a && a.fieldName === c.fieldName &&
-					a.from && a.to &&
-					a.from.kind === from.kind && String(a.from.ref) === String(from.ref) &&
-					a.to.kind === to.kind && String(a.to.ref) === String(to.ref)
-				);
-				if (!dup) {
-newAssociations.push({ from, to, fieldName: c.fieldName });
-}
-				newAssociationResults.push({
-					kind: 'new-association',
-					fieldName: c.fieldName,
-					from,
-					to,
-					status: 'applied',
-				});
-			}
-			for (const c of deleteAssociationOps) {
-				const from = _resolveEndpointForPersist(c.from);
-				const to = _resolveEndpointForPersist(c.to);
-				if (!from || !to) {
-					deleteAssociationResults.push({
-						kind: 'delete-association',
-						fieldName: c.fieldName,
-						status: 'failed',
-						error: 'endpoint-resolve-failed',
-					});
-					continue;
-				}
-				const before = newAssociations.length;
-				newAssociations = newAssociations.filter((a) => !(
-					a && a.fieldName === c.fieldName &&
-					a.from && a.to &&
-					a.from.kind === from.kind && String(a.from.ref) === String(from.ref) &&
-					a.to.kind === to.kind && String(a.to.ref) === String(to.ref)
-				));
-				deleteAssociationResults.push({
-					kind: 'delete-association',
-					fieldName: c.fieldName,
-					from,
-					to,
-					status: before === newAssociations.length ? 'failed' : 'applied',
-					error: before === newAssociations.length ? 'association-not-found' : undefined,
-				});
-			}
-			const newPayload = Object.assign({}, payload, {
-				drafts: newDrafts,
-				loadedRecords: newLoadedRecords,
-				associations: newAssociations,
-			});
-
-			let saveError = null;
-			if (!isDraft) {
-				try {
-					await store.update(canvasId, { payload: newPayload });
-				} catch (err) {
-					saveError = err.message || String(err);
-				}
-			}
-
-			for (const [key, entry] of draftChangeByTempId.entries()) {
-				const present = oldDrafts.some((d) => String(d.tempId) === key);
-				results.push({
-					targetId: entry.change.tempId,
-					tempId: entry.change.tempId,
-					kind: 'draft',
-					status: saveError ? 'failed' : (present ? 'applied' : 'failed'),
-					error: saveError || (present ? undefined : 'draft-not-found'),
-					fields: Object.assign({}, entry.fields || {}),
-				});
-			}
-			for (const [key, entry] of recordChangeById.entries()) {
-				const present = oldLoadedRecords.some((r) => {
-					const id = (r.values && r.values.Id) || r.loadedFromId;
-					return id && String(id) === key;
-				});
-				results.push({
-					targetId: entry.change.recordId,
-					recordId: entry.change.recordId,
-					kind: 'record',
-					status: saveError ? 'failed' : (present ? 'applied' : 'failed'),
-					error: saveError || (present ? undefined : 'record-not-found-on-canvas'),
-					fields: Object.assign({}, entry.fields || {}),
-				});
-			}
-			for (const r of newDraftResults) {
-				results.push(Object.assign({}, r, {
-					status: saveError ? 'failed' : 'applied',
-					error: saveError || undefined,
-				}));
-			}
-			for (const r of newAssociationResults) {
-				results.push(Object.assign({}, r, {
-					status: saveError ? 'failed' : r.status,
-					error: saveError || r.error,
-				}));
-			}
-			for (const r of deleteAssociationResults) {
-				results.push(Object.assign({}, r, {
-					status: saveError ? 'failed' : r.status,
-					error: saveError || r.error,
-				}));
-			}
-			for (const op of deleteDraftOps) {
-				const present = oldDrafts.some((d) => String(d.tempId) === String(op.tempId));
-				const cascadeCount = cascadedAssocs.filter((a) => {
-					const checkSide = (e) => e && e.kind === 'draft' && String(e.ref) === String(op.tempId);
-					return checkSide(a.from) || checkSide(a.to);
-				}).length;
-				results.push({
-					kind: 'delete-draft',
-					tempId: op.tempId,
-					targetId: op.tempId,
-					cascadedAssociations: cascadeCount,
-					status: saveError ? 'failed' : (present ? 'applied' : 'failed'),
-					error: saveError || (present ? undefined : 'draft-not-found'),
-				});
-			}
-			for (const op of deleteRecordOps) {
-				const present = oldLoadedRecords.some((r) => {
-					const id = (r.values && r.values.Id) || r.loadedFromId;
-					return id && String(id) === String(op.recordId);
-				});
-				const cascadeCount = cascadedAssocs.filter((a) => {
-					const checkSide = (e) => e && e.kind === 'loaded' && String(e.ref) === String(op.recordId);
-					return checkSide(a.from) || checkSide(a.to);
-				}).length;
-				results.push({
-					kind: 'delete-record',
-					recordId: op.recordId,
-					targetId: op.recordId,
-					cascadedAssociations: cascadeCount,
-					status: saveError ? 'failed' : (present ? 'applied' : 'failed'),
-					error: saveError || (present ? undefined : 'record-not-found-on-canvas'),
-				});
-			}
-			for (const op of autofillOps) {
-				results.push({
-					kind: 'autofill-required',
-					tempIds: Array.isArray(op.tempIds) ? op.tempIds.slice() : [],
-					status: saveError ? 'failed' : 'applied',
-					error: saveError || undefined,
-				});
-			}
-			if (loadRecordOps.length > 0 && (!req.sf || !req.sf.conn)) {
-				try {
-					const bundle = await getActiveSfConnection(req);
-					if (bundle) {
-req.sf = bundle;
-}
-				} catch (_) { /* leave req.sf unset; per-op error below */ }
-			}
-			for (const op of loadRecordOps) {
-				if (saveError) {
-					results.push({ kind: 'load-record', objectName: op.objectName, recordId: op.recordId, status: 'failed', error: saveError });
-					continue;
-				}
-				if (!req.sf || !req.sf.conn) {
-					results.push({
-						kind: 'load-record',
-						objectName: op.objectName,
-						recordId: op.recordId,
-						status: 'failed',
-						error: 'no-active-sf-connection - connect Salesforce to load existing records',
-					});
-					continue;
-				}
-				const alreadyOnCanvas = oldLoadedRecords.some((r) => {
-					const id = (r.values && r.values.Id) || r.loadedFromId;
-					return id && String(id) === String(op.recordId);
-				});
-				if (alreadyOnCanvas) {
-					results.push({
-						kind: 'load-record',
-						objectName: op.objectName,
-						recordId: op.recordId,
-						status: 'skipped',
-						error: 'already-on-canvas',
-					});
-					continue;
-				}
-				try {
-					const fields = Array.isArray(op.fields) && op.fields.length > 0 ? op.fields : null;
-					const record = fields
-						? await req.sf.conn.sobject(op.objectName).retrieve(op.recordId, fields)
-						: await req.sf.conn.sobject(op.objectName).retrieve(op.recordId);
-					const values = {};
-					if (record && typeof record === 'object') {
-						for (const k of Object.keys(record)) {
-							if (k === 'attributes') {
-continue;
-}
-							if (record[k] != null) {
-values[k] = record[k];
-}
-						}
-					}
-					if (!values.Id) {
-values.Id = op.recordId;
-}
-					results.push({
-						kind: 'load-record',
-						objectName: op.objectName,
-						recordId: op.recordId,
-						values,
-						status: 'applied',
-					});
-				} catch (err) {
-					results.push({
-						kind: 'load-record',
-						objectName: op.objectName,
-						recordId: op.recordId,
-						status: 'failed',
-						error: (err && err.message) || 'sf-retrieve-failed',
-					});
-				}
-			}
-
-			await ext.auditWrite({
-				req,
-				workspaceId: proposal.workspaceId,
-				action: 'ai_proposal_applied',
-				targetObject: 'ai_proposals',
-				targetId: proposalId,
-				targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
-				payload: {
-					canvasId,
-					mode: isDraft ? 'draft-canvas-only' : 'canvas-only',
-					results: results.map((r) => {
-						const out = Object.assign({}, r);
-						delete out.fields;
-						delete out.values;
-						return out;
-					}),
-					proposingAccountId: proposal.proposingAccountId,
-					proposingTokenId: proposal.proposingTokenId,
-				},
-			});
-			await proposalsDb.markApplied({ id: proposalId, decidedByAccountId: req.account.id });
-
-			res.json({ ok: true, results, mode: 'canvas-only' });
-		} catch (err) {
-			await auditDb.recordFailure(req, 'ai_proposal_applied', err, {
-				targetObject: 'ai_proposals',
-				targetId: req.params.proposalId,
-				targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
-				payload: { canvasId: req.params.id },
-			});
 			next(err);
 		}
 	});
+
+	app.post(
+		'/api/canvas/:id/proposals/:proposalId/apply',
+		requireAccount,
+		requireSfConnectionUnlessDraft,
+		async (req, res, next) => {
+			try {
+				const canvasId = req.params.id;
+				const proposalId = req.params.proposalId;
+				const isDraft = /^draft-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canvasId);
+				const isSf = /^[a-zA-Z0-9]{15,18}$/.test(canvasId);
+				if (!isDraft && !isSf) {
+					return res.status(400).json({ error: 'invalid-id' });
+				}
+				const proposal = await proposalsDb.findById(proposalId);
+				if (!proposal) {
+					return res.status(404).json({ error: 'proposal-not-found' });
+				}
+				if (proposal.canvasId !== canvasId) {
+					return res.status(400).json({ error: 'canvas-mismatch' });
+				}
+				if (proposal.status !== 'pending') {
+					return res.status(409).json({ error: 'proposal-not-pending', status: proposal.status });
+				}
+				const view = await viewStateDb.get(req.account.id);
+				const workspaceId = view && view.current_workspace_id;
+				if (workspaceId !== proposal.workspaceId) {
+					return res.status(403).json({ error: 'workspace-mismatch' });
+				}
+
+				if (!(await _gateCapability(req, res, 'ai-edit-on-canvas', 'proposal_apply'))) {
+					return;
+				}
+
+				const overrides = (req.body && req.body.overrides) || {};
+				const skipIds = new Set(
+					Array.isArray(req.body && req.body.skipRecordIds) ? req.body.skipRecordIds.map(String) : [],
+				);
+				const skipChangeIndexes = new Set();
+				if (Array.isArray(req.body && req.body.skipChangeIndexes)) {
+					for (const idx of req.body.skipChangeIndexes) {
+						const n = Number(idx);
+						if (Number.isInteger(n) && n >= 0) {
+							skipChangeIndexes.add(n);
+						}
+					}
+				}
+
+				const results = [];
+
+				let store = null;
+				let payload;
+				let liveRead;
+				try {
+					liveRead = await mcpRelay.dispatchRequest({
+						workspaceId,
+						canvasId,
+						method: 'read_canvas',
+						params: { canvasId },
+						timeoutMs: 5000,
+					});
+				} catch (err) {
+					const code = err && err.message;
+					if (code === 'no-live-browser-for-canvas') {
+						return res.status(404).json({
+							error: 'canvas-not-open',
+							message:
+								'This proposal was made against a canvas that is no longer open in any browser. Re-open the canvas in Org Loom and retry.',
+						});
+					}
+					if (code === 'relay-request-timeout') {
+						return res.status(504).json({ error: 'canvas-read-timeout' });
+					}
+					throw err;
+				}
+				payload = (liveRead && liveRead.payload) || {};
+				if (!isDraft) {
+					store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+						sessionId: req.session && req.session.id,
+					});
+					const item = await store.get(canvasId);
+					if (!item) {
+						return res.status(404).json({ error: 'canvas-not-found' });
+					}
+					if (!item.ownedByMe) {
+						return res.status(403).json({ error: 'not-canvas-owner' });
+					}
+					if (typeof store.update !== 'function') {
+						return res.status(501).json({ error: 'in-place-update-not-supported' });
+					}
+				}
+				const oldDrafts = Array.isArray(payload.drafts) ? payload.drafts : [];
+				const oldLoadedRecords = Array.isArray(payload.loadedRecords) ? payload.loadedRecords : [];
+
+				const draftChangeByTempId = new Map();
+				const recordChangeById = new Map();
+				const newDraftAdds = [];
+				const newAssociationAdds = [];
+				const deleteAssociationOps = [];
+				const deleteDraftOps = [];
+				const deleteRecordOps = [];
+				const autofillOps = [];
+				const loadRecordOps = [];
+				const allChanges = Array.isArray(proposal.changes) ? proposal.changes : [];
+				for (let idx = 0; idx < allChanges.length; idx++) {
+					const c = allChanges[idx];
+					if (skipChangeIndexes.has(idx)) {
+						results.push({
+							changeIndex: idx,
+							kind: (c && c.kind) || 'unknown',
+							tempId: c && c.tempId,
+							recordId: c && c.recordId,
+							objectName: c && c.objectName,
+							status: 'skipped',
+						});
+						continue;
+					}
+					if (c.kind === 'new-draft') {
+						newDraftAdds.push(c);
+						continue;
+					}
+					if (c.kind === 'new-association') {
+						newAssociationAdds.push(c);
+						continue;
+					}
+					if (c.kind === 'delete-association') {
+						deleteAssociationOps.push(c);
+						continue;
+					}
+					if (c.kind === 'delete-draft') {
+						deleteDraftOps.push(c);
+						continue;
+					}
+					if (c.kind === 'delete-record') {
+						deleteRecordOps.push(c);
+						continue;
+					}
+					if (c.kind === 'autofill-required') {
+						autofillOps.push(c);
+						continue;
+					}
+					if (c.kind === 'load-record') {
+						loadRecordOps.push(c);
+						continue;
+					}
+					const isDraft = c.kind === 'draft' || c.tempId != null;
+					const targetId = isDraft ? c.tempId : c.recordId;
+					const targetKey = String(targetId);
+					if (skipIds.has(targetKey)) {
+						results.push({ targetId, kind: isDraft ? 'draft' : 'record', status: 'skipped' });
+						continue;
+					}
+					const overrideFields =
+						(overrides[targetId] && overrides[targetId].fields) ||
+						(overrides[targetKey] && overrides[targetKey].fields) ||
+						{};
+					const fields = Object.assign({}, c.fields, overrideFields);
+					if (isDraft) {
+						draftChangeByTempId.set(targetKey, { change: c, fields });
+					} else {
+						recordChangeById.set(targetKey, { change: c, fields });
+					}
+				}
+
+				const deletedDraftTempIds = new Set();
+				for (const op of deleteDraftOps) {
+					if (op.tempId != null) {
+						deletedDraftTempIds.add(String(op.tempId));
+					}
+				}
+				const newDrafts = oldDrafts
+					.filter((d) => d.tempId == null || !deletedDraftTempIds.has(String(d.tempId)))
+					.map((d) => {
+						const entry = d.tempId != null ? draftChangeByTempId.get(String(d.tempId)) : null;
+						if (!entry) {
+							return d;
+						}
+						return Object.assign({}, d, {
+							values: Object.assign({}, d.values || {}, entry.fields),
+						});
+					});
+				let nextTempId = 1;
+				for (const d of newDrafts) {
+					if (typeof d.tempId === 'number' && d.tempId >= nextTempId) {
+						nextTempId = d.tempId + 1;
+					}
+				}
+				const newDraftResults = [];
+				const tempRefToMintedTempId = new Map();
+				for (const c of newDraftAdds) {
+					const mintedTempId = nextTempId++;
+					newDrafts.push({
+						tempId: mintedTempId,
+						objectName: c.objectName,
+						values: Object.assign({}, c.fields || {}),
+					});
+					if (c.tempRef) {
+						tempRefToMintedTempId.set(String(c.tempRef), mintedTempId);
+					}
+					newDraftResults.push({
+						tempId: mintedTempId,
+						objectName: c.objectName,
+						kind: 'new-draft',
+						fields: Object.assign({}, c.fields || {}),
+						tempRef: c.tempRef || undefined,
+					});
+				}
+				const deletedRecordIds = new Set();
+				for (const op of deleteRecordOps) {
+					if (op.recordId) {
+						deletedRecordIds.add(String(op.recordId));
+					}
+				}
+				const newLoadedRecords = oldLoadedRecords
+					.filter((r) => {
+						const id = (r.values && r.values.Id) || r.loadedFromId;
+						return !(id && deletedRecordIds.has(String(id)));
+					})
+					.map((r) => {
+						const id = (r.values && r.values.Id) || r.loadedFromId;
+						const entry = id ? recordChangeById.get(String(id)) : null;
+						if (!entry) {
+							return r;
+						}
+						return Object.assign({}, r, {
+							values: Object.assign({}, r.values || {}, entry.fields),
+						});
+					});
+				function _resolveEndpointForPersist(ep) {
+					if (!ep || typeof ep !== 'object') {
+						return null;
+					}
+					if (ep.kind === 'loaded') {
+						return { kind: 'loaded', ref: String(ep.ref) };
+					}
+					if (ep.kind === 'draft') {
+						return { kind: 'draft', ref: Number(ep.ref) };
+					}
+					if (ep.kind === 'tempRef') {
+						const mintedTempId = tempRefToMintedTempId.get(String(ep.ref));
+						if (mintedTempId == null) {
+							return null;
+						}
+						return { kind: 'draft', ref: mintedTempId };
+					}
+					return null;
+				}
+				const _assocTouchesDeletedDraft = (a) => {
+					if (!a) {
+						return false;
+					}
+					const checkSide = (e) =>
+						e && e.kind === 'draft' && e.ref != null && deletedDraftTempIds.has(String(e.ref));
+					return checkSide(a.from) || checkSide(a.to);
+				};
+				const _assocTouchesDeletedRecord = (a) => {
+					if (!a) {
+						return false;
+					}
+					const checkSide = (e) =>
+						e && e.kind === 'loaded' && e.ref != null && deletedRecordIds.has(String(e.ref));
+					return checkSide(a.from) || checkSide(a.to);
+				};
+				const cascadedAssocs = (Array.isArray(payload.associations) ? payload.associations : []).filter(
+					(a) => _assocTouchesDeletedDraft(a) || _assocTouchesDeletedRecord(a),
+				);
+				let newAssociations = (Array.isArray(payload.associations) ? payload.associations : []).filter(
+					(a) => !_assocTouchesDeletedDraft(a) && !_assocTouchesDeletedRecord(a),
+				);
+				const newAssociationResults = [];
+				const deleteAssociationResults = [];
+				for (const c of newAssociationAdds) {
+					const from = _resolveEndpointForPersist(c.from);
+					const to = _resolveEndpointForPersist(c.to);
+					if (!from || !to) {
+						newAssociationResults.push({
+							kind: 'new-association',
+							fieldName: c.fieldName,
+							status: 'failed',
+							error: 'endpoint-resolve-failed',
+						});
+						continue;
+					}
+					const dup = newAssociations.some(
+						(a) =>
+							a &&
+							a.fieldName === c.fieldName &&
+							a.from &&
+							a.to &&
+							a.from.kind === from.kind &&
+							String(a.from.ref) === String(from.ref) &&
+							a.to.kind === to.kind &&
+							String(a.to.ref) === String(to.ref),
+					);
+					if (!dup) {
+						newAssociations.push({ from, to, fieldName: c.fieldName });
+					}
+					newAssociationResults.push({
+						kind: 'new-association',
+						fieldName: c.fieldName,
+						from,
+						to,
+						status: 'applied',
+					});
+				}
+				for (const c of deleteAssociationOps) {
+					const from = _resolveEndpointForPersist(c.from);
+					const to = _resolveEndpointForPersist(c.to);
+					if (!from || !to) {
+						deleteAssociationResults.push({
+							kind: 'delete-association',
+							fieldName: c.fieldName,
+							status: 'failed',
+							error: 'endpoint-resolve-failed',
+						});
+						continue;
+					}
+					const before = newAssociations.length;
+					newAssociations = newAssociations.filter(
+						(a) =>
+							!(
+								a &&
+								a.fieldName === c.fieldName &&
+								a.from &&
+								a.to &&
+								a.from.kind === from.kind &&
+								String(a.from.ref) === String(from.ref) &&
+								a.to.kind === to.kind &&
+								String(a.to.ref) === String(to.ref)
+							),
+					);
+					deleteAssociationResults.push({
+						kind: 'delete-association',
+						fieldName: c.fieldName,
+						from,
+						to,
+						status: before === newAssociations.length ? 'failed' : 'applied',
+						error: before === newAssociations.length ? 'association-not-found' : undefined,
+					});
+				}
+				const newPayload = Object.assign({}, payload, {
+					drafts: newDrafts,
+					loadedRecords: newLoadedRecords,
+					associations: newAssociations,
+				});
+
+				let saveError = null;
+				if (!isDraft) {
+					try {
+						await store.update(canvasId, { payload: newPayload });
+					} catch (err) {
+						saveError = err.message || String(err);
+					}
+				}
+
+				for (const [key, entry] of draftChangeByTempId.entries()) {
+					const present = oldDrafts.some((d) => String(d.tempId) === key);
+					results.push({
+						targetId: entry.change.tempId,
+						tempId: entry.change.tempId,
+						kind: 'draft',
+						status: saveError ? 'failed' : present ? 'applied' : 'failed',
+						error: saveError || (present ? undefined : 'draft-not-found'),
+						fields: Object.assign({}, entry.fields || {}),
+					});
+				}
+				for (const [key, entry] of recordChangeById.entries()) {
+					const present = oldLoadedRecords.some((r) => {
+						const id = (r.values && r.values.Id) || r.loadedFromId;
+						return id && String(id) === key;
+					});
+					results.push({
+						targetId: entry.change.recordId,
+						recordId: entry.change.recordId,
+						kind: 'record',
+						status: saveError ? 'failed' : present ? 'applied' : 'failed',
+						error: saveError || (present ? undefined : 'record-not-found-on-canvas'),
+						fields: Object.assign({}, entry.fields || {}),
+					});
+				}
+				for (const r of newDraftResults) {
+					results.push(
+						Object.assign({}, r, {
+							status: saveError ? 'failed' : 'applied',
+							error: saveError || undefined,
+						}),
+					);
+				}
+				for (const r of newAssociationResults) {
+					results.push(
+						Object.assign({}, r, {
+							status: saveError ? 'failed' : r.status,
+							error: saveError || r.error,
+						}),
+					);
+				}
+				for (const r of deleteAssociationResults) {
+					results.push(
+						Object.assign({}, r, {
+							status: saveError ? 'failed' : r.status,
+							error: saveError || r.error,
+						}),
+					);
+				}
+				for (const op of deleteDraftOps) {
+					const present = oldDrafts.some((d) => String(d.tempId) === String(op.tempId));
+					const cascadeCount = cascadedAssocs.filter((a) => {
+						const checkSide = (e) => e && e.kind === 'draft' && String(e.ref) === String(op.tempId);
+						return checkSide(a.from) || checkSide(a.to);
+					}).length;
+					results.push({
+						kind: 'delete-draft',
+						tempId: op.tempId,
+						targetId: op.tempId,
+						cascadedAssociations: cascadeCount,
+						status: saveError ? 'failed' : present ? 'applied' : 'failed',
+						error: saveError || (present ? undefined : 'draft-not-found'),
+					});
+				}
+				for (const op of deleteRecordOps) {
+					const present = oldLoadedRecords.some((r) => {
+						const id = (r.values && r.values.Id) || r.loadedFromId;
+						return id && String(id) === String(op.recordId);
+					});
+					const cascadeCount = cascadedAssocs.filter((a) => {
+						const checkSide = (e) => e && e.kind === 'loaded' && String(e.ref) === String(op.recordId);
+						return checkSide(a.from) || checkSide(a.to);
+					}).length;
+					results.push({
+						kind: 'delete-record',
+						recordId: op.recordId,
+						targetId: op.recordId,
+						cascadedAssociations: cascadeCount,
+						status: saveError ? 'failed' : present ? 'applied' : 'failed',
+						error: saveError || (present ? undefined : 'record-not-found-on-canvas'),
+					});
+				}
+				for (const op of autofillOps) {
+					results.push({
+						kind: 'autofill-required',
+						tempIds: Array.isArray(op.tempIds) ? op.tempIds.slice() : [],
+						status: saveError ? 'failed' : 'applied',
+						error: saveError || undefined,
+					});
+				}
+				if (loadRecordOps.length > 0 && (!req.sf || !req.sf.conn)) {
+					try {
+						const bundle = await getActiveSfConnection(req);
+						if (bundle) {
+							req.sf = bundle;
+						}
+					} catch (_) {
+						/* leave req.sf unset; per-op error below */
+					}
+				}
+				for (const op of loadRecordOps) {
+					if (saveError) {
+						results.push({
+							kind: 'load-record',
+							objectName: op.objectName,
+							recordId: op.recordId,
+							status: 'failed',
+							error: saveError,
+						});
+						continue;
+					}
+					if (!req.sf || !req.sf.conn) {
+						results.push({
+							kind: 'load-record',
+							objectName: op.objectName,
+							recordId: op.recordId,
+							status: 'failed',
+							error: 'no-active-sf-connection - connect Salesforce to load existing records',
+						});
+						continue;
+					}
+					const alreadyOnCanvas = oldLoadedRecords.some((r) => {
+						const id = (r.values && r.values.Id) || r.loadedFromId;
+						return id && String(id) === String(op.recordId);
+					});
+					if (alreadyOnCanvas) {
+						results.push({
+							kind: 'load-record',
+							objectName: op.objectName,
+							recordId: op.recordId,
+							status: 'skipped',
+							error: 'already-on-canvas',
+						});
+						continue;
+					}
+					try {
+						const fields = Array.isArray(op.fields) && op.fields.length > 0 ? op.fields : null;
+						const record = fields
+							? await req.sf.conn.sobject(op.objectName).retrieve(op.recordId, fields)
+							: await req.sf.conn.sobject(op.objectName).retrieve(op.recordId);
+						const values = {};
+						if (record && typeof record === 'object') {
+							for (const k of Object.keys(record)) {
+								if (k === 'attributes') {
+									continue;
+								}
+								if (record[k] != null) {
+									values[k] = record[k];
+								}
+							}
+						}
+						if (!values.Id) {
+							values.Id = op.recordId;
+						}
+						results.push({
+							kind: 'load-record',
+							objectName: op.objectName,
+							recordId: op.recordId,
+							values,
+							status: 'applied',
+						});
+					} catch (err) {
+						results.push({
+							kind: 'load-record',
+							objectName: op.objectName,
+							recordId: op.recordId,
+							status: 'failed',
+							error: (err && err.message) || 'sf-retrieve-failed',
+						});
+					}
+				}
+
+				await ext.auditWrite({
+					req,
+					workspaceId: proposal.workspaceId,
+					action: 'ai_proposal_applied',
+					targetObject: 'ai_proposals',
+					targetId: proposalId,
+					targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
+					payload: {
+						canvasId,
+						mode: isDraft ? 'draft-canvas-only' : 'canvas-only',
+						results: results.map((r) => {
+							const out = Object.assign({}, r);
+							delete out.fields;
+							delete out.values;
+							return out;
+						}),
+						proposingAccountId: proposal.proposingAccountId,
+						proposingTokenId: proposal.proposingTokenId,
+					},
+				});
+				await proposalsDb.markApplied({ id: proposalId, decidedByAccountId: req.account.id });
+
+				res.json({ ok: true, results, mode: 'canvas-only' });
+			} catch (err) {
+				await auditDb.recordFailure(req, 'ai_proposal_applied', err, {
+					targetObject: 'ai_proposals',
+					targetId: req.params.proposalId,
+					targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
+					payload: { canvasId: req.params.id },
+				});
+				next(err);
+			}
+		},
+	);
 
 	app.post('/api/canvas/:id/proposals/:proposalId/reject', requireAccount, async (req, res, next) => {
 		try {
@@ -6486,8 +7096,8 @@ values.Id = op.recordId;
 			const proposalId = req.params.proposalId;
 			const proposal = await proposalsDb.findById(proposalId);
 			if (!proposal) {
-return res.status(404).json({ error: 'proposal-not-found' });
-}
+				return res.status(404).json({ error: 'proposal-not-found' });
+			}
 			if (proposal.canvasId !== canvasId) {
 				return res.status(400).json({ error: 'canvas-mismatch' });
 			}
@@ -6523,7 +7133,6 @@ return res.status(404).json({ error: 'proposal-not-found' });
 		}
 	});
 
-
 	app.get('/api/canvas/:id/clarifications', requireAccount, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
@@ -6535,34 +7144,36 @@ return res.status(404).json({ error: 'proposal-not-found' });
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
-return res.status(409).json({ error: 'no-active-workspace' });
-}
+				return res.status(409).json({ error: 'no-active-workspace' });
+			}
 			const all = await clarificationsDb.listPendingForCanvas(canvasId);
 			const now = Date.now();
 			const visible = all.filter((c) => c.workspaceId === workspaceId && (!c.expiresAt || c.expiresAt > now));
 			res.json({ clarifications: visible });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/canvas/:id/clarifications/:clarificationId/respond', requireAccount, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const clarificationId = req.params.clarificationId;
-			const responseText = req.body && typeof req.body.responseText === 'string'
-				? req.body.responseText.trim().slice(0, 2000)
-				: null;
-			const responseOption = req.body && typeof req.body.responseOption === 'string'
-				? req.body.responseOption.slice(0, 120)
-				: null;
+			const responseText =
+				req.body && typeof req.body.responseText === 'string'
+					? req.body.responseText.trim().slice(0, 2000)
+					: null;
+			const responseOption =
+				req.body && typeof req.body.responseOption === 'string' ? req.body.responseOption.slice(0, 120) : null;
 			if (!responseText && !responseOption) {
-				return res.status(400).json({ error: 'response-required', message: 'Provide responseText or responseOption (or both).' });
+				return res
+					.status(400)
+					.json({ error: 'response-required', message: 'Provide responseText or responseOption (or both).' });
 			}
 			const row = await clarificationsDb.findById(clarificationId);
 			if (!row) {
-return res.status(404).json({ error: 'clarification-not-found' });
-}
+				return res.status(404).json({ error: 'clarification-not-found' });
+			}
 			if (row.canvasId !== canvasId) {
 				return res.status(400).json({ error: 'canvas-mismatch' });
 			}
@@ -6575,7 +7186,9 @@ return res.status(404).json({ error: 'clarification-not-found' });
 				return res.status(403).json({ error: 'workspace-mismatch' });
 			}
 			if (responseOption && Array.isArray(row.options) && !row.options.includes(responseOption)) {
-				return res.status(400).json({ error: 'invalid-option', message: 'responseOption must be one of the options offered.' });
+				return res
+					.status(400)
+					.json({ error: 'invalid-option', message: 'responseOption must be one of the options offered.' });
 			}
 			const ok = await clarificationsDb.markAnswered({
 				id: clarificationId,
@@ -6584,7 +7197,10 @@ return res.status(404).json({ error: 'clarification-not-found' });
 				respondedByAccountId: req.account.id,
 			});
 			if (!ok) {
-				return res.status(409).json({ error: 'clarification-not-pending', message: 'Another action changed the clarification status between read and respond.' });
+				return res.status(409).json({
+					error: 'clarification-not-pending',
+					message: 'Another action changed the clarification status between read and respond.',
+				});
 			}
 			await ext.auditWrite({
 				req,
@@ -6605,29 +7221,33 @@ return res.status(404).json({ error: 'clarification-not-found' });
 		}
 	});
 
-
 	app.get('/api/canvas/:id/presence/subscribe', requireAccount, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const isDraft = /^draft-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canvasId);
 			const isSf = /^[a-zA-Z0-9]{15,18}$/.test(canvasId);
 			if (!isDraft && !isSf) {
-return res.status(400).json({ error: 'invalid-id' });
-}
+				return res.status(400).json({ error: 'invalid-id' });
+			}
 			const view = await viewStateDb.get(req.account.id);
 			const workspaceId = view && view.current_workspace_id;
 			if (!workspaceId) {
-return res.status(409).json({ error: 'no-active-workspace' });
-}
+				return res.status(409).json({ error: 'no-active-workspace' });
+			}
 			let canEditPresence = true;
 			if (isSf) {
 				const bundle = await getActiveSfConnection(req);
 				if (!bundle || !bundle.conn) {
-					return res.status(409).json({ error: 'no-active-connection', message: 'Connect or activate a Salesforce org to continue.' });
+					return res.status(409).json({
+						error: 'no-active-connection',
+						message: 'Connect or activate a Salesforce org to continue.',
+					});
 				}
 				let item = null;
 				try {
-					const store = await canvasStoreFromSfConnection(bundle.conn, bundle.sfUserId, bundle.sfOrgId, { sessionId: req.session && req.session.id });
+					const store = await canvasStoreFromSfConnection(bundle.conn, bundle.sfUserId, bundle.sfOrgId, {
+						sessionId: req.session && req.session.id,
+					});
 					item = await store.get(canvasId);
 				} catch (e) {
 					item = null;
@@ -6648,7 +7268,8 @@ return res.status(409).json({ error: 'no-active-workspace' });
 							return res.status(403).json({
 								error: cap.reason || 'permission-denied',
 								capability: 'receive-canvas',
-								message: 'Contributor and Editor collaboration requires an active Pro trial, Pro subscription, or Team seat.',
+								message:
+									'Contributor and Editor collaboration requires an active Pro trial, Pro subscription, or Team seat.',
 							});
 						}
 					}
@@ -6670,8 +7291,8 @@ return res.status(409).json({ error: 'no-active-workspace' });
 				sseRes: res,
 			});
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/canvas/:id/presence/cursor', requireAccount, async (req, res, next) => {
@@ -6683,16 +7304,24 @@ return res.status(409).json({ error: 'no-active-workspace' });
 			const world = !!(req.body && req.body.world);
 			const sequence = req.body && req.body.sequence;
 			if (!connectionId) {
-return res.status(400).json({ error: 'missing-connectionId' });
-}
-			const accepted = canvasPresence.updateCursor({ canvasId, connectionId, x, y, world, sequence, requestingAccountId: req.account.id });
+				return res.status(400).json({ error: 'missing-connectionId' });
+			}
+			const accepted = canvasPresence.updateCursor({
+				canvasId,
+				connectionId,
+				x,
+				y,
+				world,
+				sequence,
+				requestingAccountId: req.account.id,
+			});
 			if (!accepted) {
-return res.status(409).json({ error: 'presence-event-rejected' });
-}
+				return res.status(409).json({ error: 'presence-event-rejected' });
+			}
 			res.json({ ok: true });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/canvas/:id/presence/focus', requireAccount, async (req, res, next) => {
@@ -6702,16 +7331,22 @@ return res.status(409).json({ error: 'presence-event-rejected' });
 			const focus = req.body && req.body.focus ? req.body.focus : null;
 			const sequence = req.body && req.body.sequence;
 			if (!connectionId) {
-return res.status(400).json({ error: 'missing-connectionId' });
-}
-			const accepted = canvasPresence.updateFocus({ canvasId, connectionId, focus, sequence, requestingAccountId: req.account.id });
+				return res.status(400).json({ error: 'missing-connectionId' });
+			}
+			const accepted = canvasPresence.updateFocus({
+				canvasId,
+				connectionId,
+				focus,
+				sequence,
+				requestingAccountId: req.account.id,
+			});
 			if (!accepted) {
-return res.status(409).json({ error: 'presence-event-rejected' });
-}
+				return res.status(409).json({ error: 'presence-event-rejected' });
+			}
 			res.json({ ok: true });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/canvas/:id/presence/draft-link', requireAccount, async (req, res, next) => {
@@ -6720,26 +7355,35 @@ return res.status(409).json({ error: 'presence-event-rejected' });
 			const body = req.body || {};
 			const connectionId = body.connectionId;
 			if (!connectionId) {
-return res.status(400).json({ error: 'missing-connectionId' });
-}
+				return res.status(400).json({ error: 'missing-connectionId' });
+			}
 			const kind = body.kind;
 			if (kind !== 'add' && kind !== 'remove') {
-return res.status(400).json({ error: 'invalid-kind' });
-}
+				return res.status(400).json({ error: 'invalid-kind' });
+			}
 			const fromSyncId = body.fromSyncId;
 			const toSyncId = body.toSyncId;
 			const fieldName = body.fieldName;
 			if (!fromSyncId || !toSyncId || !fieldName) {
-return res.status(400).json({ error: 'missing-endpoint-or-field' });
-}
-			const accepted = canvasPresence.updateDraftLink({ canvasId, connectionId, kind, fromSyncId, toSyncId, fieldName, sequence: body.sequence, requestingAccountId: req.account.id });
+				return res.status(400).json({ error: 'missing-endpoint-or-field' });
+			}
+			const accepted = canvasPresence.updateDraftLink({
+				canvasId,
+				connectionId,
+				kind,
+				fromSyncId,
+				toSyncId,
+				fieldName,
+				sequence: body.sequence,
+				requestingAccountId: req.account.id,
+			});
 			if (!accepted) {
-return res.status(409).json({ error: 'presence-event-rejected' });
-}
+				return res.status(409).json({ error: 'presence-event-rejected' });
+			}
 			res.json({ ok: true });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/canvas/:id/presence/record-remove', requireAccount, async (req, res, next) => {
@@ -6749,19 +7393,25 @@ return res.status(409).json({ error: 'presence-event-rejected' });
 			const connectionId = body.connectionId;
 			const sfId = body.sfId;
 			if (!connectionId) {
-return res.status(400).json({ error: 'missing-connectionId' });
-}
+				return res.status(400).json({ error: 'missing-connectionId' });
+			}
 			if (!sfId) {
-return res.status(400).json({ error: 'missing-sfId' });
-}
-			const accepted = canvasPresence.removeLoadedRecord({ canvasId, connectionId, sfId, sequence: body.sequence, requestingAccountId: req.account.id });
+				return res.status(400).json({ error: 'missing-sfId' });
+			}
+			const accepted = canvasPresence.removeLoadedRecord({
+				canvasId,
+				connectionId,
+				sfId,
+				sequence: body.sequence,
+				requestingAccountId: req.account.id,
+			});
 			if (!accepted) {
-return res.status(409).json({ error: 'presence-event-rejected' });
-}
+				return res.status(409).json({ error: 'presence-event-rejected' });
+			}
 			res.json({ ok: true });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
 
 	app.post('/api/canvas/:id/presence/draft', requireAccount, async (req, res, next) => {
@@ -6772,23 +7422,29 @@ return res.status(409).json({ error: 'presence-event-rejected' });
 			const tempId = body.tempId;
 			const fields = body.fields;
 			if (!connectionId) {
-return res.status(400).json({ error: 'missing-connectionId' });
-}
+				return res.status(400).json({ error: 'missing-connectionId' });
+			}
 			if (tempId == null) {
-return res.status(400).json({ error: 'missing-tempId' });
-}
+				return res.status(400).json({ error: 'missing-tempId' });
+			}
 			if (!fields || typeof fields !== 'object') {
-return res.status(400).json({ error: 'missing-fields' });
-}
-			const kind = (body.kind === 'create' || body.kind === 'remove') ? body.kind : undefined;
-			const position = (body.position
-				&& typeof body.position === 'object'
-				&& typeof body.position.x === 'number'
-				&& typeof body.position.y === 'number')
-				? body.position
-				: undefined;
+				return res.status(400).json({ error: 'missing-fields' });
+			}
+			const kind = body.kind === 'create' || body.kind === 'remove' ? body.kind : undefined;
+			const position =
+				body.position &&
+				typeof body.position === 'object' &&
+				typeof body.position.x === 'number' &&
+				typeof body.position.y === 'number'
+					? body.position
+					: undefined;
 			const accepted = canvasPresence.updateDraft({
-				canvasId, connectionId, tempId, fields, kind, position,
+				canvasId,
+				connectionId,
+				tempId,
+				fields,
+				kind,
+				position,
 				sequence: body.sequence,
 				objectName: typeof body.objectName === 'string' ? body.objectName : undefined,
 				x: typeof body.x === 'number' ? body.x : undefined,
@@ -6796,12 +7452,11 @@ return res.status(400).json({ error: 'missing-fields' });
 				requestingAccountId: req.account.id,
 			});
 			if (!accepted) {
-return res.status(409).json({ error: 'presence-event-rejected' });
-}
+				return res.status(409).json({ error: 'presence-event-rejected' });
+			}
 			res.json({ ok: true });
 		} catch (err) {
- next(err); 
-}
+			next(err);
+		}
 	});
-
 }

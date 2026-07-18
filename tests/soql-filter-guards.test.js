@@ -9,14 +9,8 @@ let server;
 let baseUrl;
 let capturedQueries;
 
-const browseClientSource = readFileSync(
-	new URL('../src/public/js/record-browse.js', import.meta.url),
-	'utf8',
-);
-const linkedCsvSource = readFileSync(
-	new URL('../src/public/js/linked-csv.js', import.meta.url),
-	'utf8',
-);
+const browseClientSource = readFileSync(new URL('../src/public/js/record-browse.js', import.meta.url), 'utf8');
+const linkedCsvSource = readFileSync(new URL('../src/public/js/linked-csv.js', import.meta.url), 'utf8');
 
 const describes = {
 	Account: {
@@ -25,8 +19,22 @@ const describes = {
 			{ name: 'Id', type: 'id', filterable: true },
 			{ name: 'Name', label: 'Account Name', type: 'string', filterable: true, nameField: true },
 			{ name: 'Description', label: 'Description', type: 'textarea', filterable: false },
-			{ name: 'External_Key__c', label: 'External Key', type: 'string', filterable: true, externalId: true, createable: true },
-			{ name: 'Unfilterable_External__c', label: 'Unfilterable External', type: 'string', filterable: false, externalId: true, createable: true },
+			{
+				name: 'External_Key__c',
+				label: 'External Key',
+				type: 'string',
+				filterable: true,
+				externalId: true,
+				createable: true,
+			},
+			{
+				name: 'Unfilterable_External__c',
+				label: 'Unfilterable External',
+				type: 'string',
+				filterable: false,
+				externalId: true,
+				createable: true,
+			},
 		],
 	},
 	Child__c: {
@@ -165,13 +173,15 @@ describe('app-generated SOQL WHERE field guards', () => {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					records: [{
-						tempId: 'r1',
-						objectName: 'Account',
-						values: { [field]: 'key-1' },
-						_csvOperation: 'upsert',
-						_csvExternalIdField: field,
-					}],
+					records: [
+						{
+							tempId: 'r1',
+							objectName: 'Account',
+							values: { [field]: 'key-1' },
+							_csvOperation: 'upsert',
+							_csvExternalIdField: field,
+						},
+					],
 				}),
 			});
 			assert.equal(response.status, 400);

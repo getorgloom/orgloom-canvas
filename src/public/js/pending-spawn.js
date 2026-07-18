@@ -1,21 +1,24 @@
-
 (function () {
 	'use strict';
+	// Materializes pending relationship placeholders after the required object metadata arrives.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	window.OrgLoom.pendingSpawn = {
 		mount: function mount(deps) {
 			const required = [
-				'canvasState', 'showBulkToast',
+				'canvasState',
+				'showBulkToast',
 				'_canvasCapBlockReason',
-				'addToSelection', 'cloneRecord',
-				'pickRecordForFreeTypeNode', 'renderBulkView',
+				'addToSelection',
+				'cloneRecord',
+				'pickRecordForFreeTypeNode',
+				'renderBulkView',
 				'getGraph',
 			];
 			if (!deps) {
-throw new Error('pending-spawn.mount: missing deps object');
-}
+				throw new Error('pending-spawn.mount: missing deps object');
+			}
 			for (const k of required) {
 				if (deps[k] === undefined || deps[k] === null) {
 					throw new Error('pending-spawn.mount: missing dep ' + k);
@@ -34,20 +37,21 @@ throw new Error('pending-spawn.mount: missing deps object');
 			async function spawnDraftRecord(objectName) {
 				const blocked = _canvasCapBlockReason(1);
 				if (blocked) {
- showBulkToast(blocked); return; 
-}
+					showBulkToast(blocked);
+					return;
+				}
 				let s = canvasState.selectedObjects.find((so) => so.name === objectName);
 				if (!s) {
 					try {
- s = await addToSelection(objectName); 
-} catch (e) {
+						s = await addToSelection(objectName);
+					} catch (e) {
 						showBulkToast('Failed to add ' + objectName + ': ' + (e.message || e), 'error');
 						return;
 					}
 				}
 				cloneRecord(objectName);
 			}
-			
+
 			function spawnPendingRecord(worldX, worldY) {
 				let x, y;
 				if (typeof worldX === 'number' && typeof worldY === 'number') {
@@ -99,21 +103,22 @@ throw new Error('pending-spawn.mount: missing deps object');
 					});
 				}
 			}
-			
+
 			async function resolvePendingRecord(recId, objectName) {
 				const rec = canvasState.bulkRecords.find((r) => r.id === recId);
 				if (!rec || !rec.isPending) {
-return;
-}
+					return;
+				}
 				const blocked = _canvasCapBlockReason(1);
 				if (blocked) {
- showBulkToast(blocked); return; 
-}
+					showBulkToast(blocked);
+					return;
+				}
 				let s = canvasState.selectedObjects.find((so) => so.name === objectName);
 				if (!s) {
 					try {
- s = await addToSelection(objectName); 
-} catch (e) {
+						s = await addToSelection(objectName);
+					} catch (e) {
 						showBulkToast('Failed to add ' + objectName + ': ' + (e.message || e), 'error');
 						return;
 					}
@@ -126,36 +131,39 @@ return;
 				rec.values = {};
 				renderBulkView();
 			}
-			
+
 			async function resolvePendingRecordToLoad(recId, objectName) {
 				const rec = canvasState.bulkRecords.find((r) => r.id === recId);
 				if (!rec || !rec.isPending) {
-return;
-}
+					return;
+				}
 				const blocked = _canvasCapBlockReason(1);
 				if (blocked) {
- showBulkToast(blocked); return; 
-}
+					showBulkToast(blocked);
+					return;
+				}
 				let s = canvasState.selectedObjects.find((so) => so.name === objectName);
 				if (!s) {
 					try {
- s = await addToSelection(objectName); 
-} catch (e) {
+						s = await addToSelection(objectName);
+					} catch (e) {
 						showBulkToast('Failed to add ' + objectName + ': ' + (e.message || e), 'error');
 						return;
 					}
 				}
 				const cardEl = getGraph().querySelector('[data-rec-id="' + rec.id + '"]');
 				const loadBtn = cardEl && cardEl.querySelector('[data-pending-pick-load]');
-				pickRecordForFreeTypeNode({
-					id: rec.id,
-					x: rec.x,
-					y: rec.y,
-					objectName: s.name,
-					label: s.label,
-				}, loadBtn || cardEl || null);
+				pickRecordForFreeTypeNode(
+					{
+						id: rec.id,
+						x: rec.x,
+						y: rec.y,
+						objectName: s.name,
+						label: s.label,
+					},
+					loadBtn || cardEl || null,
+				);
 			}
-			
 
 			return {
 				spawnDraftRecord: spawnDraftRecord,

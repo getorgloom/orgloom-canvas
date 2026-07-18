@@ -4,37 +4,37 @@
 		return;
 	}
 	if (!window.ORGLOOM_SENTRY_DSN) {
-return;
-}
+		return;
+	}
 
 	function scrubEvent(event) {
 		if (event.request && typeof event.request.url === 'string') {
 			var i = event.request.url.indexOf('?');
 			if (i >= 0) {
-event.request.url = event.request.url.slice(0, i);
-}
+				event.request.url = event.request.url.slice(0, i);
+			}
 		}
 		if (event.message) {
-event.message = '<redacted-error-message>';
-}
+			event.message = '<redacted-error-message>';
+		}
 		if (event.extra) {
-event.extra = {};
-}
+			event.extra = {};
+		}
 		if (event.breadcrumbs) {
 			event.breadcrumbs.forEach(function (b) {
 				if (b && typeof b.message === 'string') {
-b.message = '<redacted-breadcrumb>';
-}
+					b.message = '<redacted-breadcrumb>';
+				}
 				if (b && b.data) {
-b.data = {};
-}
+					b.data = {};
+				}
 			});
 		}
 		if (event.exception && event.exception.values) {
 			event.exception.values.forEach(function (ex) {
 				if (ex && typeof ex.value === 'string') {
-ex.value = '<redacted-error-message>';
-}
+					ex.value = '<redacted-error-message>';
+				}
 			});
 		}
 		return event;
@@ -50,11 +50,11 @@ ex.value = '<redacted-error-message>';
 		beforeSend: scrubEvent,
 		beforeBreadcrumb: function (b) {
 			if (b && (b.category === 'fetch' || b.category === 'xhr')) {
-return null;
-}
+				return null;
+			}
 			if (b && b.category === 'ui.click') {
-return null;
-}
+				return null;
+			}
 			return b;
 		},
 	});

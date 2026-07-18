@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyValueDrift, executeRecall } from '../src/upload-recall.js';
@@ -8,21 +7,19 @@ function makeQueryConn(stateById) {
 		version: '60.0',
 		request: async ({ method, url }) => {
 			if (method !== 'GET') {
-return { records: [] };
-}
+				return { records: [] };
+			}
 			const qIdx = url.indexOf('?q=');
 			if (qIdx < 0) {
-return { records: [] };
-}
+				return { records: [] };
+			}
 			const soql = decodeURIComponent(url.slice(qIdx + 3));
 			const selMatch = soql.match(/^SELECT\s+(.+?)\s+FROM/i);
-			const fields = selMatch
-				? selMatch[1].split(',').map((f) => f.trim())
-				: ['Id'];
+			const fields = selMatch ? selMatch[1].split(',').map((f) => f.trim()) : ['Id'];
 			const idsMatch = soql.match(/Id IN \(([^)]+)\)/);
 			if (!idsMatch) {
-return { records: [] };
-}
+				return { records: [] };
+			}
 			const ids = idsMatch[1].split(',').map((s) => s.replace(/^'|'$/g, '').trim());
 			const records = ids
 				.map((id) => stateById[id])
@@ -39,7 +36,14 @@ return { records: [] };
 	};
 }
 
-function makeUpdateRow({ tempId = 't1', sfId = '001abc', objectName = 'Account', label = null, priorValues = {}, uploadedValues = {} }) {
+function makeUpdateRow({
+	tempId = 't1',
+	sfId = '001abc',
+	objectName = 'Account',
+	label = null,
+	priorValues = {},
+	uploadedValues = {},
+}) {
 	return { tempId, sfId, objectName, mode: 'update', label, priorValues, uploadedValues };
 }
 
@@ -55,9 +59,7 @@ describe('classifyValueDrift', () => {
 		const conn = makeQueryConn({});
 		const result = await classifyValueDrift({
 			conn,
-			batch: { insertedIds: [
-				{ tempId: 't1', sfId: '001abc', objectName: 'Account', mode: 'create' },
-			] },
+			batch: { insertedIds: [{ tempId: 't1', sfId: '001abc', objectName: 'Account', mode: 'create' }] },
 		});
 		assert.deepEqual(result.records, []);
 		assert.equal(result.summary.eligibleRecords, 0);
@@ -69,9 +71,7 @@ describe('classifyValueDrift', () => {
 		});
 		const result = await classifyValueDrift({
 			conn,
-			batch: { insertedIds: [
-				{ tempId: 't1', sfId: '001abc', objectName: 'Account', mode: 'update' },
-			] },
+			batch: { insertedIds: [{ tempId: 't1', sfId: '001abc', objectName: 'Account', mode: 'update' }] },
 		});
 		assert.deepEqual(result.records, []);
 		assert.equal(result.summary.eligibleRecords, 0);
@@ -135,7 +135,7 @@ describe('classifyValueDrift', () => {
 		assert.equal(rec.drifted.length, 0);
 	});
 
-	test('SF record missing → notFound (deleted out of band, can\'t revert)', async () => {
+	test("SF record missing → notFound (deleted out of band, can't revert)", async () => {
 		const conn = makeQueryConn({}); // no records
 		const row = makeUpdateRow({
 			sfId: '001abc',
@@ -175,8 +175,7 @@ describe('classifyValueDrift', () => {
 		});
 		const result = await classifyValueDrift({ conn, batch: { insertedIds: [row] } });
 		const rec = result.records[0];
-		const industryEntry = [...rec.clean, ...rec.drifted, ...rec.reverted]
-			.find((c) => c.fieldName === 'Industry');
+		const industryEntry = [...rec.clean, ...rec.drifted, ...rec.reverted].find((c) => c.fieldName === 'Industry');
 		assert.ok(industryEntry, 'Industry must still be classified');
 	});
 
@@ -188,8 +187,8 @@ describe('classifyValueDrift', () => {
 				queries.push(url);
 				const qIdx = url.indexOf('?q=');
 				if (qIdx < 0) {
-return { records: [] };
-}
+					return { records: [] };
+				}
 				const soql = decodeURIComponent(url.slice(qIdx + 3));
 				const idsMatch = soql.match(/Id IN \(([^)]+)\)/);
 				const ids = idsMatch[1].split(',').map((s) => s.replace(/^'|'$/g, '').trim());
@@ -200,10 +199,16 @@ return { records: [] };
 		};
 		await classifyValueDrift({
 			conn,
-			batch: { insertedIds: [
-				makeUpdateRow({ sfId: '001a', priorValues: { Industry: 'A' }, uploadedValues: { Industry: 'Banking' } }),
-				makeUpdateRow({ sfId: '001b', priorValues: { Phone: 'B' }, uploadedValues: { Phone: '555' } }),
-			] },
+			batch: {
+				insertedIds: [
+					makeUpdateRow({
+						sfId: '001a',
+						priorValues: { Industry: 'A' },
+						uploadedValues: { Industry: 'Banking' },
+					}),
+					makeUpdateRow({ sfId: '001b', priorValues: { Phone: 'B' }, uploadedValues: { Phone: '555' } }),
+				],
+			},
 		});
 		assert.equal(queries.length, 1, 'should batch all records of one object into one SOQL');
 	});
@@ -218,13 +223,17 @@ function makeRecallConn({ updateBehavior = () => ({ success: true }), executionR
 			if (method === 'GET' && url.indexOf('queryAll') >= 0 && !decodeURIComponent(url).includes('IsDeleted')) {
 				const soql = decodeURIComponent((url.split('q=')[1] || '').replace(/\+/g, ' '));
 				const ids = Array.from(soql.matchAll(/'([^']+)'/g)).map((m) => m[1]);
-				return { records: executionRecords || ids.map((Id) => ({
-					Id,
-					Industry: Id === '001a' || Id === '001abc2' ? 'B' : 'Banking',
-					Phone: Id === '001b' ? '555' : '555-1234',
-					Website: 'new.com',
-					LastName: 'New',
-				})) };
+				return {
+					records:
+						executionRecords ||
+						ids.map((Id) => ({
+							Id,
+							Industry: Id === '001a' || Id === '001abc2' ? 'B' : 'Banking',
+							Phone: Id === '001b' ? '555' : '555-1234',
+							Website: 'new.com',
+							LastName: 'New',
+						})),
+				};
 			}
 			if (method === 'GET' && url.indexOf('queryAll') >= 0) {
 				return { records: [] };
@@ -282,9 +291,7 @@ describe('executeRecall - value-revert path', () => {
 		const result = await executeRecall({
 			conn,
 			batch,
-			revertSelections: [
-				{ sfId: '001abc', fields: ['Industry', 'Phone'] },
-			],
+			revertSelections: [{ sfId: '001abc', fields: ['Industry', 'Phone'] }],
 		});
 		assert.equal(conn.calls.updates.length, 1);
 		const patch = conn.calls.updates[0].patch;
@@ -301,11 +308,13 @@ describe('executeRecall - value-revert path', () => {
 			executionRecords: [{ Id: '001abc', Industry: 'Third-party edit' }],
 		});
 		const batch = {
-			insertedIds: [makeUpdateRow({
-				sfId: '001abc',
-				priorValues: { Industry: 'Tech' },
-				uploadedValues: { Industry: 'Banking' },
-			})],
+			insertedIds: [
+				makeUpdateRow({
+					sfId: '001abc',
+					priorValues: { Industry: 'Tech' },
+					uploadedValues: { Industry: 'Banking' },
+				}),
+			],
 			associations: [],
 		};
 		const result = await executeRecall({
@@ -373,12 +382,16 @@ describe('executeRecall - value-revert path', () => {
 		const batch = {
 			insertedIds: [
 				makeUpdateRow({
-					sfId: '001a', objectName: 'Account',
-					priorValues: { Industry: 'A' }, uploadedValues: { Industry: 'B' },
+					sfId: '001a',
+					objectName: 'Account',
+					priorValues: { Industry: 'A' },
+					uploadedValues: { Industry: 'B' },
 				}),
 				makeUpdateRow({
-					sfId: '003c', objectName: 'Contact',
-					priorValues: { LastName: 'Old' }, uploadedValues: { LastName: 'New' },
+					sfId: '003c',
+					objectName: 'Contact',
+					priorValues: { LastName: 'Old' },
+					uploadedValues: { LastName: 'New' },
 				}),
 			],
 			associations: [],
@@ -427,7 +440,8 @@ describe('executeRecall - value-revert path', () => {
 		const batch = {
 			insertedIds: [
 				makeUpdateRow({
-					sfId: '001a', objectName: 'Account',
+					sfId: '001a',
+					objectName: 'Account',
 					priorValues: { Industry: 'A', _meta: 'x' },
 					uploadedValues: { Industry: 'B', _meta: 'y' },
 				}),

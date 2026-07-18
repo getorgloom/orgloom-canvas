@@ -1,15 +1,11 @@
-
-import { ext } from "../extensions.js";
-import {
-	generateDataKey,
-	getCachedDek,
-	putCachedDek,
-} from "../storage/canvas-encryption.js";
+// Wrapped DEKs for upload-ledger files, isolated from canvas keys by table and scope.
+import { ext } from '../extensions.js';
+import { generateDataKey, getCachedDek, putCachedDek } from '../storage/canvas-encryption.js';
 
 async function _insertOrReplaceWrappedKey(db, { sfOrgId, batchId, wrapped }) {
 	const now = Date.now();
 	await db
-		.insertInto("batch_keys")
+		.insertInto('batch_keys')
 		.values({
 			sf_org_id: sfOrgId,
 			batch_id: batchId,
@@ -20,21 +16,16 @@ async function _insertOrReplaceWrappedKey(db, { sfOrgId, batchId, wrapped }) {
 			created_at: now,
 			updated_at: now,
 		})
-		.onConflict((oc) => oc.columns(["sf_org_id", "batch_id"]).doNothing())
+		.onConflict((oc) => oc.columns(['sf_org_id', 'batch_id']).doNothing())
 		.execute();
 }
 
 async function _readRow(db, sfOrgId, batchId) {
 	return db
-		.selectFrom("batch_keys")
-		.select([
-			"wrapped_key",
-			"wrap_iv",
-			"wrap_auth_tag",
-			"master_key_version",
-		])
-		.where("sf_org_id", "=", sfOrgId)
-		.where("batch_id", "=", batchId)
+		.selectFrom('batch_keys')
+		.select(['wrapped_key', 'wrap_iv', 'wrap_auth_tag', 'master_key_version'])
+		.where('sf_org_id', '=', sfOrgId)
+		.where('batch_id', '=', batchId)
 		.executeTakeFirst();
 }
 
@@ -52,7 +43,7 @@ export async function get({ sfOrgId, batchId, kekProvider, sessionId }) {
 		return null;
 	}
 	if (!kekProvider) {
-		throw new Error("batch-keys.get: kekProvider required");
+		throw new Error('batch-keys.get: kekProvider required');
 	}
 	const cached = getCachedDek(sessionId, 'batch', batchId);
 	if (cached) {
@@ -69,14 +60,15 @@ export async function get({ sfOrgId, batchId, kekProvider, sessionId }) {
 }
 
 export async function getOrMint({ sfOrgId, batchId, kekProvider, sessionId }) {
+	// Rewrites reuse the existing key so older Salesforce file versions remain decryptable.
 	if (!sfOrgId) {
-		throw new Error("sfOrgId required");
+		throw new Error('sfOrgId required');
 	}
 	if (!batchId) {
-		throw new Error("batchId required");
+		throw new Error('batchId required');
 	}
 	if (!kekProvider) {
-		throw new Error("batch-keys.getOrMint: kekProvider required");
+		throw new Error('batch-keys.getOrMint: kekProvider required');
 	}
 	const existing = await get({ sfOrgId, batchId, kekProvider, sessionId });
 	if (existing) {
@@ -92,13 +84,13 @@ export async function getOrMint({ sfOrgId, batchId, kekProvider, sessionId }) {
 
 export async function persist({ sfOrgId, batchId, dataKey, kekProvider, sessionId }) {
 	if (!sfOrgId) {
-		throw new Error("sfOrgId required");
+		throw new Error('sfOrgId required');
 	}
 	if (!batchId) {
-		throw new Error("batchId required");
+		throw new Error('batchId required');
 	}
 	if (!kekProvider) {
-		throw new Error("batch-keys.persist: kekProvider required");
+		throw new Error('batch-keys.persist: kekProvider required');
 	}
 	const wrapped = await kekProvider.wrapDataKey(dataKey);
 	const db = ext.getDb();
@@ -112,9 +104,9 @@ export async function remove({ sfOrgId, batchId }) {
 	}
 	const db = ext.getDb();
 	const result = await db
-		.deleteFrom("batch_keys")
-		.where("sf_org_id", "=", sfOrgId)
-		.where("batch_id", "=", batchId)
+		.deleteFrom('batch_keys')
+		.where('sf_org_id', '=', sfOrgId)
+		.where('batch_id', '=', batchId)
 		.executeTakeFirst();
 	return Number(result && result.numDeletedRows) || 0;
 }

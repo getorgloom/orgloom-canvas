@@ -2,17 +2,17 @@
 	function openTarget() {
 		var hash = location.hash ? location.hash.slice(1) : '';
 		if (!hash) {
-return;
-}
+			return;
+		}
 		var el = document.getElementById(hash);
 		if (!el || el.tagName !== 'DETAILS') {
-return;
-}
+			return;
+		}
 		el.open = true;
 		setTimeout(function () {
 			try {
- el.scrollIntoView({ block: 'start' }); 
-} catch (_) {}
+				el.scrollIntoView({ block: 'start' });
+			} catch (_) {}
 		}, 0);
 	}
 	if (document.readyState === 'loading') {

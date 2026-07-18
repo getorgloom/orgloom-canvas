@@ -1,4 +1,4 @@
-
+// Canonical product capability registry. UI visibility and server execution gates share these IDs.
 export const CAPABILITIES = Object.freeze({
 	'create-slot-canvas': {
 		workspaceToggle: null,
@@ -105,8 +105,8 @@ export const CAPABILITIES = Object.freeze({
 		scope: 'connection',
 		requiresApproval: ({ orgType, settings, plan }) => {
 			if (!plan || plan.id !== 'team') {
-return false;
-}
+				return false;
+			}
 			if (orgType === 'production') {
 				return !!settings.prod_org_allowlist_enabled;
 			}
@@ -131,11 +131,9 @@ const _BASE_DATA_CAPS = [
 	'export-canvas',
 ];
 
-const _LOCKED_CAPS = [
-	'connect-sf-org',
-	'open-saved-canvas',
-];
+const _LOCKED_CAPS = ['connect-sf-org', 'open-saved-canvas'];
 
+// Pro contains individual power-user tools; Team adds multi-member administration.
 const _PRO_ADDS = [
 	'create-slot-canvas',
 	'run-script',
@@ -147,9 +145,7 @@ const _PRO_ADDS = [
 	'auto-fill-records',
 ];
 
-const _TEAM_ADDS = [
-	'invite-members',
-];
+const _TEAM_ADDS = ['invite-members'];
 
 export const PLANS = Object.freeze({
 	free: Object.freeze({
@@ -191,14 +187,15 @@ export const PLANS = Object.freeze({
 });
 
 export function planMeetsRequirement(planOrId, requirement) {
+	// Rank checks express plan hierarchy only; member overrides are enforced separately.
 	if (!requirement) {
-return true;
-}
+		return true;
+	}
 	const plan = typeof planOrId === 'string' ? PLANS[planOrId] : planOrId;
 	const required = PLANS[requirement];
 	if (!plan || !required) {
-return false;
-}
+		return false;
+	}
 	return plan.rank >= required.rank;
 }
 

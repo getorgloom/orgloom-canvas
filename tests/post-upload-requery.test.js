@@ -1,10 +1,6 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-	_fetchCanonicalValuesForUpload,
-	_buildBatchEntryFromResult,
-} from '../src/canvas-routes.js';
+import { _fetchCanonicalValuesForUpload, _buildBatchEntryFromResult } from '../src/canvas-routes.js';
 
 describe('_buildBatchEntryFromResult (canonical-values preference)', () => {
 	test('without canonical → uploadedValues mirrors rec.values (legacy path)', () => {
@@ -26,8 +22,11 @@ describe('_buildBatchEntryFromResult (canonical-values preference)', () => {
 		};
 		const canonical = { values: { Industry: 'Technology', Phone: '555-1234' } };
 		const entry = _buildBatchEntryFromResult(r, rec, canonical);
-		assert.equal(entry.uploadedValues.Industry, 'Technology',
-			'trigger-transformed value must land in uploadedValues, not what we wrote');
+		assert.equal(
+			entry.uploadedValues.Industry,
+			'Technology',
+			'trigger-transformed value must land in uploadedValues, not what we wrote',
+		);
 		assert.equal(entry.uploadedValues.Phone, '555-1234');
 		assert.equal(entry.priorValues.Industry, 'Old');
 	});
@@ -41,8 +40,11 @@ describe('_buildBatchEntryFromResult (canonical-values preference)', () => {
 		const canonical = { values: { Industry: 'Technology' } };
 		const entry = _buildBatchEntryFromResult(r, rec, canonical);
 		assert.equal(entry.uploadedValues.Industry, 'Technology');
-		assert.equal(entry.uploadedValues.Phone, '555-1234',
-			'Phone falls back to client value when canonical lacks it');
+		assert.equal(
+			entry.uploadedValues.Phone,
+			'555-1234',
+			'Phone falls back to client value when canonical lacks it',
+		);
 	});
 
 	test('canonical with extra fields not in rec.values is ignored', () => {
@@ -90,8 +92,8 @@ function makeQueryConn(stateById) {
 			calls.queries.push(soql);
 			const idsMatch = soql.match(/Id IN \(([^)]+)\)/);
 			if (!idsMatch) {
-return { records: [] };
-}
+				return { records: [] };
+			}
 			const ids = idsMatch[1].split(',').map((s) => s.replace(/^'|'$/g, '').trim());
 			const selMatch = soql.match(/^SELECT\s+(.+?)\s+FROM/i);
 			const fields = selMatch ? selMatch[1].split(',').map((f) => f.trim()) : ['Id'];
@@ -114,7 +116,9 @@ describe('_fetchCanonicalValuesForUpload', () => {
 	test('returns empty map for empty results array', async () => {
 		const conn = makeQueryConn({});
 		const out = await _fetchCanonicalValuesForUpload({
-			conn, results: [], recordsById: new Map(),
+			conn,
+			results: [],
+			recordsById: new Map(),
 		});
 		assert.equal(out.size, 0);
 		assert.equal(conn.calls.queries.length, 0);
@@ -124,11 +128,15 @@ describe('_fetchCanonicalValuesForUpload', () => {
 		const conn = makeQueryConn({
 			'001abc': { Id: '001abc', Industry: 'Technology', Phone: '555-1234' },
 		});
-		const results = [
-			{ tempId: 1, id: '001abc', objectName: 'Account', mode: 'update', success: true },
-		];
+		const results = [{ tempId: 1, id: '001abc', objectName: 'Account', mode: 'update', success: true }];
 		const recordsById = new Map([
-			[1, { values: { Industry: 'Tech', Phone: '555-1234' }, loadedValues: { Industry: 'Old', Phone: '555-0000' } }],
+			[
+				1,
+				{
+					values: { Industry: 'Tech', Phone: '555-1234' },
+					loadedValues: { Industry: 'Old', Phone: '555-0000' },
+				},
+			],
 		]);
 		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
 		assert.equal(out.size, 1);
@@ -154,8 +162,7 @@ describe('_fetchCanonicalValuesForUpload', () => {
 			[2, { values: { Industry: 'b' }, loadedValues: { Industry: 'x' } }],
 		]);
 		await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		assert.equal(conn.calls.queries.length, 1,
-			'records of the same object should hit SF in one SOQL, not N');
+		assert.equal(conn.calls.queries.length, 1, 'records of the same object should hit SF in one SOQL, not N');
 	});
 
 	test('skipped: failed results, unchanged results, and results without recordsById entry', async () => {
@@ -185,19 +192,19 @@ describe('_fetchCanonicalValuesForUpload', () => {
 		const conn = makeQueryConn({
 			'001a': { Id: '001a', Industry: 'Banking' },
 		});
-		const results = [
-			{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true },
-		];
+		const results = [{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true }];
 		const recordsById = new Map([
-			[1, {
-				values: { Industry: 'a', 'BadField; DROP TABLE': 'x' },
-				loadedValues: { Industry: 'x' },
-			}],
+			[
+				1,
+				{
+					values: { Industry: 'a', 'BadField; DROP TABLE': 'x' },
+					loadedValues: { Industry: 'x' },
+				},
+			],
 		]);
 		await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
 		const soql = conn.calls.queries[0] || '';
-		assert.doesNotMatch(soql, /DROP TABLE/,
-			'malformed field names must not reach the SOQL');
+		assert.doesNotMatch(soql, /DROP TABLE/, 'malformed field names must not reach the SOQL');
 	});
 
 	test('SOQL failure leaves the tempId missing from the returned map (graceful fallback)', async () => {
@@ -208,12 +215,8 @@ describe('_fetchCanonicalValuesForUpload', () => {
 				throw new Error('INSUFFICIENT_ACCESS');
 			},
 		};
-		const results = [
-			{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true },
-		];
-		const recordsById = new Map([
-			[1, { values: { Industry: 'a' }, loadedValues: { Industry: 'x' } }],
-		]);
+		const results = [{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true }];
+		const recordsById = new Map([[1, { values: { Industry: 'a' }, loadedValues: { Industry: 'x' } }]]);
 		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
 		assert.equal(out.size, 0);
 	});
@@ -222,14 +225,15 @@ describe('_fetchCanonicalValuesForUpload', () => {
 		const conn = makeQueryConn({
 			'001a': { Id: '001a' },
 		});
-		const results = [
-			{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true },
-		];
+		const results = [{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true }];
 		const recordsById = new Map([
-			[1, {
-				values: { Industry: 'a' },
-				loadedValues: { Industry: 'x', Phone: '555-0000' },
-			}],
+			[
+				1,
+				{
+					values: { Industry: 'a' },
+					loadedValues: { Industry: 'x', Phone: '555-0000' },
+				},
+			],
 		]);
 		await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
 		const soql = conn.calls.queries[0] || '';
@@ -239,12 +243,8 @@ describe('_fetchCanonicalValuesForUpload', () => {
 
 	test('object name with bad shape is silently skipped (defense in depth)', async () => {
 		const conn = makeQueryConn({});
-		const results = [
-			{ tempId: 1, id: '001a', objectName: 'Bad; DROP TABLE', mode: 'update', success: true },
-		];
-		const recordsById = new Map([
-			[1, { values: { Industry: 'a' } }],
-		]);
+		const results = [{ tempId: 1, id: '001a', objectName: 'Bad; DROP TABLE', mode: 'update', success: true }];
+		const recordsById = new Map([[1, { values: { Industry: 'a' } }]]);
 		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
 		assert.equal(out.size, 0);
 		assert.equal(conn.calls.queries.length, 0);
@@ -260,7 +260,11 @@ describe('_orderDeletesChildrenFirst', () => {
 		const deletes = [del(1), del(2)]; // 1 = parent first (canvas order)
 		const assoc = [{ fromId: 2, toId: 1, fieldName: 'ParentId' }];
 		const ordered = _orderDeletesChildrenFirst(deletes, assoc);
-		assert.deepEqual(ordered.map((d) => d.tempId), [2, 1], 'child (2) first, parent (1) last');
+		assert.deepEqual(
+			ordered.map((d) => d.tempId),
+			[2, 1],
+			'child (2) first, parent (1) last',
+		);
 	});
 
 	test('three-level chain orders grandchild → child → parent', () => {
@@ -270,14 +274,21 @@ describe('_orderDeletesChildrenFirst', () => {
 			{ fromId: 3, toId: 2 },
 		];
 		const ordered = _orderDeletesChildrenFirst(deletes, assoc);
-		assert.deepEqual(ordered.map((d) => d.tempId), [3, 2, 1]);
+		assert.deepEqual(
+			ordered.map((d) => d.tempId),
+			[3, 2, 1],
+		);
 	});
 
 	test('unlinked deletes keep relative order; associations to non-deleted records are ignored', () => {
 		const deletes = [del(1), del(2), del(3)];
 		const assoc = [{ fromId: 99, toId: 1 }];
 		const ordered = _orderDeletesChildrenFirst(deletes, assoc);
-		assert.deepEqual(ordered.map((d) => d.tempId), [1, 2, 3], 'no reorder without in-set edges');
+		assert.deepEqual(
+			ordered.map((d) => d.tempId),
+			[1, 2, 3],
+			'no reorder without in-set edges',
+		);
 	});
 
 	test('entries missing sfId/tempId run last, in original order', () => {
@@ -285,7 +296,10 @@ describe('_orderDeletesChildrenFirst', () => {
 		const deletes = [broken, del(1), del(2)];
 		const assoc = [{ fromId: 2, toId: 1 }];
 		const ordered = _orderDeletesChildrenFirst(deletes, assoc);
-		assert.deepEqual(ordered.map((d) => d.tempId), [2, 1, null]);
+		assert.deepEqual(
+			ordered.map((d) => d.tempId),
+			[2, 1, null],
+		);
 	});
 
 	test('empty and single-entry inputs pass through', () => {

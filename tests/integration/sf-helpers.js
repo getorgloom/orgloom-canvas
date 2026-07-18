@@ -1,4 +1,3 @@
-
 import { execSync } from 'node:child_process';
 import jsforce from 'jsforce';
 
@@ -6,24 +5,21 @@ const TEST_RULE_PREFIX = 'OrgLoomTest_';
 
 export function connectViaSfCli(alias) {
 	if (!alias) {
-throw new Error('alias required');
-}
+		throw new Error('alias required');
+	}
 	let stdout;
 	try {
-		stdout = execSync(
-			`sf org display --target-org ${alias} --json`,
-			{
-				encoding: 'utf8',
-				stdio: ['pipe', 'pipe', 'pipe'],
-				env: {
-					...process.env,
-					SF_AUTO_UPDATE_DISABLE: 'true',
-					SF_AUTOUPDATE_DISABLE: 'true',
-					FORCE_COLOR: '0',
-					NO_COLOR: '1',
-				},
+		stdout = execSync(`sf org display --target-org ${alias} --json`, {
+			encoding: 'utf8',
+			stdio: ['pipe', 'pipe', 'pipe'],
+			env: {
+				...process.env,
+				SF_AUTO_UPDATE_DISABLE: 'true',
+				SF_AUTOUPDATE_DISABLE: 'true',
+				FORCE_COLOR: '0',
+				NO_COLOR: '1',
 			},
-		);
+		});
 	} catch (err) {
 		const stderr = err.stderr ? err.stderr.toString() : '';
 		throw new Error(`sf org display failed for alias "${alias}": ${stderr || err.message}`);
@@ -38,8 +34,8 @@ throw new Error('alias required');
 	const jsonText = stripped.slice(startIdx);
 	let parsed;
 	try {
- parsed = JSON.parse(jsonText); 
-} catch (_e) {
+		parsed = JSON.parse(jsonText);
+	} catch (_e) {
 		throw new Error(
 			`sf org display did not return parseable JSON. First 300 chars of stripped stdout: ${JSON.stringify(stripped.slice(0, 300))}`,
 		);
@@ -47,8 +43,8 @@ throw new Error('alias required');
 	const r = parsed && parsed.result;
 	if (!r || !r.accessToken || !r.instanceUrl) {
 		throw new Error(
-			'sf org display did not return accessToken/instanceUrl. Parsed payload keys: '
-			+ Object.keys((parsed && parsed.result) || parsed || {}).join(', '),
+			'sf org display did not return accessToken/instanceUrl. Parsed payload keys: ' +
+				Object.keys((parsed && parsed.result) || parsed || {}).join(', '),
 		);
 	}
 	return new jsforce.Connection({
@@ -68,7 +64,10 @@ export function sentinelErrorMessage(ruleName) {
 	return `SENTINEL_${ruleName}_FAILED`;
 }
 
-export async function deployValidationRule(conn, { objectName, ruleName, formula, errorMessage, description = 'OrgLoom integration test' }) {
+export async function deployValidationRule(
+	conn,
+	{ objectName, ruleName, formula, errorMessage, description = 'OrgLoom integration test' },
+) {
 	const result = await conn.tooling.sobject('ValidationRule').create({
 		FullName: `${objectName}.${ruleName}`,
 		Metadata: {
@@ -88,14 +87,14 @@ export async function deployValidationRule(conn, { objectName, ruleName, formula
 
 export async function deleteValidationRule(conn, ruleId) {
 	if (!ruleId) {
-return;
-}
+		return;
+	}
 	try {
 		await conn.tooling.sobject('ValidationRule').destroy(ruleId);
 	} catch (e) {
 		if (e && (e.errorCode === 'NOT_FOUND' || e.errorCode === 'INVALID_CROSS_REFERENCE_KEY')) {
-return;
-}
+			return;
+		}
 		throw e;
 	}
 }
@@ -110,8 +109,8 @@ export async function cleanupTestRules(conn, objectName) {
 		})
 		.map((r) => r.Id);
 	for (const id of ids) {
-await deleteValidationRule(conn, id);
-}
+		await deleteValidationRule(conn, id);
+	}
 	return ids.length;
 }
 
@@ -120,28 +119,29 @@ export async function tryInsert(conn, objectName, values) {
 	try {
 		result = await conn.sobject(objectName).create(values);
 	} catch (err) {
-		const errs = err && err.errors
-			? err.errors
-			: [{ message: err.message || String(err), statusCode: err.errorCode || 'UNKNOWN' }];
+		const errs =
+			err && err.errors
+				? err.errors
+				: [{ message: err.message || String(err), statusCode: err.errorCode || 'UNKNOWN' }];
 		return { ok: false, errors: errs };
 	}
 	if (result && result.success) {
-return { ok: true, id: result.id };
-}
+		return { ok: true, id: result.id };
+	}
 	const errs = (result && result.errors) || [];
 	return { ok: false, errors: errs };
 }
 
 export async function deleteRecord(conn, objectName, recordId) {
 	if (!recordId) {
-return;
-}
+		return;
+	}
 	try {
 		await conn.sobject(objectName).destroy(recordId);
 	} catch (e) {
 		if (e && (e.errorCode === 'ENTITY_IS_DELETED' || e.errorCode === 'NOT_FOUND')) {
-return;
-}
+			return;
+		}
 		throw e;
 	}
 }
@@ -153,9 +153,9 @@ export async function waitForRuleActive(conn, objectName, failingValues, sentine
 			return; // Active.
 		}
 		if (r.ok) {
-await deleteRecord(conn, objectName, r.id);
-}
+			await deleteRecord(conn, objectName, r.id);
+		}
 		await new Promise((resolve) => setTimeout(resolve, delayMs));
 	}
-	throw new Error('Rule did not become active within ' + (tries * delayMs) + 'ms');
+	throw new Error('Rule did not become active within ' + tries * delayMs + 'ms');
 }

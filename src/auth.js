@@ -1,4 +1,3 @@
-
 import jsforce from 'jsforce';
 import { config } from 'orgloom-canvas/config';
 

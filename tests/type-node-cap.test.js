@@ -11,7 +11,18 @@ const source = fs.readFileSync(path.resolve(here, '../src/public/js/type-node.js
 function harness(records, capResult) {
 	const window = {};
 	const toasts = [];
-	vm.runInNewContext(source, { window, Set, Map, Promise, Object, Math, String, encodeURIComponent, setTimeout, clearTimeout });
+	vm.runInNewContext(source, {
+		window,
+		Set,
+		Map,
+		Promise,
+		Object,
+		Math,
+		String,
+		encodeURIComponent,
+		setTimeout,
+		clearTimeout,
+	});
 	const state = {
 		bulkRecords: records,
 		bulkAssociations: [],
@@ -67,7 +78,11 @@ test('load-existing rechecks the cap when the picked record materializes', async
 test('a duplicate pick does not consume cap headroom and focuses the existing card', async () => {
 	const existing = { id: 7, objectName: 'Account', loadedFromId: '001000000000001AAA', x: 1, y: 2 };
 	const pending = { id: 42, isTypeNode: true, isPending: true, objectName: 'Account', x: 10, y: 20 };
-	const { api, state, toasts } = harness([existing, pending], { ok: false, blocked: true, reason: 'Canvas is full.' });
+	const { api, state, toasts } = harness([existing, pending], {
+		ok: false,
+		blocked: true,
+		reason: 'Canvas is full.',
+	});
 	await api.loadRecordIntoFreeTypeNode(pending, { Id: existing.loadedFromId, Name: 'Already here' });
 	assert.deepEqual(state.bulkRecords, [existing]);
 	assert.deepEqual(Array.from(state.bulkSelectedIds), [existing.id]);

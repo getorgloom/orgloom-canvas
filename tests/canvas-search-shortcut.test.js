@@ -14,5 +14,8 @@ test('record editor has an explicit visible-state hook for global shortcuts', ()
 
 test('canvas Ctrl+F does not intercept browser find while the record editor is open', () => {
 	assert.match(appSource, /recordEditorOpen = Boolean\([\s\S]*\.record-editor-modal:not\(\.hidden\)/);
-	assert.match(appSource, /!isInputTarget &&[\s\S]*!recordEditorOpen &&[\s\S]*\(e\.key === "f" \|\| e\.key === "F"\)[\s\S]*e\.preventDefault\(\)[\s\S]*openCanvasSearchModal\(\)/);
+	assert.match(
+		appSource,
+		/!isInputTarget\s*&&\s*!recordEditorOpen\s*&&[\s\S]*\(e\.key === ['"]f['"] \|\| e\.key === ['"]F['"]\)[\s\S]*e\.preventDefault\(\)[\s\S]*openCanvasSearchModal\(\)/,
+	);
 });

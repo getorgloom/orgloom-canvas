@@ -1,20 +1,25 @@
-
 (function () {
 	'use strict';
+	// Finds likely duplicates with filterable keys and leaves ambiguous matches for user review.
 
 	window.OrgLoom = window.OrgLoom || {};
 
 	window.OrgLoom.findDuplicatesModal = {
 		mount: function mount(deps) {
 			const required = [
-				'canvasState', 'escapeHtml', 'recordOrdinal',
-				'renderBulkView', 'deleteRecord', 'markPendingDelete',
-				'isRecordPendingDelete', 'showBulkToast',
+				'canvasState',
+				'escapeHtml',
+				'recordOrdinal',
+				'renderBulkView',
+				'deleteRecord',
+				'markPendingDelete',
+				'isRecordPendingDelete',
+				'showBulkToast',
 				'getCyInstance',
 			];
 			if (!deps) {
-throw new Error('find-duplicates-modal.mount: missing deps object');
-}
+				throw new Error('find-duplicates-modal.mount: missing deps object');
+			}
 			for (const k of required) {
 				if (deps[k] === undefined || deps[k] === null) {
 					throw new Error('find-duplicates-modal.mount: missing dep ' + k);
@@ -29,52 +34,50 @@ throw new Error('find-duplicates-modal.mount: missing deps object');
 			const isRecordPendingDelete = deps.isRecordPendingDelete;
 			const showBulkToast = deps.showBulkToast;
 			const getCyInstance = deps.getCyInstance;
-			const showBulkToastWithAction = typeof deps.showBulkToastWithAction === 'function'
-				? deps.showBulkToastWithAction : null;
-			const undoStackSize = typeof deps.undoStackSize === 'function'
-				? deps.undoStackSize : null;
-			const trimUndoStack = typeof deps.trimUndoStack === 'function'
-				? deps.trimUndoStack : null;
+			const showBulkToastWithAction =
+				typeof deps.showBulkToastWithAction === 'function' ? deps.showBulkToastWithAction : null;
+			const undoStackSize = typeof deps.undoStackSize === 'function' ? deps.undoStackSize : null;
+			const trimUndoStack = typeof deps.trimUndoStack === 'function' ? deps.trimUndoStack : null;
 
 			function _jumpToRecord(recordId) {
 				const cy = getCyInstance && getCyInstance();
 				if (!cy) {
-return;
-}
+					return;
+				}
 				const node = cy.getElementById('r' + recordId);
 				if (!node || !node.length) {
-return;
-}
+					return;
+				}
 				cy.animate({
 					center: { eles: node },
 					duration: 380,
 					easing: 'ease-out',
 				});
 				try {
- node.addClass('csr-flash'); 
-} catch (_) {}
+					node.addClass('csr-flash');
+				} catch (_) {}
 				const overlay = document.querySelector('.fdm-overlay');
 				if (overlay) {
-overlay.classList.add('fdm-peek');
-}
+					overlay.classList.add('fdm-peek');
+				}
 				setTimeout(() => {
 					try {
- node.removeClass('csr-flash'); 
-} catch (_) {}
+						node.removeClass('csr-flash');
+					} catch (_) {}
 					if (overlay) {
-overlay.classList.remove('fdm-peek');
-}
+						overlay.classList.remove('fdm-peek');
+					}
 				}, 1400);
 			}
 
 			const MATCH_RULES = {
 				Contact: [['Email'], ['FirstName', 'LastName']],
-				Lead:    [['Email'], ['FirstName', 'LastName', 'Company']],
-				User:    [['Email'], ['Username'], ['FirstName', 'LastName']],
+				Lead: [['Email'], ['FirstName', 'LastName', 'Company']],
+				User: [['Email'], ['Username'], ['FirstName', 'LastName']],
 				Account: [['Name']],
-				Asset:   [['Name']],
+				Asset: [['Name']],
 				Opportunity: [['Name']],
-				Case:    [['Subject']],
+				Case: [['Subject']],
 			};
 			const DEFAULT_RULE = [['Name']];
 
@@ -83,9 +86,10 @@ overlay.classList.remove('fdm-peek');
 			}
 
 			function _normalize(v) {
+				// Matching is intentionally conservative: trim, case-fold, and collapse whitespace only.
 				if (v === null || v === undefined) {
-return '';
-}
+					return '';
+				}
 				return String(v).trim().toLowerCase().replace(/\s+/g, ' ');
 			}
 
@@ -97,13 +101,14 @@ return '';
 					for (const f of fieldSet) {
 						const norm = _normalize(v[f]);
 						if (!norm) {
- full = false; break; 
-}
+							full = false;
+							break;
+						}
 						parts.push(f + ':' + norm);
 					}
 					if (full) {
-return { fields: fieldSet, key: parts.join('||') };
-}
+						return { fields: fieldSet, key: parts.join('||') };
+					}
 				}
 				return null;
 			}
@@ -115,9 +120,14 @@ return { fields: fieldSet, key: parts.join('||') };
 
 			function _displayName(rec) {
 				const v = rec.values || {};
-				const guess = v.Name || (v.FirstName || v.LastName ? [v.FirstName, v.LastName].filter(Boolean).join(' ') : '')
-					|| v.Subject || v.CaseNumber || v.Email || '';
-				return guess || ('(no name)');
+				const guess =
+					v.Name ||
+					(v.FirstName || v.LastName ? [v.FirstName, v.LastName].filter(Boolean).join(' ') : '') ||
+					v.Subject ||
+					v.CaseNumber ||
+					v.Email ||
+					'';
+				return guess || '(no name)';
 			}
 
 			function _matchExcerpt(rec, fields) {
@@ -130,25 +140,26 @@ return { fields: fieldSet, key: parts.join('||') };
 
 			function _sortGroupRecords(arr) {
 				arr.sort((a, b) => {
-					const aLoaded = !!a.loadedFromId, bLoaded = !!b.loadedFromId;
+					const aLoaded = !!a.loadedFromId,
+						bLoaded = !!b.loadedFromId;
 					if (aLoaded !== bLoaded) {
-return aLoaded ? -1 : 1;
-}
+						return aLoaded ? -1 : 1;
+					}
 					return recordOrdinal(a) - recordOrdinal(b);
 				});
 			}
 
 			function _scanForObject(objectName, fields, op) {
 				if (!objectName || !Array.isArray(fields) || fields.length === 0) {
-return null;
-}
+					return null;
+				}
 				op = op === 'or' ? 'or' : 'and';
 				const recs = canvasState.bulkRecords.filter(
-					(r) => r && !r.isTypeNode && !isRecordPendingDelete(r) && r.objectName === objectName
+					(r) => r && !r.isTypeNode && !isRecordPendingDelete(r) && r.objectName === objectName,
 				);
 				if (recs.length < 2) {
-return null;
-}
+					return null;
+				}
 
 				if (op === 'and') {
 					const buckets = new Map();
@@ -159,30 +170,31 @@ return null;
 						for (const f of fields) {
 							const norm = _normalize(v[f]);
 							if (!norm) {
- full = false; break; 
-}
+								full = false;
+								break;
+							}
 							parts.push(f + ':' + norm);
 						}
 						if (!full) {
-continue;
-}
+							continue;
+						}
 						const k = parts.join('||');
 						if (!buckets.has(k)) {
-buckets.set(k, []);
-}
+							buckets.set(k, []);
+						}
 						buckets.get(k).push(rec);
 					}
 					const groups = [];
 					for (const bucket of buckets.values()) {
 						if (bucket.length < 2) {
-continue;
-}
+							continue;
+						}
 						_sortGroupRecords(bucket);
 						groups.push({ fields, records: bucket, winnerId: bucket[0].id });
 					}
 					if (groups.length === 0) {
-return null;
-}
+						return null;
+					}
 					return { objectName, groups, defaultFields: fields, op };
 				}
 
@@ -195,10 +207,11 @@ return null;
 					return i;
 				};
 				const union = (i, j) => {
-					const ri = find(i), rj = find(j);
+					const ri = find(i),
+						rj = find(j);
 					if (ri !== rj) {
-parent[ri] = rj;
-}
+						parent[ri] = rj;
+					}
 				};
 				for (const f of fields) {
 					const byValue = new Map();
@@ -206,72 +219,74 @@ parent[ri] = rj;
 						const v = (recs[i].values || {})[f];
 						const norm = _normalize(v);
 						if (!norm) {
-continue;
-}
+							continue;
+						}
 						if (!byValue.has(norm)) {
-byValue.set(norm, []);
-}
+							byValue.set(norm, []);
+						}
 						byValue.get(norm).push(i);
 					}
 					for (const idxs of byValue.values()) {
 						if (idxs.length < 2) {
-continue;
-}
+							continue;
+						}
 						for (let k = 1; k < idxs.length; k++) {
-union(idxs[0], idxs[k]);
-}
+							union(idxs[0], idxs[k]);
+						}
 					}
 				}
 				const componentMap = new Map();
 				for (let i = 0; i < recs.length; i++) {
 					const root = find(i);
 					if (!componentMap.has(root)) {
-componentMap.set(root, []);
-}
+						componentMap.set(root, []);
+					}
 					componentMap.get(root).push(recs[i]);
 				}
 				const groups = [];
 				for (const component of componentMap.values()) {
 					if (component.length < 2) {
-continue;
-}
+						continue;
+					}
 					_sortGroupRecords(component);
 					groups.push({ fields, records: component, winnerId: component[0].id });
 				}
 				if (groups.length === 0) {
-return null;
-}
+					return null;
+				}
 				return { objectName, groups, defaultFields: fields, op };
 			}
 
-
 			const SYSTEM_FIELDS = new Set([
 				'Id',
-				'CreatedDate', 'CreatedById',
-				'LastModifiedDate', 'LastModifiedById',
+				'CreatedDate',
+				'CreatedById',
+				'LastModifiedDate',
+				'LastModifiedById',
 				'SystemModstamp',
-				'LastReferencedDate', 'LastViewedDate',
+				'LastReferencedDate',
+				'LastViewedDate',
 				'IsDeleted',
 			]);
 
 			function _availableFieldsForObject(objectName) {
 				const recs = canvasState.bulkRecords.filter(
-					(r) => r && !r.isTypeNode && !isRecordPendingDelete(r) && r.objectName === objectName
+					(r) => r && !r.isTypeNode && !isRecordPendingDelete(r) && r.objectName === objectName,
 				);
 				const counts = new Map();
 				for (const rec of recs) {
 					const v = rec.values || {};
 					for (const k of Object.keys(v)) {
 						if (!k || k.startsWith('_')) {
-continue;
-}
+							continue;
+						}
 						if (SYSTEM_FIELDS.has(k)) {
-continue;
-}
+							continue;
+						}
 						const val = v[k];
 						if (val === null || val === undefined || val === '') {
-continue;
-}
+							continue;
+						}
 						counts.set(k, (counts.get(k) || 0) + 1);
 					}
 				}
@@ -285,8 +300,8 @@ continue;
 				const availSet = new Set(availableFields.map((f) => f.name));
 				for (const fieldSet of rules) {
 					if (fieldSet.every((f) => availSet.has(f))) {
-return fieldSet.slice();
-}
+						return fieldSet.slice();
+					}
 				}
 				return null;
 			}
@@ -295,11 +310,11 @@ return fieldSet.slice();
 				const counts = new Map();
 				for (const r of canvasState.bulkRecords) {
 					if (!r || r.isTypeNode) {
-continue;
-}
+						continue;
+					}
 					if (isRecordPendingDelete(r)) {
-continue;
-}
+						continue;
+					}
 					counts.set(r.objectName, (counts.get(r.objectName) || 0) + 1);
 				}
 				return Array.from(counts.entries())
@@ -311,20 +326,26 @@ continue;
 			function _renderBody(overlay, sections) {
 				const body = overlay.querySelector('.fdm-body');
 				if (!body) {
-return;
-}
+					return;
+				}
 				let html = '';
 				let losersTotal = 0;
 				sections.forEach((section) => {
-					html += '<div class="fdm-section">' +
+					html +=
+						'<div class="fdm-section">' +
 						'<div class="fdm-section-head">' +
-							escapeHtml(section.objectName) +
-							' <span class="fdm-section-fields">matching on ' + escapeHtml(_formatFieldSet(section.defaultFields, section.op)) + '</span>' +
+						escapeHtml(section.objectName) +
+						' <span class="fdm-section-fields">matching on ' +
+						escapeHtml(_formatFieldSet(section.defaultFields, section.op)) +
+						'</span>' +
 						'</div>';
 					section.groups.forEach((group, gi) => {
 						const groupKey = section.objectName + ':' + gi;
-						html += '<div class="fdm-group">' +
-							'<div class="fdm-group-head">' + group.records.length + ' records match</div>' +
+						html +=
+							'<div class="fdm-group">' +
+							'<div class="fdm-group-head">' +
+							group.records.length +
+							' records match</div>' +
 							'<ul class="fdm-rows">';
 						group.records.forEach((rec) => {
 							const isWinner = group.winnerId === rec.id;
@@ -332,23 +353,47 @@ return;
 							const badge = rec.loadedFromId
 								? '<span class="fdm-badge fdm-badge--loaded" title="Loaded from Salesforce, will be marked for delete on Apply">loaded</span>'
 								: '<span class="fdm-badge fdm-badge--draft" title="Draft record, will be removed from canvas on Apply">draft</span>';
-							const gotoBtn = '<button type="button" class="fdm-row-goto" data-fdm-goto="' + rec.id + '" title="Pan the canvas to this record and flash it" aria-label="Go to this record on the canvas">' +
+							const gotoBtn =
+								'<button type="button" class="fdm-row-goto" data-fdm-goto="' +
+								rec.id +
+								'" title="Pan the canvas to this record and flash it" aria-label="Go to this record on the canvas">' +
 								'<span aria-hidden="true">&#8689;</span>' +
-							'</button>';
-							html += '<li class="' + rowClass + '">' +
+								'</button>';
+							html +=
+								'<li class="' +
+								rowClass +
+								'">' +
 								'<label class="fdm-row-label">' +
-									'<input type="radio" name="fdm-group-' + escapeHtml(groupKey) + '" value="' + rec.id + '"' + (isWinner ? ' checked' : '') + ' data-fdm-winner data-group-key="' + escapeHtml(groupKey) + '">' +
-									'<span class="fdm-row-keep-tag">' + (isWinner ? 'KEEP' : 'REMOVE') + '</span>' +
-									'<span class="fdm-row-ord">' + escapeHtml(section.objectName) + ' #' + recordOrdinal(rec) + '</span>' +
-									'<span class="fdm-row-name">' + escapeHtml(_displayName(rec)) + '</span>' +
-									badge +
+								'<input type="radio" name="fdm-group-' +
+								escapeHtml(groupKey) +
+								'" value="' +
+								rec.id +
+								'"' +
+								(isWinner ? ' checked' : '') +
+								' data-fdm-winner data-group-key="' +
+								escapeHtml(groupKey) +
+								'">' +
+								'<span class="fdm-row-keep-tag">' +
+								(isWinner ? 'KEEP' : 'REMOVE') +
+								'</span>' +
+								'<span class="fdm-row-ord">' +
+								escapeHtml(section.objectName) +
+								' #' +
+								recordOrdinal(rec) +
+								'</span>' +
+								'<span class="fdm-row-name">' +
+								escapeHtml(_displayName(rec)) +
+								'</span>' +
+								badge +
 								'</label>' +
 								gotoBtn +
-								'<div class="fdm-row-excerpt">' + escapeHtml(_matchExcerpt(rec, group.fields)) + '</div>' +
-							'</li>';
+								'<div class="fdm-row-excerpt">' +
+								escapeHtml(_matchExcerpt(rec, group.fields)) +
+								'</div>' +
+								'</li>';
 							if (!isWinner) {
-losersTotal++;
-}
+								losersTotal++;
+							}
 						});
 						html += '</ul></div>';
 					});
@@ -358,21 +403,22 @@ losersTotal++;
 				const applyBtn = overlay.querySelector('.fdm-apply');
 				if (applyBtn) {
 					applyBtn.disabled = losersTotal === 0;
-					applyBtn.textContent = losersTotal === 0
-						? 'Nothing to remove'
-						: 'Remove ' + losersTotal + ' duplicate' + (losersTotal === 1 ? '' : 's');
+					applyBtn.textContent =
+						losersTotal === 0
+							? 'Nothing to remove'
+							: 'Remove ' + losersTotal + ' duplicate' + (losersTotal === 1 ? '' : 's');
 				}
 				body.querySelectorAll('[data-fdm-winner]').forEach((input) => {
 					input.addEventListener('change', () => {
 						const [obj, gi] = input.dataset.groupKey.split(':');
 						const section = sections.find((s) => s.objectName === obj);
 						if (!section) {
-return;
-}
+							return;
+						}
 						const group = section.groups[parseInt(gi, 10)];
 						if (!group) {
-return;
-}
+							return;
+						}
 						group.winnerId = parseInt(input.value, 10);
 						_renderBody(overlay, sections);
 					});
@@ -383,8 +429,8 @@ return;
 						e.stopPropagation();
 						const recordId = parseInt(btn.dataset.fdmGoto, 10);
 						if (Number.isFinite(recordId)) {
-_jumpToRecord(recordId);
-}
+							_jumpToRecord(recordId);
+						}
 					});
 				});
 			}
@@ -394,17 +440,25 @@ _jumpToRecord(recordId);
 				if (body) {
 					const joiner = op === 'or' ? ' / ' : ' + ';
 					const fieldList = (fields || []).join(joiner);
-					const phrase = op === 'or'
-						? 'share a normalized value on any of'
-						: 'share the same normalized value across all of';
-					body.innerHTML = '<div class="fdm-empty">' +
+					const phrase =
+						op === 'or'
+							? 'share a normalized value on any of'
+							: 'share the same normalized value across all of';
+					body.innerHTML =
+						'<div class="fdm-empty">' +
 						'<div class="fdm-empty-title">No duplicates found</div>' +
 						'<div class="fdm-empty-hint">' +
-							'No two <code>' + escapeHtml(objectName || '') + '</code> records ' + phrase + ' ' +
-							'<code>' + escapeHtml(fieldList) + '</code>' +
-							'. Try a different field set or switch operator if you expected matches.' +
+						'No two <code>' +
+						escapeHtml(objectName || '') +
+						'</code> records ' +
+						phrase +
+						' ' +
+						'<code>' +
+						escapeHtml(fieldList) +
+						'</code>' +
+						'. Try a different field set or switch operator if you expected matches.' +
 						'</div>' +
-					'</div>';
+						'</div>';
 				}
 				const applyBtn = overlay.querySelector('.fdm-apply');
 				if (applyBtn) {
@@ -414,6 +468,7 @@ _jumpToRecord(recordId);
 			}
 
 			function _apply(sections) {
+				// Draft losers are removed locally; existing losers are only staged for a later upload.
 				const winners = new Set();
 				const losers = [];
 				sections.forEach((section) => {
@@ -421,8 +476,8 @@ _jumpToRecord(recordId);
 						winners.add(group.winnerId);
 						group.records.forEach((rec) => {
 							if (rec.id !== group.winnerId) {
-losers.push(rec);
-}
+								losers.push(rec);
+							}
 						});
 					});
 				});
@@ -431,7 +486,8 @@ losers.push(rec);
 				const _snapSelected = new Set(canvasState.bulkSelectedIds);
 				const _undoSizeBefore = undoStackSize ? undoStackSize() : 0;
 				const _markedLoserIds = [];
-				let drafts = 0, marked = 0;
+				let drafts = 0,
+					marked = 0;
 				losers.forEach((rec) => {
 					if (rec.loadedFromId) {
 						if (markPendingDelete(rec.id)) {
@@ -452,14 +508,12 @@ losers.push(rec);
 				renderBulkView();
 				const parts = [];
 				if (drafts > 0) {
-parts.push(drafts + ' draft' + (drafts === 1 ? '' : 's') + ' removed');
-}
+					parts.push(drafts + ' draft' + (drafts === 1 ? '' : 's') + ' removed');
+				}
 				if (marked > 0) {
-parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for delete');
-}
-				const msg = parts.length === 0
-					? 'No duplicates removed.'
-					: parts.join(' · ');
+					parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for delete');
+				}
+				const msg = parts.length === 0 ? 'No duplicates removed.' : parts.join(' · ');
 				const _postBulk = canvasState.bulkRecords;
 				const _postAssoc = canvasState.bulkAssociations;
 				const _postFingerprint = JSON.stringify({
@@ -467,6 +521,7 @@ parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for 
 					associations: canvasState.bulkAssociations,
 				});
 				const _undo = () => {
+					// Do not restore an old snapshot after unrelated canvas edits.
 					let currentFingerprint = null;
 					try {
 						currentFingerprint = JSON.stringify({
@@ -474,9 +529,11 @@ parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for 
 							associations: canvasState.bulkAssociations,
 						});
 					} catch (_e) {}
-					if (canvasState.bulkRecords !== _postBulk ||
+					if (
+						canvasState.bulkRecords !== _postBulk ||
 						canvasState.bulkAssociations !== _postAssoc ||
-						currentFingerprint !== _postFingerprint) {
+						currentFingerprint !== _postFingerprint
+					) {
 						showBulkToast('Can’t undo duplicate removal because the canvas was edited afterward.', 'info');
 						return;
 					}
@@ -492,7 +549,7 @@ parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for 
 					renderBulkView();
 					showBulkToast('Restored the removed duplicates.');
 				};
-				if ((drafts + marked) > 0 && showBulkToastWithAction) {
+				if (drafts + marked > 0 && showBulkToastWithAction) {
 					showBulkToastWithAction(msg, 'Undo', _undo);
 				} else {
 					showBulkToast(msg);
@@ -506,26 +563,25 @@ parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for 
 				overlay.innerHTML =
 					'<div class="modal-overlay" data-fdm-close></div>' +
 					'<div class="modal-body fdm-body-wrap">' +
-						'<div class="modal-header">' +
-							'<h3>Find duplicates</h3>' +
-							'<button class="modal-close" data-fdm-close>&times;</button>' +
-						'</div>' +
-						'<div class="modal-content fdm-content">' +
-							'<div class="fdm-intro-wrap"></div>' +
-							'<div class="fdm-body"></div>' +
-						'</div>' +
-						'<div class="modal-footer fdm-footer"></div>' +
+					'<div class="modal-header">' +
+					'<h3>Find duplicates</h3>' +
+					'<button class="modal-close" data-fdm-close>&times;</button>' +
+					'</div>' +
+					'<div class="modal-content fdm-content">' +
+					'<div class="fdm-intro-wrap"></div>' +
+					'<div class="fdm-body"></div>' +
+					'</div>' +
+					'<div class="modal-footer fdm-footer"></div>' +
 					'</div>';
 				document.body.appendChild(overlay);
 				const cleanup = () => overlay.remove();
-				overlay.querySelectorAll('[data-fdm-close]').forEach((el) =>
-					el.addEventListener('click', cleanup)
-				);
+				overlay.querySelectorAll('[data-fdm-close]').forEach((el) => el.addEventListener('click', cleanup));
 				const onEsc = (ev) => {
- if (ev.key === 'Escape') {
- cleanup(); document.removeEventListener('keydown', onEsc, true); 
-} 
-};
+					if (ev.key === 'Escape') {
+						cleanup();
+						document.removeEventListener('keydown', onEsc, true);
+					}
+				};
 				document.addEventListener('keydown', onEsc, true);
 
 				const _fieldMemory = new Map();
@@ -545,17 +601,20 @@ parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for 
 				const body = overlay.querySelector('.fdm-body');
 				const footer = overlay.querySelector('.fdm-footer');
 				if (intro) {
-intro.innerHTML = '';
-}
+					intro.innerHTML = '';
+				}
 				if (body) {
-					body.innerHTML = '<div class="fdm-empty">' +
+					body.innerHTML =
+						'<div class="fdm-empty">' +
 						'<div class="fdm-empty-title">Nothing to scan</div>' +
 						'<div class="fdm-empty-hint">Find duplicates needs at least 2 records of the same object type. Add more records to the canvas, then come back.</div>' +
-					'</div>';
+						'</div>';
 				}
 				if (footer) {
 					footer.innerHTML = '<button class="button secondary" data-fdm-close>Close</button>';
-					footer.querySelectorAll('[data-fdm-close]').forEach((el) => el.addEventListener('click', () => overlay.remove()));
+					footer
+						.querySelectorAll('[data-fdm-close]')
+						.forEach((el) => el.addEventListener('click', () => overlay.remove()));
 				}
 			}
 
@@ -578,26 +637,50 @@ intro.innerHTML = '';
 					}
 				}
 
-				const objectOptions = eligible.map((e) =>
-					'<option value="' + escapeHtml(e.objectName) + '"' +
-						(e.objectName === objectName ? ' selected' : '') + '>' +
-						escapeHtml(e.objectName) + ' (' + e.recordCount + ')' +
-					'</option>'
-				).join('');
+				const objectOptions = eligible
+					.map(
+						(e) =>
+							'<option value="' +
+							escapeHtml(e.objectName) +
+							'"' +
+							(e.objectName === objectName ? ' selected' : '') +
+							'>' +
+							escapeHtml(e.objectName) +
+							' (' +
+							e.recordCount +
+							')' +
+							'</option>',
+					)
+					.join('');
 
 				const defaultsSet = new Set(_defaultFieldsFor(objectName, available) || []);
-				const fieldRows = available.length === 0
-					? '<div class="fdm-fields-empty">None of the records of this object type have any field values yet. Fill some fields first, then come back.</div>'
-					: available.map((f) => {
-						const checked = selected.has(f.name) ? ' checked' : '';
-						const isDefault = defaultsSet.has(f.name);
-						return '<label class="fdm-field-row">' +
-							'<input type="checkbox" data-fdm-field value="' + escapeHtml(f.name) + '"' + checked + '>' +
-							'<span class="fdm-field-name"><code>' + escapeHtml(f.name) + '</code></span>' +
-							(isDefault ? '<span class="fdm-field-tag">suggested</span>' : '') +
-							'<span class="fdm-field-pop">' + f.populated + ' of ' + f.total + ' populated</span>' +
-						'</label>';
-					}).join('');
+				const fieldRows =
+					available.length === 0
+						? '<div class="fdm-fields-empty">None of the records of this object type have any field values yet. Fill some fields first, then come back.</div>'
+						: available
+								.map((f) => {
+									const checked = selected.has(f.name) ? ' checked' : '';
+									const isDefault = defaultsSet.has(f.name);
+									return (
+										'<label class="fdm-field-row">' +
+										'<input type="checkbox" data-fdm-field value="' +
+										escapeHtml(f.name) +
+										'"' +
+										checked +
+										'>' +
+										'<span class="fdm-field-name"><code>' +
+										escapeHtml(f.name) +
+										'</code></span>' +
+										(isDefault ? '<span class="fdm-field-tag">suggested</span>' : '') +
+										'<span class="fdm-field-pop">' +
+										f.populated +
+										' of ' +
+										f.total +
+										' populated</span>' +
+										'</label>'
+									);
+								})
+								.join('');
 
 				if (intro) {
 					intro.innerHTML =
@@ -608,29 +691,37 @@ intro.innerHTML = '';
 					const orChecked = modeRef.op === 'or' ? ' checked' : '';
 					body.innerHTML =
 						'<div class="fdm-config">' +
-							'<label class="fdm-config-row">' +
-								'<span class="fdm-config-label">Object</span>' +
-								'<select id="fdm-object">' + objectOptions + '</select>' +
-							'</label>' +
-							'<div class="fdm-config-row fdm-config-row--block">' +
-								'<span class="fdm-config-label">Match fields</span>' +
-								'<div class="fdm-fields">' + fieldRows + '</div>' +
-							'</div>' +
-							'<div class="fdm-config-row fdm-config-row--block">' +
-								'<span class="fdm-config-label">Match when…</span>' +
-								'<div class="fdm-mode">' +
-									'<label class="fdm-mode-opt">' +
-										'<input type="radio" name="fdm-op" value="and"' + andChecked + '>' +
-										'<span class="fdm-mode-label">All selected fields agree <span class="fdm-mode-tag">AND &middot; strict</span></span>' +
-										'<span class="fdm-mode-sub">Two records match only when every checked field has the same value. Fewer false positives; misses records that disagree on one field.</span>' +
-									'</label>' +
-									'<label class="fdm-mode-opt">' +
-										'<input type="radio" name="fdm-op" value="or"' + orChecked + '>' +
-										'<span class="fdm-mode-label">Any selected field agrees <span class="fdm-mode-tag">OR &middot; transitive</span></span>' +
-										'<span class="fdm-mode-sub">Records group whenever they share a value on any checked field. Catches "same person, different contact methods": A↔B by Email and B↔C by Phone groups {A, B, C}.</span>' +
-									'</label>' +
-								'</div>' +
-							'</div>' +
+						'<label class="fdm-config-row">' +
+						'<span class="fdm-config-label">Object</span>' +
+						'<select id="fdm-object">' +
+						objectOptions +
+						'</select>' +
+						'</label>' +
+						'<div class="fdm-config-row fdm-config-row--block">' +
+						'<span class="fdm-config-label">Match fields</span>' +
+						'<div class="fdm-fields">' +
+						fieldRows +
+						'</div>' +
+						'</div>' +
+						'<div class="fdm-config-row fdm-config-row--block">' +
+						'<span class="fdm-config-label">Match when…</span>' +
+						'<div class="fdm-mode">' +
+						'<label class="fdm-mode-opt">' +
+						'<input type="radio" name="fdm-op" value="and"' +
+						andChecked +
+						'>' +
+						'<span class="fdm-mode-label">All selected fields agree <span class="fdm-mode-tag">AND &middot; strict</span></span>' +
+						'<span class="fdm-mode-sub">Two records match only when every checked field has the same value. Fewer false positives; misses records that disagree on one field.</span>' +
+						'</label>' +
+						'<label class="fdm-mode-opt">' +
+						'<input type="radio" name="fdm-op" value="or"' +
+						orChecked +
+						'>' +
+						'<span class="fdm-mode-label">Any selected field agrees <span class="fdm-mode-tag">OR &middot; transitive</span></span>' +
+						'<span class="fdm-mode-sub">Records group whenever they share a value on any checked field. Catches "same person, different contact methods": A↔B by Email and B↔C by Phone groups {A, B, C}.</span>' +
+						'</label>' +
+						'</div>' +
+						'</div>' +
 						'</div>';
 				}
 				if (footer) {
@@ -643,8 +734,8 @@ intro.innerHTML = '';
 				const updateScanEnabled = () => {
 					const scanBtn = footer && footer.querySelector('#fdm-scan');
 					if (scanBtn) {
-scanBtn.disabled = selected.size === 0;
-}
+						scanBtn.disabled = selected.size === 0;
+					}
 				};
 				updateScanEnabled();
 
@@ -659,18 +750,18 @@ scanBtn.disabled = selected.size === 0;
 					body.querySelectorAll('[data-fdm-field]').forEach((cb) => {
 						cb.addEventListener('change', () => {
 							if (cb.checked) {
-selected.add(cb.value);
-} else {
-selected.delete(cb.value);
-}
+								selected.add(cb.value);
+							} else {
+								selected.delete(cb.value);
+							}
 							updateScanEnabled();
 						});
 					});
 					body.querySelectorAll('input[name="fdm-op"]').forEach((rb) => {
 						rb.addEventListener('change', () => {
 							if (rb.checked) {
-modeRef.op = rb.value === 'or' ? 'or' : 'and';
-}
+								modeRef.op = rb.value === 'or' ? 'or' : 'and';
+							}
 						});
 					});
 				}
@@ -678,8 +769,8 @@ modeRef.op = rb.value === 'or' ? 'or' : 'and';
 				if (scanBtn) {
 					scanBtn.addEventListener('click', () => {
 						if (scanBtn.disabled) {
-return;
-}
+							return;
+						}
 						const fields = Array.from(selected);
 						fieldMemory.set(objectName, fields);
 						const section = _scanForObject(objectName, fields, modeRef.op);
@@ -697,28 +788,34 @@ return;
 			function _renderResultsFooter(overlay, sections, objectName, eligible, fieldMemory, modeRef, cleanup) {
 				const footer = overlay.querySelector('.fdm-footer');
 				if (!footer) {
-return;
-}
+					return;
+				}
 				const losersTotal = sections.reduce((acc, sec) => {
 					return acc + sec.groups.reduce((a, g) => a + (g.records.length - 1), 0);
 				}, 0);
 				footer.innerHTML =
 					'<button class="button secondary" id="fdm-back">&larr; Back</button>' +
 					'<button class="button secondary" data-fdm-close>Cancel</button>' +
-					'<button class="button fdm-apply"' + (losersTotal === 0 ? ' disabled' : '') + '>' +
-						(losersTotal === 0 ? 'Nothing to remove' : 'Remove ' + losersTotal + ' duplicate' + (losersTotal === 1 ? '' : 's')) +
+					'<button class="button fdm-apply"' +
+					(losersTotal === 0 ? ' disabled' : '') +
+					'>' +
+					(losersTotal === 0
+						? 'Nothing to remove'
+						: 'Remove ' + losersTotal + ' duplicate' + (losersTotal === 1 ? '' : 's')) +
 					'</button>';
 				footer.querySelectorAll('[data-fdm-close]').forEach((el) => el.addEventListener('click', cleanup));
 				const backBtn = footer.querySelector('#fdm-back');
 				if (backBtn) {
-					backBtn.addEventListener('click', () => _renderConfig(overlay, objectName, eligible, fieldMemory, modeRef, cleanup));
+					backBtn.addEventListener('click', () =>
+						_renderConfig(overlay, objectName, eligible, fieldMemory, modeRef, cleanup),
+					);
 				}
 				const applyBtn = footer.querySelector('.fdm-apply');
 				if (applyBtn) {
 					applyBtn.addEventListener('click', () => {
 						if (applyBtn.disabled) {
-return;
-}
+							return;
+						}
 						_apply(sections);
 						cleanup();
 					});
@@ -728,4 +825,4 @@ return;
 			return { openFindDuplicatesModal: openFindDuplicatesModal };
 		},
 	};
-}());
+})();

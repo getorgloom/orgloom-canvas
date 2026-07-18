@@ -1,6 +1,6 @@
-
 (function () {
 	'use strict';
+	// Keeps unsaved draft values in org- and canvas-scoped session storage only.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -17,15 +17,15 @@
 
 			function _readMap(canvasId) {
 				if (!canvasId) {
-return {};
-}
+					return {};
+				}
 				try {
 					const raw = window.sessionStorage.getItem(_storageKey(canvasId));
 					if (!raw) {
-return {};
-}
+						return {};
+					}
 					const parsed = JSON.parse(raw);
-					return (parsed && typeof parsed === 'object') ? parsed : {};
+					return parsed && typeof parsed === 'object' ? parsed : {};
 				} catch (_) {
 					return {};
 				}
@@ -33,89 +33,88 @@ return {};
 
 			function _writeMap(canvasId, map) {
 				if (!canvasId) {
-return;
-}
+					return;
+				}
 				try {
 					if (!map || Object.keys(map).length === 0) {
 						window.sessionStorage.removeItem(_storageKey(canvasId));
 					} else {
 						window.sessionStorage.setItem(_storageKey(canvasId), JSON.stringify(map));
 					}
-				} catch (_) {
-				}
+				} catch (_) {}
 			}
 
 			function persistDraftValues(canvasId) {
 				if (!canvasId) {
-return;
-}
+					return;
+				}
 				if (!Array.isArray(canvasState.bulkRecords)) {
-return;
-}
+					return;
+				}
 				const map = {};
 				for (const r of canvasState.bulkRecords) {
 					if (!r) {
-continue;
-}
+						continue;
+					}
 					if (r.isTypeNode) {
-continue;
-}
+						continue;
+					}
 					if (r.loadedFromId) {
-continue;
-} // SF record, not a draft
+						continue;
+					} // SF record, not a draft
 					const tid = _persistedTempIdOf(r);
 					if (tid == null) {
-continue;
-}
+						continue;
+					}
 					const values = r.values || {};
 					if (Object.keys(values).length === 0) {
-continue;
-}
+						continue;
+					}
 					const safe = {};
 					for (const k of Object.keys(values)) {
 						const v = values[k];
 						if (v == null) {
-continue;
-}
+							continue;
+						}
 						const t = typeof v;
 						if (t === 'string' || t === 'number' || t === 'boolean') {
 							safe[k] = v;
 						}
 					}
 					if (Object.keys(safe).length > 0) {
-map[String(tid)] = safe;
-}
+						map[String(tid)] = safe;
+					}
 				}
 				_writeMap(canvasId, map);
 			}
 
 			function rehydrateDraftValues(canvasId) {
 				if (!canvasId) {
-return 0;
-}
+					return 0;
+				}
 				if (!Array.isArray(canvasState.bulkRecords)) {
-return 0;
-}
+					return 0;
+				}
 				const map = _readMap(canvasId);
 				if (!map || Object.keys(map).length === 0) {
-return 0;
-}
+					return 0;
+				}
 				let restored = 0;
 				for (const r of canvasState.bulkRecords) {
 					if (!r) {
-continue;
-}
+						continue;
+					}
 					if (r.isTypeNode || r.loadedFromId) {
-continue;
-}
+						continue;
+					}
 					const tid = _persistedTempIdOf(r);
 					if (tid == null) {
-continue;
-}
+						continue;
+					}
 					const stored = map[String(tid)];
 					if (!stored || typeof stored !== 'object') {
-continue;
-}
+						continue;
+					}
 					r.values = Object.assign({}, r.values || {}, stored);
 					restored++;
 				}
@@ -124,32 +123,32 @@ continue;
 
 			function clearDraftValues(canvasId, tempId) {
 				if (!canvasId || tempId == null) {
-return;
-}
+					return;
+				}
 				const map = _readMap(canvasId);
 				if (!map || !map[String(tempId)]) {
-return;
-}
+					return;
+				}
 				delete map[String(tempId)];
 				_writeMap(canvasId, map);
 			}
 
 			function clearAllForCanvas(canvasId) {
 				if (!canvasId) {
-return;
-}
+					return;
+				}
 				try {
- window.sessionStorage.removeItem(_storageKey(canvasId)); 
-} catch (_) {}
+					window.sessionStorage.removeItem(_storageKey(canvasId));
+				} catch (_) {}
 			}
 
 			function _persistedTempIdOf(rec) {
 				if (rec._persistedTempId != null) {
-return rec._persistedTempId;
-}
+					return rec._persistedTempId;
+				}
 				if (rec.id != null) {
-return rec.id;
-}
+					return rec.id;
+				}
 				return null;
 			}
 

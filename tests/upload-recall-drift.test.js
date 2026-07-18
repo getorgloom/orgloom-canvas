@@ -1,4 +1,3 @@
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyBatchDrift, detectCascadeConflicts } from '../src/upload-recall.js';
@@ -8,17 +7,17 @@ function makeFakeConn(stateById) {
 		version: '60.0',
 		request: async ({ method, url }) => {
 			if (method !== 'GET') {
-return { records: [] };
-}
+				return { records: [] };
+			}
 			const qIdx = url.indexOf('?q=');
 			if (qIdx < 0) {
-return { records: [] };
-}
+				return { records: [] };
+			}
 			const soql = decodeURIComponent(url.slice(qIdx + 3));
 			const m = soql.match(/Id IN \(([^)]+)\)/);
 			if (!m) {
-return { records: [] };
-}
+				return { records: [] };
+			}
 			const ids = m[1].split(',').map((s) => s.replace(/^'|'$/g, '').trim());
 			const records = ids
 				.map((id) => stateById[id])
@@ -30,7 +29,7 @@ return { records: [] };
 }
 
 const UPLOADER_SF_ID = '005AAA00000Uploader';
-const OTHER_SF_ID    = '005BBB00000OtherXX';
+const OTHER_SF_ID = '005BBB00000OtherXX';
 const UPLOAD_TIME = Date.parse('2026-05-01T10:00:00Z');
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -42,13 +41,17 @@ describe('classifyBatchDrift', () => {
 	test('empty batch returns empty buckets', async () => {
 		const conn = makeFakeConn({});
 		const result = await classifyBatchDrift({
-			conn, batch: makeBatchRow([]),
+			conn,
+			batch: makeBatchRow([]),
 			uploaderSfUserId: UPLOADER_SF_ID,
 			uploadTimeMs: UPLOAD_TIME,
 		});
 		assert.deepEqual(result, {
-			clean: [], drifted: [], alreadyDeleted: [],
-			unverified: [], updates: [],
+			clean: [],
+			drifted: [],
+			alreadyDeleted: [],
+			unverified: [],
+			updates: [],
 		});
 	});
 
@@ -63,8 +66,10 @@ describe('classifyBatchDrift', () => {
 			},
 		});
 		const r = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
-			uploaderSfUserId: UPLOADER_SF_ID, uploadTimeMs: UPLOAD_TIME,
+			conn,
+			batch: makeBatchRow(inserted),
+			uploaderSfUserId: UPLOADER_SF_ID,
+			uploadTimeMs: UPLOAD_TIME,
 		});
 		assert.equal(r.clean.length, 1);
 		assert.equal(r.drifted.length, 0);
@@ -83,8 +88,10 @@ describe('classifyBatchDrift', () => {
 			},
 		});
 		const r = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
-			uploaderSfUserId: UPLOADER_SF_ID, uploadTimeMs: UPLOAD_TIME,
+			conn,
+			batch: makeBatchRow(inserted),
+			uploaderSfUserId: UPLOADER_SF_ID,
+			uploadTimeMs: UPLOAD_TIME,
 		});
 		assert.equal(r.clean.length, 0);
 		assert.equal(r.drifted.length, 1);
@@ -103,8 +110,10 @@ describe('classifyBatchDrift', () => {
 			},
 		});
 		const r = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
-			uploaderSfUserId: UPLOADER_SF_ID, uploadTimeMs: UPLOAD_TIME,
+			conn,
+			batch: makeBatchRow(inserted),
+			uploaderSfUserId: UPLOADER_SF_ID,
+			uploadTimeMs: UPLOAD_TIME,
 		});
 		assert.equal(r.clean.length, 0);
 		assert.equal(r.drifted.length, 1);
@@ -122,8 +131,10 @@ describe('classifyBatchDrift', () => {
 			},
 		});
 		const r = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
-			uploaderSfUserId: UPLOADER_SF_ID, uploadTimeMs: UPLOAD_TIME,
+			conn,
+			batch: makeBatchRow(inserted),
+			uploaderSfUserId: UPLOADER_SF_ID,
+			uploadTimeMs: UPLOAD_TIME,
 		});
 		assert.equal(r.clean.length, 0);
 		assert.equal(r.drifted.length, 0);
@@ -135,8 +146,10 @@ describe('classifyBatchDrift', () => {
 		const inserted = [{ tempId: 't1', sfId: '001missing', objectName: 'Account' }];
 		const conn = makeFakeConn({}); // empty; record doesn't exist
 		const r = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
-			uploaderSfUserId: UPLOADER_SF_ID, uploadTimeMs: UPLOAD_TIME,
+			conn,
+			batch: makeBatchRow(inserted),
+			uploaderSfUserId: UPLOADER_SF_ID,
+			uploadTimeMs: UPLOAD_TIME,
 		});
 		assert.equal(r.alreadyDeleted.length, 1);
 		assert.equal(r.alreadyDeleted[0].sfId, '001missing');
@@ -146,29 +159,34 @@ describe('classifyBatchDrift', () => {
 		const inserted = [
 			{ tempId: 't1', sfId: '001clean', objectName: 'Account' },
 			{ tempId: 't2', sfId: '001drift', objectName: 'Account' },
-			{ tempId: 't3', sfId: '001gone',  objectName: 'Account' },
+			{ tempId: 't3', sfId: '001gone', objectName: 'Account' },
 			{ tempId: 't4', sfId: '003contact', objectName: 'Contact' },
 		];
 		const conn = makeFakeConn({
 			'001clean': {
-				id: '001clean', LastModifiedById: UPLOADER_SF_ID,
+				id: '001clean',
+				LastModifiedById: UPLOADER_SF_ID,
 				LastModifiedDate: new Date(UPLOAD_TIME + 10 * 1000).toISOString(),
 				IsDeleted: false,
 			},
 			'001drift': {
-				id: '001drift', LastModifiedById: OTHER_SF_ID,
+				id: '001drift',
+				LastModifiedById: OTHER_SF_ID,
 				LastModifiedDate: new Date(UPLOAD_TIME + 60 * 1000).toISOString(),
 				IsDeleted: false,
 			},
 			'003contact': {
-				id: '003contact', LastModifiedById: UPLOADER_SF_ID,
+				id: '003contact',
+				LastModifiedById: UPLOADER_SF_ID,
 				LastModifiedDate: new Date(UPLOAD_TIME + 20 * 1000).toISOString(),
 				IsDeleted: false,
 			},
 		});
 		const r = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
-			uploaderSfUserId: UPLOADER_SF_ID, uploadTimeMs: UPLOAD_TIME,
+			conn,
+			batch: makeBatchRow(inserted),
+			uploaderSfUserId: UPLOADER_SF_ID,
+			uploadTimeMs: UPLOAD_TIME,
 		});
 		assert.equal(r.clean.length, 2);
 		assert.equal(r.drifted.length, 1);
@@ -184,13 +202,15 @@ describe('classifyBatchDrift', () => {
 		const inserted = [{ tempId: 't1', sfId: '001abc', objectName: 'Account' }];
 		const conn = makeFakeConn({
 			'001abc': {
-				id: '001abc', LastModifiedById: uploader18,
+				id: '001abc',
+				LastModifiedById: uploader18,
 				LastModifiedDate: new Date(UPLOAD_TIME + 1000).toISOString(),
 				IsDeleted: false,
 			},
 		});
 		const r = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
+			conn,
+			batch: makeBatchRow(inserted),
 			uploaderSfUserId: uploader15,
 			uploadTimeMs: UPLOAD_TIME,
 		});
@@ -201,20 +221,25 @@ describe('classifyBatchDrift', () => {
 		const inserted = [{ tempId: 't1', sfId: '001abc', objectName: 'Account' }];
 		const conn = makeFakeConn({
 			'001abc': {
-				id: '001abc', LastModifiedById: UPLOADER_SF_ID,
+				id: '001abc',
+				LastModifiedById: UPLOADER_SF_ID,
 				LastModifiedDate: new Date(UPLOAD_TIME + 10 * 60 * 1000).toISOString(),
 				IsDeleted: false,
 			},
 		});
 		const def = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
-			uploaderSfUserId: UPLOADER_SF_ID, uploadTimeMs: UPLOAD_TIME,
+			conn,
+			batch: makeBatchRow(inserted),
+			uploaderSfUserId: UPLOADER_SF_ID,
+			uploadTimeMs: UPLOAD_TIME,
 		});
 		assert.equal(def.clean.length, 1);
 
 		const tight = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
-			uploaderSfUserId: UPLOADER_SF_ID, uploadTimeMs: UPLOAD_TIME,
+			conn,
+			batch: makeBatchRow(inserted),
+			uploaderSfUserId: UPLOADER_SF_ID,
+			uploadTimeMs: UPLOAD_TIME,
 			gracePeriodMs: 5 * 60 * 1000, // 5 min
 		});
 		assert.equal(tight.clean.length, 0);
@@ -230,20 +255,22 @@ describe('classifyBatchDrift', () => {
 		];
 		const conn = makeFakeConn({
 			'001valid': {
-				id: '001valid', LastModifiedById: UPLOADER_SF_ID,
+				id: '001valid',
+				LastModifiedById: UPLOADER_SF_ID,
 				LastModifiedDate: new Date(UPLOAD_TIME).toISOString(),
 				IsDeleted: false,
 			},
 		});
 		const r = await classifyBatchDrift({
-			conn, batch: makeBatchRow(inserted),
-			uploaderSfUserId: UPLOADER_SF_ID, uploadTimeMs: UPLOAD_TIME,
+			conn,
+			batch: makeBatchRow(inserted),
+			uploaderSfUserId: UPLOADER_SF_ID,
+			uploadTimeMs: UPLOAD_TIME,
 		});
 		assert.equal(r.clean.length, 1);
 		assert.equal(r.clean[0].sfId, '001valid');
 	});
 });
-
 
 function makeFakeConnWithDescribe(describesByObject) {
 	return {
@@ -267,7 +294,9 @@ describe('detectCascadeConflicts', () => {
 			conn,
 			batch: makeBatchWithAssoc([{ tempId: 1, sfId: '001A', objectName: 'Account' }], []),
 			classification: {
-				clean: [{ sfId: '001A' }], drifted: [], alreadyDeleted: [],
+				clean: [{ sfId: '001A' }],
+				drifted: [],
+				alreadyDeleted: [],
 			},
 		});
 		assert.deepEqual(conflicts, []);
@@ -281,9 +310,7 @@ describe('detectCascadeConflicts', () => {
 			{ tempId: 1, sfId: '001PARENT', objectName: 'Account' },
 			{ tempId: 2, sfId: '003CHILD', objectName: 'Contact' },
 		];
-		const associations = [
-			{ fromTempId: 2, toTempId: 1, fieldName: 'AccountId' },
-		];
+		const associations = [{ fromTempId: 2, toTempId: 1, fieldName: 'AccountId' }];
 		const conflicts = await detectCascadeConflicts({
 			conn,
 			batch: makeBatchWithAssoc(inserted, associations),
@@ -304,9 +331,7 @@ describe('detectCascadeConflicts', () => {
 			{ tempId: 1, sfId: '801ORDER', objectName: 'Order' },
 			{ tempId: 2, sfId: 'a01LINE', objectName: 'Order_Line__c' },
 		];
-		const associations = [
-			{ fromTempId: 2, toTempId: 1, fieldName: 'Order__c' },
-		];
+		const associations = [{ fromTempId: 2, toTempId: 1, fieldName: 'Order__c' }];
 		const conflicts = await detectCascadeConflicts({
 			conn,
 			batch: makeBatchWithAssoc(inserted, associations),
@@ -398,8 +423,8 @@ describe('detectCascadeConflicts', () => {
 			sobject: (name) => ({
 				describe: async () => {
 					if (name === 'Order_Line__c') {
-throw new Error('No describe access');
-}
+						throw new Error('No describe access');
+					}
 					return { fields: [] };
 				},
 			}),
@@ -424,8 +449,8 @@ throw new Error('No describe access');
 	test('only master-detail fields with cascadeDelete=true count', async () => {
 		const conn = makeFakeConnWithDescribe({
 			Order_Line__c: [
-				{ name: 'Order__c', cascadeDelete: true },        // master-detail
-				{ name: 'Approver__c', cascadeDelete: false },     // lookup
+				{ name: 'Order__c', cascadeDelete: true }, // master-detail
+				{ name: 'Approver__c', cascadeDelete: false }, // lookup
 			],
 		});
 		const inserted = [
