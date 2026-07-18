@@ -62,6 +62,72 @@
 		return true;
 	}
 
+	function reconcileLoadedRecordAssociations(canvasState) {
+		const state = canvasState || {};
+		const records = Array.isArray(state.bulkRecords) ? state.bulkRecords : [];
+		const selectedObjects = Array.isArray(state.selectedObjects) ? state.selectedObjects : [];
+		const associations = Array.isArray(state.bulkAssociations) ? state.bulkAssociations : [];
+		const idKey = (id) => (id == null ? '' : String(id).trim().slice(0, 15));
+		const recordBySalesforceId = new Map();
+		records.forEach((record) => {
+			if (!record || record.isTypeNode || record.isPending || !record.objectName || !record.loadedFromId) {
+				return;
+			}
+			recordBySalesforceId.set(record.objectName + '::' + idKey(record.loadedFromId), record);
+		});
+		const selectionById = new Map();
+		const selectionByObject = new Map();
+		selectedObjects.forEach((selection) => {
+			if (!selection || !selection.name) {
+				return;
+			}
+			selectionById.set(selection.id, selection);
+			if (!selectionByObject.has(selection.name)) {
+				selectionByObject.set(selection.name, selection);
+			}
+		});
+		const usedFk = new Set();
+		associations.forEach((association) => {
+			if (association && association.fromId != null && association.fieldName) {
+				usedFk.add(association.fromId + '::' + association.fieldName);
+			}
+		});
+		let added = 0;
+		records.forEach((record) => {
+			if (!record || record.isTypeNode || record.isPending || !record.loadedFromId || !record.values) {
+				return;
+			}
+			const selection = selectionById.get(record.fromSelectionId) || selectionByObject.get(record.objectName);
+			const parents =
+				selection && selection.data && Array.isArray(selection.data.parents) ? selection.data.parents : [];
+			parents.forEach((parent) => {
+				if (!parent || !parent.field || !parent.object || usedFk.has(record.id + '::' + parent.field)) {
+					return;
+				}
+				const parentId = idKey(record.values[parent.field]);
+				if (!parentId) {
+					return;
+				}
+				const target = recordBySalesforceId.get(parent.object + '::' + parentId);
+				if (
+					!target ||
+					target.id === record.id ||
+					!admitAssociation(usedFk, record.id, target.id, parent.field)
+				) {
+					return;
+				}
+				associations.push({
+					id: state.bulkIdSeq++,
+					fromId: record.id,
+					toId: target.id,
+					fieldName: parent.field,
+				});
+				added++;
+			});
+		});
+		return { added: added };
+	}
+
 	function skipSuffix(skippedRecords, skippedAssoc) {
 		const dropped = [];
 		if (skippedRecords > 0) {
@@ -190,6 +256,7 @@
 		gateImportFile: gateImportFile,
 		captureImportFailure: captureImportFailure,
 		admitAssociation: admitAssociation,
+		reconcileLoadedRecordAssociations: reconcileLoadedRecordAssociations,
 		skipSuffix: skipSuffix,
 		summarizeCanvasContent: summarizeCanvasContent,
 		makeUndoCapture: makeUndoCapture,

@@ -23,7 +23,7 @@ function _writeSseEvent(res, event, data) {
 	} catch (e) {}
 }
 
-export function registerConnection({ accountId, workspaceId, sseRes }) {
+export function registerConnection({ accountId, workspaceId, sseRes, mcpActive = false }) {
 	const connectionId = crypto.randomUUID();
 	connections.set(connectionId, {
 		sseRes,
@@ -33,7 +33,7 @@ export function registerConnection({ accountId, workspaceId, sseRes }) {
 		openedAt: Date.now(),
 	});
 
-	_writeSseEvent(sseRes, 'ready', { connectionId });
+	_writeSseEvent(sseRes, 'ready', { connectionId, mcpActive: !!mcpActive });
 
 	const keepalive = setInterval(() => {
 		try {
@@ -57,6 +57,14 @@ export function registerConnection({ accountId, workspaceId, sseRes }) {
 		unregisterConnection(connectionId);
 	});
 	return connectionId;
+}
+
+export function broadcastMcpAvailability(workspaceId, active) {
+	for (const conn of connections.values()) {
+		if (conn.workspaceId === workspaceId) {
+			_writeSseEvent(conn.sseRes, 'mcp-availability', { active: !!active });
+		}
+	}
 }
 
 export function unregisterConnection(connectionId) {

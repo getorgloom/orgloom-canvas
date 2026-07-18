@@ -83,6 +83,11 @@
 				return null;
 			}
 			async function _refreshProposals() {
+				if (window.ORGLOOM_MCP_ACTIVE !== true) {
+					_proposalsBanner.hidden = true;
+					_proposalsLastCanvasId = null;
+					return;
+				}
 				const id = _proposalsPollCanvasId();
 				if (!id) {
 					_proposalsBanner.hidden = true;
@@ -146,6 +151,15 @@
 			}
 
 			function _watchProposalsForCurrentCanvas() {
+				if (window.ORGLOOM_MCP_ACTIVE !== true) {
+					_proposalsBanner.hidden = true;
+					_proposalsLastCanvasId = null;
+					if (_proposalsPollTimer) {
+						clearInterval(_proposalsPollTimer);
+						_proposalsPollTimer = null;
+					}
+					return;
+				}
 				const id = _proposalsPollCanvasId();
 				if (id !== _proposalsLastCanvasId) {
 					_proposalsLastCanvasId = id;
@@ -167,6 +181,9 @@
 			});
 			window.addEventListener('focus', () => {
 				_refreshProposals();
+			});
+			window.addEventListener('orgloom:mcp-availability', () => {
+				_watchProposalsForCurrentCanvas();
 			});
 
 			function _autoApplyStorageKey(canvasId) {

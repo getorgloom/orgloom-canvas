@@ -32,3 +32,14 @@ test('hovering an inline resize handle clears the FK-link affordance', () => {
 		/_isInlineResizeHandleTarget\(ev\.target\)[\s\S]*classList\.remove\('cy-edge-hover'\)[\s\S]*_setEdgeHoverCard\(null\)/,
 	);
 });
+
+test('the first Cytoscape render waits for settled card geometry before becoming visible', () => {
+	assert.match(source, /container\.classList\.add\('cy-initializing'\)/);
+	assert.match(source, /redrawCyEdgeMarkers\(settledCy, container\)/);
+	assert.match(source, /container\.classList\.remove\('cy-initializing'\)/);
+	assert.ok(
+		source.indexOf("container.classList.add('cy-initializing')") <
+			source.indexOf("container.classList.remove('cy-initializing')"),
+		'initial canvas visibility is restored only after the first-render setup',
+	);
+});

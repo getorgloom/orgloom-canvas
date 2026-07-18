@@ -10,6 +10,8 @@ const _ts_onCanvas = _ts_path === '/';
 const _ts_onDocs = _ts_path === '/docs';
 const _ts_saas = (typeof saasEnabled !== 'undefined') ? !!saasEnabled : false;
 const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMode : false;
+const _ts_sfControlPaths = new Set(['/', '/workspace', '/quick-upload', '/connect', '/setup']);
+const _ts_showSfControl = _ts_sfControlPaths.has(_ts_path);
 %>
 <header class="app-top-strip">
 	<div class="app-top-strip-left">
@@ -59,13 +61,13 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 				<div class="app-workspace-switcher" id="app-workspace-switcher" hidden></div>
 			<% } %>
 
-			<% if (_ts_saas) { %>
+			<% if (_ts_saas && _ts_showSfControl) { %>
 				<button type="button" class="app-sf-chip<%= _ts_sfConnected ? '' : ' app-sf-chip--disconnected' %>" id="app-sf-chip" title="<%= _ts_sfConnected ? 'Active Salesforce connection: manage' : 'No active Salesforce connection: click to connect' %>">
 					<span class="app-sf-chip-dot" aria-hidden="true"></span>
 					<span class="app-sf-chip-label"><%= _ts_sfConnected ? _ts_sfLabel : 'Not connected' %></span>
 					<span class="app-sf-chip-caret" aria-hidden="true">&#9662;</span>
 				</button>
-			<% } else { %>
+			<% } else if (!_ts_saas && _ts_showSfControl) { %>
 				<a class="app-sf-chip<%= _ts_sfConnected ? '' : ' app-sf-chip--disconnected' %>" id="app-sf-chip" href="<%= _ts_sfConnected ? '/connect' : '/connect' %>" title="<%= _ts_sfConnected ? 'Re-authorize Salesforce' : 'Connect Salesforce to load and save canvas records' %>">
 					<span class="app-sf-chip-dot" aria-hidden="true"></span>
 					<span class="app-sf-chip-label"><%= _ts_sfConnected ? _ts_sfLabel : 'Not connected' %></span>
@@ -138,7 +140,9 @@ const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMod
 <% if (_ts_user && _ts_saas && !_ts_playground) { %>
 	<script src="/js/workspace-switcher.js" defer></script>
 	<script src="/js/support.js" defer></script>
+	<% if (_ts_showSfControl) { %>
 	<script src="/js/sf-connections-modal.js" defer></script>
+	<% } %>
 	<script src="/js/trial-banner.js" defer></script>
 <% } %>
 <% if (_ts_user && !_ts_playground) { %>

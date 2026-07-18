@@ -153,13 +153,17 @@
 				return result;
 			}
 
-			function fetchByRefCached(objectName, field, hostId) {
+			function fetchByRefCached(objectName, field, hostId, options) {
 				const key = _countCacheKey(objectName, field, hostId);
-				if (_byRefCache.has(key)) {
+				const forceRefresh = !!(options && options.forceRefresh);
+				if (!forceRefresh && _byRefCache.has(key)) {
 					return Promise.resolve(_byRefCache.get(key));
 				}
 				if (_byRefInFlight.has(key)) {
-					return _byRefInFlight.get(key);
+					const inFlight = _byRefInFlight.get(key);
+					return forceRefresh
+						? inFlight.catch(() => null).then(() => fetchByRefCached(objectName, field, hostId, options))
+						: inFlight;
 				}
 				const url =
 					'/api/objects/' +

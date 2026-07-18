@@ -27,6 +27,28 @@ describe('accountsDb.upsertByEmail', () => {
 		assert.equal(second.account.id, first.account.id);
 	});
 
+	test('blocks plus aliases and Gmail dot or googlemail variants', async () => {
+		const { accounts } = await import('../src/database/index.js');
+		const first = await accounts.upsertByEmail({ email: 'first.last@gmail.com' });
+		const plusAlias = await accounts.upsertByEmail({ email: 'first.last+again@gmail.com' });
+		const dotAlias = await accounts.upsertByEmail({ email: 'firstlast@googlemail.com' });
+		assert.equal(plusAlias.created, false);
+		assert.equal(plusAlias.account, null);
+		assert.equal(plusAlias.collision.id, first.account.id);
+		assert.equal(dotAlias.created, false);
+		assert.equal(dotAlias.collision.id, first.account.id);
+	});
+
+	test('a canonical email key permits only one concurrent account insert', async () => {
+		const { accounts } = await import('../src/database/index.js');
+		const [first, second] = await Promise.all([
+			accounts.upsertByEmail({ email: 'race+one@example.com' }),
+			accounts.upsertByEmail({ email: 'race+two@example.com' }),
+		]);
+		assert.equal([first, second].filter((result) => result.created).length, 1);
+		assert.equal([first, second].filter((result) => result.collision).length, 1);
+	});
+
 	test('updates a missing display_name on existing account', async () => {
 		const { accounts } = await import('../src/database/index.js');
 		await accounts.upsertByEmail({ email: 'cara@x.com', displayName: null });
@@ -62,11 +84,43 @@ describe('accountsDb.updateEmail', () => {
 		);
 	});
 
+	test('rejects an alias collision with another account', async () => {
+		const { accounts } = await import('../src/database/index.js');
+		await accounts.upsertByEmail({ email: 'owner+original@example.com' });
+		const { account: other } = await accounts.upsertByEmail({ email: 'other@example.com' });
+		await assert.rejects(
+			() => accounts.updateEmail(other.id, 'owner+replacement@example.com'),
+			(err) => err.code === 'email_in_use',
+		);
+	});
+
 	test('updates email when free, normalizing case', async () => {
 		const { accounts } = await import('../src/database/index.js');
 		const { account } = await accounts.upsertByEmail({ email: 'gail@x.com' });
 		const updated = await accounts.updateEmail(account.id, 'GAIL.NEW@X.COM');
 		assert.equal(updated.email, 'gail.new@x.com');
+	});
+
+	test('allows a historical alias-collision account to keep its exact email', async () => {
+		const { accounts } = await import('../src/database/index.js');
+		const { ext } = await import('../src/extensions.js');
+		await accounts.upsertByEmail({ email: 'legacy-owner@example.com' });
+		const now = Date.now();
+		await ext.getDb().insertInto('accounts').values({
+			id: 'acc_legacy_alias',
+			email: 'legacy-owner+old@example.com',
+			email_collision_key: null,
+			created_at: now,
+			updated_at: now,
+		}).execute();
+
+		const unchanged = await accounts.updateEmail(
+			'acc_legacy_alias',
+			'LEGACY-OWNER+OLD@EXAMPLE.COM',
+		);
+		assert.equal(unchanged.id, 'acc_legacy_alias');
+		assert.equal(unchanged.email, 'legacy-owner+old@example.com');
+		assert.equal(unchanged.email_collision_key, null);
 	});
 });
 

@@ -13,6 +13,7 @@
 				'isRecordModified',
 				'recordOrdinal',
 				'attachCyEdgeMarkers',
+				'redrawCyEdgeMarkers',
 				'attachCyMarqueeSelect',
 				'attachCyMiddleClickPan',
 				'attachCySpacePan',
@@ -69,6 +70,7 @@
 			const isRecordModified = deps.isRecordModified;
 			const recordOrdinal = deps.recordOrdinal;
 			const attachCyEdgeMarkers = deps.attachCyEdgeMarkers;
+			const redrawCyEdgeMarkers = deps.redrawCyEdgeMarkers;
 			const attachCyMarqueeSelect = deps.attachCyMarqueeSelect;
 			const attachCyMiddleClickPan = deps.attachCyMiddleClickPan;
 			const attachCySpacePan = deps.attachCySpacePan;
@@ -605,6 +607,7 @@
 				const isFirstRender = !getCyInstance();
 				const newRealNodeIds = []; // Tracked across the diff path
 				if (!getCyInstance()) {
+					container.classList.add('cy-initializing');
 					setCyInstance(
 						cytoscape({
 							container,
@@ -1717,21 +1720,29 @@
 
 				if (isFirstRender) {
 					requestAnimationFrame(() => {
-						if (!getCyInstance() || getCyInstance().elements().length === 0) {
-							return;
-						}
-						getCyInstance().resize();
-						const baseCard = getCyInstance().nodes('[kind ^= "card"]').first();
-						if (baseCard && baseCard.length) {
-							getCyInstance().zoom(1);
-							getCyInstance().center(baseCard);
-						} else {
-							getCyInstance().fit(undefined, 60);
-							if (getCyInstance().zoom() > 1) {
-								getCyInstance().zoom(1);
-								getCyInstance().center();
+						const cy = getCyInstance();
+						if (cy && cy.elements().length > 0) {
+							cy.resize();
+							const baseCard = cy.nodes('[kind ^= "card"]').first();
+							if (baseCard && baseCard.length) {
+								cy.zoom(1);
+								cy.center(baseCard);
+							} else {
+								cy.fit(undefined, 60);
+								if (cy.zoom() > 1) {
+									cy.zoom(1);
+									cy.center();
+								}
 							}
 						}
+						requestAnimationFrame(() => {
+							const settledCy = getCyInstance();
+							if (settledCy) {
+								settledCy.resize();
+								redrawCyEdgeMarkers(settledCy, container);
+							}
+							container.classList.remove('cy-initializing');
+						});
 					});
 				} else if (newRealNodeIds.length > 0 && !getSkipNextCyAutoPan()) {
 					const newNodes = getCyInstance().collection(

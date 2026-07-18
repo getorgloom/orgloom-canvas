@@ -52,6 +52,7 @@
 				window.ORGLOOM_SF_CONNECTED = <%- jsonForScript(!!__sfConnected) %>;
 				window.ORGLOOM_HAS_DOCS = <%- jsonForScript(typeof saasEnabled !== 'undefined' && !!saasEnabled) %>;
 				window.ORGLOOM_MOCK = <%- jsonForScript(typeof playgroundMode !== 'undefined' && !!playgroundMode) %>;
+				window.ORGLOOM_MCP_ACTIVE = <%- jsonForScript(!(typeof saasEnabled !== 'undefined' && saasEnabled)) %>;
 				window.ORGLOOM_SENTRY_DSN = <%- jsonForScript(typeof sentryDsn !== 'undefined' ? sentryDsn : null) %>;
 				window.ORGLOOM_ACCOUNT_ID_HASH = <%- jsonForScript(typeof accountIdHash !== 'undefined' ? accountIdHash : null) %>;
 				window.ORGLOOM_ENV = <%- jsonForScript(typeof appEnv !== 'undefined' ? appEnv : 'production') %>;

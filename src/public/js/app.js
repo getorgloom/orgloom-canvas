@@ -1181,6 +1181,10 @@ function csrfFetch(url, options) {
 		'<a class="bec-doclink" href="/docs/walkthroughs/quick-start" target="_blank" rel="noopener">Follow the Quick start &rarr;</a>' +
 		'</div>' + // .bulk-empty-card
 		'</div>' + // .bulk-empty-placeholder
+		'<div class="canvas-top-left-overlays">' +
+		'<div class="canvas-status-strip" id="canvas-status-strip">' +
+		'<div class="bulk-count-chip" id="bulk-count-chip"></div>' +
+		'</div>' +
 		'<aside class="canvas-onboarding-progress" id="canvas-onboarding-progress" hidden aria-label="Getting started">' +
 		'<button type="button" class="cog-dismiss" data-cog-dismiss title="Hide this guide" aria-label="Dismiss getting started guide">&times;</button>' +
 		'<h3 class="cog-title">Getting started</h3>' +
@@ -1191,15 +1195,13 @@ function csrfFetch(url, options) {
 		'</ol>' +
 		'<a class="cog-doclink" href="/docs/walkthroughs/quick-start" target="_blank" rel="noopener">Quick start &rarr;</a>' +
 		'</aside>' +
+		'</div>' +
 		'<div class="bulk-canvas-hint" id="bulk-canvas-hint" style="display:none">' +
 		'<span class="bch-icon" aria-hidden="true">⊞</span>' +
 		'<span class="bch-text">Right-click to add a record</span>' +
 		'</div>' +
 		'<div class="object-filter-panel" id="object-filter-panel" hidden></div>' +
 		'<div class="bulk-selection-chip" id="bulk-selection-chip" style="display:none"></div>' +
-		'<div class="canvas-status-strip" id="canvas-status-strip">' +
-		'<div class="bulk-count-chip" id="bulk-count-chip"></div>' +
-		'</div>' +
 		'</div>' +
 		'</div>' +
 		'<div class="canvas-shortcut-hint" id="canvas-shortcut-hint" title="Open shortcuts reference">' +
@@ -2092,7 +2094,18 @@ function csrfFetch(url, options) {
 		const request = csrfFetch('/api/objects/' + encodeURIComponent(name) + '/describe')
 			.then((r) => {
 				if (!r.ok) {
-					throw new Error(r.statusText);
+					return r
+						.clone()
+						.json()
+						.catch(() => null)
+						.then((body) => {
+							const error = new Error(
+								(body && body.message) || r.statusText || 'Could not load Salesforce fields.',
+							);
+							error.status = r.status;
+							error.code = body && body.error ? body.error : null;
+							throw error;
+						});
 				}
 				return r.json();
 			})
@@ -5360,6 +5373,7 @@ function csrfFetch(url, options) {
 		isRecordModified: isRecordModified,
 		recordOrdinal: recordOrdinal,
 		attachCyEdgeMarkers: attachCyEdgeMarkers,
+		redrawCyEdgeMarkers: redrawCyEdgeMarkers,
 		attachCyMarqueeSelect: attachCyMarqueeSelect,
 		attachCyMiddleClickPan: attachCyMiddleClickPan,
 		attachCySpacePan: attachCySpacePan,

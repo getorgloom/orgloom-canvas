@@ -10,6 +10,7 @@ import {
 	recordResponse,
 	purgeWorkspace,
 	workspaceLiveSummary,
+	broadcastMcpAvailability,
 } from '../src/mcp/relay.js';
 
 function mockSseRes() {
@@ -61,12 +62,26 @@ describe('register / unregister symmetry', () => {
 	});
 	test('registerConnection writes the connectionId via SSE ready event', () => {
 		const sse = mockSseRes();
-		const id = registerConnection({ accountId: 'a1', workspaceId: 'ws1', sseRes: sse });
+		const id = registerConnection({ accountId: 'a1', workspaceId: 'ws1', sseRes: sse, mcpActive: true });
 		assert.equal(typeof id, 'string');
 		assert.ok(id.length > 0);
 		const ready = sse.lastDataEvent();
-		assert.deepEqual(ready, { connectionId: id });
+		assert.deepEqual(ready, { connectionId: id, mcpActive: true });
 		sse.fireClose();
+	});
+
+	test('MCP availability changes reach only browser connections in that workspace', () => {
+		const target = mockSseRes();
+		const other = mockSseRes();
+		registerConnection({ accountId: 'a1', workspaceId: 'ws-target', sseRes: target });
+		registerConnection({ accountId: 'a2', workspaceId: 'ws-other', sseRes: other });
+
+		broadcastMcpAvailability('ws-target', true);
+		assert.deepEqual(target.lastDataEvent(), { active: true });
+		assert.notDeepEqual(other.lastDataEvent(), { active: true });
+
+		target.fireClose();
+		other.fireClose();
 	});
 
 	test('SSE close handler invokes unregisterConnection (canvas drops off list)', () => {

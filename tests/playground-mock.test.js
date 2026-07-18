@@ -80,7 +80,6 @@ describe('interception policy: default-block for /api/*', () => {
 			['GET', '/api/activity/workspace'],
 			['POST', '/api/workspaces'],
 			['DELETE', '/api/connections/abc'],
-			['POST', '/api/records/refresh'],
 			['GET', '/api/made-up-endpoint'],
 		];
 		for (const [m, p] of paths) {
@@ -157,6 +156,76 @@ describe('dataset integrity: describes vs records', () => {
 });
 
 describe('core flows round-trip through the mock', () => {
+	test('refresh returns current demo values using the production response contract', async () => {
+		const seed = W.OrgLoomMock.records.Account[0];
+		const result = await call('POST', '/api/records/refresh', {
+			records: [{ objectName: 'Account', sfId: seed.Id }],
+		});
+		assert.equal(result.status, 200);
+		assert.equal(result.body.results.length, 1);
+		assert.equal(result.body.results[0].objectName, 'Account');
+		assert.equal(result.body.results[0].sfId, seed.Id);
+		assert.equal(result.body.results[0].ok, true);
+		assert.equal(JSON.stringify(result.body.results[0].values), JSON.stringify(seed));
+	});
+
+	test('refresh reports missing and malformed demo records without failing the batch', async () => {
+		const result = await call('POST', '/api/records/refresh', {
+			records: [
+				{ objectName: 'Account', sfId: '001999999999999AAA' },
+				{ objectName: 'Account', sfId: 'bad-id' },
+				{ objectName: '!bad!', sfId: '001000000000001AAA' },
+			],
+		});
+		assert.equal(result.status, 200);
+		assert.deepEqual(
+			result.body.results.map((row) => row.error),
+			['not-found', 'invalid-id', 'invalid-object'],
+		);
+	});
+
+	test('refresh reads the latest playground overlay after an existing record is updated', async () => {
+		const seed = W.OrgLoomMock.records.Account[0];
+		const updatedName = 'Updated in the demo org';
+		const upload = await call('POST', '/api/upload', {
+			records: [
+				{
+					tempId: 'refresh-update',
+					objectName: 'Account',
+					loadedFromId: seed.Id,
+					values: { ...seed, Name: updatedName },
+				},
+			],
+			associations: [],
+		});
+		assert.equal(upload.status, 200);
+		assert.equal(upload.body.results[0].mode, 'update');
+
+		const result = await call('POST', '/api/records/refresh', {
+			records: [{ objectName: 'Account', sfId: seed.Id }],
+		});
+		assert.equal(result.status, 200);
+		assert.equal(result.body.results[0].ok, true);
+		assert.equal(result.body.results[0].values.Name, updatedName);
+		W.localStorage.removeItem('orgloom.playground.records');
+	});
+
+	test('the preset SOQL query resolves its outer Account FROM and returns linked contacts', async () => {
+		const preset =
+			'SELECT Id, Name, Industry, Phone, Type,\n' +
+			'       (SELECT Id, FirstName, LastName, Email, Title FROM Contacts)\n' +
+			'FROM Account\n' +
+			"WHERE Industry = 'Technology'\n" +
+			'LIMIT 5';
+		const result = await call('POST', '/api/query', { soql: preset, fullFields: true });
+		assert.equal(result.status, 200);
+		assert.equal(result.body.objectName, 'Account');
+		assert.equal(result.body.totalSize, 5);
+		assert.equal(result.body.records.filter((record) => record.objectName === 'Account').length, 5);
+		assert.ok(result.body.records.some((record) => record.objectName === 'Contact'));
+		assert.ok(result.body.associations.length > 0);
+	});
+
 	test('canvas save → list → get → delete (localStorage-backed)', async () => {
 		const save = await call('POST', '/api/canvas', {
 			name: 'demo canvas',
@@ -192,5 +261,61 @@ describe('core flows round-trip through the mock', () => {
 		assert.equal(row.success, true);
 		assert.ok(row.id, 'assigned an id');
 		assert.ok(row.mode === 'create' || row.mode === 'created', 'mode present');
+	});
+
+	test('mixed graph upload skips unchanged loaded records and records only actual writes', async () => {
+		const account = W.OrgLoomMock.records.Account[0];
+		const contact = W.OrgLoomMock.records.Contact.find((record) => record.AccountId === account.Id);
+		const existingAsset = W.OrgLoomMock.records.Asset[0];
+		const body = {
+			records: [
+				{
+					tempId: 'unchanged-account',
+					objectName: 'Account',
+					loadedFromId: account.Id,
+					values: account,
+				},
+				{
+					tempId: 'draft-asset',
+					objectName: 'Asset',
+					values: { Name: 'Demo draft asset', AccountId: account.Id, Status: 'Installed' },
+				},
+				{
+					tempId: 'modified-asset',
+					objectName: 'Asset',
+					loadedFromId: existingAsset.Id,
+					values: { ...existingAsset, Description: 'Modified on canvas' },
+				},
+				{
+					tempId: 'unchanged-contact',
+					objectName: 'Contact',
+					loadedFromId: contact.Id,
+					values: contact,
+				},
+			],
+			associations: [],
+			skipTempIds: ['unchanged-account', 'unchanged-contact'],
+		};
+		const result = await call('POST', '/api/upload/graph', body);
+		assert.equal(result.status, 200);
+		assert.equal(result.body.atomicSuccess, true);
+		assert.deepEqual(
+			result.body.results.map((row) => [row.tempId, row.mode]),
+			[
+				['unchanged-account', 'unchanged'],
+				['draft-asset', 'create'],
+				['modified-asset', 'update'],
+				['unchanged-contact', 'unchanged'],
+			],
+		);
+
+		const batch = await call('GET', '/api/upload-batches/' + result.body.batchId);
+		assert.equal(batch.status, 200);
+		assert.equal(batch.body.batch.recordCount, 2);
+		assert.deepEqual(
+			batch.body.batch.insertedIds.map((row) => row.tempId),
+			['draft-asset', 'modified-asset'],
+		);
+		W.localStorage.removeItem('orgloom.playground.records');
 	});
 });

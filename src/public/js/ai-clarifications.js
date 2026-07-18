@@ -145,6 +145,11 @@
 			}
 
 			async function _refreshClarifications() {
+				if (window.ORGLOOM_MCP_ACTIVE !== true) {
+					_banner.hidden = true;
+					_lastCanvasId = null;
+					return;
+				}
 				const id = _pollCanvasId();
 				if (!id) {
 					_banner.hidden = true;
@@ -174,6 +179,15 @@
 			}
 
 			function _watchClarificationsForCurrentCanvas() {
+				if (window.ORGLOOM_MCP_ACTIVE !== true) {
+					_banner.hidden = true;
+					_lastCanvasId = null;
+					if (_pollTimer) {
+						clearInterval(_pollTimer);
+						_pollTimer = null;
+					}
+					return;
+				}
 				const id = _pollCanvasId();
 				if (id !== _lastCanvasId) {
 					_lastCanvasId = id;
@@ -194,6 +208,9 @@
 			});
 			window.addEventListener('focus', () => {
 				_refreshClarifications();
+			});
+			window.addEventListener('orgloom:mcp-availability', () => {
+				_watchClarificationsForCurrentCanvas();
 			});
 
 			return {

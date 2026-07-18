@@ -61,6 +61,14 @@
 					showAiGenConversionPrompt();
 					return;
 				}
+				const migrateBtn = target.closest('[data-bulk-op="migrate-org"]');
+				if (migrateBtn) {
+					ev.preventDefault();
+					ev.stopPropagation();
+					document.querySelectorAll('.fill-menu-popup').forEach((el) => el.remove());
+					showMigrationConversionPrompt();
+					return;
+				}
 				const saveBtn = target.closest('[data-bulk-save]');
 				if (saveBtn && !sessionFlag(NAGGED_SAVE_KEY)) {
 					ev.preventDefault();
@@ -254,6 +262,46 @@
 				});
 			});
 			modal.querySelector('[data-pg-ai-go]').addEventListener('click', () => {
+				close();
+				stashHandoffAndRedirect();
+			});
+		}
+
+		function showMigrationConversionPrompt() {
+			capture('playground_migration_attempted', { record_count: countCurrentRecords() });
+			document.querySelectorAll('.playground-convert-modal').forEach((el) => el.remove());
+			const modal = document.createElement('div');
+			modal.className = 'modal playground-convert-modal';
+			modal.innerHTML =
+				'<div class="modal-overlay" data-pg-migration-close></div>' +
+				'<div class="modal-body" style="max-width:520px">' +
+				'<div class="modal-header">' +
+				'<h3>Sign up to migrate between Salesforce orgs</h3>' +
+				'<button class="modal-close" data-pg-migration-close>&times;</button>' +
+				'</div>' +
+				'<div class="modal-content">' +
+				'<p>Cross-org migration carries canvas records into another Salesforce org. You can match destination records, resolve field differences, and review the migration before uploading. The playground cannot connect real Salesforce orgs. Sign up free to run a migration with your own orgs.</p>' +
+				'</div>' +
+				'<div class="modal-footer">' +
+				'<button class="button secondary" data-pg-migration-close>Close</button>' +
+				'<button class="button" data-pg-migration-go>Sign up free &rarr;</button>' +
+				'</div>' +
+				'</div>';
+			document.body.appendChild(modal);
+			const close = () => {
+				modal.remove();
+				document.removeEventListener('keydown', onEsc);
+			};
+			const onEsc = (event) => {
+				if (event.key === 'Escape') {
+					close();
+				}
+			};
+			document.addEventListener('keydown', onEsc);
+			modal.querySelectorAll('[data-pg-migration-close]').forEach((el) => {
+				el.addEventListener('click', close);
+			});
+			modal.querySelector('[data-pg-migration-go]').addEventListener('click', () => {
 				close();
 				stashHandoffAndRedirect();
 			});

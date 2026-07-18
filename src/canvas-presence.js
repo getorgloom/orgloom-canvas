@@ -130,6 +130,8 @@ export function subscribe({ canvasId, workspaceId, accountId, displayName, canEd
 				return;
 			}
 			sseRes.write(': keepalive\n\n');
+			// The open SSE stream, rather than cursor traffic, proves this browser is still present.
+			entry.lastSeenAt = Date.now();
 		} catch (e) {
 			clearInterval(keepalive);
 			unsubscribe({ canvasId, connectionId });

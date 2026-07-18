@@ -268,6 +268,51 @@
 		return recordsFor(objectName).find((r) => idMatches(r.Id, id)) || null;
 	}
 
+	async function handleRecordsRefresh(req) {
+		const MAX_RECORDS = 200;
+		const body = await req.json().catch(() => ({}));
+		const records = Array.isArray(body.records) ? body.records : [];
+		if (records.length === 0) {
+			return jsonResponse({ error: 'records-required' }, { status: 400 });
+		}
+		if (records.length > MAX_RECORDS) {
+			return jsonResponse(
+				{
+					error: 'too-many-records',
+					message: `Refresh accepts up to ${MAX_RECORDS} records per request. Split the batch on the client.`,
+					max: MAX_RECORDS,
+				},
+				{ status: 400 },
+			);
+		}
+
+		const results = records.map((record) => {
+			const objectName = String((record && record.objectName) || '').trim();
+			const sfId = String((record && record.sfId) || '').trim();
+			if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(objectName)) {
+				return { objectName, sfId, ok: false, error: 'invalid-object' };
+			}
+			if (!/^[a-zA-Z0-9]{15,18}$/.test(sfId)) {
+				return { objectName, sfId, ok: false, error: 'invalid-id' };
+			}
+			if (!Object.prototype.hasOwnProperty.call(MOCK.records, objectName)) {
+				return { objectName, sfId, ok: false, error: 'invalid-object' };
+			}
+			const found = findRecord(objectName, sfId);
+			if (!found) {
+				return { objectName, sfId, ok: false, error: 'not-found' };
+			}
+			const values = {};
+			for (const [field, value] of Object.entries(found)) {
+				if (field !== 'attributes') {
+					values[field] = value;
+				}
+			}
+			return { objectName, sfId, ok: true, values };
+		});
+		return jsonResponse({ results });
+	}
+
 	function appendRecord(objectName, record) {
 		const store = readStore(STORAGE_KEY.records);
 		if (!store[objectName]) {
@@ -832,6 +877,28 @@
 		};
 	}
 
+	function processUploadRecords(records, skipTempIds) {
+		const skipped = new Set(Array.isArray(skipTempIds) ? skipTempIds : []);
+		const idMap = {};
+		for (const rec of records) {
+			if (rec && rec.loadedFromId && skipped.has(rec.tempId)) {
+				idMap[rec.tempId] = rec.loadedFromId;
+			}
+		}
+		return records.map((rec) => {
+			if (rec && rec.loadedFromId && skipped.has(rec.tempId)) {
+				return {
+					tempId: rec.tempId,
+					success: true,
+					id: rec.loadedFromId,
+					objectName: rec.objectName,
+					mode: 'unchanged',
+				};
+			}
+			return processUploadedRecord(rec, idMap);
+		});
+	}
+
 	function processDelete(del) {
 		if (!del || !del.sfId) {
 			return { tempId: del && del.tempId, success: false, error: 'Missing sfId' };
@@ -851,7 +918,7 @@
 
 	function recordBatch(records, associations, source, note, deletes) {
 		const insertedIds = records
-			.filter((r) => r.success && r.id)
+			.filter((r) => r.success && r.id && r.mode !== 'unchanged')
 			.map((r) => ({
 				tempId: r.tempId,
 				sfId: r.id,
@@ -902,8 +969,7 @@
 		const associations = Array.isArray(body.associations) ? body.associations : [];
 		const deletes = Array.isArray(body.deletes) ? body.deletes : [];
 		const directUpload = !!body.directUpload;
-		const idMap = {};
-		const results = records.map((rec) => processUploadedRecord(rec, idMap));
+		const results = processUploadRecords(records, body.skipTempIds);
 		const deleteResults = deletes.map(processDelete);
 		const batchId = recordBatch(
 			results,
@@ -926,8 +992,7 @@
 		const associations = Array.isArray(body.associations) ? body.associations : [];
 		const deletes = Array.isArray(body.deletes) ? body.deletes : [];
 		const directUpload = !!body.directUpload;
-		const idMap = {};
-		const results = records.map((rec) => processUploadedRecord(rec, idMap));
+		const results = processUploadRecords(records, body.skipTempIds);
 		const deleteResults = deletes.map(processDelete);
 		const batchId = recordBatch(
 			results,
@@ -951,8 +1016,7 @@
 		const body = await req.json().catch(() => ({}));
 		const records = Array.isArray(body.records) ? body.records : [];
 		const deletes = Array.isArray(body.deletes) ? body.deletes : [];
-		const idMap = {};
-		const results = records.map((rec) => processUploadedRecord(rec, idMap));
+		const results = processUploadRecords(records, body.skipTempIds);
 		const deleteResults = deletes.map(processDelete);
 		return jsonResponse({
 			results,
@@ -1150,8 +1214,43 @@
 		const fullFields = body.fullFields === false ? false : true;
 		const soql = String(body.soql || '');
 
-		const fromMatch = soql.match(/FROM\s+([A-Za-z][A-Za-z0-9_]*)/i);
-		const queryObject = fromMatch ? fromMatch[1] : 'Account';
+		function outerQueryObject(query) {
+			let depth = 0;
+			let quote = null;
+			for (let i = 0; i < query.length; i++) {
+				const char = query[i];
+				if (quote) {
+					if (char === '\\') {
+						i++;
+					} else if (char === quote) {
+						quote = null;
+					}
+					continue;
+				}
+				if (char === "'" || char === '"') {
+					quote = char;
+					continue;
+				}
+				if (char === '(') {
+					depth++;
+					continue;
+				}
+				if (char === ')') {
+					depth = Math.max(0, depth - 1);
+					continue;
+				}
+				if (depth !== 0) {
+					continue;
+				}
+				const match = query.slice(i).match(/^FROM\s+([A-Za-z][A-Za-z0-9_]*)\b/i);
+				if (match && (i === 0 || !/[A-Za-z0-9_]/.test(query[i - 1]))) {
+					return match[1];
+				}
+			}
+			return null;
+		}
+
+		const queryObject = outerQueryObject(soql) || 'Account';
 		const inMatch = soql.match(/WHERE\s+Id\s+IN\s*\(([^)]*)\)/i);
 		const explicitIds = inMatch ? Array.from(inMatch[1].matchAll(/'([^']+)'/g)).map((m) => m[1]) : null;
 		const hasContactsSubquery = /\(\s*SELECT[\s\S]*FROM\s+Contacts\s*\)/i.test(soql);
@@ -1464,6 +1563,7 @@
 		},
 
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/related-counts' && handleRelatedCountsPost(req) },
+		{ method: 'POST', match: (u, req) => u.pathname === '/api/records/refresh' && handleRecordsRefresh(req) },
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/limits' && handleLimits() },
 

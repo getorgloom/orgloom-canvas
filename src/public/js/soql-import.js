@@ -44,6 +44,10 @@
 			const showBulkToastWithAction =
 				typeof deps.showBulkToastWithAction === 'function' ? deps.showBulkToastWithAction : null;
 			const _shared = window.OrgLoom.importShared;
+			const reconcileLoadedRecordAssociations =
+				_shared && typeof _shared.reconcileLoadedRecordAssociations === 'function'
+					? _shared.reconcileLoadedRecordAssociations
+					: null;
 
 			function formatQueryError(body, status) {
 				const code = body && body.error ? String(body.error) : '';
@@ -581,6 +585,9 @@
 					});
 					existingAssocKey.add(key);
 					assocsAdded++;
+				}
+				if (reconcileLoadedRecordAssociations) {
+					assocsAdded += reconcileLoadedRecordAssociations(canvasState).added;
 				}
 				clearBulkUserDeleted();
 				if (newBulkIds.size > 0) {

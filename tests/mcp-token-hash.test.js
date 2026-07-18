@@ -123,6 +123,26 @@ describe('mcpTokens.authenticate', () => {
 	});
 });
 
+describe('mcpTokens.hasActiveForWorkspace', () => {
+	test('reports only unrevoked, unexpired tokens in the requested workspace', async () => {
+		const { mcpTokens } = await import('../src/database/index.js');
+		const a = await makeAccount();
+		assert.equal(await mcpTokens.hasActiveForWorkspace(WS_A), false);
+
+		const active = await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'active' });
+		await mcpTokens.issue({ accountId: a.id, workspaceId: WS_B, name: 'other workspace' });
+		assert.equal(await mcpTokens.hasActiveForWorkspace(WS_A), true);
+
+		await mcpTokens.revoke(active.id, a.id, WS_A);
+		assert.equal(await mcpTokens.hasActiveForWorkspace(WS_A), false);
+
+		await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'expired', ttlMs: 5 });
+		await new Promise((resolve) => setTimeout(resolve, 15));
+		assert.equal(await mcpTokens.hasActiveForWorkspace(WS_A), false);
+		assert.equal(await mcpTokens.hasActiveForWorkspace(null), false);
+	});
+});
+
 describe('mcpTokens.revoke', () => {
 	test("account-scoped revoke rejects another user's token", async () => {
 		const { mcpTokens } = await import('../src/database/index.js');

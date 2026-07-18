@@ -71,9 +71,40 @@ test('all-record upload retains linked drafts without an exclusion warning', () 
 
 test('upload preflight summary uses one user-facing total', () => {
 	assert.match(source, /<span>Total records<\/span>/);
+	assert.match(source, /const totalRecords = willUploadCount \+ willDeleteCount/);
 	assert.doesNotMatch(source, /Records will upload in the order below/);
 	assert.doesNotMatch(source, /<span>Will sync<\/span>/);
 	assert.doesNotMatch(source, /Associations \(FK links\)/);
+});
+
+test('upload preflight identifies an inactive Salesforce connection and offers reconnection', () => {
+	const summary = uploadModal.describeLoadFailureSummary(
+		[{ name: 'Account', code: 'no-active-connection', status: 409 }],
+		new Set(['Account']),
+	);
+
+	assert.equal(summary.kind, 'connection');
+	assert.match(summary.heading, /reconnected/);
+	assert.match(summary.message, /another tab does not restore the connection/);
+	assert.equal(summary.action, 'Reconnect Salesforce');
+	assert.match(source, /describeFailure\.action/);
+});
+
+test('upload preflight stops for another describe failure and lets the user retry', () => {
+	const summary = uploadModal.describeLoadFailureSummary(
+		[{ name: 'Contact', code: 'service-unavailable', status: 503 }],
+		new Set(['Contact']),
+	);
+
+	assert.equal(summary.kind, 'retry');
+	assert.match(summary.message, /Contact/);
+	assert.equal(summary.action, 'Retry pre-flight checks');
+});
+
+test('describe requests preserve their HTTP reason for upload recovery', () => {
+	assert.match(appSource, /error\.status = r\.status/);
+	assert.match(appSource, /error\.code = body && body\.error/);
+	assert.match(appSource, /body && body\.message/);
 });
 
 test('upload progress uses a plain object-aware record summary', () => {
@@ -162,6 +193,14 @@ test('recall review omits recovery promises and legacy pre-value-revert messagin
 test('recall review restores the cached history list and never renders a zero-record action', () => {
 	assert.match(historySource, /const historyListHtml = content\.innerHTML/);
 	assert.match(historySource, /data-uh-back[^\n]+restoreHistoryList/);
+	assert.match(
+		historySource,
+		/_executeRecall\(batchId, overlay, skipSfIds, revertSelections, restoreHistoryList\)/,
+	);
+	assert.match(
+		historySource,
+		/async function _executeRecall\(batchId, overlay, skipSfIds, revertSelections, restoreHistoryList\)/,
+	);
 	assert.match(
 		historySource,
 		/querySelector\(\s*'\[data-uh-list\]'\s*\)\s*\.addEventListener\(\s*'click',\s*\(\) => restoreHistoryList\(body\.status\)\s*\)/,

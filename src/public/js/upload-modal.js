@@ -91,6 +91,32 @@
 		return 'Uploading ' + count + ' ' + objectLabel + '…';
 	}
 
+	function describeLoadFailureSummary(failures, missingDescribes) {
+		const failed = Array.isArray(failures) ? failures : [];
+		const missing = Array.from(missingDescribes || []).filter(Boolean);
+		const connectionFailure = failed.some(
+			(failure) => failure && (failure.code === 'no-active-connection' || failure.code === 'sf-session-expired'),
+		);
+		if (connectionFailure) {
+			return {
+				kind: 'connection',
+				heading: 'Salesforce needs to be reconnected.',
+				message:
+					'Org Loom could not use its Salesforce connection to check these records. Signing in to Salesforce in another tab does not restore the connection. Reconnect here, then reopen Upload.',
+				action: 'Reconnect Salesforce',
+			};
+		}
+		return {
+			kind: 'retry',
+			heading: 'Salesforce field information could not be loaded.',
+			message:
+				'Org Loom could not pre-flight check ' +
+				(missing.length > 0 ? missing.join(', ') : 'these records') +
+				'. Retry the check before uploading. If it continues, reconnect Salesforce.',
+			action: 'Retry pre-flight checks',
+		};
+	}
+
 	window.OrgLoom.uploadModal = {
 		scopeUploadRecords: scopeUploadRecords,
 		excludedDraftParentLinks: excludedDraftParentLinks,
@@ -98,6 +124,7 @@
 		requiredExcludedDraftParentLinks: requiredExcludedDraftParentLinks,
 		scopeUploadValues: scopeUploadValues,
 		formatUploadProgress: formatUploadProgress,
+		describeLoadFailureSummary: describeLoadFailureSummary,
 		mount: function mount(deps) {
 			const required = [
 				'canvasState',
@@ -151,6 +178,7 @@
 					? deps.markCanvasGuideUploadComplete
 					: function () {};
 
+			let _describeLoadFailures = [];
 			const uploadModal = document.createElement('div');
 			uploadModal.className = 'modal hidden';
 			uploadModal.innerHTML =
@@ -210,8 +238,29 @@
 				const content = uploadModal.querySelector('#upload-modal-content');
 				content.innerHTML = '<p class="center tag">Running pre-flight checks\u2026</p>';
 				uploadModal.classList.remove('hidden');
-				const uniqObjs = Array.from(new Set(canvasState.bulkRecords.map((r) => r.objectName)));
-				await Promise.all(uniqObjs.map((n) => ensureDescribe(n).catch(() => null)));
+				const uniqObjs = Array.from(
+					new Set(
+						canvasState.bulkRecords
+							.filter((record) => record && !record.isTypeNode && record.objectName)
+							.map((record) => record.objectName),
+					),
+				);
+				_describeLoadFailures = (
+					await Promise.all(
+						uniqObjs.map(async (name) => {
+							try {
+								await ensureDescribe(name);
+								return null;
+							} catch (error) {
+								return {
+									name,
+									code: error && error.code,
+									status: error && error.status,
+								};
+							}
+						}),
+					)
+				).filter(Boolean);
 
 				_renderUploadModalSummary();
 			}
@@ -385,7 +434,7 @@
 							'</div>',
 					)
 					.join('');
-				const totalRecords = scopedRecords.length;
+				const totalRecords = willUploadCount + willDeleteCount;
 				const scopeToggleHtml = canScope
 					? '<div class="upload-scope-toggle">' +
 						'<button type="button" class="upload-scope-btn' +
@@ -405,8 +454,12 @@
 						'</div>'
 					: '';
 
+				const describeFailure =
+					missingDescribes.size > 0 || _describeLoadFailures.length > 0
+						? describeLoadFailureSummary(_describeLoadFailures, missingDescribes)
+						: null;
 				let preflightHtml = '';
-				if (issues.length === 0 && missingDescribes.size === 0) {
+				if (issues.length === 0 && !describeFailure) {
 					preflightHtml =
 						'<div class="preflight ok">' +
 						'<span class="pf-icon">\u2713</span>' +
@@ -485,15 +538,14 @@
 						'</div>' +
 						'</div>';
 				}
-				if (missingDescribes.size > 0) {
+				if (describeFailure) {
 					preflightHtml +=
-						'<div class="preflight has-warnings">' +
-						'<span class="pf-icon">i</span>' +
-						'<span class="pf-msg">Describes still loading for: ' +
-						Array.from(missingDescribes)
-							.map((n) => '<code>' + escapeHtml(n) + '</code>')
-							.join(', ') +
-						'. These objects weren\u2019t pre-flight checked.' +
+						'<div class="preflight has-errors">' +
+						'<span class="pf-icon">\u26A0</span>' +
+						'<span class="pf-msg"><strong>' +
+						escapeHtml(describeFailure.heading) +
+						'</strong> ' +
+						escapeHtml(describeFailure.message) +
 						'</span>' +
 						'</div>';
 				}
@@ -584,7 +636,26 @@
 				});
 
 				const hasWork = willUploadCount > 0 || willDeleteCount > 0;
-				if (cycleIds.size > 0) {
+				if (describeFailure) {
+					confirmBtn.style.display = '';
+					confirmBtn.disabled = false;
+					confirmBtn.textContent = describeFailure.action;
+					confirmBtn.classList.remove('confirm-anyway');
+					confirmBtn.classList.remove('confirm-danger');
+					confirmBtn.onclick = () => {
+						if (describeFailure.kind === 'connection') {
+							const chip = document.getElementById('app-sf-chip');
+							if (chip) {
+								chip.click();
+							}
+							return;
+						}
+						openUploadModal({ initialScope: _uploadScopeSelected ? 'selected' : 'all' });
+					};
+					if (cancelBtn) {
+						cancelBtn.textContent = 'Close';
+					}
+				} else if (cycleIds.size > 0) {
 					confirmBtn.style.display = '';
 					confirmBtn.disabled = true;
 					confirmBtn.textContent = 'Break reference cycle';

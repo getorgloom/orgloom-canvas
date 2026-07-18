@@ -48,13 +48,11 @@ export async function findByCanonicalEmail(email) {
 		return null;
 	}
 	const db = ext.getDb();
-
-	const direct = await db.selectFrom('accounts').selectAll().where('email', '=', canonical).executeTakeFirst();
-	if (direct) {
-		return direct;
-	}
-	const all = await db.selectFrom('accounts').selectAll().where('deleted_at', 'is', null).execute();
-	return all.find((acc) => normalizeEmailForCollisionCheck(acc.email) === canonical) || null;
+	return db
+		.selectFrom('accounts')
+		.selectAll()
+		.where('email_collision_key', '=', canonical)
+		.executeTakeFirst();
 }
 
 export async function findById(id) {
@@ -108,13 +106,26 @@ export async function upsertByEmail({ email, displayName, promoCode }) {
 	const account = {
 		id: 'acc_' + crypto.randomUUID(),
 		email: normalized,
+		email_collision_key: normalizeEmailForCollisionCheck(normalized),
 		display_name: displayName || null,
 		promo_code: normalizePromoCode(promoCode),
 		deleted_at: null,
 		created_at: now,
 		updated_at: now,
 	};
-	await db.insertInto('accounts').values(account).execute();
+	try {
+		await db.insertInto('accounts').values(account).execute();
+	} catch (error) {
+		// The unique key closes the race between two simultaneous signups.
+		const collision = await findByCanonicalEmail(normalized);
+		if (collision) {
+			if (collision.email === normalized) {
+				return { account: collision, created: false };
+			}
+			return { account: null, created: false, collision };
+		}
+		throw error;
+	}
 	return { account, created: true };
 }
 
@@ -138,14 +149,36 @@ export async function updateEmail(id, email) {
 		throw new Error('id and email are required');
 	}
 	const db = ext.getDb();
-	const collision = await findByEmail(normalized);
+	const current = await findById(id);
+	if (current && current.email === normalized) {
+		return current;
+	}
+	const collision = await findByCanonicalEmail(normalized);
 	if (collision && collision.id !== id) {
 		const err = new Error('Email already in use by another account.');
 		err.code = 'email_in_use';
 		throw err;
 	}
 	const now = Date.now();
-	await db.updateTable('accounts').set({ email: normalized, updated_at: now }).where('id', '=', id).execute();
+	try {
+		await db
+			.updateTable('accounts')
+			.set({
+				email: normalized,
+				email_collision_key: normalizeEmailForCollisionCheck(normalized),
+				updated_at: now,
+			})
+			.where('id', '=', id)
+			.execute();
+	} catch (error) {
+		const raced = await findByCanonicalEmail(normalized);
+		if (raced && raced.id !== id) {
+			const collisionError = new Error('Email already in use by another account.');
+			collisionError.code = 'email_in_use';
+			throw collisionError;
+		}
+		throw error;
+	}
 	return findById(id);
 }
 
@@ -172,6 +205,7 @@ export async function pseudonymize(id, pseudoEmail) {
 		.updateTable('accounts')
 		.set({
 			email: pseudoEmail,
+			email_collision_key: normalizeEmailForCollisionCheck(pseudoEmail),
 			display_name: null,
 			deleted_at: now,
 			updated_at: now,

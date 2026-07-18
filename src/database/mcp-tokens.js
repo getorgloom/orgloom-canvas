@@ -145,6 +145,22 @@ export async function listForWorkspace(accountId, workspaceId, { includeAllOwner
 	}));
 }
 
+export async function hasActiveForWorkspace(workspaceId) {
+	if (!workspaceId) {
+		return false;
+	}
+	const now = Date.now();
+	const row = await ext
+		.getDb()
+		.selectFrom('mcp_tokens')
+		.select('id')
+		.where('workspace_id', '=', workspaceId)
+		.where('revoked_at', 'is', null)
+		.where((eb) => eb.or([eb('expires_at', 'is', null), eb('expires_at', '>', now)]))
+		.executeTakeFirst();
+	return !!row;
+}
+
 export async function revoke(tokenId, accountId, workspaceId = null) {
 	if (!tokenId) {
 		throw new Error('tokenId required');

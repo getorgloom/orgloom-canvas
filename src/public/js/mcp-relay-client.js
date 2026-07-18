@@ -31,6 +31,19 @@
 	let _eventSource = null;
 	let _connectAttempts = 0;
 
+	function _setMcpAvailability(active) {
+		const next = active === true;
+		window.ORGLOOM_MCP_ACTIVE = next;
+		window.dispatchEvent(
+			new CustomEvent('orgloom:mcp-availability', {
+				detail: { active: next },
+			}),
+		);
+		if (!next && _registeredCanvasId) {
+			_unregister(_registeredCanvasId);
+		}
+	}
+
 	function _log(...args) {
 		try {
 			if (localStorage.getItem('orgloomRelayDebug') === '1') {
@@ -53,10 +66,24 @@
 				const data = JSON.parse(ev.data);
 				_connectionId = data.connectionId;
 				_connectAttempts = 0;
+				if (typeof data.mcpActive === 'boolean') {
+					_setMcpAvailability(data.mcpActive);
+				}
 				_log('connected, connectionId=' + _connectionId);
 				_maybeRegisterCurrent();
 			} catch (e) {
 				_log('bad ready payload:', e);
+			}
+		});
+		_eventSource.addEventListener('mcp-availability', (ev) => {
+			try {
+				const data = JSON.parse(ev.data);
+				_setMcpAvailability(data.active === true);
+				if (data.active === true) {
+					_maybeRegisterCurrent();
+				}
+			} catch (e) {
+				_log('bad MCP availability payload:', e);
 			}
 		});
 		_eventSource.addEventListener('request', (ev) => {
@@ -123,7 +150,7 @@
 	}
 
 	async function _register(canvasId, meta) {
-		if (!_connectionId) {
+		if (!_connectionId || window.ORGLOOM_MCP_ACTIVE !== true) {
 			return;
 		}
 		_registeredCanvasId = canvasId;
@@ -158,6 +185,9 @@
 
 	let _pendingLoad = null;
 	function _maybeRegisterCurrent() {
+		if (window.ORGLOOM_MCP_ACTIVE !== true) {
+			return;
+		}
 		// Hidden tabs do not advertise a canvas as the active MCP client.
 		if (document.visibilityState !== 'visible') {
 			return;
@@ -194,6 +224,13 @@
 	});
 
 	function _syncRegistration(canvasId, meta) {
+		if (window.ORGLOOM_MCP_ACTIVE !== true) {
+			_pendingLoad = { canvasId, meta: meta || {} };
+			if (_registeredCanvasId) {
+				_unregister(_registeredCanvasId);
+			}
+			return;
+		}
 		if (document.visibilityState !== 'visible') {
 			if (_registeredCanvasId) {
 				_unregister(_registeredCanvasId);
@@ -228,6 +265,9 @@
 	});
 
 	setInterval(() => {
+		if (window.ORGLOOM_MCP_ACTIVE !== true) {
+			return;
+		}
 		const cs = window.Orgloom && window.Orgloom.canvasState;
 		if (!cs || typeof cs.getCurrentCanvas !== 'function') {
 			return;

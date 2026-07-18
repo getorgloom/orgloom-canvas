@@ -443,25 +443,23 @@
 					if (opts.recordsOverride) {
 						records = opts.recordsOverride;
 					} else if (rec.direction === 'child') {
-						records = await fetchByRefCached(targetType, rec.fieldOnOther, base.loadedFromId);
+						records = await fetchByRefCached(targetType, rec.fieldOnOther, base.loadedFromId, {
+							forceRefresh: true,
+						});
 					} else {
 						const cacheKey = _countCacheKey(targetType, 'Id', rec.parentId);
-						if (_byRefCache.has(cacheKey)) {
-							records = _byRefCache.get(cacheKey);
-						} else {
-							const resp = await csrfFetch(
-								'/api/objects/' +
-									encodeURIComponent(targetType) +
-									'/records/' +
-									encodeURIComponent(rec.parentId),
-							);
-							if (!resp.ok) {
-								throw new Error(resp.statusText);
-							}
-							const single = await resp.json();
-							records = single ? [single] : [];
-							_byRefCache.set(cacheKey, records);
+						const resp = await csrfFetch(
+							'/api/objects/' +
+								encodeURIComponent(targetType) +
+								'/records/' +
+								encodeURIComponent(rec.parentId),
+						);
+						if (!resp.ok) {
+							throw new Error(resp.statusText);
 						}
+						const single = await resp.json();
+						records = single ? [single] : [];
+						_byRefCache.set(cacheKey, records);
 					}
 					const recToValues = (r) => {
 						const v = {};

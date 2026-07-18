@@ -112,15 +112,28 @@
 				return _RELCHIP_SYSTEM_PARENT_FIELDS.has(fieldName);
 			}
 
+			function _selectionForRecord(rec) {
+				if (!rec) {
+					return null;
+				}
+				if (rec.fromSelectionId != null) {
+					const exact = canvasState.selectedObjects.find((s) => s.id === rec.fromSelectionId);
+					if (exact && exact.data) {
+						return exact;
+					}
+				}
+				return canvasState.selectedObjects.find((s) => s.name === rec.objectName && s.data) || null;
+			}
+
 			function _ensureChipProbed(rec) {
-				if (!rec || !rec.loadedFromId || !rec.fromSelectionId) {
+				if (!rec || !rec.loadedFromId) {
 					return;
 				}
 				if (_chipProbeState.has(rec.id)) {
 					return;
 				}
-				const sel = canvasState.selectedObjects.find((s) => s.id === rec.fromSelectionId);
-				if (!sel || !sel.data) {
+				const sel = _selectionForRecord(rec);
+				if (!sel) {
 					return;
 				}
 				const children = (sel.data.children || [])
@@ -164,11 +177,11 @@
 			}
 
 			function _relInfoForRec(rec) {
-				if (!rec || !rec.fromSelectionId) {
+				if (!rec) {
 					return null;
 				}
-				const sel = canvasState.selectedObjects.find((s) => s.id === rec.fromSelectionId);
-				if (!sel || !sel.data) {
+				const sel = _selectionForRecord(rec);
+				if (!sel) {
 					return null;
 				}
 				const allParents = (sel.data.parents || [])
@@ -234,10 +247,12 @@
 			}
 
 			function showRelatedPopover(triggerEl, hostRec) {
-				const sel = hostRec.fromSelectionId
-					? canvasState.selectedObjects.find((s) => s.id === hostRec.fromSelectionId)
-					: null;
-				if (!sel || !sel.data) {
+				const sel = _selectionForRecord(hostRec);
+				if (!sel) {
+					showBulkToast(
+						'Relationship details are still loading for this record. Try Find related again in a moment.',
+						'info',
+					);
 					return;
 				}
 				const parents = [];
@@ -666,6 +681,7 @@
 				_relInfoForRec: _relInfoForRec,
 				_isSystemChildRelationship: _isSystemChildRelationship,
 				_isSystemParentField: _isSystemParentField,
+				_selectionForRecord: _selectionForRecord,
 				_sfIdValue: _sfIdValue,
 				_sfIdMatch: _sfIdMatch,
 			};

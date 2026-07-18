@@ -51,6 +51,9 @@
 			let _lastCursorPostAt = 0;
 			const CURSOR_THROTTLE_MS = 100;
 			let _pendingCursorAbort = null;
+			let _cursorPublished = false;
+			let _hasLocalFocus = false;
+			let _lastLocalFocus = null;
 
 			function _resolveCanvasId() {
 				if (canvasState.currentCanvas && canvasState.currentCanvas.id) {
@@ -201,6 +204,7 @@
 					}
 				}
 				_renderChips();
+				_publishLocalFocus();
 			}
 
 			function _onPresenceEvent(data) {
@@ -224,8 +228,12 @@
 					return;
 				}
 				if (data.type === 'join' && data.peer) {
+					const wasAlone = _peers.size === 0;
 					_peers.set(data.peer.connectionId, data.peer);
 					_renderChips();
+					if (wasAlone) {
+						_publishLocalFocus();
+					}
 					if (data.peer.focus) {
 						_renderPeerFocus(data.peer);
 					}
@@ -239,6 +247,9 @@
 						}
 					}
 					_clearPeerFocus(data.connectionId);
+					if (_peers.size === 0) {
+						_clearPublishedCursor();
+					}
 				} else if (data.type === 'cursor' && data.connectionId) {
 					const peer = _peers.get(data.connectionId);
 					if (peer) {
@@ -953,7 +964,7 @@
 			}
 
 			function _onMouseMove(ev) {
-				if (!_currentCanvasId || !_myConnectionId) {
+				if (!_currentCanvasId || !_myConnectionId || _peers.size === 0) {
 					return;
 				}
 				const now = Date.now();
@@ -994,6 +1005,7 @@
 				}
 				const ctl = new AbortController();
 				_pendingCursorAbort = ctl;
+				_cursorPublished = true;
 				csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/cursor', {
 					method: 'POST',
 					credentials: 'same-origin',
@@ -1012,9 +1024,28 @@
 			}
 
 			function _onMouseLeave() {
-				if (!_currentCanvasId || !_myConnectionId) {
+				if (!_currentCanvasId || !_myConnectionId || _peers.size === 0 || !_cursorPublished) {
 					return;
 				}
+				_cursorPublished = false;
+				csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/cursor', {
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						connectionId: _myConnectionId,
+						sequence: _nextSequence(),
+						x: null,
+						y: null,
+					}),
+				}).catch(() => {});
+			}
+
+			function _clearPublishedCursor() {
+				if (!_currentCanvasId || !_myConnectionId || !_cursorPublished) {
+					return;
+				}
+				_cursorPublished = false;
 				csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/cursor', {
 					method: 'POST',
 					credentials: 'same-origin',
@@ -1092,14 +1123,17 @@
 				_myConnectionId = null;
 				_currentCanvasId = null;
 				_peers.clear();
+				_cursorPublished = false;
+				_hasLocalFocus = false;
+				_lastLocalFocus = null;
 				if (_cursorLayer) {
 					_cursorLayer.innerHTML = '';
 				}
 				_renderChips();
 			}
 
-			function pushFocus(focus) {
-				if (!_currentCanvasId || !_myConnectionId) {
+			function _publishLocalFocus() {
+				if (!_currentCanvasId || !_myConnectionId || _peers.size === 0 || !_hasLocalFocus) {
 					return;
 				}
 				csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/focus', {
@@ -1109,9 +1143,15 @@
 					body: JSON.stringify({
 						connectionId: _myConnectionId,
 						sequence: _nextSequence(),
-						focus: focus || null,
+						focus: _lastLocalFocus,
 					}),
 				}).catch(() => {});
+			}
+
+			function pushFocus(focus) {
+				_hasLocalFocus = true;
+				_lastLocalFocus = focus || null;
+				_publishLocalFocus();
 			}
 
 			let _lastSeenId = null;

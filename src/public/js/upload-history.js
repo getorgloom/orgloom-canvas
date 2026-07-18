@@ -661,11 +661,11 @@
 						sfId,
 						fields,
 					}));
-					_executeRecall(batchId, overlay, skipSfIds, revertSelections);
+					_executeRecall(batchId, overlay, skipSfIds, revertSelections, restoreHistoryList);
 				});
 			}
 
-			async function _executeRecall(batchId, overlay, skipSfIds, revertSelections) {
+			async function _executeRecall(batchId, overlay, skipSfIds, revertSelections, restoreHistoryList) {
 				// The server revalidates selections; client-side preflight is advisory, not authorization.
 				const content = overlay.querySelector('#uh-content');
 				content.innerHTML =
