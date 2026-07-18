@@ -1,4 +1,9 @@
+import { migrationTableExists } from "../migration-introspection.js";
+
 export async function up(db) {
+	if (!(await migrationTableExists(db, "workspace_settings"))) {
+		return;
+	}
 	await db.schema
 		.alterTable("workspace_settings")
 		.addColumn("prod_org_allowlist_enabled", "integer", (col) =>
@@ -18,6 +23,9 @@ export async function up(db) {
 }
 
 export async function down(db) {
+	if (!(await migrationTableExists(db, "workspace_settings"))) {
+		return;
+	}
 	await db.schema
 		.alterTable("workspace_settings")
 		.addColumn("prod_orgs_unrestricted", "integer", (col) =>

@@ -1,4 +1,9 @@
+import { migrationTableExists } from "../migration-introspection.js";
+
 export async function up(db) {
+	if (!(await migrationTableExists(db, "workspace_settings"))) {
+		return;
+	}
 	await db.schema
 		.alterTable("workspace_settings")
 		.addColumn("strict_draft_mode", "integer", (col) =>
@@ -8,6 +13,9 @@ export async function up(db) {
 }
 
 export async function down(db) {
+	if (!(await migrationTableExists(db, "workspace_settings"))) {
+		return;
+	}
 	await db.schema
 		.alterTable("workspace_settings")
 		.dropColumn("strict_draft_mode")

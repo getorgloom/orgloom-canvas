@@ -2,7 +2,7 @@
 import { test, describe, before, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { initTestDb, clearTestDb } from './helpers/db.js';
+import { initTestDb, clearTestDb, hasTestTable } from './helpers/db.js';
 
 before(initTestDb);
 beforeEach(async () => {
@@ -57,15 +57,17 @@ async function makeAccount(email = 'mcp@x.com') {
 }
 
 async function makeWorkspace(ownerAccountId, name = 'W') {
-	const { ext } = await import('../src/extensions.js');
-	const db = ext.getDb();
 	const id = 'ws_' + crypto.randomUUID();
+	if (!(await hasTestTable('workspace_members'))) {
+		return { id };
+	}
+	const { ext } = await import('../src/extensions.js');
 	const now = Date.now();
-	await db.insertInto('workspaces').values({
+	await ext.getDb().insertInto('workspaces').values({
 		id, name, owner_account_id: ownerAccountId,
 		created_at: now, updated_at: now,
 	}).execute();
-	await db.insertInto('workspace_members').values({
+	await ext.getDb().insertInto('workspace_members').values({
 		workspace_id: id, account_id: ownerAccountId, role: 'admin', joined_at: now,
 	}).execute();
 	return { id };
@@ -74,8 +76,6 @@ async function makeWorkspace(ownerAccountId, name = 'W') {
 async function makeMcpFixture() {
 	const account = await makeAccount();
 	const ws = await makeWorkspace(account.id);
-	const viewState = await import('../src/database/view-state.js');
-	await viewState.setCurrentWorkspace(account.id, ws.id);
 	const mcpTokens = await import('../src/database/mcp-tokens.js');
 	const issued = await mcpTokens.issue({ accountId: account.id, workspaceId: ws.id, name: 'test client' });
 	return { account, ws, token: issued.plaintext, tokenId: issued.id };
@@ -145,7 +145,11 @@ describe('auth resolution', () => {
 		assert.equal(res.body.error.code, ERR_AUTH);
 	});
 
-	test('workspace switch does not retarget an existing token', async () => {
+	test('workspace switch does not retarget an existing token', async (t) => {
+		if (!(await hasTestTable('workspace_members'))) {
+			t.skip('hosted workspace overlay is not installed');
+			return;
+		}
 		const { account, ws, token } = await makeMcpFixture();
 		const other = await makeWorkspace(account.id, 'Other');
 		const viewState = await import('../src/database/view-state.js');

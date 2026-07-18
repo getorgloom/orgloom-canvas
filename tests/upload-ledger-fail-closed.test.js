@@ -2,7 +2,7 @@ import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import express from 'express';
-import { initTestDb } from './helpers/db.js';
+import { initTestDb, hasTestTable } from './helpers/db.js';
 import { ext } from '../src/extensions.js';
 
 let server;
@@ -18,24 +18,23 @@ before(async () => {
 	ext.registerDbProvider(() => dbProvider());
 	ext.registerRawClientProvider(() => rawProvider());
 	const { accounts } = await import('../src/database/index.js');
-	const viewState = await import('../src/database/view-state.js');
 	testAccount = (await accounts.upsertByEmail({ email: 'ledger@example.com' })).account;
+	const viewState = await import('../src/database/view-state.js');
 	const workspaceId = 'ws_' + crypto.randomUUID();
-	const now = Date.now();
-	await ext.getDb().insertInto('workspaces').values({
-		id: workspaceId,
-		name: 'Ledger Test',
-		owner_account_id: testAccount.id,
-		created_at: now,
-		updated_at: now,
-	}).execute();
-	await ext.getDb().insertInto('workspace_members').values({
-		workspace_id: workspaceId,
-		account_id: testAccount.id,
-		role: 'admin',
-		joined_at: now,
-	}).execute();
-	await viewState.setCurrentWorkspace(testAccount.id, workspaceId);
+	if (await hasTestTable('workspace_members')) {
+		const now = Date.now();
+		await ext.getDb().insertInto('workspaces').values({
+			id: workspaceId, name: 'Ledger Test', owner_account_id: testAccount.id,
+			created_at: now, updated_at: now,
+		}).execute();
+		await ext.getDb().insertInto('workspace_members').values({
+			workspace_id: workspaceId, account_id: testAccount.id,
+			role: 'admin', joined_at: now,
+		}).execute();
+		await viewState.setCurrentWorkspace(testAccount.id, workspaceId);
+	} else {
+		await viewState.set(testAccount.id, { currentWorkspaceId: workspaceId });
+	}
 	ext.registerAuthProvider(async () => testAccount);
 	ext.registerCapabilityResolver(async () => ({ allowed: true, role: 'admin', plan: 'team' }));
 

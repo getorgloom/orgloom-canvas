@@ -90,7 +90,17 @@ const TABLES_IN_DELETE_ORDER = [
 
 export async function clearTestDb() {
 	const db = ext.getDb();
+	const existingTables = new Set(
+		(await db.introspection.getTables()).map((table) => table.name),
+	);
 	for (const t of TABLES_IN_DELETE_ORDER) {
+		if (!existingTables.has(t)) {
+			continue;
+		}
 		await db.deleteFrom(t).execute();
 	}
+}
+
+export async function hasTestTable(tableName) {
+	return (await _db.introspection.getTables()).some((table) => table.name === tableName);
 }

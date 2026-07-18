@@ -12,16 +12,8 @@ async function makeAccount(email = 'a@x.com') {
 	return (await accounts.upsertByEmail({ email })).account;
 }
 
-async function makeWorkspace(ownerAccountId, name = 'W') {
-	const { ext } = await import('../src/extensions.js');
-	const db = ext.getDb();
-	const id = 'ws_' + crypto.randomUUID();
-	const now = Date.now();
-	await db.insertInto('workspaces').values({
-		id, name, owner_account_id: ownerAccountId,
-		created_at: now, updated_at: now,
-	}).execute();
-	return { id };
+async function makeWorkspace() {
+	return { id: 'ws_' + crypto.randomUUID() };
 }
 
 async function writeN(workspaceId, actorAccountId, n) {

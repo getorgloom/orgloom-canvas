@@ -2,7 +2,7 @@
 import { test, describe, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { initTestDb, clearTestDb } from './helpers/db.js';
+import { initTestDb, clearTestDb, hasTestTable } from './helpers/db.js';
 
 before(initTestDb);
 beforeEach(clearTestDb);
@@ -30,6 +30,13 @@ async function makeWorkspace(ownerAccountId, name = 'W') {
 	return { id };
 }
 
+async function makeWorkspaceReference(accountId) {
+	if (await hasTestTable('workspace_members')) {
+		return (await makeWorkspace(accountId)).id;
+	}
+	return 'ws_' + crypto.randomUUID();
+}
+
 describe('viewStateDb', () => {
 	test('get returns undefined for an account with no view-state row yet', async () => {
 		const { viewState } = await import('../src/database/index.js');
@@ -38,7 +45,11 @@ describe('viewStateDb', () => {
 		assert.equal(v, undefined);
 	});
 
-	test('setCurrentWorkspace creates the row on first call', async () => {
+	test('setCurrentWorkspace creates the row on first call', async (t) => {
+		if (!(await hasTestTable('workspace_members'))) {
+			t.skip('hosted workspace overlay is not installed');
+			return;
+		}
 		const { viewState } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
@@ -51,29 +62,32 @@ describe('viewStateDb', () => {
 	test('setCurrentConnection preserves current_workspace_id', async () => {
 		const { viewState, connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
-		const ws = await makeWorkspace(a.id);
+		const workspaceId = await makeWorkspaceReference(a.id);
 		const { connection } = await connections.upsertFromOauth({
 			accountId: a.id, sfUserId: 's1', sfOrgId: '00D1',
 			instanceUrl: 'https://x.salesforce.com',
 		});
-		await viewState.setCurrentWorkspace(a.id, ws.id);
+		await viewState.set(a.id, { currentWorkspaceId: workspaceId });
 		await viewState.setCurrentConnection(a.id, connection.id);
 		const v = await viewState.get(a.id);
-		assert.equal(v.current_workspace_id, ws.id, 'workspace preserved');
+		assert.equal(v.current_workspace_id, workspaceId, 'workspace preserved');
 		assert.equal(v.current_connection_id, connection.id);
 	});
 
 	test('passing null clears the field', async () => {
 		const { viewState } = await import('../src/database/index.js');
 		const a = await makeAccount();
-		const ws = await makeWorkspace(a.id);
-		await viewState.setCurrentWorkspace(a.id, ws.id);
+		await viewState.set(a.id, { currentWorkspaceId: await makeWorkspaceReference(a.id) });
 		await viewState.setCurrentWorkspace(a.id, null);
 		const v = await viewState.get(a.id);
 		assert.equal(v.current_workspace_id, null);
 	});
 
-	test('setCurrentWorkspace rejects when the account is not a member of the target workspace', async () => {
+	test('setCurrentWorkspace rejects when the account is not a member of the target workspace', async (t) => {
+		if (!(await hasTestTable('workspace_members'))) {
+			t.skip('hosted workspace overlay is not installed');
+			return;
+		}
 		const { viewState } = await import('../src/database/index.js');
 		const owner = await makeAccount('owner@x.com');
 		const stranger = await makeAccount('stranger@x.com');

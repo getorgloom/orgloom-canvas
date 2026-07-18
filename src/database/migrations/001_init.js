@@ -86,8 +86,19 @@ export async function up(db) {
 		const msg = (e && e.message) || "";
 		const code = e && e.code;
 		if (code === "ERR_MODULE_NOT_FOUND" || /cannot find/i.test(msg)) {
+			await db.schema
+				.createTable("account_view_state")
+				.addColumn("account_id", "text", (col) =>
+					col.primaryKey().references("accounts.id").onDelete("cascade"),
+				)
+				.addColumn("current_workspace_id", "text")
+				.addColumn("current_connection_id", "text", (col) =>
+					col.references("connections.id").onDelete("set null"),
+				)
+				.addColumn("updated_at", "integer", (col) => col.notNull())
+				.execute();
 			console.log(
-				"[migration 001_init] orgloom-saas not installed; running canvas-standalone schema (no workspaces/billing/oauth tables).",
+				"[migration 001_init] orgloom-saas not installed; running canvas-standalone schema (no hosted workspace, billing, or OAuth tables).",
 			);
 			return;
 		}
@@ -107,6 +118,7 @@ export async function down(db) {
 		}
 	}
 
+	await db.schema.dropTable("account_view_state").ifExists().execute();
 	await db.schema.dropTable("audit_log").execute();
 	await db.schema.dropTable("connections").execute();
 	await db.schema.dropTable("accounts").execute();

@@ -31,8 +31,13 @@ test('browser error telemetry drops free-form messages, context, and click crumb
 	assert.match(source, /ex\.value = '<redacted-error-message>'/);
 });
 
-test('server error telemetry drops free-form messages and extra context', () => {
-	const source = fs.readFileSync(path.join(saasSrc, 'lib/sentry.js'), 'utf8');
+test('server error telemetry drops free-form messages and extra context', (t) => {
+	const sourcePath = path.join(saasSrc, 'lib/sentry.js');
+	if (!fs.existsSync(sourcePath)) {
+		t.skip('hosted SaaS source is not installed');
+		return;
+	}
+	const source = fs.readFileSync(sourcePath, 'utf8');
 	assert.match(source, /event\.message = '<redacted-error-message>'/);
 	assert.match(source, /event\.extra = \{\}/);
 	assert.match(source, /ex\.value = '<redacted-error-message>'/);

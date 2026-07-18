@@ -1,4 +1,9 @@
+import { migrationTableExists } from "../migration-introspection.js";
+
 export async function up(db) {
+	if (!(await migrationTableExists(db, "workspaces"))) {
+		return;
+	}
 	await db.schema
 		.createTable("ai_clarifications")
 		.addColumn("id", "text", (col) => col.primaryKey())
