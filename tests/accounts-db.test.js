@@ -106,18 +106,19 @@ describe('accountsDb.updateEmail', () => {
 		const { ext } = await import('../src/extensions.js');
 		await accounts.upsertByEmail({ email: 'legacy-owner@example.com' });
 		const now = Date.now();
-		await ext.getDb().insertInto('accounts').values({
-			id: 'acc_legacy_alias',
-			email: 'legacy-owner+old@example.com',
-			email_collision_key: null,
-			created_at: now,
-			updated_at: now,
-		}).execute();
+		await ext
+			.getDb()
+			.insertInto('accounts')
+			.values({
+				id: 'acc_legacy_alias',
+				email: 'legacy-owner+old@example.com',
+				email_collision_key: null,
+				created_at: now,
+				updated_at: now,
+			})
+			.execute();
 
-		const unchanged = await accounts.updateEmail(
-			'acc_legacy_alias',
-			'LEGACY-OWNER+OLD@EXAMPLE.COM',
-		);
+		const unchanged = await accounts.updateEmail('acc_legacy_alias', 'LEGACY-OWNER+OLD@EXAMPLE.COM');
 		assert.equal(unchanged.id, 'acc_legacy_alias');
 		assert.equal(unchanged.email, 'legacy-owner+old@example.com');
 		assert.equal(unchanged.email_collision_key, null);

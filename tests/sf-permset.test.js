@@ -75,4 +75,18 @@ describe('Org Loom managed permission-set assignment gate', () => {
 		);
 		assert.equal(queried, false);
 	});
+
+	test('fails closed when Salesforce does not finish the verification query', async () => {
+		await assert.rejects(
+			() =>
+				hasAssignedOrgloomPermissionSet(
+					{
+						query: () => new Promise(() => {}),
+					},
+					USER_ID,
+					{ timeoutMs: 5 },
+				),
+			(error) => error && error.code === 'sf-permset-check-timeout',
+		);
+	});
 });

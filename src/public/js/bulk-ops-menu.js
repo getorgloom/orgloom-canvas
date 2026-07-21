@@ -254,7 +254,7 @@
 					'<button type="button" data-add-menu="browse" title="Filter records by field values, see live counts, then load matches onto the canvas, no SOQL knowledge required">Browse records</button>' +
 					'<button type="button" data-add-menu="soql" title="Write a SOQL SELECT to pull records (and their related children via subqueries) into the canvas">Import via SOQL query</button>' +
 					'<div class="fm-header">From a file</div>' +
-					'<button type="button" data-add-menu="csv" title="Upload one or more CSV files; multi-file imports auto-detect FK links between rows">Import from CSV</button>' +
+					'<button type="button" data-add-menu="csv" title="Upload one or more CSV files; multi-file imports can detect relationships between rows">Import from CSV</button>' +
 					'<button type="button" data-add-menu="fixture" title="Import a previously-saved canvas (with records) from a JSON file">Import saved canvas (JSON)</button>';
 				document.body.appendChild(pop);
 				const cleanup = () => {

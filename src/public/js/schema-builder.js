@@ -1097,11 +1097,11 @@
 							return;
 						}
 						ringSeen.add(ringKey);
-						const fkA =
+						const relationshipKey =
 							direction === 'parent'
-								? activeName + '|' + peerObj + '|' + fieldName // FK on active points at peer
-								: peerObj + '|' + activeName + '|' + fieldName; // FK on peer points at active
-						if (seenEdges.has(fkA)) {
+								? activeName + '|' + peerObj + '|' + fieldName // Lookup on active points at peer
+								: peerObj + '|' + activeName + '|' + fieldName; // Lookup on peer points at active
+						if (seenEdges.has(relationshipKey)) {
 							return;
 						}
 						ringKeys.push(ringKey);

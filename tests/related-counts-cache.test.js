@@ -37,8 +37,5 @@ test('user-requested related loads can refresh a previously cached by-ref respon
 	});
 	assert.equal(fresh[0].Name, 'After upload');
 	assert.equal(requestCount, 2);
-	assert.equal(
-		(await api.fetchByRefCached('Asset', 'ContactId', '003000000000001AAA'))[0].Name,
-		'After upload',
-	);
+	assert.equal((await api.fetchByRefCached('Asset', 'ContactId', '003000000000001AAA'))[0].Name, 'After upload');
 });

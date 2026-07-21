@@ -117,6 +117,53 @@
 		};
 	}
 
+	function approvalRequiredMessage(body) {
+		if (body && body.message) {
+			return body.message;
+		}
+		if (body && body.approvalStatus === 'pending') {
+			return 'Org Loom automatically created an access request for this Salesforce org. Any workspace admin can approve it in Workspace settings. After approval, retry this action.';
+		}
+		return 'This Salesforce org requires workspace approval. Any workspace admin can review and approve access in Workspace settings, then you can retry this action.';
+	}
+
+	function csvReportCell(value) {
+		let text = value == null ? '' : String(value);
+		// Keep spreadsheet applications from interpreting report content as formulas.
+		if (/^[=+\-@]/.test(text)) {
+			text = "'" + text;
+		}
+		return '"' + text.replace(/"/g, '""') + '"';
+	}
+
+	function buildUploadResultsCsv(results, records) {
+		const recordByTempId = new Map(
+			(records || []).filter((record) => record && record.id != null).map((record) => [record.id, record]),
+		);
+		const header = ['Source file', 'CSV row', 'Object', 'Status', 'Salesforce ID', 'Error'];
+		const rows = (results || []).map((result) => {
+			const record = recordByTempId.get(result && result.tempId);
+			let status = 'Failed';
+			if (result && result.success) {
+				status = result.mode === 'update' ? 'Updated' : result.mode === 'unchanged' ? 'Unchanged' : 'Created';
+			}
+			return [
+				record && record._csvSourceFile,
+				record && record._csvSourceRow,
+				(result && result.objectName) || (record && record.objectName),
+				status,
+				result && result.success ? result.id : '',
+				result && !result.success ? result.error || 'Unknown error' : '',
+			];
+		});
+		return (
+			[header]
+				.concat(rows)
+				.map((row) => row.map(csvReportCell).join(','))
+				.join('\r\n') + '\r\n'
+		);
+	}
+
 	window.OrgLoom.uploadModal = {
 		scopeUploadRecords: scopeUploadRecords,
 		excludedDraftParentLinks: excludedDraftParentLinks,
@@ -125,6 +172,8 @@
 		scopeUploadValues: scopeUploadValues,
 		formatUploadProgress: formatUploadProgress,
 		describeLoadFailureSummary: describeLoadFailureSummary,
+		approvalRequiredMessage: approvalRequiredMessage,
+		buildUploadResultsCsv: buildUploadResultsCsv,
 		mount: function mount(deps) {
 			const required = [
 				'canvasState',
@@ -142,6 +191,7 @@
 				'startElapsedTicker',
 				'ensureDescribe',
 				'isLinkedCsvQuickUploadMode',
+				'getMeInfo',
 			];
 			if (!deps) {
 				throw new Error('upload-modal.mount: missing deps object');
@@ -172,6 +222,7 @@
 			const startElapsedTicker = deps.startElapsedTicker;
 			const ensureDescribe = deps.ensureDescribe;
 			const _isLinkedCsvQuickUploadMode = deps.isLinkedCsvQuickUploadMode;
+			const getMeInfo = deps.getMeInfo;
 			const pingAuditEvent = typeof deps.pingAuditEvent === 'function' ? deps.pingAuditEvent : function () {};
 			const markCanvasGuideUploadComplete =
 				typeof deps.markCanvasGuideUploadComplete === 'function'
@@ -182,7 +233,7 @@
 			const uploadModal = document.createElement('div');
 			uploadModal.className = 'modal hidden';
 			uploadModal.innerHTML =
-				'<div class="modal-overlay" data-upload-close></div>' +
+				'<div class="modal-overlay"></div>' +
 				'<div class="modal-body">' +
 				'<div class="modal-header">' +
 				'<h3>Upload records to Salesforce</h3>' +
@@ -190,6 +241,7 @@
 				'</div>' +
 				'<div class="modal-content" id="upload-modal-content"></div>' +
 				'<div class="modal-footer">' +
+				'<button type="button" class="button secondary" id="upload-results-csv" hidden style="margin-right:auto">Download CSV report</button>' +
 				'<button class="button secondary" id="upload-cancel" data-upload-close>Cancel</button>' +
 				'<button class="button" id="upload-confirm">Upload</button>' +
 				'</div>' +
@@ -205,7 +257,31 @@
 			});
 			uploadModal.querySelector('#upload-confirm').onclick = confirmUpload;
 
+			function renderApprovalRequired(contentEl, confirmBtn, body) {
+				_uploadAttemptId = null;
+				contentEl.innerHTML =
+					'<div class="banner error"><strong>Workspace approval required.</strong> ' +
+					escapeHtml(approvalRequiredMessage(body)) +
+					'</div><p class="tag center">No Salesforce records were written.</p>';
+				confirmBtn.disabled = false;
+				confirmBtn.textContent = 'Retry';
+			}
+
+			function renderActiveOrgChanged(contentEl, confirmBtn, body) {
+				_uploadAttemptId = null;
+				contentEl.innerHTML =
+					'<div class="banner error"><strong>Salesforce org changed.</strong> ' +
+					escapeHtml(
+						(body && body.message) ||
+							'Nothing was uploaded. Close this window and reopen Quick Upload to remap your files.',
+					) +
+					'</div>';
+				confirmBtn.disabled = true;
+				confirmBtn.textContent = 'Upload';
+			}
+
 			async function openUploadModal(opts) {
+				resetResultsCsvAction();
 				if (canvasState.bulkRecords.length === 0) {
 					showBulkToast('No records to upload.');
 					_runPendingUploadCleanup();
@@ -737,13 +813,21 @@
 			}
 			function closeUploadModal() {
 				uploadModal.classList.add('hidden');
+				resetResultsCsvAction();
 				_runPendingUploadCleanup();
+			}
+
+			function resetResultsCsvAction() {
+				const button = uploadModal.querySelector('#upload-results-csv');
+				if (button) {
+					button.hidden = true;
+					button.onclick = null;
+				}
 			}
 
 			let _preflightOverride = false;
 			let _bulkSwitchAcknowledged = false;
 			let _uploadScopeSelected = false;
-
 			function _scopedRealRecords() {
 				return scopeUploadRecords(canvasState.bulkRecords, canvasState.bulkSelectedIds, _uploadScopeSelected);
 			}
@@ -774,6 +858,7 @@
 			let _uploadAttemptId = null;
 			let _allowDuplicates = false;
 			async function confirmUpload() {
+				resetResultsCsvAction();
 				const realRecords = _scopedRealRecords();
 				if (realRecords.length === 0) {
 					return;
@@ -805,12 +890,13 @@
 						return;
 					}
 				}
+				const meInfo = getMeInfo();
 				const userRecords = realRecords.filter((r) => r.objectName === 'User' && !r.loadedFromId);
 				if (userRecords.length > 0) {
 					const orgLabel =
-						_meInfo && _meInfo.orgType === 'production'
+						meInfo && meInfo.orgType === 'production'
 							? 'PRODUCTION'
-							: (_meInfo && _meInfo.orgType) || 'this org';
+							: (meInfo && meInfo.orgType) || 'this org';
 					const msg =
 						"You're about to create " +
 						userRecords.length +
@@ -838,6 +924,55 @@
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
 				const cancelBtn = uploadModal.querySelector('[data-upload-close]');
 				const content = uploadModal.querySelector('#upload-modal-content');
+				confirmBtn.disabled = true;
+				content.innerHTML =
+					'<p class="center busy-row" style="justify-content:center">' +
+					'<span class="busy-spinner lg"></span>' +
+					'<span>Checking Salesforce access&hellip;</span>' +
+					'</p>';
+				const accessController = new AbortController();
+				const accessTimeout = setTimeout(() => accessController.abort(), 5000);
+				try {
+					const accessResponse = await csrfFetch('/api/upload/access-check', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: '{}',
+						credentials: 'same-origin',
+						signal: accessController.signal,
+					});
+					const accessBody = await accessResponse.json().catch(() => ({}));
+					if (!accessResponse.ok) {
+						if (accessBody && accessBody.error === 'approval-required') {
+							renderApprovalRequired(content, confirmBtn, accessBody);
+							return;
+						}
+						throw new Error(
+							(accessBody && (accessBody.message || accessBody.error)) ||
+								'Org Loom could not verify upload access.',
+						);
+					}
+					if (meInfo && meInfo.connection) {
+						meInfo.connection.approval = { required: false, status: 'approved' };
+					}
+				} catch (error) {
+					const timedOut = accessController.signal.aborted;
+					content.innerHTML =
+						'<div class="banner error"><strong>' +
+						(timedOut ? 'Salesforce access check took too long.' : 'Could not verify upload access.') +
+						'</strong> ' +
+						(timedOut
+							? 'No records were written. Retry, or open Workspace settings to review whether this Salesforce org is awaiting approval.'
+							: escapeHtml(error.message || String(error))) +
+						'</div>' +
+						(timedOut
+							? '<p class="center"><a class="button secondary" href="/workspace#workspace" target="_blank" rel="noopener">Open Workspace settings</a></p>'
+							: '');
+					confirmBtn.disabled = false;
+					confirmBtn.textContent = 'Retry';
+					return;
+				} finally {
+					clearTimeout(accessTimeout);
+				}
 
 				const skipTempIds = realRecords
 					.filter((r) => r.loadedFromId && !isRecordModified(r) && !r.pendingDelete)
@@ -870,6 +1005,7 @@
 					})),
 					skipTempIds,
 					directUpload: _isLinkedCsvQuickUploadMode(),
+					expectedSfOrgId: window.SF_ORG_ID || null,
 				};
 				// Retries reuse this ID so the server can distinguish a retry from a new transaction.
 				if (!_uploadAttemptId) {
@@ -1097,6 +1233,17 @@
 							renderAttemptIncomplete(body);
 							return;
 						}
+						if (r.status === 409 && body && body.error === 'active-org-changed') {
+							renderActiveOrgChanged(content, confirmBtn, body);
+							return;
+						}
+						if (!r.ok && body && body.error === 'approval-required') {
+							renderApprovalRequired(content, confirmBtn, body);
+							return;
+						}
+						if (!r.ok) {
+							throw new Error((body && (body.message || body.error)) || 'Upload failed');
+						}
 						const allResults = (body && body.results) || [];
 						const hasCommitted = allResults.some((r) => r && r.success && r.mode !== 'unchanged');
 						if (body && (body.atomicSuccess || hasCommitted)) {
@@ -1202,6 +1349,14 @@
 								'and retry the upload.' +
 								'</div>';
 							confirmBtn.disabled = true;
+							return;
+						}
+						if (!r.ok && pf && pf.error === 'approval-required') {
+							renderApprovalRequired(content, confirmBtn, pf);
+							return;
+						}
+						if (!r.ok && pf && pf.error === 'active-org-changed') {
+							renderActiveOrgChanged(content, confirmBtn, pf);
 							return;
 						}
 					} catch (err) {
@@ -1316,8 +1471,16 @@
 						renderAttemptIncomplete(body);
 						return;
 					}
+					if (r.status === 409 && body && body.error === 'active-org-changed') {
+						renderActiveOrgChanged(content, confirmBtn, body);
+						return;
+					}
 					if (!r.ok) {
-						throw new Error((body && body.error) || 'Upload failed');
+						if (body && body.error === 'approval-required') {
+							renderApprovalRequired(content, confirmBtn, body);
+							return;
+						}
+						throw new Error((body && (body.message || body.error)) || 'Upload failed');
 					}
 					displayUploadResults(
 						body.results || [],
@@ -1489,6 +1652,22 @@
 						'<a class="tag" href="/pricing" target="_blank" rel="noopener">Compare plans</a>' +
 						'</div>';
 					return;
+				}
+				if (resp.status === 403) {
+					const body = await resp.json().catch(() => ({}));
+					if (body && body.error === 'approval-required') {
+						renderApprovalRequired(contentEl, uploadModal.querySelector('#upload-confirm'), body);
+						return;
+					}
+					throw new Error((body && (body.message || body.error)) || 'HTTP 403');
+				}
+				if (resp.status === 409) {
+					const body = await resp.json().catch(() => ({}));
+					if (body && body.error === 'active-org-changed') {
+						renderActiveOrgChanged(contentEl, uploadModal.querySelector('#upload-confirm'), body);
+						return;
+					}
+					throw new Error((body && (body.message || body.error)) || 'HTTP 409');
 				}
 				if (!resp.ok || !resp.body) {
 					const t = await resp.text().catch(() => '');
@@ -1813,6 +1992,10 @@
 				_allowDuplicates = false;
 				const content = uploadModal.querySelector('#upload-modal-content');
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
+				const isQuickUploadResults = !!_pendingCsvImportMeta;
+				const resultsCsv = isQuickUploadResults
+					? buildUploadResultsCsv(results, canvasState.bulkRecords)
+					: null;
 				const synced = results.filter((r) => r.success && r.mode !== 'unchanged');
 				const unchanged = results.filter((r) => r.success && r.mode === 'unchanged');
 				const failed = results.filter((r) => !r.success);
@@ -2008,6 +2191,23 @@
 					});
 				}
 				content.innerHTML = html;
+
+				const resultsCsvBtn = uploadModal.querySelector('#upload-results-csv');
+				if (resultsCsvBtn && resultsCsv) {
+					resultsCsvBtn.hidden = false;
+					resultsCsvBtn.onclick = () => {
+						const blob = new Blob(['\uFEFF' + resultsCsv], { type: 'text/csv;charset=utf-8' });
+						const url = URL.createObjectURL(blob);
+						const link = document.createElement('a');
+						link.href = url;
+						link.download =
+							'org-loom-quick-upload-results-' + new Date().toISOString().slice(0, 10) + '.csv';
+						document.body.appendChild(link);
+						link.click();
+						link.remove();
+						setTimeout(() => URL.revokeObjectURL(url), 0);
+					};
+				}
 
 				const _allowDupsBtn = content.querySelector('#upload-allow-dups');
 				if (_allowDupsBtn) {

@@ -47,7 +47,11 @@ const TOOLS = [
 			'the workspace enabled AI access, or the AI-on-canvas-data ' +
 			'toggle is off (admin opt-in). The cache is populated when ' +
 			'a human opens or saves a canvas in the Orgloom web app; AI ' +
-			'is reading derived state from Orgloom, not from Salesforce.',
+			'is reading derived state from Orgloom, not from Salesforce. If ' +
+			'more than one canvas is returned and the user has not clearly ' +
+			'identified the intended canvas, DO NOT choose based on list order, ' +
+			'title similarity, or contents. Ask the user which canvas to use, ' +
+			"then pass that canvas's id to every subsequent canvas-scoped tool.",
 
 		inputSchema: {
 			type: 'object',
@@ -62,7 +66,7 @@ const TOOLS = [
 			'Read the live canvas state: drafts, loaded records, edges, ' +
 			'their field values, AND a schema map of each object type ' +
 			'the user has on the canvas. The schema entries include each ' +
-			"object's `referenceFields` (FK fields with the target " +
+			"object's `referenceFields` (lookup fields with the target " +
 			'objectName + the relationship name) and `requiredFields` ' +
 			'(field API names that MUST be filled on new-drafts before ' +
 			'upload). Use referenceFields to compose valid ' +
@@ -80,7 +84,7 @@ const TOOLS = [
 				canvasId: {
 					type: 'string',
 					description:
-						'Canvas id: either a 15/18-char Salesforce ContentDocument id (for saved canvases, also visible in the Orgloom canvas URL) or a "draft-<uuid>" id (for canvases the user has open but has not yet saved). Always use the id field from list_canvases.',
+						'Canvas id: either a 15/18-char Salesforce ContentDocument id (for saved canvases, also visible in the Orgloom canvas URL) or a "draft-<uuid>" id (for canvases the user has open but has not yet saved). Always use the id field from list_canvases. If multiple canvases are open and the user did not identify one, ask which canvas to use before calling this tool; never pick one from list order.',
 				},
 			},
 			required: ['canvasId'],
@@ -97,6 +101,19 @@ const TOOLS = [
 			'+ apply in the web UI. This tool DOES NOT modify the canvas ' +
 			'or write to Salesforce directly; it writes a pending ' +
 			'proposal record.\n\n' +
+			'FIELD VALUE RULE: before proposing a field value, use ' +
+			'describe_object when you do not already have the exact field ' +
+			'type, writeability, format, and allowed values from Salesforce ' +
+			'metadata. Never infer a field type from its label or from a ' +
+			'similar field. Salesforce date fields use YYYY-MM-DD, while ' +
+			'datetime fields require a complete ISO 8601 timestamp with a ' +
+			'timezone, such as 2026-07-20T14:30:00.000Z. Do not send a ' +
+			'date-only value to a datetime field or add a time to a date ' +
+			'field. Send booleans as JSON booleans and numeric values as ' +
+			'JSON numbers. For picklists, use an active value returned by ' +
+			'describe_object. Include only fields whose values should change. ' +
+			'Do not repeat unchanged name or identity fields for context; use ' +
+			'recordId or tempId to identify the record.\n\n' +
 			'NINE change shapes (each is one element in the changes array):\n' +
 			'  1. ADD a brand-new draft record: provide objectName + ' +
 			'fields. Optionally include `tempRef` (any short string you ' +
@@ -112,16 +129,20 @@ const TOOLS = [
 			'objectName + fields. Drafts have numeric tempIds visible in ' +
 			"read_canvas under drafts[].tempId. On accept, the draft's " +
 			'values update.\n' +
-			'  4. ADD an association (FK link) between two records: set ' +
-			'kind="new-association", provide fieldName (the FK API name on ' +
+			'  4. ADD a relationship between two records: set ' +
+			'kind="new-association", provide fieldName (the lookup field API name on ' +
 			'the CHILD record, e.g. "AccountId"), and provide `from` + ' +
 			'`to` endpoints. Convention: `from` is the CHILD (the record ' +
-			'that holds the FK field), `to` is the PARENT. Endpoint shape ' +
+			'that holds the lookup field), `to` is the PARENT. Endpoint shape ' +
 			'(use exactly one key per endpoint): {recordId: "<sf-id>"} for ' +
 			'an existing loaded record, {tempId: <number>} for an existing ' +
 			'draft, {tempRef: "<string>"} for a same-proposal new-draft. ' +
 			'Mix freely, e.g. add a new Contact as child of an existing ' +
 			'Account in one proposal.\n' +
+			'     Salesforce lookup fields are single-valued. If the child ' +
+			'already has a canvas relationship for fieldName, accepting this ' +
+			'new-association replaces that relationship; do not also submit a ' +
+			'delete-association merely to reparent the record.\n' +
 			'  5. REMOVE an association: set kind="delete-association", ' +
 			'provide fieldName + from + to using the same endpoint shape ' +
 			'as #4. Only matches associations already on the canvas.\n' +
@@ -178,7 +199,7 @@ const TOOLS = [
 				canvasId: {
 					type: 'string',
 					description:
-						'Canvas id: either a 15/18-char Salesforce ContentDocument id (saved canvases) or a "draft-<uuid>" id (canvases the user has open but has not saved yet). Use list_canvases to discover ids; the `id` field is what to pass here, not the `title`.',
+						'Canvas id: either a 15/18-char Salesforce ContentDocument id (saved canvases) or a "draft-<uuid>" id (canvases the user has open but has not saved yet). Use list_canvases to discover ids; the `id` field is what to pass here, not the `title`. If more than one canvas is open and the user did not clearly identify the target, ask which canvas the proposal should apply to before calling this tool. Never guess from list order.',
 				},
 				summary: {
 					type: 'string',
@@ -222,7 +243,7 @@ const TOOLS = [
 							fields: {
 								type: 'object',
 								description:
-									'Field-name → new-value map. Required for new-draft / record / draft. Ignored for association changes. Values must match the field types in the SF schema. (Ask the user for the schema if you need it; this server intentionally does not call Salesforce.)',
+									'Field-name → new-value map. Required for new-draft / record / draft. Ignored for association changes. Values must match the Salesforce field metadata. If the exact type or format is not already known, call describe_object before constructing this map. In particular, date values use YYYY-MM-DD and datetime values use a complete ISO 8601 timestamp with a timezone, such as 2026-07-20T14:30:00.000Z.',
 								additionalProperties: true,
 							},
 							tempRef: {
@@ -234,12 +255,12 @@ const TOOLS = [
 							fieldName: {
 								type: 'string',
 								description:
-									'For association changes (kinds new-association / delete-association). The FK API name on the CHILD record (e.g. "AccountId" when linking a Contact to an Account).',
+									'For relationship changes (kinds new-association / delete-association). The lookup field API name on the child record (for example, "AccountId" when linking a Contact to an Account).',
 							},
 							from: {
 								type: 'object',
 								description:
-									'For association changes. The CHILD endpoint (the record that holds the FK). Exactly one of recordId / tempId / tempRef.',
+									'For relationship changes. The child endpoint, which holds the lookup field. Exactly one of recordId / tempId / tempRef.',
 								properties: {
 									recordId: {
 										type: 'string',
@@ -304,13 +325,21 @@ const TOOLS = [
 			"it), to find the canonical API name of a field (so you don't " +
 			'propose "name" when the SObject uses "Name"), and to compose ' +
 			'valid new-association calls (referenceTo arrays tell you ' +
-			'which parent object a FK field targets).\n\n' +
+			'which parent object a lookup field targets).\n\n' +
+			'Call this before propose_record_changes whenever you do not ' +
+			"already know a field's exact Salesforce type, writeability, " +
+			'format, or allowed values. Do not infer date versus datetime ' +
+			'from the field label: date uses YYYY-MM-DD; datetime requires ' +
+			'a complete ISO 8601 timestamp with a timezone, such as ' +
+			'2026-07-20T14:30:00.000Z. Pass the canvasId returned by ' +
+			'read_canvas so the describe comes from the same open canvas and ' +
+			'Salesforce connection.\n\n' +
 			"IMPORTANT: this tool reads ONLY from the user's browser-side " +
 			'describe cache. It will NEVER trigger a fresh Salesforce ' +
 			'describe call on your behalf; that would violate the ' +
 			'"AI cannot talk to Salesforce" guarantee. If the requested ' +
-			'object is not in the cache, the response will be NOT_FOUND ' +
-			'with a hint to ask the user to add the object to the canvas ' +
+			'object is not in the cache, the tool returns an actionable error ' +
+			'asking the user to add the object to the canvas ' +
 			"(which auto-caches its describe through the user's own SF " +
 			'session). Every object the user has on the canvas is cached ' +
 			"automatically, so if you just need Subject's picklist " +
@@ -322,6 +351,11 @@ const TOOLS = [
 		inputSchema: {
 			type: 'object',
 			properties: {
+				canvasId: {
+					type: 'string',
+					description:
+						"Recommended. The id of the canvas whose schema you need, as returned by list_canvases or read_canvas. Supplying it ensures metadata comes from that canvas tab and its active Salesforce connection. When omitted, Org Loom tries the caches of the workspace's open canvases for backward compatibility.",
+				},
 				objectName: {
 					type: 'string',
 					description: 'SObject API name (e.g. "Task", "Account", "Contact"). Case-sensitive.',
@@ -556,6 +590,10 @@ async function _toolListCanvases(ctx) {
 				ownerSfUserId: r.meta.ownerSfUserId || null,
 				liveBrowsers: r.liveBrowsers,
 			})),
+			selectionGuidance:
+				rows.length > 1
+					? 'Multiple canvases are open. If the user has not clearly identified the intended canvas, ask which canvas to use. Do not choose based on list order, title similarity, or canvas contents.'
+					: undefined,
 			hint:
 				rows.length === 0
 					? "No canvases are open in any browser in this workspace right now. Orgloom routes AI reads through the user's open browser tabs - close the tab, lose the read. Ask the user to open Orgloom and load the canvas they want you to see; the AI's list_canvases / read_canvas calls become live again instantly. If the workspace's ai_on_canvas_data_enabled toggle is off, no canvases will be visible regardless of what's open."
@@ -665,6 +703,28 @@ async function _toolProposeRecordChanges(ctx, args) {
 
 	const normalized = [];
 	const tempRefIndex = new Map();
+	const _comparableProposalValue = (value) => {
+		if (value == null) {
+			return '';
+		}
+		if (typeof value === 'object') {
+			try {
+				return JSON.stringify(value);
+			} catch {
+				return String(value);
+			}
+		}
+		return String(value);
+	};
+	const _changedFields = (target, proposedFields) => {
+		const currentValues = target && target.values && typeof target.values === 'object' ? target.values : {};
+		return Object.fromEntries(
+			Object.entries(proposedFields).filter(
+				([fieldName, proposedValue]) =>
+					_comparableProposalValue(currentValues[fieldName]) !== _comparableProposalValue(proposedValue),
+			),
+		);
+	};
 
 	for (const c of changes) {
 		if (!c || typeof c !== 'object') {
@@ -909,15 +969,19 @@ async function _toolProposeRecordChanges(ctx, args) {
 						' is not a loaded record on this canvas (per the cache; ask the user to refresh if it should be)',
 				);
 			}
+			const fields = _changedFields(target, c.fields);
+			if (Object.keys(fields).length === 0) {
+				continue;
+			}
 			const oldValues = {};
-			for (const k of Object.keys(c.fields)) {
+			for (const k of Object.keys(fields)) {
 				oldValues[k] = target.values && target.values[k] != null ? target.values[k] : null;
 			}
 			normalized.push({
 				kind: 'record',
 				recordId: String(c.recordId),
 				objectName: c.objectName,
-				fields: c.fields,
+				fields,
 				oldValues,
 			});
 		} else if (hasTempId) {
@@ -931,8 +995,12 @@ async function _toolProposeRecordChanges(ctx, args) {
 						' is not a draft on this canvas (per the cache; ask the user to refresh if it should be)',
 				);
 			}
+			const fields = _changedFields(target, c.fields);
+			if (Object.keys(fields).length === 0) {
+				continue;
+			}
 			const oldValues = {};
-			for (const k of Object.keys(c.fields)) {
+			for (const k of Object.keys(fields)) {
 				oldValues[k] = target.values && target.values[k] != null ? target.values[k] : null;
 			}
 
@@ -941,7 +1009,7 @@ async function _toolProposeRecordChanges(ctx, args) {
 				kind: 'draft',
 				tempId: tempIdValue,
 				objectName: c.objectName,
-				fields: c.fields,
+				fields,
 				oldValues,
 			});
 		} else {
@@ -955,6 +1023,13 @@ async function _toolProposeRecordChanges(ctx, args) {
 			}
 			normalized.push(entry);
 		}
+	}
+
+	if (normalized.length === 0) {
+		throw _appError(
+			ERR_INVALID_PARAMS,
+			'Proposal contains no effective changes. Omit fields whose values already match the canvas and retry.',
+		);
 	}
 
 	const proposal = await proposalsDb.create({
@@ -1083,53 +1158,69 @@ async function _toolDescribeObject(ctx, args) {
 		);
 	}
 	const fields = Array.isArray(args && args.fields) ? args.fields : null;
+	const requestedCanvasId = args && args.canvasId != null ? _validateCanvasId(args.canvasId) : null;
 
 	const liveCanvases = relay.listCanvasesInWorkspace(ctx.workspaceId);
 	if (liveCanvases.length === 0) {
-		throw _appError(
-			ERR_NOT_FOUND,
+		return _textErrorResult(
 			'No canvases are currently open in any browser in this workspace, so I have no browser to fetch the describe cache from. Ask the user to open a canvas in Org Loom - any object on the canvas is auto-cached.',
 		);
 	}
 
-	const targetCanvasId = liveCanvases[0].canvasId;
-
-	let result;
-	try {
-		result = await relay.dispatchRequest({
-			workspaceId: ctx.workspaceId,
-			canvasId: targetCanvasId,
-			method: 'describe_object',
-			params: { objectName, fields },
-			timeoutMs: RELAY_REQUEST_TIMEOUT_MS,
-		});
-	} catch (err) {
-		const code = err && err.message;
-		if (code === 'no-live-browser-for-canvas' || code === 'relay-connection-dropped') {
-			throw _appError(
-				ERR_NOT_FOUND,
-				"The user's browser disconnected before the describe could be fetched. Ask them to re-open the canvas and retry.",
-			);
-		}
-		if (code === 'relay-request-timeout') {
-			throw _appError(
-				ERR_INTERNAL,
-				"Timed out waiting for the user's browser to respond. The tab may be backgrounded - ask the user to bring the canvas tab to the foreground and retry.",
-			);
-		}
-		throw _appError(ERR_INTERNAL, 'Relay error: ' + (code || 'unknown'));
-	}
-	if (!result || result.cacheMiss) {
-		throw _appError(
-			ERR_NOT_FOUND,
-			"Object '" +
-				objectName +
-				"' is not in the workspace describe cache. I cannot fetch fresh schema from Salesforce on my own - that would violate the no-direct-SF-access guarantee. Ask the user to add '" +
-				objectName +
-				"' to the canvas (the canvas auto-caches describes for every object on it through the user's own SF session), then retry.",
+	const liveCanvasIds = liveCanvases.map((canvas) => canvas.canvasId);
+	if (requestedCanvasId && !liveCanvasIds.includes(requestedCanvasId)) {
+		return _textErrorResult(
+			'Canvas ' +
+				requestedCanvasId +
+				' is not currently open in this workspace. Ask the user to open that canvas, then retry describe_object with the same canvasId.',
 		);
 	}
-	return _textResult(JSON.stringify(result));
+
+	const candidateCanvasIds = requestedCanvasId ? [requestedCanvasId] : liveCanvasIds;
+	let lastRelayError = null;
+	let receivedCacheMiss = false;
+	for (const canvasId of candidateCanvasIds) {
+		try {
+			const result = await relay.dispatchRequest({
+				workspaceId: ctx.workspaceId,
+				canvasId,
+				method: 'describe_object',
+				params: { objectName, fields },
+				timeoutMs: RELAY_REQUEST_TIMEOUT_MS,
+			});
+			if (result && !result.cacheMiss) {
+				return _textResult(JSON.stringify(result));
+			}
+			receivedCacheMiss = true;
+		} catch (err) {
+			lastRelayError = err && err.message;
+		}
+	}
+
+	if (!receivedCacheMiss && lastRelayError === 'relay-request-timeout') {
+		return _textErrorResult(
+			"Timed out waiting for the user's browser to return Salesforce field metadata. Ask the user to bring the target canvas tab to the foreground, then retry describe_object with that canvasId.",
+		);
+	}
+	if (
+		!receivedCacheMiss &&
+		lastRelayError &&
+		lastRelayError !== 'no-live-browser-for-canvas' &&
+		lastRelayError !== 'relay-connection-dropped'
+	) {
+		return _textErrorResult(
+			'Could not read Salesforce field metadata from the open canvas: ' + lastRelayError + '.',
+		);
+	}
+	return _textErrorResult(
+		"Object '" +
+			objectName +
+			"' is not in the describe cache for " +
+			(requestedCanvasId ? 'the requested canvas' : 'any open canvas in this workspace') +
+			". Ask the user to add an example '" +
+			objectName +
+			"' record to that canvas, wait for it to finish loading, then retry describe_object with the canvasId. Org Loom does not fetch schema directly from Salesforce for an AI client.",
+	);
 }
 
 async function _toolWithdrawProposal(ctx, args) {
@@ -1630,14 +1721,17 @@ async function _handleToolsCall(ctx, params) {
 		throw err;
 	}
 
+	const toolReportedError = result && result.isError === true;
 	await ext
 		.auditWrite({
 			workspaceId: ctx.workspaceId,
 			actorAccountId: ctx.account.id,
 			actorKind: 'mcp',
 			mcpTokenId: ctx.mcpToken.id,
-			action: 'mcp_tool_call',
+			action: toolReportedError ? 'mcp_tool_call_failed' : 'mcp_tool_call',
 			targetObject: 'mcp',
+			status: toolReportedError ? 'failed' : undefined,
+			errorCode: toolReportedError ? 'mcp-tool-failed' : undefined,
 			payload: { tool: name },
 		})
 		.catch(() => {});
@@ -1710,7 +1804,7 @@ async function _resolveContext(req) {
 
 	const tokenRow = await mcpTokensDb.authenticate(plaintext);
 	if (!tokenRow) {
-		throw _appError(ERR_AUTH, 'Invalid or revoked token');
+		throw _appError(ERR_AUTH, 'Invalid, expired, or revoked token');
 	}
 	if (!_consumeTokenRequest(tokenRow.id)) {
 		throw _appError(ERR_RATE_LIMIT, 'MCP token request limit exceeded', { retryAfterSeconds: 60 });
@@ -1731,6 +1825,10 @@ async function _resolveContext(req) {
 
 function _textResult(text) {
 	return { content: [{ type: 'text', text }] };
+}
+
+function _textErrorResult(text) {
+	return { content: [{ type: 'text', text }], isError: true };
 }
 
 function _appError(code, message, data) {

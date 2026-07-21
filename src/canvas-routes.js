@@ -55,6 +55,7 @@ import {
 } from './ai-plan.js';
 import {
 	rejectIfOverPayloadCap,
+	rejectIfUploadOrgChanged,
 	makeDescribeCache,
 	stripUnwritableFields,
 	formatUploadError,
@@ -87,6 +88,7 @@ import { transformToolingRecords } from './validation-rules.js';
 import { makeLimiter } from './rate-limit.js';
 
 import { withSfRetry } from './sf-upload.js';
+import { buildOrgApprovalDeniedPayload } from './org-approval-copy.js';
 
 const _activeUploadAttempts = new Set();
 const UPLOAD_ATTEMPT_ID_RE = /^[a-zA-Z0-9-]{16,64}$/;
@@ -311,6 +313,38 @@ async function requireSfConnection(req, res, next) {
 		next();
 	} catch (err) {
 		next(err);
+	}
+}
+
+async function requireUploadOrgApproval(req, res, next) {
+	try {
+		const accountId = req.account && req.account.id;
+		const sfAuth = req.session && req.session.sfAuth;
+		const connectionId = req.session && req.session.currentConnectionId;
+		if (!accountId || !sfAuth || !sfAuth.sfOrgId || !connectionId) {
+			return next();
+		}
+		const connection = await connectionsDb.findById(connectionId);
+		if (
+			!connection ||
+			connection.account_id !== accountId ||
+			(connection.sf_org_id && connection.sf_org_id !== sfAuth.sfOrgId)
+		) {
+			return next();
+		}
+		const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+			sfOrgId: sfAuth.sfOrgId,
+			orgType: connection.org_type || 'unknown',
+			createPendingOnDeny: true,
+			req,
+			auditAction: 'upload',
+		});
+		if (!orgGate.allowed) {
+			return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, connection.org_type || 'unknown'));
+		}
+		return next();
+	} catch (error) {
+		return next(error);
 	}
 }
 
@@ -2109,9 +2143,16 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/upload', requireAccount, requireSfConnection, async (req, res, next) => {
+	const uploadRouteGuards = [requireAccount, requireUploadOrgApproval, requireSfConnection];
+	app.post('/api/upload/access-check', requireAccount, requireUploadOrgApproval, (_req, res) => {
+		res.json({ ok: true });
+	});
+	app.post('/api/upload', ...uploadRouteGuards, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
+				return;
+			}
+			if (rejectIfUploadOrgChanged(req, res)) {
 				return;
 			}
 			if (!(await _gateCapability(req, res, 'upload-records', 'upload'))) {
@@ -2126,14 +2167,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				auditAction: 'upload',
 			});
 			if (!orgGate.allowed) {
-				return res.status(403).json({
-					error: orgGate.reason,
-					approvalStatus: orgGate.approvalStatus,
-					message:
-						orgGate.reason === 'approval-required'
-							? 'Writes to this production org are pending admin approval.'
-							: 'This action is blocked by workspace policy.',
-				});
+				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 
 			const records = Array.isArray(req.body?.records) ? req.body.records : [];
@@ -2750,10 +2784,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				auditPayload: { batchId: req.params.id },
 			});
 			if (!orgGate.allowed) {
-				return res.status(403).json({
-					error: orgGate.reason,
-					approvalStatus: orgGate.approvalStatus,
-				});
+				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 			const skipSfIds = Array.isArray(req.body && req.body.skipSfIds) ? req.body.skipSfIds.slice() : [];
 			const executionCreateDrift = await classifyBatchDrift({
@@ -2870,9 +2901,12 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/upload/graph', requireAccount, requireSfConnection, async (req, res, next) => {
+	app.post('/api/upload/graph', ...uploadRouteGuards, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
+				return;
+			}
+			if (rejectIfUploadOrgChanged(req, res)) {
 				return;
 			}
 			if (!(await _gateCapability(req, res, 'upload-records', 'upload_graph'))) {
@@ -2888,10 +2922,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				auditPayload: { mode: 'graph' },
 			});
 			if (!orgGate.allowed) {
-				return res.status(403).json({
-					error: orgGate.reason,
-					approvalStatus: orgGate.approvalStatus,
-				});
+				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 
 			const records = Array.isArray(req.body?.records) ? req.body.records : [];
@@ -3055,20 +3086,22 @@ export function mountCanvasRoutes(app, options = {}) {
 				}
 			});
 			const describesByObject = new Map();
-			for (const name of objNamesToDescribe) {
-				try {
-					describesByObject.set(name, await getDescribe(name));
-				} catch (err) {
+			await Promise.all(
+				Array.from(objNamesToDescribe, async (name) => {
 					try {
-						ext.captureException(err, {
-							where: 'canvas-routes/upload/buildDescribesMap',
-							objectName: name,
-						});
-					} catch (_) {
-						/* never break the upload prep on a telemetry failure */
+						describesByObject.set(name, await getDescribe(name));
+					} catch (err) {
+						try {
+							ext.captureException(err, {
+								where: 'canvas-routes/upload/buildDescribesMap',
+								objectName: name,
+							});
+						} catch (_) {
+							/* never break the upload prep on a telemetry failure */
+						}
 					}
-				}
-			}
+				}),
+			);
 
 			const graphsPayload = components.map((tempIds, i) => ({
 				graphId: 'g' + i,
@@ -3202,7 +3235,12 @@ export function mountCanvasRoutes(app, options = {}) {
 					}
 					const bodies = Array.isArray(r.body) ? r.body : r.body ? [r.body] : [];
 					if (bodies.length === 0) {
-						results.push({ tempId, objectName: rec.objectName, success: false, error: 'HTTP ' + status });
+						results.push({
+							tempId,
+							objectName: rec.objectName,
+							success: false,
+							error: 'HTTP ' + status,
+						});
 						return;
 					}
 					bodies.forEach((b) => {
@@ -3366,7 +3404,13 @@ export function mountCanvasRoutes(app, options = {}) {
 					const obj = d.objectName || 'unknown';
 					const bucket =
 						graphObjectBreakdown[obj] ||
-						(graphObjectBreakdown[obj] = { created: 0, updated: 0, unchanged: 0, failed: 0, deleted: 0 });
+						(graphObjectBreakdown[obj] = {
+							created: 0,
+							updated: 0,
+							unchanged: 0,
+							failed: 0,
+							deleted: 0,
+						});
 					if (d.success) {
 						bucket.deleted = (bucket.deleted || 0) + 1;
 					} else {
@@ -3499,9 +3543,12 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/upload/preflight', requireAccount, requireSfConnection, async (req, res, next) => {
+	app.post('/api/upload/preflight', ...uploadRouteGuards, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
+				return;
+			}
+			if (rejectIfUploadOrgChanged(req, res)) {
 				return;
 			}
 			if (!(await _gateCapability(req, res, 'upload-records', 'upload_preflight'))) {
@@ -3515,7 +3562,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				auditAction: 'preflight',
 			});
 			if (!orgGate.allowed) {
-				return res.status(403).json({ error: orgGate.reason, approvalStatus: orgGate.approvalStatus });
+				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 			const records = Array.isArray(req.body?.records) ? req.body.records : [];
 			applySlotFieldFilter(records);
@@ -3784,9 +3831,12 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/upload/bulk', requireAccount, requireSfConnection, async (req, res, next) => {
+	app.post('/api/upload/bulk', ...uploadRouteGuards, async (req, res, next) => {
 		try {
 			if (rejectIfOverPayloadCap(req, res)) {
+				return;
+			}
+			if (rejectIfUploadOrgChanged(req, res)) {
 				return;
 			}
 			if (!(await _gateCapability(req, res, 'upload-records', 'upload_bulk'))) {
@@ -3800,7 +3850,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				auditAction: 'upload_bulk',
 			});
 			if (!orgGate.allowed) {
-				return res.status(403).json({ error: orgGate.reason, approvalStatus: orgGate.approvalStatus });
+				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 			const records = Array.isArray(req.body?.records) ? req.body.records : [];
 			applySlotFieldFilter(records);
@@ -5454,10 +5504,14 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			function _soqlDateTime(v) {
 				const s = String(v).trim();
-				if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:?\d{2})?$/.test(s)) {
-					throw new Error('Invalid datetime (ISO-8601): ' + s);
+				if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})$/.test(s)) {
+					throw new Error('Invalid date and time. Choose a valid value and try again.');
 				}
-				return s;
+				const parsed = new Date(s);
+				if (Number.isNaN(parsed.getTime())) {
+					throw new Error('Invalid date and time. Choose a valid value and try again.');
+				}
+				return parsed.toISOString();
 			}
 			function _soqlNumber(v) {
 				const n = Number(v);
@@ -6309,14 +6363,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				auditAction: 'record_insert',
 			});
 			if (!orgGate.allowed) {
-				return res.status(403).json({
-					error: orgGate.reason,
-					approvalStatus: orgGate.approvalStatus,
-					message:
-						orgGate.reason === 'approval-required'
-							? 'Writes to this production org are pending admin approval.'
-							: 'This action is blocked by workspace policy.',
-				});
+				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 			const result = await req.sf.conn.sobject(req.params.name).create(req.body);
 			try {

@@ -42,6 +42,14 @@ describe('mcpTokens.issue', () => {
 		await assert.rejects(() => mcpTokens.issue({ accountId: a.id, name: 'x' }), /workspaceId/);
 		await assert.rejects(() => mcpTokens.issue({ accountId: a.id, workspaceId: WS_A }), /name/);
 		await assert.rejects(() => mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: '   ' }), /name/);
+		await assert.rejects(
+			() => mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'bad ttl', ttlMs: 0 }),
+			/ttlMs must be a positive finite number/,
+		);
+		await assert.rejects(
+			() => mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'bad ttl', ttlMs: Infinity }),
+			/ttlMs must be a positive finite number/,
+		);
 	});
 
 	test('two issuances for the same account produce distinct plaintexts', async () => {
@@ -119,6 +127,23 @@ describe('mcpTokens.authenticate', () => {
 		const a = await makeAccount();
 		const issued = await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'cli', ttlMs: 5 });
 		await new Promise((r) => setTimeout(r, 15));
+		assert.equal(await mcpTokens.authenticate(issued.plaintext), null);
+	});
+
+	test('expiry is fail-closed at the boundary and for invalid stored values', async () => {
+		const { mcpTokens } = await import('../src/database/index.js');
+		const { ext } = await import('../src/extensions.js');
+		const a = await makeAccount();
+		const issued = await mcpTokens.issue({ accountId: a.id, workspaceId: WS_A, name: 'cli' });
+		await ext.getDb().updateTable('mcp_tokens').set({ expires_at: 0 }).where('id', '=', issued.id).execute();
+		assert.equal(await mcpTokens.authenticate(issued.plaintext), null);
+
+		await ext
+			.getDb()
+			.updateTable('mcp_tokens')
+			.set({ expires_at: 'not-a-timestamp' })
+			.where('id', '=', issued.id)
+			.execute();
 		assert.equal(await mcpTokens.authenticate(issued.plaintext), null);
 	});
 });

@@ -71,6 +71,43 @@
 		return op !== 'isNull' && op !== 'isNotNull';
 	}
 
+	function _browsePageWindow(count, limit, requestedOffset, returnedRecordCount) {
+		const safeCount = Math.max(0, Number(count) || 0);
+		const safeLimit = Math.max(1, Number(limit) || 1);
+		const requested = Math.max(0, Number(requestedOffset) || 0);
+		const lastOffset = safeCount > 0 ? Math.floor((safeCount - 1) / safeLimit) * safeLimit : 0;
+		const offset = Math.min(requested, lastOffset);
+		const available = Math.max(0, safeCount - offset);
+		const returned = Math.max(0, Number(returnedRecordCount) || 0);
+		const pageLength = Math.min(returned, safeLimit, available);
+		return {
+			offset,
+			start: safeCount === 0 ? 0 : offset + 1,
+			end: offset + pageLength,
+			hasPrev: offset > 0,
+			hasMore: offset + pageLength < safeCount,
+		};
+	}
+
+	function _datetimeLocalToIso(value) {
+		const raw = String(value == null ? '' : value).trim();
+		if (!raw) {
+			return raw;
+		}
+		const parsed = new Date(raw);
+		return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
+	}
+
+	function _updateFilterValueFromInput(filter, control) {
+		if (!control.classList.contains('rb-filter-value')) {
+			return false;
+		}
+		filter.value = control.classList.contains('rb-filter-value-multi')
+			? Array.from(control.selectedOptions).map((option) => option.value)
+			: control.value;
+		return true;
+	}
+
 	window.OrgLoom.recordBrowse = {
 		mount: function mount(deps) {
 			const required = [
@@ -467,6 +504,12 @@
 							? true
 							: f.value != null && f.value !== '' && !(Array.isArray(f.value) && f.value.length === 0)),
 				);
+				const requestFilters = validFilters.map((filter) => {
+					const field = _fieldByName(_state.objectName, filter.field);
+					return field && field.type === 'datetime'
+						? { ...filter, value: _datetimeLocalToIso(filter.value) }
+						: filter;
+				});
 				const statusEl = content.querySelector('.rb-count');
 				statusEl.textContent = 'Counting…';
 				statusEl.classList.remove('rb-count-error');
@@ -478,7 +521,7 @@
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
 							objectName: _state.objectName,
-							filters: validFilters,
+							filters: requestFilters,
 							sort: _state.sort,
 							limit: _state.limit,
 							offset: _state.offset,
@@ -492,8 +535,19 @@
 					if (!r.ok) {
 						throw new Error((body && (body.message || body.error)) || 'HTTP ' + r.status);
 					}
-					_state.lastResult = body;
 					const count = body.count || 0;
+					const pageWindow = _browsePageWindow(
+						count,
+						_state.limit,
+						_state.offset,
+						(body.records || []).length,
+					);
+					if (pageWindow.offset !== _state.offset) {
+						_state.offset = pageWindow.offset;
+						_state.lastResult = null;
+						return _fetchResults(content);
+					}
+					_state.lastResult = body;
 					const loadable = typeof body.loadableCount === 'number' ? body.loadableCount : count;
 					const onCanvasInMatch = Math.max(0, count - loadable);
 					statusEl.textContent =
@@ -507,21 +561,19 @@
 					_updateLoadButton(content);
 					const pageInfo = content.querySelector('.rb-page-info');
 					if (body.count > _state.limit) {
-						const start = _state.offset + 1;
-						const end = _state.offset + (body.records || []).length;
 						pageInfo.innerHTML =
 							'Showing ' +
-							start +
+							pageWindow.start +
 							'–' +
-							end +
+							pageWindow.end +
 							' of ' +
 							body.count +
 							' · ' +
 							'<button type="button" class="rb-page-btn" data-rb-prev' +
-							(_state.offset === 0 ? ' disabled' : '') +
+							(!pageWindow.hasPrev ? ' disabled' : '') +
 							'>Prev</button> ' +
 							'<button type="button" class="rb-page-btn" data-rb-next' +
-							(!body.hasMore ? ' disabled' : '') +
+							(!pageWindow.hasMore ? ' disabled' : '') +
 							'>Next</button>';
 					} else {
 						pageInfo.innerHTML = '';
@@ -731,10 +783,8 @@
 					if (!filt) {
 						return;
 					}
-					if (t.classList.contains('rb-filter-value-multi')) {
-						filt.value = Array.from(t.selectedOptions).map((o) => o.value);
-					} else {
-						filt.value = t.value;
+					if (!_updateFilterValueFromInput(filt, t)) {
+						return;
 					}
 					_state.offset = 0;
 					_scheduleFetch(content);
@@ -762,9 +812,6 @@
 						_scheduleFetch(content);
 					} else if (t.classList.contains('rb-filter-op')) {
 						filt.op = t.value;
-						if (!_opTakesValue(filt.op)) {
-							filt.value = '';
-						}
 						_renderBody(content);
 						_state.offset = 0;
 						_scheduleFetch(content);
@@ -793,16 +840,33 @@
 				});
 
 				content.querySelector('.rb-page-info').addEventListener('click', (ev) => {
-					if (ev.target.disabled) {
+					if (ev.target.disabled || !_state.lastResult) {
 						return;
 					}
+					const pageWindow = _browsePageWindow(
+						_state.lastResult.count,
+						_state.limit,
+						_state.offset,
+						(_state.lastResult.records || []).length,
+					);
 					if (ev.target.dataset && ev.target.dataset.rbPrev !== undefined) {
+						if (!pageWindow.hasPrev) {
+							return;
+						}
 						_state.offset = Math.max(0, _state.offset - _state.limit);
-						_fetchResults(content);
 					} else if (ev.target.dataset && ev.target.dataset.rbNext !== undefined) {
+						if (!pageWindow.hasMore) {
+							return;
+						}
 						_state.offset += _state.limit;
-						_fetchResults(content);
+					} else {
+						return;
 					}
+					_state.lastResult = null;
+					content.querySelectorAll('.rb-page-btn').forEach((button) => {
+						button.disabled = true;
+					});
+					_fetchResults(content);
 				});
 
 				content.querySelector('.rb-preview').addEventListener('change', (ev) => {

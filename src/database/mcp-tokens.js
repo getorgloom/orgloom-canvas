@@ -14,6 +14,14 @@ function _generatePlaintext() {
 	return TOKEN_PREFIX + crypto.randomBytes(TOKEN_RANDOM_BYTES).toString('hex');
 }
 
+function _isExpired(expiresAt, now = Date.now()) {
+	if (expiresAt == null) {
+		return false;
+	}
+	const timestamp = Number(expiresAt);
+	return !Number.isFinite(timestamp) || timestamp <= now;
+}
+
 export async function issue({ accountId, workspaceId, name, ttlMs = null }) {
 	if (!accountId) {
 		throw new Error('accountId required');
@@ -26,6 +34,13 @@ export async function issue({ accountId, workspaceId, name, ttlMs = null }) {
 		.slice(0, 80);
 	if (!trimmedName) {
 		throw new Error('name required');
+	}
+	let normalizedTtlMs = null;
+	if (ttlMs != null) {
+		normalizedTtlMs = Number(ttlMs);
+		if (!Number.isFinite(normalizedTtlMs) || normalizedTtlMs <= 0) {
+			throw new Error('ttlMs must be a positive finite number');
+		}
 	}
 	const db = ext.getDb();
 	const now = Date.now();
@@ -54,7 +69,10 @@ export async function issue({ accountId, workspaceId, name, ttlMs = null }) {
 			continue;
 		}
 		const id = 'mcp_' + crypto.randomUUID();
-		const expiresAt = ttlMs ? now + ttlMs : null;
+		const expiresAt = normalizedTtlMs == null ? null : now + normalizedTtlMs;
+		if (expiresAt != null && !Number.isSafeInteger(expiresAt)) {
+			throw new Error('token expiry is outside the supported timestamp range');
+		}
 		await db
 			.insertInto('mcp_tokens')
 			.values({
@@ -91,7 +109,7 @@ export async function authenticate(plaintext) {
 	if (row.revoked_at) {
 		return null;
 	}
-	if (row.expires_at && row.expires_at < Date.now()) {
+	if (_isExpired(row.expires_at)) {
 		return null;
 	}
 	if (!row.workspace_id) {
@@ -141,7 +159,7 @@ export async function listForWorkspace(accountId, workspaceId, { includeAllOwner
 		createdAt: r.created_at,
 		lastUsedAt: r.last_used_at,
 		expiresAt: r.expires_at,
-		expired: !!(r.expires_at && r.expires_at < Date.now()),
+		expired: _isExpired(r.expires_at),
 	}));
 }
 

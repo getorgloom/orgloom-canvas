@@ -367,7 +367,7 @@
 			}
 
 			async function loadRelatedFromChip(hostRec, rel) {
-				// Encode lookup direction on the temporary node so import recreates the correct FK edge.
+				// Preserve lookup direction so import recreates the correct relationship edge.
 				if (!hostRec || !rel) {
 					return;
 				}

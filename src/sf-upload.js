@@ -19,6 +19,19 @@ export function rejectIfOverPayloadCap(req, res) {
 	return false;
 }
 
+export function rejectIfUploadOrgChanged(req, res) {
+	const expectedSfOrgId = String(req.body?.expectedSfOrgId || '').trim();
+	if (!expectedSfOrgId || expectedSfOrgId === req.sf?.sfOrgId) {
+		return false;
+	}
+	res.status(409).json({
+		error: 'active-org-changed',
+		message:
+			'Your active Salesforce org changed while this upload was being prepared. Nothing was uploaded. Reopen Quick Upload to remap the files against the active org.',
+	});
+	return true;
+}
+
 export async function withSfRetry(fn, { maxAttempts = 4, baseDelay = 500 } = {}) {
 	// Retry only Salesforce rate limits; validation and permission failures are deterministic.
 	let lastErr;

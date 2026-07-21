@@ -49,8 +49,27 @@
 		return canCreate ? ' - new records only' : ' - existing records only';
 	}
 
+	function linkedCsvReady(state) {
+		if (!state || state.processingFiles || state.hasRejectedFileErrors) {
+			return false;
+		}
+		return (
+			state.files.some(
+				(file) =>
+					file &&
+					file.objectName &&
+					Array.isArray(file.headers) &&
+					file.headers.length > 0 &&
+					Array.isArray(file.rows) &&
+					file.rows.length > 0 &&
+					Object.values(file.mapping || {}).some(Boolean),
+			) &&
+			!state.files.some((file) => file && Array.isArray(file.blockingErrors) && file.blockingErrors.length > 0)
+		);
+	}
+
 	window.OrgLoom.linkedCsv = {
-		_test: { csvFieldDisposition, csvRowOperation, csvFieldAccessSuffix },
+		_test: { csvFieldDisposition, csvRowOperation, csvFieldAccessSuffix, linkedCsvReady },
 		mount: function mount(deps) {
 			if (
 				!deps ||
@@ -155,7 +174,7 @@
 					footer.innerHTML =
 						'<button class="button" id="linked-csv-upload" disabled title="Push these rows to Salesforce. No cap on this path - direct CSV uploads are unlimited on every plan.">Upload to Salesforce</button>';
 					footer.querySelector('#linked-csv-upload').onclick = () =>
-						linkedCsvConfirm({ uploadDirectly: true });
+						startLinkedCsvConfirm({ uploadDirectly: true });
 				} else {
 					footer.innerHTML =
 						'<button class="button secondary" id="linked-csv-replace" disabled title="Drop everything currently on the canvas, then load this file onto a fresh canvas.">Replace canvas</button>' +
@@ -176,18 +195,9 @@
 					files: [],
 					links: null,
 					notices: [],
-					planSfOrgId: window.SF_ORG_ID || null,
-					planConnectionPromise: csrfFetch('/api/me', { credentials: 'same-origin' })
-						.then((response) => response.json())
-						.then((me) =>
-							me && me.connection
-								? {
-										id: me.connection.id || null,
-										sfOrgId: me.connection.sfOrgId || me.connection.organizationId || null,
-									}
-								: null,
-						)
-						.catch(() => null),
+					processingFiles: false,
+					hasRejectedFileErrors: false,
+					preparingUpload: false,
 				};
 				linkedCsvModal.classList.remove('hidden');
 				linkedCsvRender();
@@ -201,10 +211,52 @@
 			}
 
 			function closeLinkedCsvModal(opts) {
+				if (linkedCsvState && linkedCsvState.preparingUpload && !(opts && opts.allowWhilePreparing)) {
+					return;
+				}
 				linkedCsvModal.classList.add('hidden');
+				linkedCsvModal.classList.remove('lcsv-is-preparing');
+				linkedCsvModal.querySelector('.modal-body').removeAttribute('aria-busy');
 				linkedCsvState = null;
 				if (!opts || !opts.keepQuickUploadMode) {
 					_linkedCsvQuickUploadMode = false;
+				}
+			}
+
+			function setQuickUploadPreparing(state, preparing) {
+				if (!state || linkedCsvState !== state) {
+					return;
+				}
+				state.preparingUpload = preparing;
+				linkedCsvModal.classList.toggle('lcsv-is-preparing', preparing);
+				const modalBody = linkedCsvModal.querySelector('.modal-body');
+				if (preparing) {
+					modalBody.setAttribute('aria-busy', 'true');
+				} else {
+					modalBody.removeAttribute('aria-busy');
+				}
+				const uploadBtn = linkedCsvModal.querySelector('#linked-csv-upload');
+				if (uploadBtn) {
+					uploadBtn.disabled = preparing || !linkedCsvReady(state);
+					uploadBtn.setAttribute('aria-busy', preparing ? 'true' : 'false');
+					uploadBtn.innerHTML = preparing
+						? '<span class="busy-spinner" aria-hidden="true"></span> Preparing upload&hellip;'
+						: 'Upload to Salesforce';
+				}
+			}
+
+			async function startLinkedCsvConfirm(opts) {
+				const state = linkedCsvState;
+				if (!state || state.preparingUpload) {
+					return;
+				}
+				setQuickUploadPreparing(state, true);
+				// Let the busy state paint before CSV planning and Salesforce checks begin.
+				await new Promise((resolve) => requestAnimationFrame(resolve));
+				try {
+					await linkedCsvConfirm(opts);
+				} finally {
+					setQuickUploadPreparing(state, false);
 				}
 			}
 			function guessObjectForFile(headers) {
@@ -264,11 +316,11 @@
 					const toHeader = toFile.headers[i] || '';
 					let bonus = 0;
 					const tk = csvNormalizeKey(toHeader);
-					const fk = csvNormalizeKey(fromHeader);
+					const sourceKey = csvNormalizeKey(fromHeader);
 					if (tk === 'id' || tk === 'name') {
 						bonus += 1;
 					}
-					if (fk.endsWith('id') && tk === fk.slice(0, -2)) {
+					if (sourceKey.endsWith('id') && tk === sourceKey.slice(0, -2)) {
 						bonus += 1;
 					}
 					const score = hits + bonus;
@@ -289,17 +341,17 @@
 					if (!file.objectName || !file.describe) {
 						return;
 					}
-					const fkFields = file.describe.fields.filter(
+					const lookupFields = file.describe.fields.filter(
 						(f) => f.type === 'reference' && Array.isArray(f.referenceTo) && f.referenceTo.length > 0,
 					);
-					const fkByName = new Map(fkFields.map((f) => [f.name, f]));
+					const lookupByName = new Map(lookupFields.map((f) => [f.name, f]));
 					Object.keys(file.mapping).forEach((idxStr) => {
 						const fieldName = file.mapping[idxStr];
 						if (!fieldName) {
 							return;
 						}
-						const fk = fkByName.get(fieldName);
-						if (!fk) {
+						const lookupField = lookupByName.get(fieldName);
+						if (!lookupField) {
 							return;
 						}
 						const fromColumnIdx = Number(idxStr);
@@ -324,7 +376,7 @@
 							if (!toFile.objectName) {
 								continue;
 							}
-							if (!fk.referenceTo.includes(toFile.objectName)) {
+							if (!lookupField.referenceTo.includes(toFile.objectName)) {
 								continue;
 							}
 							const isSelfRef = toIdx === fromIdx;
@@ -378,6 +430,9 @@
 				}
 				const files = Array.from(fileList || []);
 				state.notices = [];
+				state.processingFiles = true;
+				state.hasRejectedFileErrors = false;
+				linkedCsvRender();
 				const _shared = window.OrgLoom.importShared;
 				const _CSV_GATE = {
 					extRe: /\.csv$/i,
@@ -457,6 +512,15 @@
 												'.',
 										);
 									}
+									if (blockingErrors.length > 0) {
+										resolve({
+											__rejected: true,
+											name: f.name,
+											reason: 'structure',
+											blockingErrors,
+										});
+										return;
+									}
 									resolve({
 										name: f.name,
 										headers: parsed.headers,
@@ -472,8 +536,11 @@
 							}),
 					),
 				).then(async (parsedFiles) => {
+					state.processingFiles = false;
 					const valid = parsedFiles.filter((f) => f && !f.__rejected);
 					const rejected = parsedFiles.filter((f) => f && f.__rejected);
+					const structural = rejected.filter((f) => f.reason === 'structure');
+					state.hasRejectedFileErrors = rejected.length > 0;
 					const _newNames = new Set(valid.map((f) => f.name));
 					const _existingCount = new Map();
 					for (const f of state.files) {
@@ -506,9 +573,8 @@
 										') - suffixed "(2)" etc. in the file list. Rename if you want clearer labels.',
 						});
 					}
-					const _ragged = valid.filter((f) => Array.isArray(f.blockingErrors) && f.blockingErrors.length > 0);
-					if (_ragged.length > 0) {
-						const list = _ragged.map((f) => '"' + f.name + '": ' + f.blockingErrors.join(' ')).join(' ');
+					if (structural.length > 0) {
+						const list = structural.map((f) => '"' + f.name + '": ' + f.blockingErrors.join(' ')).join(' ');
 						state.notices.push({
 							kind: 'error',
 							text:
@@ -520,7 +586,7 @@
 					if (rejected.length > 0) {
 						const _sized = rejected.filter((f) => f.reason === 'toolarge');
 						_sized.forEach((f) => state.notices.push({ kind: 'error', text: f.gateMsg }));
-						const _rest = rejected.filter((f) => f.reason !== 'toolarge');
+						const _rest = rejected.filter((f) => f.reason !== 'toolarge' && f.reason !== 'structure');
 						_rest.forEach((f) => {
 							const name = '"' + f.name + '"';
 							const text =
@@ -949,7 +1015,7 @@
 				const linksHtml =
 					links.length === 0
 						? state.files.filter((f) => f.objectName).length >= 2
-							? '<p class="tag">No FK links auto-detected between these files. Records will import unconnected; you can wire them on the canvas after.</p>'
+							? '<p class="tag">No relationships were detected between these files. Records will import unconnected; you can connect them on the canvas afterward.</p>'
 							: ''
 						: links
 								.map((link, i) => {
@@ -1091,7 +1157,7 @@
 						: '') +
 					(links.length > 0
 						? '<div class="lcsv-step"><strong>Detected links</strong>' +
-							'<p class="tag">FK columns are auto-paired with the closest match by value overlap. Adjust or skip below; unlinked rows still import as standalone records.</p>' +
+							'<p class="tag">Columns that relate records are paired using matching values. Adjust or skip them below; unlinked rows still import as standalone records.</p>' +
 							'<div class="lcsv-links">' +
 							linksHtml +
 							'</div>' +
@@ -1145,9 +1211,7 @@
 				const replaceBtn = linkedCsvModal.querySelector('#linked-csv-replace');
 				const confirmBtn = linkedCsvModal.querySelector('#linked-csv-confirm');
 				const uploadBtn = linkedCsvModal.querySelector('#linked-csv-upload');
-				const ready =
-					_validForSummary.length > 0 &&
-					!state.files.some((f) => Array.isArray(f.blockingErrors) && f.blockingErrors.length > 0);
+				const ready = linkedCsvReady(state);
 				if (confirmBtn) {
 					confirmBtn.disabled = !ready;
 				}
@@ -1155,9 +1219,9 @@
 					replaceBtn.disabled = !ready;
 				}
 				if (uploadBtn) {
-					uploadBtn.disabled = !ready;
+					uploadBtn.disabled = !ready || state.preparingUpload;
 				}
-				if (uploadBtn && ready) {
+				if (uploadBtn && ready && !state.preparingUpload) {
 					const linkedCount = (state.links || []).length;
 					const isMultiOrLinked = _validForSummary.length > 1 || linkedCount > 0;
 					const overValidatedCap = isMultiOrLinked && _totalRowsForSummary > _DIRECT_CSV_VALIDATED_CAP;
@@ -1166,7 +1230,7 @@
 						uploadBtn.title =
 							'Multi-file or linked uploads are capped at ' +
 							_DIRECT_CSV_VALIDATED_CAP.toLocaleString() +
-							' rows. Split this batch or remove FK linking.';
+							' rows. Split this batch or remove the detected relationships.';
 					} else if (_bulkBannerForSummary) {
 						uploadBtn.title =
 							'Large single-file upload - runs via Bulk API v2. Per-record success/failure; no pre-flight check, no atomic rollback.';
@@ -1593,43 +1657,6 @@
 				if (!state) {
 					return;
 				}
-				if (skipCanvas) {
-					try {
-						const plannedConnection = await state.planConnectionPromise;
-						const response = await csrfFetch('/api/me', { credentials: 'same-origin' });
-						const me = await response.json();
-						const activeConnection =
-							me && me.connection
-								? {
-										id: me.connection.id || null,
-										sfOrgId: me.connection.sfOrgId || me.connection.organizationId || null,
-									}
-								: null;
-						const changed =
-							!plannedConnection ||
-							!activeConnection ||
-							(plannedConnection.id &&
-								activeConnection.id &&
-								plannedConnection.id !== activeConnection.id) ||
-							(plannedConnection.sfOrgId &&
-								activeConnection.sfOrgId &&
-								plannedConnection.sfOrgId !== activeConnection.sfOrgId);
-						if (!response.ok || changed) {
-							closeLinkedCsvModal();
-							showBulkToast(
-								'Your active Salesforce org changed. Quick Upload was cancelled; reopen it to remap against the active org.',
-								'error',
-							);
-							return;
-						}
-					} catch (e) {
-						showBulkToast(
-							'Could not verify the active Salesforce org. Nothing was uploaded; retry when the connection is available.',
-							'error',
-						);
-						return;
-					}
-				}
 				const validFiles = state.files.filter(
 					(f) => f.objectName && Object.values(f.mapping).filter(Boolean).length > 0,
 				);
@@ -1686,7 +1713,7 @@
 						showBulkToast(
 							'Multi-file or linked uploads are capped at ' +
 								_DIRECT_CSV_VALIDATED_CAP.toLocaleString() +
-								' rows. Split this batch or remove the FK linking.',
+								' rows. Split this batch or remove the detected relationships.',
 							'error',
 						);
 						return;
@@ -1717,6 +1744,7 @@
 				const stepY = 180;
 				const perRow = Math.max(1, Math.floor((W - startX) / stepX));
 				const _preImportSelectedObjects = canvasState.selectedObjects.slice();
+				const _preImportSelectedIdSeq = canvasState.selectedIdSeq;
 				const existingCanvasById = new Map();
 				const mergeQueue = [];
 				let mergeSkippedNoModal = 0;
@@ -1773,11 +1801,26 @@
 				for (const file of validFiles) {
 					let sel = canvasState.selectedObjects.find((s) => s.name === file.objectName);
 					if (!sel) {
-						try {
-							sel = await addToSelection(file.objectName);
-						} catch (e) {
-							console.warn('addToSelection failed for', file.objectName, e);
-							continue;
+						if (skipCanvas) {
+							// Mapping already loaded the object describe. Direct upload only needs
+							// identity and labels, not a second round of full schema-graph requests.
+							sel = {
+								id: canvasState.selectedIdSeq++,
+								name: file.objectName,
+								label: (file.describe && file.describe.label) || file.objectName,
+								data: null,
+								addedFrom: null,
+								addedVia: 'quick-upload',
+								worldPos: null,
+							};
+							canvasState.selectedObjects.push(sel);
+						} else {
+							try {
+								sel = await addToSelection(file.objectName);
+							} catch (e) {
+								console.warn('addToSelection failed for', file.objectName, e);
+								continue;
+							}
 						}
 					}
 					selByName.set(file.objectName, sel);
@@ -1864,6 +1907,10 @@
 							values,
 							fromSelectionId: sel.id,
 						};
+						if (skipCanvas) {
+							rec._csvSourceFile = file.name;
+							rec._csvSourceRow = rowIdx + 2;
+						}
 						if (sfId) {
 							const _live = _idResolution.liveById.get(sfId.slice(0, 15));
 							if (_live) {
@@ -1944,7 +1991,7 @@
 				});
 				const totalRecords = validFiles.reduce((n, f) => n + f.rows.length, 0);
 				const fileCount = validFiles.length;
-				closeLinkedCsvModal({ keepQuickUploadMode: true });
+				closeLinkedCsvModal({ keepQuickUploadMode: true, allowWhilePreparing: true });
 				if (skipCanvas) {
 					const _snapRecs = canvasState.bulkRecords.filter((r) => !newRecIds.has(r.id));
 					const _snapAssocs = canvasState.bulkAssociations.filter((a) => !newAssocIds.has(a.id));
@@ -1976,6 +2023,7 @@
 						canvasState.bulkRecords = _snapRecs;
 						canvasState.bulkAssociations = _snapAssocs;
 						canvasState.selectedObjects = _snapSelectedObjects;
+						canvasState.selectedIdSeq = _preImportSelectedIdSeq;
 						getGraph().classList.remove('csv-direct-upload-active');
 						_linkedCsvQuickUploadMode = false;
 						try {

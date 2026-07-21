@@ -18,6 +18,7 @@ const describes = {
 		fields: [
 			{ name: 'Id', type: 'id', filterable: true },
 			{ name: 'Name', label: 'Account Name', type: 'string', filterable: true, nameField: true },
+			{ name: 'CreatedDate', label: 'Created Date', type: 'datetime', filterable: true },
 			{ name: 'Description', label: 'Description', type: 'textarea', filterable: false },
 			{
 				name: 'External_Key__c',
@@ -129,6 +130,41 @@ describe('app-generated SOQL WHERE field guards', () => {
 		assert.equal(response.status, 400);
 		assert.equal(body.error, 'invalid-filter');
 		assert.match(body.message, /cannot be used in a Salesforce filter/i);
+		assert.equal(capturedQueries.length, 0);
+	});
+
+	test('Browse emits complete UTC literals for datetime filters', async () => {
+		for (const [op, token] of [
+			['equals', '='],
+			['before', '<'],
+			['after', '>'],
+		]) {
+			capturedQueries = [];
+			const { response } = await jsonRequest('/api/browse', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					objectName: 'Account',
+					filters: [{ field: 'CreatedDate', op, value: '2026-07-19T07:00:00.000Z' }],
+				}),
+			});
+			assert.equal(response.status, 200);
+			assert.ok(capturedQueries[0].includes(`CreatedDate ${token} 2026-07-19T07:00:00.000Z`));
+		}
+	});
+
+	test('Browse rejects timezone-free datetime values before querying Salesforce', async () => {
+		const { response, body } = await jsonRequest('/api/browse', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				objectName: 'Account',
+				filters: [{ field: 'CreatedDate', op: 'equals', value: '2026-07-19T00:00' }],
+			}),
+		});
+		assert.equal(response.status, 400);
+		assert.equal(body.error, 'invalid-filter');
+		assert.match(body.message, /valid date and time/i);
 		assert.equal(capturedQueries.length, 0);
 	});
 

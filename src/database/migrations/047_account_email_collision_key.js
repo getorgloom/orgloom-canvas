@@ -1,7 +1,9 @@
 import { migrationColumnExists } from '../migration-introspection.js';
 
 function normalizeEmailForCollisionCheck(email) {
-	const lower = String(email || '').trim().toLowerCase();
+	const lower = String(email || '')
+		.trim()
+		.toLowerCase();
 	const atIndex = lower.lastIndexOf('@');
 	if (atIndex < 1) {
 		return lower;
@@ -25,10 +27,7 @@ export async function up(db) {
 	if (!(await migrationColumnExists(db, 'accounts', 'email_collision_key'))) {
 		await db.schema.alterTable('accounts').addColumn('email_collision_key', 'text').execute();
 	}
-	const rows = await db
-		.selectFrom('accounts')
-		.select(['id', 'email', 'deleted_at', 'created_at'])
-		.execute();
+	const rows = await db.selectFrom('accounts').select(['id', 'email', 'deleted_at', 'created_at']).execute();
 	// Preserve every historical account. Prefer an active account as the
 	// canonical owner, then the oldest account for deterministic recovery.
 	rows.sort((a, b) => {
@@ -54,11 +53,7 @@ export async function up(db) {
 		backfill.push({ id: row.id, key: isHistoricalCollision ? null : key });
 	}
 	for (const row of backfill) {
-		await db
-			.updateTable('accounts')
-			.set({ email_collision_key: row.key })
-			.where('id', '=', row.id)
-			.execute();
+		await db.updateTable('accounts').set({ email_collision_key: row.key }).where('id', '=', row.id).execute();
 	}
 	await db.schema
 		.createIndex('accounts_email_collision_key_unique')

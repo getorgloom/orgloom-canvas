@@ -40,6 +40,46 @@
 						};
 			let _proposalsPollTimer = null;
 			let _proposalsLastCanvasId = null;
+			function _upsertSingleLookupAssociation(associations, nextAssociation) {
+				const current = Array.isArray(associations) ? associations : [];
+				const sameLookup = current.filter(
+					(association) =>
+						association.fromId === nextAssociation.fromId &&
+						association.fieldName === nextAssociation.fieldName,
+				);
+				const exact = sameLookup.find((association) => association.toId === nextAssociation.toId);
+				if (sameLookup.length === 1 && exact) {
+					return { associations: current, changed: false, inserted: false };
+				}
+				const withoutLookup = current.filter(
+					(association) =>
+						association.fromId !== nextAssociation.fromId ||
+						association.fieldName !== nextAssociation.fieldName,
+				);
+				withoutLookup.push(exact || nextAssociation);
+				return { associations: withoutLookup, changed: true, inserted: !exact };
+			}
+			function _syncLookupFieldValue(records, fromId, toId, fieldName) {
+				const holder = records.find((record) => record && record.id === fromId);
+				const target = records.find((record) => record && record.id === toId);
+				if (!holder || !target || !fieldName) {
+					return false;
+				}
+				holder.values = holder.values || {};
+				const targetSalesforceId = target.loadedFromId || (target.values && target.values.Id) || null;
+				if (targetSalesforceId) {
+					if (String(holder.values[fieldName] || '') === String(targetSalesforceId)) {
+						return false;
+					}
+					holder.values[fieldName] = targetSalesforceId;
+					return true;
+				}
+				if (Object.prototype.hasOwnProperty.call(holder.values, fieldName)) {
+					delete holder.values[fieldName];
+					return true;
+				}
+				return false;
+			}
 			const _proposalsBanner = document.createElement('div');
 			_proposalsBanner.className = 'proposals-banner';
 			_proposalsBanner.hidden = true;
@@ -328,18 +368,22 @@
 							const pid = btn.getAttribute('data-proposal-id');
 							const card = btn.closest('.proposal-card');
 							const skipChangeIndexes = [];
+							let skipItemCount = 0;
 							if (card) {
 								card.querySelectorAll('.proposal-change-checkbox').forEach((cb) => {
 									if (!cb.checked) {
-										const i = Number(cb.getAttribute('data-change-index'));
-										if (Number.isInteger(i)) {
-											skipChangeIndexes.push(i);
-										}
+										skipItemCount += 1;
+										String(cb.getAttribute('data-change-indexes') || '')
+											.split(',')
+											.map((value) => Number(value))
+											.filter((value) => Number.isInteger(value))
+											.forEach((value) => skipChangeIndexes.push(value));
 									}
 								});
 							}
 							await _applyProposal(canvasId, pid, modal, {
 								skipChangeIndexes,
+								skipItemCount,
 							});
 						});
 					});
@@ -376,12 +420,124 @@
 				const _newDraftRefIndex = new Map();
 				for (const ch of changes) {
 					if (ch && ch.kind === 'new-draft' && ch.tempRef) {
-						_newDraftRefIndex.set(String(ch.tempRef), ch.objectName || 'record');
+						_newDraftRefIndex.set(String(ch.tempRef), ch);
 					}
 				}
+				const _canvasRecords = Array.isArray(canvasState.bulkRecords) ? canvasState.bulkRecords : [];
+				const _salesforceIdsMatch = (left, right) => {
+					if (left == null || right == null) {
+						return false;
+					}
+					const a = String(left);
+					const b = String(right);
+					return a === b || (a.length >= 15 && b.length >= 15 && a.slice(0, 15) === b.slice(0, 15));
+				};
+				const _recordValues = (record) =>
+					Object.assign({}, (record && record.loadedValues) || {}, (record && record.values) || {});
+				const _canvasRecordForEndpoint = (ep) => {
+					if (!ep || ep.ref == null) {
+						return null;
+					}
+					if (ep.kind === 'loaded') {
+						return (
+							_canvasRecords.find(
+								(record) =>
+									record &&
+									(_salesforceIdsMatch(record.loadedFromId, ep.ref) ||
+										_salesforceIdsMatch(_recordValues(record).Id, ep.ref)),
+							) || null
+						);
+					}
+					if (ep.kind === 'draft') {
+						return (
+							_canvasRecords.find(
+								(record) => record && !record.loadedFromId && String(record.id) === String(ep.ref),
+							) || null
+						);
+					}
+					return null;
+				};
+				const _recordDisplayName = (values, objectName) => {
+					values = values && typeof values === 'object' ? values : {};
+					const personName = [values.FirstName, values.LastName]
+						.filter((value) => value != null && String(value).trim())
+						.map((value) => String(value).trim())
+						.join(' ');
+					if (personName) {
+						return personName;
+					}
+					const describe = canvasState.describeCache && canvasState.describeCache[objectName];
+					const nameField =
+						describe && Array.isArray(describe.fields)
+							? describe.fields.find((field) => field && field.nameField)
+							: null;
+					if (nameField && values[nameField.name] != null && String(values[nameField.name]).trim()) {
+						return String(values[nameField.name]).trim();
+					}
+					for (const field of ['Name', 'CaseNumber', 'OrderNumber', 'WorkOrderNumber', 'Subject', 'Title']) {
+						if (values[field] != null && String(values[field]).trim()) {
+							return String(values[field]).trim();
+						}
+					}
+					return '';
+				};
+				const _recordIdentity = ({ objectName, values, id, idPrefix }) => {
+					const name = _recordDisplayName(values, objectName);
+					return (
+						(objectName ? '<code class="proposal-object-type">' + escapeHtml(objectName) + '</code>' : '') +
+						(name ? ' <strong class="proposal-record-name">' + escapeHtml(name) + '</strong>' : '') +
+						(id != null && String(id)
+							? ' <code class="tag">' + escapeHtml((idPrefix || '') + String(id)) + '</code>'
+							: '')
+					);
+				};
+				const _recordHeadingForEndpoint = (ep) => {
+					const record = _canvasRecordForEndpoint(ep);
+					if (record) {
+						return _recordIdentity({
+							objectName: record.objectName,
+							values: _recordValues(record),
+							id: ep.ref,
+							idPrefix: ep.kind === 'draft' ? 'Draft #' : '',
+						});
+					}
+					if (ep && ep.kind === 'tempRef') {
+						const draft = _newDraftRefIndex.get(String(ep.ref));
+						if (draft) {
+							return _recordIdentity({
+								objectName: draft.objectName,
+								values: draft.fields,
+								id: 'New record',
+							});
+						}
+					}
+					return '';
+				};
+				const _recordHeadingForChange = (change) => {
+					if (!change) {
+						return '';
+					}
+					if (change.kind === 'new-draft') {
+						return _recordIdentity({ objectName: change.objectName, values: change.fields });
+					}
+					const isDraft = change.kind === 'draft' || change.kind === 'delete-draft';
+					const id = isDraft ? change.tempId : change.recordId;
+					const endpoint = id == null ? null : { kind: isDraft ? 'draft' : 'loaded', ref: id };
+					const record = _canvasRecordForEndpoint(endpoint);
+					return _recordIdentity({
+						objectName: change.objectName || (record && record.objectName),
+						values: record && _recordValues(record),
+						id,
+						idPrefix: isDraft ? 'Draft #' : '',
+					});
+				};
 				const _epLabel = (ep) => {
 					if (!ep) {
 						return '?';
+					}
+					const identity = _recordHeadingForEndpoint(ep);
+					if (identity) {
+						return identity;
 					}
 					if (ep.kind === 'loaded') {
 						return '<code>' + escapeHtml(String(ep.ref)) + '</code>';
@@ -390,66 +546,178 @@
 						return 'Draft #<code>' + escapeHtml(String(ep.ref)) + '</code>';
 					}
 					if (ep.kind === 'tempRef') {
-						const objName = _newDraftRefIndex.get(String(ep.ref));
-						return objName
-							? 'New <code>' + escapeHtml(objName) + '</code> (this proposal)'
+						const draft = _newDraftRefIndex.get(String(ep.ref));
+						return draft
+							? 'New <code>' + escapeHtml(draft.objectName || 'record') + '</code> (this proposal)'
 							: 'New record (this proposal)';
 					}
 					return escapeHtml(JSON.stringify(ep));
 				};
+				const _endpointKey = (ep) => {
+					if (!ep || ep.ref == null) {
+						return null;
+					}
+					if (ep.kind === 'loaded') {
+						return 'record:' + String(ep.ref);
+					}
+					if (ep.kind === 'draft') {
+						return 'draft:' + String(ep.ref);
+					}
+					if (ep.kind === 'tempRef') {
+						return 'tempRef:' + String(ep.ref);
+					}
+					return null;
+				};
+				const _changeTargetKey = (change) => {
+					if (!change) {
+						return null;
+					}
+					if (change.kind === 'new-draft' && change.tempRef != null) {
+						return 'tempRef:' + String(change.tempRef);
+					}
+					if (change.kind === 'draft' && change.tempId != null) {
+						return 'draft:' + String(change.tempId);
+					}
+					if ((change.kind === 'record' || change.kind === 'load-record') && change.recordId != null) {
+						return 'record:' + String(change.recordId);
+					}
+					return null;
+				};
 
-				const _wrapChangeRow = (idx, innerHtml) =>
+				const _wrapChangeRow = (indexes, innerHtml) =>
 					'<label class="proposal-change-row">' +
 					'<input type="checkbox" class="proposal-change-checkbox" ' +
-					'data-change-index="' +
-					idx +
+					'data-change-indexes="' +
+					indexes.join(',') +
 					'" checked>' +
 					'<div class="proposal-change-body">' +
 					innerHtml +
 					'</div>' +
 					'</label>';
-				const changeRows = changes
-					.map((c, idx) => {
-						if (c.kind === 'new-association' || c.kind === 'delete-association') {
-							const isAdd = c.kind === 'new-association';
-							const chip = isAdd
-								? '<span class="proposal-kind-chip proposal-kind-chip--new" title="Add an FK link between two records on the canvas">+ link</span>'
-								: '<span class="proposal-kind-chip proposal-kind-chip--record" title="Remove an existing FK link between two records">− unlink</span>';
+				const basePlanByTarget = new Map();
+				const rowPlans = [];
+				changes.forEach((change, index) => {
+					if (change.kind === 'new-association' || change.kind === 'delete-association') {
+						return;
+					}
+					const plan = { baseIndex: index, relationshipIndexes: [] };
+					rowPlans.push(plan);
+					const targetKey = _changeTargetKey(change);
+					if (targetKey && !basePlanByTarget.has(targetKey)) {
+						basePlanByTarget.set(targetKey, plan);
+					}
+				});
+
+				const relationshipOnlyPlans = new Map();
+				changes.forEach((change, index) => {
+					if (change.kind !== 'new-association' && change.kind !== 'delete-association') {
+						return;
+					}
+					const childKey = _endpointKey(change.from);
+					const basePlan = childKey ? basePlanByTarget.get(childKey) : null;
+					if (basePlan) {
+						basePlan.relationshipIndexes.push(index);
+						return;
+					}
+					const groupKey = childKey || 'association:' + index;
+					let plan = relationshipOnlyPlans.get(groupKey);
+					if (!plan) {
+						plan = { baseIndex: null, relationshipIndexes: [], child: change.from };
+						relationshipOnlyPlans.set(groupKey, plan);
+						rowPlans.push(plan);
+					}
+					plan.relationshipIndexes.push(index);
+				});
+				const _currentRelationshipParentLabel = (relationship) => {
+					const child = _canvasRecordForEndpoint(relationship && relationship.from);
+					if (!child || !Array.isArray(canvasState.bulkAssociations)) {
+						return '';
+					}
+					const association = canvasState.bulkAssociations.find(
+						(candidate) =>
+							candidate &&
+							candidate.fromId === child.id &&
+							candidate.fieldName === relationship.fieldName,
+					);
+					if (!association) {
+						return '';
+					}
+					const parent = _canvasRecords.find((record) => record && record.id === association.toId);
+					if (!parent) {
+						return '<code>' + escapeHtml(String(association.toId)) + '</code>';
+					}
+					return _recordIdentity({
+						objectName: parent.objectName,
+						values: _recordValues(parent),
+						id: parent.loadedFromId || (parent.values && parent.values.Id) || parent.id,
+						idPrefix: parent.loadedFromId || (parent.values && parent.values.Id) ? '' : 'Draft #',
+					});
+				};
+
+				const _relationshipFieldRows = (relationshipIndexes, isNewDraft) =>
+					relationshipIndexes
+						.map((index) => {
+							const relationship = changes[index];
+							const isAdd = relationship.kind === 'new-association';
+							const fieldCell =
+								'<td><code>' +
+								escapeHtml(relationship.fieldName || '') +
+								'</code> <span class="tag">relationship</span></td>';
+							const parentCell = _epLabel(relationship.to);
+							if (isNewDraft) {
+								return '<tr>' + fieldCell + '<td class="proposal-new">' + parentCell + '</td></tr>';
+							}
+							const currentParentCell = isAdd
+								? _currentRelationshipParentLabel(relationship)
+								: parentCell;
+							return (
+								'<tr>' +
+								fieldCell +
+								(isAdd
+									? (currentParentCell
+											? '<td class="proposal-old">' + currentParentCell + '</td>'
+											: '<td class="proposal-old proposal-old--empty">—</td>') +
+										'<td class="proposal-new">' +
+										parentCell +
+										'</td>'
+									: '<td class="proposal-old">' +
+										parentCell +
+										'</td><td class="proposal-new proposal-old--empty">Not linked</td>') +
+								'</tr>'
+							);
+						})
+						.join('');
+
+				const changeRows = rowPlans
+					.map((plan) => {
+						const idx = plan.baseIndex;
+						const c = idx == null ? null : changes[idx];
+						const changeIndexes =
+							idx == null ? [...plan.relationshipIndexes] : [idx, ...plan.relationshipIndexes];
+						if (!c) {
 							return _wrapChangeRow(
-								idx,
+								changeIndexes,
 								'<div class="proposal-record">' +
 									'<div class="proposal-record-head">' +
-									'<code>' +
-									escapeHtml(c.fieldName || '') +
-									'</code> ' +
-									chip +
+									_epLabel(plan.child) +
 									'</div>' +
 									'<table class="proposal-fields">' +
-									'<thead><tr><th>From (child)</th><th>To (parent)</th></tr></thead>' +
-									'<tbody><tr>' +
-									'<td>' +
-									_epLabel(c.from) +
-									'</td>' +
-									'<td>' +
-									_epLabel(c.to) +
-									'</td>' +
-									'</tr></tbody>' +
-									'</table>' +
-									'</div>',
+									'<thead><tr><th>Field</th><th>Old value</th><th>New value</th></tr></thead>' +
+									'<tbody>' +
+									_relationshipFieldRows(plan.relationshipIndexes, false) +
+									'</tbody></table></div>',
 							);
 						}
 						if (c.kind === 'delete-draft' || c.kind === 'delete-record') {
 							const isDraftDel = c.kind === 'delete-draft';
 							const chip =
 								'<span class="proposal-kind-chip proposal-kind-chip--record" title="Remove from the canvas. Salesforce records are NOT deleted; this only removes the canvas reference.">− remove</span>';
-							const target = isDraftDel
-								? 'Draft #<code>' + escapeHtml(String(c.tempId)) + '</code>'
-								: 'Record <code>' + escapeHtml(String(c.recordId)) + '</code>';
+							const target = _recordHeadingForChange(c);
 							const note = isDraftDel
 								? 'The draft is removed from the canvas; any associations touching it are dropped too.'
 								: 'The reference is removed from the canvas + its associations are dropped. The Salesforce record itself is NOT deleted.';
 							return _wrapChangeRow(
-								idx,
+								changeIndexes,
 								'<div class="proposal-record">' +
 									'<div class="proposal-record-head">' +
 									target +
@@ -476,7 +744,7 @@
 							const chip =
 								'<span class="proposal-kind-chip proposal-kind-chip--new" title="Fill required fields with sample values on the listed drafts. Same logic as the Bulk Operations → Fill required fields button.">✨ autofill</span>';
 							return _wrapChangeRow(
-								idx,
+								changeIndexes,
 								'<div class="proposal-record">' +
 									'<div class="proposal-record-head">' +
 									chip +
@@ -497,41 +765,37 @@
 										'</code>.'
 									: '';
 							return _wrapChangeRow(
-								idx,
+								changeIndexes,
 								'<div class="proposal-record">' +
 									'<div class="proposal-record-head">' +
-									'<code>' +
-									escapeHtml(c.objectName || '') +
-									'</code> ' +
-									'<code class="tag">' +
-									escapeHtml(String(c.recordId || '')) +
-									'</code> ' +
+									_recordHeadingForChange(c) +
+									' ' +
 									chip +
 									'</div>' +
 									'<p class="tag" style="margin:0.2em 0 0">Fetch this record from Salesforce via your active connection and add it to the canvas.' +
 									fieldsNote +
 									'</p>' +
+									(plan.relationshipIndexes.length
+										? '<table class="proposal-fields"><thead><tr><th>Field</th><th>Old value</th><th>New value</th></tr></thead><tbody>' +
+											_relationshipFieldRows(plan.relationshipIndexes, false) +
+											'</tbody></table>'
+										: '') +
 									'</div>',
 							);
 						}
 						const fields = c.fields && typeof c.fields === 'object' ? c.fields : {};
 						const oldValues = c.oldValues && typeof c.oldValues === 'object' ? c.oldValues : {};
-						const fieldKeys = Object.keys(fields);
+						const fieldKeys = Object.keys(fields).filter((k) => _fmt(oldValues[k]) !== _fmt(fields[k]));
 						const fieldRows = fieldKeys
 							.map((k) => {
 								const oldRaw = oldValues[k];
 								const oldStr = _fmt(oldRaw);
 								const newStr = _fmt(fields[k]);
-								const same = oldStr === newStr;
 								const oldCell =
 									oldStr === ''
 										? '<td class="proposal-old proposal-old--empty">—</td>'
 										: '<td class="proposal-old">' + escapeHtml(oldStr) + '</td>';
-								const newCell = same
-									? '<td class="proposal-new proposal-new--unchanged">' +
-										escapeHtml(newStr) +
-										' <span class="tag">unchanged</span></td>'
-									: '<td class="proposal-new">' + escapeHtml(newStr) + '</td>';
+								const newCell = '<td class="proposal-new">' + escapeHtml(newStr) + '</td>';
 								return (
 									'<tr>' + '<td><code>' + escapeHtml(k) + '</code></td>' + oldCell + newCell + '</tr>'
 								);
@@ -540,19 +804,12 @@
 
 						const isNewDraft = c.kind === 'new-draft';
 						const kind = isNewDraft ? 'new-draft' : c.kind === 'draft' ? 'draft' : 'record';
-						const targetId = kind === 'draft' ? c.tempId : kind === 'record' ? c.recordId : null;
 						const kindChip = isNewDraft
 							? '<span class="proposal-kind-chip proposal-kind-chip--new" title="Brand-new draft record. On Apply, a fresh draft appears on the canvas with these field values.">+ new draft</span>'
 							: kind === 'draft'
 								? '<span class="proposal-kind-chip proposal-kind-chip--draft" title="Draft on the canvas, not yet uploaded to Salesforce">draft</span>'
 								: '<span class="proposal-kind-chip proposal-kind-chip--record" title="Loaded Salesforce record on the canvas; Apply updates the canvas, not Salesforce">SF record</span>';
 
-						const targetTag = isNewDraft
-							? ''
-							: '<code class="tag">' +
-								(kind === 'draft' ? 'tempId ' : '') +
-								escapeHtml(String(targetId == null ? '' : targetId)) +
-								'</code> ';
 						const tableHeaders = isNewDraft
 							? '<thead><tr><th>Field</th><th>Value</th></tr></thead>'
 							: '<thead><tr><th>Field</th><th>Old value</th><th>New value</th></tr></thead>';
@@ -569,16 +826,14 @@
 											'</td>' +
 											'</tr>',
 									)
-									.join('')
-							: fieldRows;
+									.join('') + _relationshipFieldRows(plan.relationshipIndexes, true)
+							: fieldRows + _relationshipFieldRows(plan.relationshipIndexes, false);
 						return _wrapChangeRow(
-							idx,
+							changeIndexes,
 							'<div class="proposal-record">' +
 								'<div class="proposal-record-head">' +
-								'<code>' +
-								escapeHtml(c.objectName || '') +
-								'</code> ' +
-								targetTag +
+								_recordHeadingForChange(c) +
+								' ' +
 								kindChip +
 								'</div>' +
 								'<table class="proposal-fields">' +
@@ -602,9 +857,9 @@
 					escapeHtml(ts) +
 					'</span> ' +
 					'<span class="tag proposal-selected-count">' +
-					changes.length +
+					rowPlans.length +
 					' of ' +
-					changes.length +
+					rowPlans.length +
 					' selected' +
 					'</span>' +
 					'</div>' +
@@ -630,7 +885,7 @@
 			async function _applyProposal(canvasId, proposalId, modal, opts) {
 				opts = opts || {};
 				const skipChangeIndexes = Array.isArray(opts.skipChangeIndexes) ? opts.skipChangeIndexes : [];
-				const skipCount = skipChangeIndexes.length;
+				const skipCount = Number.isInteger(opts.skipItemCount) ? opts.skipItemCount : skipChangeIndexes.length;
 
 				if (!opts.skipConfirm) {
 					const ok = await showConfirmDialog({
@@ -963,16 +1218,20 @@
 									continue;
 								}
 								const fieldName = result.fieldName;
-								const dup = canvasState.bulkAssociations.some(
-									(a) => a.fromId === fromId && a.toId === toId && a.fieldName === fieldName,
-								);
-								if (!dup) {
-									canvasState.bulkAssociations.push({
-										id: canvasState.bulkIdSeq++,
-										fromId,
-										toId,
-										fieldName,
-									});
+								const upsert = _upsertSingleLookupAssociation(canvasState.bulkAssociations, {
+									id: canvasState.bulkIdSeq,
+									fromId,
+									toId,
+									fieldName,
+								});
+								if (upsert.changed) {
+									canvasState.bulkAssociations = upsert.associations;
+									if (upsert.inserted) {
+										canvasState.bulkIdSeq++;
+									}
+									touched = true;
+								}
+								if (_syncLookupFieldValue(canvasState.bulkRecords, fromId, toId, fieldName)) {
 									touched = true;
 								}
 							} else if (result.kind === 'delete-association') {
@@ -1077,6 +1336,9 @@
 			return {
 				getPollCanvasId: _proposalsPollCanvasId,
 				openProposalsReview: _openProposalsReview,
+				renderProposalCard: _renderProposalCard,
+				syncLookupFieldValue: _syncLookupFieldValue,
+				upsertSingleLookupAssociation: _upsertSingleLookupAssociation,
 				refreshProposals: _refreshProposals,
 				watchProposalsForCurrentCanvas: _watchProposalsForCurrentCanvas,
 			};

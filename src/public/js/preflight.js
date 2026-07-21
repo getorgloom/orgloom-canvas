@@ -69,9 +69,9 @@
 
 						const raw = values[f.name];
 						const hasValue = raw !== undefined && raw !== null && !(typeof raw === 'string' && raw === '');
-						const hasFkLink = f.type === 'reference' && linkedFields.has(f.name);
+						const hasRelationship = f.type === 'reference' && linkedFields.has(f.name);
 
-						if (f.required && !hasValue && !hasFkLink && !f.defaultedOnCreate) {
+						if (f.required && !hasValue && !hasRelationship && !f.defaultedOnCreate) {
 							if (partialFieldSet && !partialFieldSet.has(f.name)) {
 								return;
 							}
@@ -163,7 +163,12 @@
 							raw.length > 0 &&
 							!/^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(raw)
 						) {
-							addIssue(rec, f, 'error', 'Lookup value isn\u2019t a Salesforce ID and no FK link is set.');
+							addIssue(
+								rec,
+								f,
+								'error',
+								'Lookup value isn\u2019t a Salesforce ID and no relationship to another canvas record is set.',
+							);
 						}
 					});
 				});
@@ -254,11 +259,11 @@
 						pushCascadeIssue(
 							rec,
 							'error',
-							'Draft FK',
+							'Draft relationship',
 							draftChildren.length +
 								' draft record' +
 								(draftChildren.length === 1 ? '' : 's') +
-								' on this canvas reference this record via FK. Deleting it would leave those FKs unresolvable at upload time. Remove the drafts or unmark this delete.',
+								' on this canvas are related to this record. Deleting it would leave those relationships unresolved during upload. Remove the drafts or unmark this delete.',
 						);
 					}
 				});

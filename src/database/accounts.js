@@ -48,11 +48,7 @@ export async function findByCanonicalEmail(email) {
 		return null;
 	}
 	const db = ext.getDb();
-	return db
-		.selectFrom('accounts')
-		.selectAll()
-		.where('email_collision_key', '=', canonical)
-		.executeTakeFirst();
+	return db.selectFrom('accounts').selectAll().where('email_collision_key', '=', canonical).executeTakeFirst();
 }
 
 export async function findById(id) {

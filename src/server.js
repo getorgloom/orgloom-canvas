@@ -210,6 +210,7 @@ const _CSRF_EXEMPT_PREFIXES = [
 	'/auth/callback', // SF OAuth, state-validated.
 	'/auth/account/google/callback',
 	'/auth/account/microsoft/callback',
+	'/mcp/', // Bearer-authenticated MCP requests are not browser session requests.
 ];
 app.use((req, res, next) => {
 	if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {

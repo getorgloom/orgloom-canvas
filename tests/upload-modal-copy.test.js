@@ -101,6 +101,42 @@ test('upload preflight stops for another describe failure and lets the user retr
 	assert.equal(summary.action, 'Retry pre-flight checks');
 });
 
+test('pending org approval explains the automatic request and the admin action', () => {
+	const message = uploadModal.approvalRequiredMessage({ approvalStatus: 'pending' });
+	assert.match(message, /automatically created an access request/i);
+	assert.match(message, /any workspace admin/i);
+	assert.match(message, /Workspace settings/i);
+	assert.match(source, /No Salesforce records were written/);
+	assert.match(source, /body\.message \|\| body\.error/);
+});
+
+test('upload checks local org approval before claiming that Salesforce upload has started', () => {
+	const accessIndex = source.indexOf("csrfFetch('/api/upload/access-check'");
+	const graphIndex = source.indexOf("csrfFetch('/api/upload/graph'");
+	assert.notEqual(accessIndex, -1);
+	assert.notEqual(graphIndex, -1);
+	assert.ok(accessIndex < graphIndex);
+	assert.match(source, /Checking Salesforce access&hellip;/);
+	assert.match(source, /accessController\.abort\(\), 5000/);
+	assert.match(source, /No records were written\. Retry/);
+});
+
+test('upload modal backdrop cannot accidentally dismiss upload review', () => {
+	assert.match(source, /'<div class="modal-overlay"><\/div>'/);
+	assert.doesNotMatch(source, /'<div class="modal-overlay" data-upload-close><\/div>'/);
+});
+
+test('org approval copy prefers the server explanation', () => {
+	const serverMessage = 'Org Loom automatically created an access request for this non-production Salesforce org.';
+	assert.equal(uploadModal.approvalRequiredMessage({ message: serverMessage }), serverMessage);
+});
+
+test('an org switch stops the upload with recovery guidance', () => {
+	assert.match(source, /Salesforce org changed/);
+	assert.match(source, /active-org-changed/);
+	assert.match(source, /reopen Quick Upload to remap/i);
+});
+
 test('describe requests preserve their HTTP reason for upload recovery', () => {
 	assert.match(appSource, /error\.status = r\.status/);
 	assert.match(appSource, /error\.code = body && body\.error/);
@@ -193,10 +229,7 @@ test('recall review omits recovery promises and legacy pre-value-revert messagin
 test('recall review restores the cached history list and never renders a zero-record action', () => {
 	assert.match(historySource, /const historyListHtml = content\.innerHTML/);
 	assert.match(historySource, /data-uh-back[^\n]+restoreHistoryList/);
-	assert.match(
-		historySource,
-		/_executeRecall\(batchId, overlay, skipSfIds, revertSelections, restoreHistoryList\)/,
-	);
+	assert.match(historySource, /_executeRecall\(batchId, overlay, skipSfIds, revertSelections, restoreHistoryList\)/);
 	assert.match(
 		historySource,
 		/async function _executeRecall\(batchId, overlay, skipSfIds, revertSelections, restoreHistoryList\)/,

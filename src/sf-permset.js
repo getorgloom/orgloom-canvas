@@ -7,7 +7,7 @@ export const ORGLOOM_PERMISSION_SET_NAMES = Object.freeze([
 
 const SF_ID_RE = /^[a-zA-Z0-9]{15,18}$/;
 
-export async function hasAssignedOrgloomPermissionSet(conn, sfUserId) {
+export async function hasAssignedOrgloomPermissionSet(conn, sfUserId, options = {}) {
 	if (!conn || typeof conn.query !== 'function') {
 		throw new TypeError('Salesforce connection with query() is required');
 	}
@@ -17,7 +17,9 @@ export async function hasAssignedOrgloomPermissionSet(conn, sfUserId) {
 	}
 
 	const names = ORGLOOM_PERMISSION_SET_NAMES.map((name) => `'${name}'`).join(',');
-	const result = await conn.query(
+	const timeoutMs = Number.isFinite(options.timeoutMs) ? Math.max(1, options.timeoutMs) : 15_000;
+	let timer;
+	const query = conn.query(
 		'SELECT Id, PermissionSet.Name, PermissionSet.NamespacePrefix ' +
 			"FROM PermissionSetAssignment WHERE AssigneeId = '" +
 			userId +
@@ -27,6 +29,19 @@ export async function hasAssignedOrgloomPermissionSet(conn, sfUserId) {
 			names +
 			')',
 	);
+	const timeout = new Promise((_, reject) => {
+		timer = setTimeout(() => {
+			const error = new Error('Salesforce permission-set verification timed out.');
+			error.code = 'sf-permset-check-timeout';
+			reject(error);
+		}, timeoutMs);
+	});
+	let result;
+	try {
+		result = await Promise.race([query, timeout]);
+	} finally {
+		clearTimeout(timer);
+	}
 
 	return (
 		Array.isArray(result?.records) &&

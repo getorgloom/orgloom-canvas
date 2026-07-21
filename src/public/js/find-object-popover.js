@@ -35,7 +35,7 @@
 				const headerText = opts.header || 'Find an object';
 				const subText =
 					opts.sub ||
-					'Adds any object to the schema, related or not. Use this to pick standalone objects alongside your FK-driven selections.';
+					'Adds any object to the schema, related or not. Use this to pick standalone objects alongside selections based on relationships.';
 				if (_activeCleanup) {
 					try {
 						_activeCleanup();

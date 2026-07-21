@@ -582,6 +582,9 @@ function csrfFetch(url, options) {
 					const directCount = data && Array.isArray(data.directShares) ? data.directShares.length : 0;
 					const count = linkCount + directCount;
 					_shareCountByCanvasId.set(canvasId, count);
+					window.dispatchEvent(
+						new CustomEvent('orgloom:canvas-share-count', { detail: { canvasId, count } }),
+					);
 					_shareCountFetching.delete(canvasId);
 					if (
 						typeof canvasState.graphView !== 'undefined' &&
@@ -595,6 +598,9 @@ function csrfFetch(url, options) {
 					console.warn('[share-count] fetch failed for', canvasId, err.message || err);
 					_shareCountFetching.delete(canvasId);
 					_shareCountByCanvasId.set(canvasId, 0);
+					window.dispatchEvent(
+						new CustomEvent('orgloom:canvas-share-count', { detail: { canvasId, count: 0 } }),
+					);
 				});
 		}
 		return null;
@@ -823,9 +829,11 @@ function csrfFetch(url, options) {
 	let _currentTeam = null;
 	function refreshCurrentTeam() {
 		return Promise.all([
-			csrfFetch('/api/me', { credentials: 'same-origin' })
-				.then((r) => (r.ok ? r.json() : null))
-				.catch(() => null),
+			window.OrgLoom && typeof window.OrgLoom.fetchMe === 'function'
+				? window.OrgLoom.fetchMe()
+				: csrfFetch('/api/me', { credentials: 'same-origin' })
+						.then((r) => (r.ok ? r.json() : null))
+						.catch(() => null),
 			csrfFetch('/api/workspaces', { credentials: 'same-origin' })
 				.then((r) => (r.ok ? r.json() : null))
 				.catch(() => null),
@@ -880,8 +888,10 @@ function csrfFetch(url, options) {
 		} catch (e) {}
 	}
 
-	csrfFetch('/api/me', { credentials: 'same-origin' })
-		.then((r) => (r.ok ? r.json() : null))
+	(window.OrgLoom && typeof window.OrgLoom.fetchMe === 'function'
+		? window.OrgLoom.fetchMe()
+		: csrfFetch('/api/me', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null))
+	)
 		.then(async (me) => {
 			if (!me) {
 				return;
@@ -1567,8 +1577,8 @@ function csrfFetch(url, options) {
 		const fieldList = Array.from(SCHEMA_SYSTEM_FK_FIELDS).join(', ');
 		btn.textContent = 'System fields filter: ' + (canvasState._systemFieldsFilter ? 'on' : 'off');
 		btn.title = canvasState._systemFieldsFilter
-			? 'Hiding audit FK spokes (' + fieldList + '). Click to show them.'
-			: 'Showing audit FK spokes (' + fieldList + '). Click to hide them.';
+			? 'Hiding audit relationship lines (' + fieldList + '). Click to show them.'
+			: 'Showing audit relationship lines (' + fieldList + '). Click to hide them.';
 		btn.classList.toggle('is-on', canvasState._systemFieldsFilter);
 	}
 	_updateSchemaSystemFieldsChip();
@@ -5604,6 +5614,9 @@ function csrfFetch(url, options) {
 		ensureDescribe: ensureDescribe,
 		isLinkedCsvQuickUploadMode: function () {
 			return _isLinkedCsvQuickUploadMode();
+		},
+		getMeInfo: function () {
+			return _meInfo;
 		},
 		pingAuditEvent: pingAuditEvent,
 		markCanvasGuideUploadComplete: _completeCanvasGuide,

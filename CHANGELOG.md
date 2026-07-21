@@ -24,7 +24,7 @@ These were already real features before the split; calling them out so the open-
 - CSV import (auto-mapping, multi-file linking by value).
 - SOQL import (read-only SELECT, child subqueries, 500-row cap).
 - Quick Upload (CSV → SF directly, no canvas staging).
-- AI Generate (Claude Sonnet 4.6, schema-aware, FK-aware, BYO Anthropic key).
+- AI Generate (Claude Sonnet 4.6, schema-aware, relationship-aware, BYO Anthropic key).
 - Upload pipeline (topological sort, Composite Graph, atomic groups, preflight).
 - Recall an upload (delete records the upload created, leave updates in place).
 - Multi-org support (multiple SF connections per account, switchable).

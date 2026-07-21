@@ -44,6 +44,47 @@ function fakeRes() {
 	return res;
 }
 
+function fakeSseRes() {
+	const writes = [];
+	const handlers = new Map();
+	return {
+		writes,
+		write(chunk) {
+			writes.push(chunk);
+			return true;
+		},
+		on(event, handler) {
+			handlers.set(event, handler);
+		},
+		fireClose() {
+			const handler = handlers.get('close');
+			if (handler) {
+				handler();
+			}
+		},
+		lastDataEvent() {
+			for (let i = writes.length - 1; i >= 0; i--) {
+				const match = writes[i].match(/^data: (.+)\n\n$/);
+				if (match) {
+					return JSON.parse(match[1]);
+				}
+			}
+			return null;
+		},
+	};
+}
+
+async function waitForRequest(sse, method = 'describe_object') {
+	for (let i = 0; i < 100; i++) {
+		const event = sse.lastDataEvent();
+		if (event && event.method === method) {
+			return event;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 2));
+	}
+	throw new Error('Timed out waiting for relay request: ' + method);
+}
+
 async function callMcp({ body, token }) {
 	const { mcpHandler } = await import('../src/mcp/server.js');
 	const headers = {};
@@ -164,6 +205,30 @@ describe('auth resolution', () => {
 		assert.equal(res.body.error.code, ERR_AUTH);
 	});
 
+	test('expired token is rejected before every request method is dispatched', async () => {
+		const { token, tokenId } = await makeMcpFixture();
+		const { ext } = await import('../src/extensions.js');
+		await ext
+			.getDb()
+			.updateTable('mcp_tokens')
+			.set({ expires_at: Date.now() - 1 })
+			.where('id', '=', tokenId)
+			.execute();
+
+		for (const body of [
+			rpc('initialize'),
+			rpc('ping'),
+			rpc('tools/list'),
+			rpc('tools/call', { name: 'list_canvases', arguments: {} }),
+			rpc('unknown/method'),
+		]) {
+			const res = await callMcp({ body, token });
+			assert.equal(res.statusCode, 401);
+			assert.equal(res.body.error.code, ERR_AUTH);
+			assert.match(res.body.error.message, /expired/);
+		}
+	});
+
 	test('workspace switch does not retarget an existing token', async (t) => {
 		if (!(await hasTestTable('workspace_members'))) {
 			t.skip('hosted workspace overlay is not installed');
@@ -227,6 +292,24 @@ describe('protocol methods', () => {
 			assert.ok(t.description, t.name + ' has a description');
 			assert.ok(t.inputSchema, t.name + ' has an inputSchema');
 		}
+		const propose = tools.find((tool) => tool.name === 'propose_record_changes');
+		assert.match(propose.description, /describe_object/);
+		assert.match(propose.description, /date fields use YYYY-MM-DD/);
+		assert.match(propose.description, /datetime fields require a complete ISO 8601 timestamp/);
+		assert.match(propose.description, /new-association replaces that relationship/);
+		assert.match(propose.description, /Do not repeat unchanged name or identity fields/);
+		assert.match(propose.inputSchema.properties.changes.items.properties.fields.description, /describe_object/);
+		const describe = tools.find((tool) => tool.name === 'describe_object');
+		assert.match(describe.description, /Do not infer date versus datetime/);
+		assert.ok(describe.inputSchema.properties.canvasId);
+		const list = tools.find((tool) => tool.name === 'list_canvases');
+		assert.match(list.description, /DO NOT choose based on list order/);
+		const read = tools.find((tool) => tool.name === 'read_canvas');
+		assert.match(read.inputSchema.properties.canvasId.description, /ask which canvas to use/);
+		assert.match(
+			propose.inputSchema.properties.canvasId.description,
+			/ask which canvas the proposal should apply to/,
+		);
 	});
 
 	test('response echoes the request id', async () => {
@@ -237,6 +320,288 @@ describe('protocol methods', () => {
 });
 
 describe('tools/call', () => {
+	test('list_canvases tells the AI to ask the user when several canvases are open', async () => {
+		const { account, ws, token } = await makeMcpFixture();
+		const relay = await import('../src/mcp/relay.js');
+		const first = fakeSseRes();
+		const second = fakeSseRes();
+		const firstConnectionId = relay.registerConnection({
+			accountId: account.id,
+			workspaceId: ws.id,
+			sseRes: first,
+		});
+		const secondConnectionId = relay.registerConnection({
+			accountId: account.id,
+			workspaceId: ws.id,
+			sseRes: second,
+		});
+		relay.registerCanvas({
+			connectionId: firstConnectionId,
+			canvasId: '001000000000001AAA',
+			meta: { title: 'First canvas' },
+		});
+		relay.registerCanvas({
+			connectionId: secondConnectionId,
+			canvasId: '001000000000002AAA',
+			meta: { title: 'Second canvas' },
+		});
+
+		try {
+			const response = await callMcp({
+				body: rpc('tools/call', { name: 'list_canvases', arguments: {} }),
+				token,
+			});
+			const payload = JSON.parse(response.body.result.content[0].text);
+			assert.equal(payload.canvases.length, 2);
+			assert.match(payload.selectionGuidance, /ask which canvas to use/);
+			assert.match(payload.selectionGuidance, /Do not choose based on list order/);
+		} finally {
+			first.fireClose();
+			second.fireClose();
+		}
+	});
+
+	test('describe_object targets the requested canvas and returns its cached field type', async () => {
+		const { account, ws, token } = await makeMcpFixture();
+		const relay = await import('../src/mcp/relay.js');
+		const sse = fakeSseRes();
+		const connectionId = relay.registerConnection({ accountId: account.id, workspaceId: ws.id, sseRes: sse });
+		const canvasId = 'draft-11111111-1111-4111-8111-111111111111';
+		relay.registerCanvas({ connectionId, canvasId, accountId: account.id });
+
+		try {
+			const responsePromise = callMcp({
+				body: rpc('tools/call', {
+					name: 'describe_object',
+					arguments: { canvasId, objectName: 'OLQA_Issue__c', fields: ['Opened_At__c'] },
+				}),
+				token,
+			});
+			const request = await waitForRequest(sse);
+			assert.equal(request.canvasId, canvasId);
+			assert.deepEqual(request.params, { objectName: 'OLQA_Issue__c', fields: ['Opened_At__c'] });
+			relay.recordResponse({
+				connectionId,
+				requestId: request.requestId,
+				result: { fields: [{ name: 'Opened_At__c', type: 'datetime' }] },
+				accountId: account.id,
+			});
+
+			const response = await responsePromise;
+			assert.equal(response.body.error, undefined);
+			assert.equal(response.body.result.isError, undefined);
+			assert.deepEqual(JSON.parse(response.body.result.content[0].text), {
+				fields: [{ name: 'Opened_At__c', type: 'datetime' }],
+			});
+		} finally {
+			sse.fireClose();
+		}
+	});
+
+	test('describe_object reports a cache miss as an actionable tool error', async () => {
+		const { account, ws, token } = await makeMcpFixture();
+		const relay = await import('../src/mcp/relay.js');
+		const sse = fakeSseRes();
+		const connectionId = relay.registerConnection({ accountId: account.id, workspaceId: ws.id, sseRes: sse });
+		const canvasId = 'draft-22222222-2222-4222-8222-222222222222';
+		relay.registerCanvas({ connectionId, canvasId, accountId: account.id });
+
+		try {
+			const responsePromise = callMcp({
+				body: rpc('tools/call', {
+					name: 'describe_object',
+					arguments: { canvasId, objectName: 'Missing__c' },
+				}),
+				token,
+			});
+			const request = await waitForRequest(sse);
+			relay.recordResponse({
+				connectionId,
+				requestId: request.requestId,
+				result: { cacheMiss: true },
+				accountId: account.id,
+			});
+
+			const response = await responsePromise;
+			assert.equal(response.body.error, undefined);
+			assert.equal(response.body.result.isError, true);
+			assert.match(response.body.result.content[0].text, /add an example 'Missing__c' record/);
+			assert.match(response.body.result.content[0].text, /retry describe_object with the canvasId/);
+		} finally {
+			sse.fireClose();
+		}
+	});
+
+	test('describe_object without canvasId tries every open canvas cache', async () => {
+		const { account, ws, token } = await makeMcpFixture();
+		const relay = await import('../src/mcp/relay.js');
+		const first = fakeSseRes();
+		const second = fakeSseRes();
+		const firstConnectionId = relay.registerConnection({
+			accountId: account.id,
+			workspaceId: ws.id,
+			sseRes: first,
+		});
+		const secondConnectionId = relay.registerConnection({
+			accountId: account.id,
+			workspaceId: ws.id,
+			sseRes: second,
+		});
+		relay.registerCanvas({ connectionId: firstConnectionId, canvasId: '001000000000001AAA' });
+		relay.registerCanvas({ connectionId: secondConnectionId, canvasId: '001000000000002AAA' });
+
+		try {
+			const responsePromise = callMcp({
+				body: rpc('tools/call', {
+					name: 'describe_object',
+					arguments: { objectName: 'OLQA_Issue__c', fields: ['Opened_At__c'] },
+				}),
+				token,
+			});
+			const firstRequest = await waitForRequest(first);
+			relay.recordResponse({
+				connectionId: firstConnectionId,
+				requestId: firstRequest.requestId,
+				result: { cacheMiss: true },
+			});
+			const secondRequest = await waitForRequest(second);
+			relay.recordResponse({
+				connectionId: secondConnectionId,
+				requestId: secondRequest.requestId,
+				result: { fields: [{ name: 'Opened_At__c', type: 'datetime' }] },
+			});
+
+			const response = await responsePromise;
+			assert.equal(response.body.result.isError, undefined);
+			assert.equal(JSON.parse(response.body.result.content[0].text).fields[0].type, 'datetime');
+		} finally {
+			first.fireClose();
+			second.fireClose();
+		}
+	});
+
+	test('propose_record_changes strips unchanged fields but keeps relationship changes', async () => {
+		const { account, ws, token } = await makeMcpFixture();
+		const relay = await import('../src/mcp/relay.js');
+		const proposals = await import('../src/mcp/proposals-store.js');
+		const sse = fakeSseRes();
+		const connectionId = relay.registerConnection({ accountId: account.id, workspaceId: ws.id, sseRes: sse });
+		const canvasId = 'draft-33333333-3333-4333-8333-333333333333';
+		relay.registerCanvas({ connectionId, canvasId, accountId: account.id });
+
+		try {
+			const responsePromise = callMcp({
+				body: rpc('tools/call', {
+					name: 'propose_record_changes',
+					arguments: {
+						canvasId,
+						changes: [
+							{
+								recordId: '003000000000020AAA',
+								objectName: 'Contact',
+								fields: { FirstName: 'Contact', LastName: 'Two' },
+							},
+							{
+								kind: 'new-association',
+								fieldName: 'AccountId',
+								from: { recordId: '003000000000020AAA' },
+								to: { tempId: 21 },
+							},
+						],
+					},
+				}),
+				token,
+			});
+			const request = await waitForRequest(sse, 'read_canvas');
+			relay.recordResponse({
+				connectionId,
+				requestId: request.requestId,
+				result: {
+					payload: {
+						loadedRecords: [
+							{
+								objectName: 'Contact',
+								loadedFromId: '003000000000020AAA',
+								values: { Id: '003000000000020AAA', FirstName: 'Contact', LastName: 'Two' },
+							},
+						],
+						drafts: [{ tempId: 21, objectName: 'Account', values: { Name: 'New Account' } }],
+						associations: [],
+					},
+				},
+				accountId: account.id,
+			});
+
+			const response = await responsePromise;
+			assert.equal(response.body.error, undefined);
+			const result = JSON.parse(response.body.result.content[0].text);
+			const pending = await proposals.findById(result.proposalId);
+			assert.deepEqual(pending.changes, [
+				{
+					kind: 'new-association',
+					fieldName: 'AccountId',
+					from: { kind: 'loaded', ref: '003000000000020AAA' },
+					to: { kind: 'draft', ref: 21 },
+				},
+			]);
+		} finally {
+			sse.fireClose();
+		}
+	});
+
+	test('propose_record_changes rejects a proposal containing only unchanged fields', async () => {
+		const { account, ws, token } = await makeMcpFixture();
+		const relay = await import('../src/mcp/relay.js');
+		const sse = fakeSseRes();
+		const connectionId = relay.registerConnection({ accountId: account.id, workspaceId: ws.id, sseRes: sse });
+		const canvasId = 'draft-44444444-4444-4444-8444-444444444444';
+		relay.registerCanvas({ connectionId, canvasId, accountId: account.id });
+
+		try {
+			const responsePromise = callMcp({
+				body: rpc('tools/call', {
+					name: 'propose_record_changes',
+					arguments: {
+						canvasId,
+						changes: [
+							{
+								recordId: '003000000000020AAA',
+								objectName: 'Contact',
+								fields: { FirstName: 'Contact', LastName: 'Two' },
+							},
+						],
+					},
+				}),
+				token,
+			});
+			const request = await waitForRequest(sse, 'read_canvas');
+			relay.recordResponse({
+				connectionId,
+				requestId: request.requestId,
+				result: {
+					payload: {
+						loadedRecords: [
+							{
+								objectName: 'Contact',
+								loadedFromId: '003000000000020AAA',
+								values: { Id: '003000000000020AAA', FirstName: 'Contact', LastName: 'Two' },
+							},
+						],
+						drafts: [],
+						associations: [],
+					},
+				},
+				accountId: account.id,
+			});
+
+			const response = await responsePromise;
+			assert.equal(response.body.error.code, ERR_INVALID_PARAMS);
+			assert.match(response.body.error.message, /no effective changes/);
+		} finally {
+			sse.fireClose();
+		}
+	});
+
 	test('per-token throttle returns HTTP 429', async () => {
 		const { token } = await makeMcpFixture();
 		for (let i = 0; i < 120; i++) {

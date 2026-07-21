@@ -44,6 +44,7 @@
 				return _outboundSequence;
 			}
 			const _peers = new Map();
+			const _shareCounts = new Map();
 
 			let _cursorLayer = null;
 			let _presenceChips = null;
@@ -57,7 +58,11 @@
 
 			function _resolveCanvasId() {
 				if (canvasState.currentCanvas && canvasState.currentCanvas.id) {
-					return canvasState.currentCanvas.id;
+					const current = canvasState.currentCanvas;
+					if (current.ownedByMe && !(_shareCounts.get(current.id) > 0)) {
+						return null;
+					}
+					return current.id;
 				}
 				const cs = window.Orgloom && window.Orgloom.canvasState;
 				if (cs && typeof cs.getCurrentCanvas === 'function') {
@@ -66,6 +71,19 @@
 				}
 				return null;
 			}
+
+			window.addEventListener('orgloom:canvas-share-count', (event) => {
+				const detail = event.detail || {};
+				if (!detail.canvasId) {
+					return;
+				}
+				_shareCounts.set(detail.canvasId, Number(detail.count) || 0);
+				if (detail.count > 0) {
+					subscribeToCanvas(detail.canvasId);
+				} else if (_currentCanvasId === detail.canvasId) {
+					unsubscribe();
+				}
+			});
 
 			function _ensureCursorLayer() {
 				if (_cursorLayer) {

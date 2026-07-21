@@ -16,20 +16,26 @@ test('email collision migration recovers when SQLite already added the column', 
 			.addColumn('deleted_at', 'integer')
 			.addColumn('email_collision_key', 'text')
 			.execute();
-		await db.insertInto('accounts').values({
-			id: 'acc_partial',
-			email: 'Owner+trial@Example.com',
-			created_at: 1,
-			deleted_at: null,
-			email_collision_key: null,
-		}).execute();
-		await db.insertInto('accounts').values({
-			id: 'acc_historical_alias',
-			email: 'owner+second@example.com',
-			created_at: 2,
-			deleted_at: null,
-			email_collision_key: null,
-		}).execute();
+		await db
+			.insertInto('accounts')
+			.values({
+				id: 'acc_partial',
+				email: 'Owner+trial@Example.com',
+				created_at: 1,
+				deleted_at: null,
+				email_collision_key: null,
+			})
+			.execute();
+		await db
+			.insertInto('accounts')
+			.values({
+				id: 'acc_historical_alias',
+				email: 'owner+second@example.com',
+				created_at: 2,
+				deleted_at: null,
+				email_collision_key: null,
+			})
+			.execute();
 
 		await migration.up(db);
 		await migration.up(db);
@@ -38,14 +44,8 @@ test('email collision migration recovers when SQLite already added the column', 
 		assert.equal(accounts[0].email_collision_key, 'owner@example.com');
 		assert.equal(accounts[1].email_collision_key, null);
 		const indexes = sqlite.prepare("PRAGMA index_list('accounts')").all();
-		assert.equal(
-			indexes.filter((index) => index.name === 'accounts_email_collision_key_unique').length,
-			1,
-		);
-		assert.equal(
-			indexes.find((index) => index.name === 'accounts_email_collision_key_unique').unique,
-			1,
-		);
+		assert.equal(indexes.filter((index) => index.name === 'accounts_email_collision_key_unique').length, 1);
+		assert.equal(indexes.find((index) => index.name === 'accounts_email_collision_key_unique').unique, 1);
 	} finally {
 		await db.destroy();
 	}

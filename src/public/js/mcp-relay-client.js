@@ -30,6 +30,7 @@
 	let _registeredCanvasId = null;
 	let _eventSource = null;
 	let _connectAttempts = 0;
+	let _statusCheck = null;
 
 	function _setMcpAvailability(active) {
 		const next = active === true;
@@ -54,8 +55,17 @@
 		}
 	}
 
-	function _connect() {
-		if (_eventSource) {
+	async function _connect() {
+		if (_eventSource || _statusCheck) {
+			return _statusCheck;
+		}
+		_statusCheck = csrfFetch('/api/mcp/relay/status', { credentials: 'same-origin' })
+			.then((response) => (response.ok ? response.json() : null))
+			.catch(() => null);
+		const status = await _statusCheck;
+		_statusCheck = null;
+		if (!status || status.active !== true) {
+			_setMcpAvailability(false);
 			return;
 		}
 		_connectAttempts++;
@@ -255,6 +265,7 @@
 			return;
 		}
 		if (document.visibilityState === 'visible') {
+			_connect();
 			const current = cs.getCurrentCanvas();
 			if (current && current.canvasId) {
 				_syncRegistration(current.canvasId, current.meta);
@@ -263,6 +274,12 @@
 			_unregister(_registeredCanvasId);
 		}
 	});
+
+	setInterval(() => {
+		if (!_eventSource && document.visibilityState === 'visible') {
+			_connect();
+		}
+	}, 30000);
 
 	setInterval(() => {
 		if (window.ORGLOOM_MCP_ACTIVE !== true) {

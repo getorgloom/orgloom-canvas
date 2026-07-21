@@ -45,7 +45,7 @@ export function buildAiDescribeSummary(describes, fkFieldsByObject) {
 
 export function buildAiSystemPrompt(summary) {
 	return (
-		'You are a Salesforce test-data planner. You produce structured plans of records to create and the foreign-key associations between them.\n\n' +
+		'You are a Salesforce test-data planner. You produce structured plans of records to create and the relationships between them.\n\n' +
 		'Available objects and createable fields:\n\n' +
 		summary +
 		'\n\nRules (you MUST follow all of them):\n' +
@@ -67,7 +67,7 @@ export function buildAiSystemPrompt(summary) {
 export const AI_PLAN_TOOL = {
 	name: 'create_plan',
 	description:
-		"Emit a structured plan of Salesforce records and foreign-key associations that will be created on the user's canvas.",
+		"Emit a structured plan of Salesforce records and relationships that will be created on the user's canvas.",
 	input_schema: {
 		type: 'object',
 		required: ['records'],
@@ -94,7 +94,7 @@ export const AI_PLAN_TOOL = {
 			associations: {
 				type: 'array',
 				description:
-					'FK links. Each populates the named reference field on the `fromTempId` record with the real ID of the `toTempId` record at upload time.',
+					'Relationships. Each populates the named reference field on the `fromTempId` record with the real ID of the `toTempId` record at upload time.',
 				items: {
 					type: 'object',
 					required: ['fromTempId', 'toTempId', 'fieldName'],

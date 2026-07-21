@@ -14,7 +14,8 @@
 
 			function _toastHost() {
 				const g = getGraph();
-				return g.querySelector('#graph-bulk') || g.querySelector('#bulk-canvas');
+				const canvas = g.querySelector('#graph-bulk') || g.querySelector('#bulk-canvas');
+				return canvas ? document.body : null;
 			}
 
 			function showBulkToast(message, variant) {
@@ -75,7 +76,8 @@
 					dismiss();
 				});
 				toast.querySelector('.bulk-toast-close').addEventListener('click', dismiss);
-				setTimeout(dismiss, 10000);
+				// Action toasts can appear while a modal is open; leave enough time to review the result and undo.
+				setTimeout(dismiss, 30000);
 			}
 
 			function showConfirmDialog({ title, message, confirmLabel, cancelLabel, danger }) {

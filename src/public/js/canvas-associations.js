@@ -1,6 +1,6 @@
 (function () {
 	'use strict';
-	// Creates one canvas edge per writable Salesforce lookup and keeps FK values synchronized.
+	// Creates one canvas edge per writable Salesforce lookup and keeps lookup values synchronized.
 
 	window.OrgLoom = window.OrgLoom || {};
 
