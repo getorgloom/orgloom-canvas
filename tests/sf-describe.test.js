@@ -185,11 +185,7 @@ describe('getQueryableSObjects cache isolation', () => {
 		const admin = fakeConn(['Account', 'Admin_Only__c']);
 		const restricted = fakeConn(['Account', 'Restricted_Only__c']);
 		const adminSet = await getQueryableSObjects(admin, 'shared-org', 'admin-user');
-		const restrictedSet = await getQueryableSObjects(
-			restricted,
-			'shared-org',
-			'restricted-user',
-		);
+		const restrictedSet = await getQueryableSObjects(restricted, 'shared-org', 'restricted-user');
 		assert.ok(adminSet.has('Admin_Only__c'));
 		assert.ok(!restrictedSet.has('Admin_Only__c'));
 		assert.ok(restrictedSet.has('Restricted_Only__c'));

@@ -668,9 +668,7 @@ export function canvasSnapshotHash(payload) {
 }
 
 export function revision({ canvasId, sfOrgId, connectionId }) {
-	const scopeId = connectionId
-		? _scopeByConnection.get(connectionId)
-		: _presenceScopeId(canvasId, sfOrgId);
+	const scopeId = connectionId ? _scopeByConnection.get(connectionId) : _presenceScopeId(canvasId, sfOrgId);
 	const state = _revisionByCanvas.get(scopeId);
 	return state ? state.revision : 0;
 }
