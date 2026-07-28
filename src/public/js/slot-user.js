@@ -17,10 +17,13 @@
 				if (!rec || !rec.slot || rec.slot.slotId == null) {
 					return false;
 				}
+				if ((rec.slot.kind || 'whole-record') !== 'whole-record') {
+					return false;
+				}
 				if (rec.loadedFromId) {
 					return false;
 				}
-				if (!rec._recipientSlot) {
+				if (!rec._recipientSlot && rec.slot.origin !== 'standalone') {
 					return false;
 				}
 				const v = rec.values || {};
@@ -43,27 +46,32 @@
 				return window.SF_USER_ID && assignee === window.SF_USER_ID ? 'mine' : 'other';
 			}
 
+			function _isSlotLockedForCurrentUser(rec) {
+				const currentCanvas = canvasState.currentCanvas;
+				const ownsCanvas = !currentCanvas || !currentCanvas.id || !!currentCanvas.ownedByMe;
+				return !ownsCanvas && _slotAssignmentState(rec) === 'other';
+			}
+
 			function _slotAssigneeBadgeHtml(rec) {
 				const state = _slotAssignmentState(rec);
 				if (state !== 'mine' && state !== 'other') {
 					return '';
 				}
 				if (state === 'mine') {
-					return '<span class="slot-assignee-badge slot-assignee-badge--mine" title="Assigned to you: your fills will be saved when you submit.">for you</span>';
+					return '<span class="slot-assignee-badge slot-assignee-badge--mine" title="Assigned to you: your response will be saved when you submit.">Assigned to you</span>';
 				}
 				const name = rec.slot.assigneeName || rec.slot.assigneeEmail || 'someone else';
 				return (
 					'<span class="slot-assignee-badge slot-assignee-badge--other" title="Assigned to ' +
 					escapeHtml(name) +
-					': only they can fill this slot.">for ' +
+					': only they can complete this request.">Assigned to ' +
 					escapeHtml(name) +
 					'</span>'
 				);
 			}
 
 			function _slotAssignmentCardClass(rec) {
-				const state = _slotAssignmentState(rec);
-				return state === 'other' ? ' record-card--slot-locked' : '';
+				return _isSlotLockedForCurrentUser(rec) ? ' record-card--slot-locked' : '';
 			}
 
 			function _slotProgress(rec) {
@@ -100,7 +108,8 @@
 			function _aggregateSlotProgress() {
 				let filled = 0,
 					total = 0,
-					recordCount = 0;
+					recordCount = 0,
+					recipientMode = false;
 				for (const r of canvasState.bulkRecords) {
 					if (r.isTypeNode || r.isPending) {
 						continue;
@@ -112,8 +121,9 @@
 					filled += p.filled;
 					total += p.total;
 					recordCount++;
+					recipientMode = recipientMode || !!r._recipientSlot;
 				}
-				return { filled, total, recordCount };
+				return { filled, total, recordCount, recipientMode };
 			}
 
 			function _slotProgressClass(progress) {
@@ -197,6 +207,7 @@
 			return {
 				_isEmptySlot: _isEmptySlot,
 				_slotAssignmentState: _slotAssignmentState,
+				_isSlotLockedForCurrentUser: _isSlotLockedForCurrentUser,
 				_slotAssigneeBadgeHtml: _slotAssigneeBadgeHtml,
 				_slotAssignmentCardClass: _slotAssignmentCardClass,
 				_slotProgress: _slotProgress,

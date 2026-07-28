@@ -79,6 +79,32 @@
 		return valuesDiffer(rec.values || {}, rec.loadedValues || {});
 	}
 
+	function relationshipChangesRecord(rec, associations, records) {
+		if (!rec || !rec.loadedFromId || rec._inaccessible) {
+			return false;
+		}
+		const recordById = new Map(
+			(records || []).filter((record) => record && record.id != null).map((record) => [record.id, record]),
+		);
+		return (associations || []).some((association) => {
+			if (!association || association.fromId !== rec.id || !association.fieldName) {
+				return false;
+			}
+			const target = recordById.get(association.toId);
+			if (!target || target.isTypeNode) {
+				return false;
+			}
+			if (!target.loadedFromId) {
+				return true;
+			}
+			const originalId = (rec.loadedValues || {})[association.fieldName];
+			if (originalId == null || originalId === '') {
+				return true;
+			}
+			return String(originalId).slice(0, 15) !== String(target.loadedFromId).slice(0, 15);
+		});
+	}
+
 	function isRecordPendingDelete(rec) {
 		if (!rec) {
 			return false;
@@ -166,6 +192,7 @@
 		valuesDiffer: valuesDiffer,
 		changedFieldNames: changedFieldNames,
 		isRecordModified: isRecordModified,
+		relationshipChangesRecord: relationshipChangesRecord,
 		isRecordPendingDelete: isRecordPendingDelete,
 		isRecordPendingCreate: isRecordPendingCreate,
 		hasPendingChange: hasPendingChange,

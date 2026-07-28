@@ -8,11 +8,12 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.resolve(here, '../src/public/js/canvas-associations.js'), 'utf8');
 
-function mount(describeCache, selectedObjects = []) {
+function mount(describeCache, selectedObjects = [], bulkRecords = []) {
 	const window = {};
 	vm.runInNewContext(source, { window, Set, Promise });
 	return window.OrgLoom.canvasAssociations.mount({
-		canvasState: { describeCache, selectedObjects, bulkRecords: [], bulkAssociations: [], bulkIdSeq: 1 },
+		canvasState: { describeCache, selectedObjects, bulkRecords, bulkAssociations: [], bulkIdSeq: 1 },
+		canEditCanvasStructure: () => true,
 		renderBulkView: () => {},
 		showBulkToast: () => {},
 		ensureDescribe: async () => {},
@@ -80,4 +81,17 @@ test('occupied-reference guidance distinguishes an existing field from an availa
 	assert.match(source, /that field is/);
 	assert.match(source, /Each relationship field can point to only one record/);
 	assert.doesNotMatch(source, /No available lookup connects/);
+});
+
+test('linking an existing child to a draft parent removes the stale Salesforce parent id', () => {
+	const contact = {
+		id: 'contact',
+		objectName: 'Contact',
+		values: { LastName: 'Tester', AccountId: '001OLD000000001AAA' },
+	};
+	const account = { id: 'account', objectName: 'Account', values: { Name: 'Draft account' } };
+	const api = mount({}, [], [contact, account]);
+	api.createAssociation(contact, account, 'fwd', 'AccountId');
+
+	assert.equal(Object.hasOwn(contact.values, 'AccountId'), false);
 });

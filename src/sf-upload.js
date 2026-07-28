@@ -1,5 +1,6 @@
 // Salesforce upload mechanics. Routes own policy, authorization, audit, and usage accounting.
 import { isWritableForOperation } from './sf-field-structure.js';
+import { specializedObjectError, specializedObjectNamesFromPayload } from './sf-object-support.js';
 
 export const FAKE_REF_ID = '001000000000001';
 
@@ -29,6 +30,15 @@ export function rejectIfUploadOrgChanged(req, res) {
 		message:
 			'Your active Salesforce org changed while this upload was being prepared. Nothing was uploaded. Reopen Quick Upload to remap the files against the active org.',
 	});
+	return true;
+}
+
+export function rejectSpecializedUploadObjects(req, res) {
+	const objects = specializedObjectNamesFromPayload(req.body);
+	if (objects.length === 0) {
+		return false;
+	}
+	res.status(400).json(specializedObjectError(objects));
 	return true;
 }
 

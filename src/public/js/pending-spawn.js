@@ -8,6 +8,7 @@
 		mount: function mount(deps) {
 			const required = [
 				'canvasState',
+				'canEditCanvasStructure',
 				'showBulkToast',
 				'_canvasCapBlockReason',
 				'addToSelection',
@@ -25,6 +26,7 @@
 				}
 			}
 			const canvasState = deps.canvasState;
+			const canEditCanvasStructure = deps.canEditCanvasStructure;
 			const showBulkToast = deps.showBulkToast;
 			const pushUndo = deps.pushUndo;
 			const _canvasCapBlockReason = deps._canvasCapBlockReason;
@@ -35,6 +37,10 @@
 			const getGraph = deps.getGraph;
 
 			async function spawnDraftRecord(objectName) {
+				if (!canEditCanvasStructure()) {
+					showBulkToast('Only the canvas owner or an editor can add records.', 'info');
+					return;
+				}
 				const blocked = _canvasCapBlockReason(1);
 				if (blocked) {
 					showBulkToast(blocked);
@@ -53,6 +59,10 @@
 			}
 
 			function spawnPendingRecord(worldX, worldY) {
+				if (!canEditCanvasStructure()) {
+					showBulkToast('Only the canvas owner or an editor can add records.', 'info');
+					return;
+				}
 				let x, y;
 				if (typeof worldX === 'number' && typeof worldY === 'number') {
 					x = worldX;

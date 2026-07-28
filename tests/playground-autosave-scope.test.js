@@ -75,6 +75,107 @@ const REAL = { account: 'acc_real', org: '00DREAL', user: '005REAL' };
 const DEMO = { account: 'playground', org: '00DDEMO000000000AAA', user: '005DEMO000000000AAA' };
 
 describe('autosave scope-namespacing (playground vs real)', () => {
+	test('refresh restores the active saved canvas, including slot configuration', () => {
+		const { api, win, sessionStorage, canvasState } = harness();
+		setScope(win, canvasState, REAL);
+		canvasState.currentCanvas = {
+			id: '069000000000001AAA',
+			title: 'Slot intake',
+			ownedByMe: true,
+		};
+		canvasState.bulkRecords = [
+			{
+				id: 21,
+				objectName: 'Contact',
+				values: {},
+				slot: {
+					slotId: 7,
+					kind: 'fields',
+					fields: ['FirstName', 'LastName'],
+					description: 'Add the contact details',
+					assigneeSfUserId: '005TEAMMATE',
+					assigneeName: 'Alex Teammate',
+					assigneeEmail: 'alex@example.com',
+				},
+			},
+		];
+		api.autosaveSchedule();
+
+		canvasState.currentCanvas = null; // startup has no canvas Id after the URL is cleaned
+		canvasState.bulkRecords = [];
+		assert.equal(api.autosaveRestore(), true);
+		assert.equal(canvasState.currentCanvas.id, '069000000000001AAA');
+		assert.equal(Array.from(canvasState.bulkRecords[0].slot.fields).join(','), 'FirstName,LastName');
+		assert.equal(canvasState.bulkRecords[0].slot.assigneeName, 'Alex Teammate');
+		assert.ok(
+			sessionStorage
+				._dump()
+				.some((key) => key.indexOf('orgloom:canvas-draft-active:v1|acc_real:00DREAL:005REAL') === 0),
+			'active saved-canvas pointer stays scoped to the account, org, and user',
+		);
+	});
+
+	test('refresh preserves a shared canvas recipient role for the first render', () => {
+		const { api, win, canvasState } = harness();
+		setScope(win, canvasState, REAL);
+		canvasState.currentCanvas = {
+			id: '069000000000009AAA',
+			title: 'Shared intake',
+			ownedByMe: false,
+			recipientRole: 'viewer',
+		};
+		canvasState.bulkRecords = [
+			{
+				id: 31,
+				objectName: 'Opportunity',
+				values: {},
+				slot: { slotId: 9, kind: 'whole-record' },
+			},
+		];
+		api.autosaveFlush();
+
+		canvasState.currentCanvas = null;
+		canvasState.bulkRecords = [];
+		assert.equal(api.autosaveRestore(), true);
+		assert.equal(canvasState.currentCanvas.ownedByMe, false);
+		assert.equal(canvasState.currentCanvas.recipientRole, 'viewer');
+	});
+
+	test('refresh does not guess an unrelated saved canvas when the active pointer is missing', () => {
+		const { api, win, sessionStorage, canvasState } = harness();
+		setScope(win, canvasState, REAL);
+		canvasState.currentCanvas = { id: '069000000000002AAA', title: 'Stale snapshot', ownedByMe: true };
+		canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Must not restore' } }];
+		api.autosaveSchedule();
+
+		const pointerKey = sessionStorage._dump().find((key) => key.indexOf('orgloom:canvas-draft-active:v1|') === 0);
+		sessionStorage.removeItem(pointerKey);
+
+		canvasState.currentCanvas = null;
+		canvasState.bulkRecords = [];
+		assert.equal(api.autosaveRestore(), false);
+		assert.equal(canvasState.currentCanvas, null);
+		assert.equal(canvasState.bulkRecords.length, 0);
+	});
+
+	test('page-exit flush makes the canvas active at refresh authoritative', () => {
+		const { api, win, canvasState } = harness();
+		setScope(win, canvasState, REAL);
+		canvasState.currentCanvas = { id: '069000000000001AAA', title: 'Old canvas', ownedByMe: true };
+		canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Old' } }];
+		api.autosaveSchedule();
+
+		canvasState.currentCanvas = { id: '069000000000002AAA', title: 'Current canvas', ownedByMe: true };
+		canvasState.bulkRecords = [{ id: 2, objectName: 'Contact', values: { LastName: 'Current' } }];
+		api.autosaveFlush();
+
+		canvasState.currentCanvas = null;
+		canvasState.bulkRecords = [];
+		assert.equal(api.autosaveRestore(), true);
+		assert.equal(canvasState.currentCanvas.id, '069000000000002AAA');
+		assert.equal(canvasState.bulkRecords[0].values.LastName, 'Current');
+	});
+
 	test('opening the playground scope does NOT clear the real draft', () => {
 		const { api, win, sessionStorage, canvasState } = harness();
 

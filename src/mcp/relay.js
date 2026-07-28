@@ -20,7 +20,10 @@ function _writeSseEvent(res, event, data) {
 			res.write('event: ' + event + '\n');
 		}
 		res.write('data: ' + JSON.stringify(data) + '\n\n');
-	} catch (e) {}
+		return true;
+	} catch (e) {
+		return false;
+	}
 }
 
 export function registerConnection({ accountId, workspaceId, sseRes, mcpActive = false }) {
@@ -67,6 +70,30 @@ export function broadcastMcpAvailability(workspaceId, active) {
 	}
 }
 
+export function broadcastCanvasEvent({ workspaceId, canvasId, accountId, event, data = {} }) {
+	if (!workspaceId || !canvasId || !accountId || !/^[a-z][a-z0-9-]{0,63}$/.test(String(event || ''))) {
+		return 0;
+	}
+	const ws = canvasIndex.get(workspaceId);
+	const entry = ws && ws.get(canvasId);
+	if (!entry) {
+		return 0;
+	}
+	let delivered = 0;
+	for (const connectionId of entry.connectionIds) {
+		const conn = connections.get(connectionId);
+		if (
+			conn &&
+			conn.workspaceId === workspaceId &&
+			conn.accountId === accountId &&
+			_writeSseEvent(conn.sseRes, event, { ...data, canvasId })
+		) {
+			delivered += 1;
+		}
+	}
+	return delivered;
+}
+
 export function unregisterConnection(connectionId) {
 	const conn = connections.get(connectionId);
 	if (!conn) {
@@ -82,6 +109,7 @@ export function unregisterConnection(connectionId) {
 			continue;
 		}
 		entry.connectionIds.delete(connectionId);
+		entry.metaByConnection.delete(connectionId);
 		if (entry.connectionIds.size === 0) {
 			ws.delete(canvasId);
 		}
@@ -112,12 +140,11 @@ export function registerCanvas({ connectionId, canvasId, meta, accountId }) {
 	const ws = _ensureWorkspace(conn.workspaceId);
 	let entry = ws.get(canvasId);
 	if (!entry) {
-		entry = { connectionIds: new Set(), meta: meta || {} };
+		entry = { connectionIds: new Set(), metaByConnection: new Map() };
 		ws.set(canvasId, entry);
-	} else if (meta) {
-		entry.meta = meta;
 	}
 	entry.connectionIds.add(connectionId);
+	entry.metaByConnection.set(connectionId, meta || {});
 	return true;
 }
 
@@ -139,6 +166,7 @@ export function unregisterCanvas({ connectionId, canvasId, accountId }) {
 		return false;
 	}
 	entry.connectionIds.delete(connectionId);
+	entry.metaByConnection.delete(connectionId);
 	if (entry.connectionIds.size === 0) {
 		ws.delete(canvasId);
 	}
@@ -148,23 +176,41 @@ export function unregisterCanvas({ connectionId, canvasId, accountId }) {
 	return true;
 }
 
-export function listCanvasesInWorkspace(workspaceId) {
+export function listCanvasesInWorkspace(workspaceId, accountId) {
+	if (!workspaceId || !accountId) {
+		return [];
+	}
 	const ws = canvasIndex.get(workspaceId);
 	if (!ws) {
 		return [];
 	}
 	const result = [];
 	for (const [canvasId, entry] of ws.entries()) {
+		const ownedConnectionIds = Array.from(entry.connectionIds).filter((connectionId) => {
+			const conn = connections.get(connectionId);
+			return conn && conn.workspaceId === workspaceId && conn.accountId === accountId;
+		});
+		if (ownedConnectionIds.length === 0) {
+			continue;
+		}
+		const lastConnectionId = ownedConnectionIds[ownedConnectionIds.length - 1];
 		result.push({
 			canvasId,
-			meta: entry.meta || {},
-			liveBrowsers: entry.connectionIds.size,
+			meta: entry.metaByConnection.get(lastConnectionId) || {},
+			liveBrowsers: ownedConnectionIds.length,
 		});
 	}
 	return result;
 }
 
-function _pickConnectionForCanvas(workspaceId, canvasId) {
+export function hasCanvasForAccount({ workspaceId, canvasId, accountId }) {
+	return _pickConnectionForCanvas(workspaceId, canvasId, accountId) !== null;
+}
+
+function _pickConnectionForCanvas(workspaceId, canvasId, accountId) {
+	if (!workspaceId || !canvasId || !accountId) {
+		return null;
+	}
 	const ws = canvasIndex.get(workspaceId);
 	if (!ws) {
 		return null;
@@ -175,14 +221,17 @@ function _pickConnectionForCanvas(workspaceId, canvasId) {
 	}
 	let last = null;
 	for (const id of entry.connectionIds) {
-		last = id;
+		const conn = connections.get(id);
+		if (conn && conn.workspaceId === workspaceId && conn.accountId === accountId) {
+			last = id;
+		}
 	}
 	return last;
 }
 
-export function dispatchRequest({ workspaceId, canvasId, method, params, timeoutMs }) {
+export function dispatchRequest({ workspaceId, canvasId, accountId, method, params, timeoutMs }) {
 	// Requests are bound to one workspace/canvas connection and fail closed when no live browser answers.
-	const connectionId = _pickConnectionForCanvas(workspaceId, canvasId);
+	const connectionId = _pickConnectionForCanvas(workspaceId, canvasId, accountId);
 	if (!connectionId) {
 		return Promise.reject(new Error('no-live-browser-for-canvas'));
 	}
@@ -254,6 +303,7 @@ export function purgeWorkspace(workspaceId) {
 			}
 		}
 		entry.connectionIds.clear();
+		entry.metaByConnection.clear();
 		removed++;
 	}
 	canvasIndex.delete(workspaceId);
@@ -269,8 +319,8 @@ export function purgeWorkspace(workspaceId) {
 	return removed;
 }
 
-export function workspaceLiveSummary(workspaceId) {
-	const rows = listCanvasesInWorkspace(workspaceId);
+export function workspaceLiveSummary(workspaceId, accountId) {
+	const rows = listCanvasesInWorkspace(workspaceId, accountId);
 	const distinctConnections = new Set();
 	for (const row of rows) {
 		const ws = canvasIndex.get(workspaceId);
@@ -282,7 +332,10 @@ export function workspaceLiveSummary(workspaceId) {
 			continue;
 		}
 		for (const id of entry.connectionIds) {
-			distinctConnections.add(id);
+			const conn = connections.get(id);
+			if (conn && conn.accountId === accountId) {
+				distinctConnections.add(id);
+			}
 		}
 	}
 	return {

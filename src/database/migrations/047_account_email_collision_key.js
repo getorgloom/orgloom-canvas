@@ -22,14 +22,12 @@ function normalizeEmailForCollisionCheck(email) {
 }
 
 export async function up(db) {
-	// SQLite can retain an ADD COLUMN even when a later migration step fails.
-	// Recover that partial state instead of retrying the DDL and failing startup.
+	// SQLite may retain the column after a later migration step fails.
 	if (!(await migrationColumnExists(db, 'accounts', 'email_collision_key'))) {
 		await db.schema.alterTable('accounts').addColumn('email_collision_key', 'text').execute();
 	}
 	const rows = await db.selectFrom('accounts').select(['id', 'email', 'deleted_at', 'created_at']).execute();
-	// Preserve every historical account. Prefer an active account as the
-	// canonical owner, then the oldest account for deterministic recovery.
+	// Prefer an active account, then the oldest, as the canonical owner.
 	rows.sort((a, b) => {
 		const deletedOrder = Number(!!a.deleted_at) - Number(!!b.deleted_at);
 		if (deletedOrder !== 0) {
@@ -46,10 +44,7 @@ export async function up(db) {
 		if (!isHistoricalCollision) {
 			claimed.set(key, row.id);
 		}
-		// SQLite and PostgreSQL unique indexes both allow multiple nulls. An
-		// exact legacy email still resolves through accounts.email, while new
-		// signups must claim the canonical key and therefore cannot add another
-		// alias of this address.
+		// Historical collisions stay null; new signups must claim the unique canonical key.
 		backfill.push({ id: row.id, key: isHistoricalCollision ? null : key });
 	}
 	for (const row of backfill) {

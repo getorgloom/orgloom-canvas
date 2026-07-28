@@ -6,18 +6,61 @@ export const ORGLOOM_PERMISSION_SET_NAMES = Object.freeze([
 ]);
 
 const SF_ID_RE = /^[a-zA-Z0-9]{15,18}$/;
+const ORGLOOM_ACCESS_PATH = '/services/apexrest/orgloom/orgloom/kek/access';
 
-export async function hasAssignedOrgloomPermissionSet(conn, sfUserId, options = {}) {
-	if (!conn || typeof conn.query !== 'function') {
-		throw new TypeError('Salesforce connection with query() is required');
+function _errorStatus(error) {
+	return Number(error?.statusCode || error?.status || error?.response?.status || 0);
+}
+
+async function _checkPackagedAccessPermission(conn, timeoutMs) {
+	if (typeof conn.request !== 'function') {
+		return null;
 	}
-	const userId = String(sfUserId || '');
-	if (!SF_ID_RE.test(userId)) {
-		throw new TypeError('Unexpected Salesforce user id shape');
+	let timer;
+	const request = Promise.resolve().then(() =>
+		conn.request({
+			method: 'POST',
+			url: ORGLOOM_ACCESS_PATH,
+			body: '{}',
+			headers: { 'Content-Type': 'application/json' },
+		}),
+	);
+	const timeout = new Promise((_, reject) => {
+		timer = setTimeout(() => {
+			const error = new Error('Salesforce permission-set verification timed out.');
+			error.code = 'sf-permset-check-timeout';
+			reject(error);
+		}, timeoutMs);
+	});
+	try {
+		let response = await Promise.race([request, timeout]);
+		if (typeof response === 'string') {
+			response = JSON.parse(response);
+		}
+		if (response?.ok !== true || typeof response?.granted !== 'boolean') {
+			throw new Error('Salesforce returned an invalid Org Loom access-check response.');
+		}
+		return response.granted;
+	} catch (error) {
+		const status = _errorStatus(error);
+		if (status === 404 || error?.errorCode === 'NOT_FOUND' || error?.code === 'NOT_FOUND') {
+			return null;
+		}
+		if (status === 403) {
+			return false;
+		}
+		throw error;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+async function _legacyAssignmentQuery(conn, userId, timeoutMs) {
+	if (typeof conn.query !== 'function') {
+		throw new TypeError('Salesforce connection with query() is required for legacy package verification');
 	}
 
 	const names = ORGLOOM_PERMISSION_SET_NAMES.map((name) => `'${name}'`).join(',');
-	const timeoutMs = Number.isFinite(options.timeoutMs) ? Math.max(1, options.timeoutMs) : 15_000;
 	let timer;
 	const query = conn.query(
 		'SELECT Id, PermissionSet.Name, PermissionSet.NamespacePrefix ' +
@@ -53,4 +96,20 @@ export async function hasAssignedOrgloomPermissionSet(conn, sfUserId, options = 
 			);
 		})
 	);
+}
+
+export async function hasAssignedOrgloomPermissionSet(conn, sfUserId, options = {}) {
+	if (!conn || (typeof conn.request !== 'function' && typeof conn.query !== 'function')) {
+		throw new TypeError('Salesforce connection with request() or query() is required');
+	}
+	const userId = String(sfUserId || '');
+	if (!SF_ID_RE.test(userId)) {
+		throw new TypeError('Unexpected Salesforce user id shape');
+	}
+	const timeoutMs = Number.isFinite(options.timeoutMs) ? Math.max(1, options.timeoutMs) : 15_000;
+	const packagedAccess = await _checkPackagedAccessPermission(conn, timeoutMs);
+	if (packagedAccess !== null) {
+		return packagedAccess;
+	}
+	return _legacyAssignmentQuery(conn, userId, timeoutMs);
 }

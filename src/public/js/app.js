@@ -1,5 +1,4 @@
-// Coordinates the canvas modules and owns shared client state. Feature-specific
-// behavior stays in the smaller modules under this directory.
+// Coordinates shared canvas state while feature modules own their behavior.
 function csrfFetch(url, options) {
 	options = options || {};
 	const method = (options.method || 'GET').toUpperCase();
@@ -13,6 +12,9 @@ function csrfFetch(url, options) {
 	}
 	if (!('credentials' in options)) {
 		options.credentials = 'same-origin';
+	}
+	if (window.OrgLoom && window.OrgLoom.workspaceContext) {
+		options = window.OrgLoom.workspaceContext.apply(url, options);
 	}
 	return globalThis.fetch(url, options);
 }
@@ -38,6 +40,7 @@ function csrfFetch(url, options) {
 		currentRecordRef: null,
 		savedRecords: {},
 		describeCache: {},
+		draftDescribeCache: {},
 		describeRequests: {},
 		_renderedRecIds: new Set(),
 		_prefetchedTypeNodeKeys: new Set(),
@@ -72,6 +75,11 @@ function csrfFetch(url, options) {
 			summary: null,
 		},
 	};
+
+	function _canEditCanvasStructure() {
+		const current = canvasState.currentCanvas;
+		return !(current && current.id && !current.ownedByMe && current.recipientRole !== 'editor');
+	}
 
 	const _canvasGuideScope =
 		typeof window.ORGLOOM_ACCOUNT_ID_HASH === 'string' && window.ORGLOOM_ACCOUNT_ID_HASH
@@ -485,6 +493,7 @@ function csrfFetch(url, options) {
 
 	const _bt = window.OrgLoom.bulkToolbar.mount({
 		canvasState: canvasState,
+		canEditCanvasStructure: _canEditCanvasStructure,
 		isRecordModified: function () {
 			return isRecordModified.apply(null, arguments);
 		},
@@ -538,6 +547,7 @@ function csrfFetch(url, options) {
 		},
 	});
 	const renderBulkToolbar = _bt.renderBulkToolbar;
+	const renderCanvasName = _bt.renderCanvasName;
 	const renderBulkCountChip = _bt.renderBulkCountChip;
 	const renderBulkSelectionChip = _bt.renderBulkSelectionChip;
 
@@ -557,12 +567,32 @@ function csrfFetch(url, options) {
 	document.addEventListener('visibilitychange', () => {
 		if (document.visibilityState === 'visible') {
 			_loadCaps();
+			_refreshOrgApprovalState();
 		}
 	});
 
 	let _canvasShareCanvasId = null;
 	let _canvasShareRecipientHasAccount = false;
 	let _canvasShareRole = null;
+	let _shareRecipientSubmitState = 'idle';
+	let _shareRecipientSubmitResetTimer = null;
+	let _renderSharedTaskSidebar = function () {
+		return false;
+	};
+
+	function _getCanvasShareRole() {
+		if (canvasState._renderCanvasShareRole) {
+			return canvasState._renderCanvasShareRole;
+		}
+		if (_canvasShareRole) {
+			return _canvasShareRole;
+		}
+		const current = canvasState.currentCanvas;
+		if (current && current.id && !current.ownedByMe) {
+			return current.recipientRole || 'viewer';
+		}
+		return null;
+	}
 
 	const _shareCountByCanvasId = new Map();
 	const _shareCountFetching = new Set();
@@ -606,6 +636,21 @@ function csrfFetch(url, options) {
 		return null;
 	}
 
+	function announceMergedContributions(data) {
+		if (data && data.contributionsApplied > 0) {
+			showBulkToast(
+				'Merged ' +
+					data.contributionsApplied +
+					' submitted contribution' +
+					(data.contributionsApplied === 1 ? '' : 's') +
+					' into this canvas.',
+			);
+		}
+		if (data && data.contributionMergeWarning) {
+			showBulkToast(data.contributionMergeWarning, 'error');
+		}
+	}
+
 	(function autoOpenSharedCanvas() {
 		const params = new URLSearchParams(window.location.search || '');
 		const shareCanvasId = params.get('share');
@@ -634,6 +679,7 @@ function csrfFetch(url, options) {
 				await applyCanvasPayload(data.payload || {}, {
 					merge: false,
 					ownedByMe: !!data.ownedByMe,
+					recipientRole: data.recipientRole || null,
 				});
 				_setStaleRefsFromLoad(data.staleRefs);
 				canvasState.currentCanvas = {
@@ -641,12 +687,16 @@ function csrfFetch(url, options) {
 					title: data.title || '',
 					ownedByMe: !!data.ownedByMe,
 					versionId: data.versionId || null,
+					recipientRole: data.recipientRole || null,
 				};
+				announceMergedContributions(data);
 				_watchProposalsForCurrentCanvas();
 				_canvasShareCanvasId = shareCanvasId;
 				_canvasShareRecipientHasAccount = !!data.recipientHasAccount;
 				_canvasShareRole = data.recipientRole || 'contributor';
 				renderShareRecipientBanner();
+				renderBulkView();
+				renderBulkToolbar();
 				const cleanUrl = window.location.pathname + window.location.hash;
 				window.history.replaceState({}, '', cleanUrl);
 			} catch (err) {
@@ -679,6 +729,7 @@ function csrfFetch(url, options) {
 				await applyCanvasPayload(data.payload || {}, {
 					merge: false,
 					ownedByMe: !!data.ownedByMe,
+					recipientRole: data.recipientRole || null,
 				});
 				_setStaleRefsFromLoad(data.staleRefs);
 				canvasState.currentCanvas = {
@@ -686,7 +737,9 @@ function csrfFetch(url, options) {
 					title: data.title || '',
 					ownedByMe: !!data.ownedByMe,
 					versionId: data.versionId || null,
+					recipientRole: data.recipientRole || null,
 				};
+				announceMergedContributions(data);
 				try {
 					const restored = rehydrateSessionDraftValues(openId);
 					if (restored > 0) {
@@ -705,6 +758,8 @@ function csrfFetch(url, options) {
 					_canvasShareRole = data.recipientRole;
 					renderShareRecipientBanner();
 				}
+				renderBulkView();
+				renderBulkToolbar();
 				const cleanUrl = window.location.pathname + window.location.hash;
 				window.history.replaceState({}, '', cleanUrl);
 			} catch (err) {
@@ -718,6 +773,7 @@ function csrfFetch(url, options) {
 		if (!_canvasShareCanvasId) {
 			return;
 		}
+		renderOrgBanner();
 		const isEditor = _canvasShareRole === 'editor';
 		const isViewer = _canvasShareRole === 'viewer';
 		document.body.classList.add('canvas-share-banner-active');
@@ -747,24 +803,30 @@ function csrfFetch(url, options) {
 				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
 				'<strong>Editor mode.</strong> ' +
-				'You’re co-authoring a canvas owned by someone else. Saves go directly to the canvas - no Submit step needed.' +
+				'You’re co-authoring a canvas owned by someone else. You can save canvas changes, but only the owner can upload them to Salesforce.' +
 				'</span>';
 		} else if (isViewer) {
 			host.innerHTML =
 				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
 				'<strong>View only.</strong> ' +
-				'You can explore this shared canvas, but you can’t make changes. Ask the owner for contributor access if you need to fill slots.' +
+				'You can explore this shared canvas, but you can’t make changes. Ask the owner for contributor access if you need to complete requests.' +
 				'</span>';
 		} else {
+			const submitPending = _shareRecipientSubmitState === 'pending';
+			const submitSucceeded = _shareRecipientSubmitState === 'success';
 			host.innerHTML =
 				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
-				'You’re filling in a canvas shared with you. ' +
-				'Update the highlighted slots, then submit your changes back to the sender.' +
+				"<strong>Contributor mode.</strong> Use Your tasks to complete the owner's requests, then submit your changes. Nothing is uploaded to Salesforce." +
 				'</span>' +
-				'<button type="button" class="button share-recipient-submit" id="share-recipient-submit">' +
-				'Submit changes' +
+				'<button type="button" class="button share-recipient-submit' +
+				(submitSucceeded ? ' share-recipient-submit--success' : '') +
+				'" id="share-recipient-submit"' +
+				(submitPending || submitSucceeded ? ' disabled' : '') +
+				(submitPending ? ' aria-busy="true"' : '') +
+				' aria-live="polite">' +
+				(submitPending ? 'Submittingâ€¦' : submitSucceeded ? 'Changes submitted' : 'Submit changes') +
 				'</button>';
 			const btn = host.querySelector('#share-recipient-submit');
 			if (btn) {
@@ -773,7 +835,28 @@ function csrfFetch(url, options) {
 		}
 	}
 
+	function setShareRecipientSubmitState(state) {
+		_shareRecipientSubmitState = state;
+		if (_shareRecipientSubmitResetTimer) {
+			clearTimeout(_shareRecipientSubmitResetTimer);
+			_shareRecipientSubmitResetTimer = null;
+		}
+		renderShareRecipientBanner();
+		if (state === 'success') {
+			_shareRecipientSubmitResetTimer = setTimeout(() => {
+				_shareRecipientSubmitResetTimer = null;
+				if (_shareRecipientSubmitState === 'success') {
+					_shareRecipientSubmitState = 'idle';
+					renderShareRecipientBanner();
+				}
+			}, 2500);
+		}
+	}
+
 	async function submitShareRecipientFills() {
+		if (_shareRecipientSubmitState === 'pending') {
+			return;
+		}
 		if (!_canvasShareCanvasId) {
 			showBulkToast('No active share session to submit to.', 'error');
 			return;
@@ -787,16 +870,22 @@ function csrfFetch(url, options) {
 				continue;
 			}
 			const values = r.values && typeof r.values === 'object' ? r.values : {};
-			fills.push({ slotId: r.slot.slotId, values });
+			const requestedFields =
+				r.slot.kind === 'fields' && Array.isArray(r.slot.fields) ? new Set(r.slot.fields) : null;
+			const submittedValues = {};
+			for (const fieldName of Object.keys(values)) {
+				if (!requestedFields || requestedFields.has(fieldName)) {
+					submittedValues[fieldName] = values[fieldName];
+				}
+			}
+			fills.push({ slotId: r.slot.slotId, values: submittedValues });
 		}
 		if (fills.length === 0) {
-			showBulkToast('No slot records to submit. Fill in the highlighted slots first.', 'error');
+			showBulkToast('No contributor requests to submit. Complete a highlighted request first.', 'error');
 			return;
 		}
-		const btn = document.getElementById('share-recipient-submit');
-		if (btn) {
-			btn.disabled = true;
-		}
+		setShareRecipientSubmitState('pending');
+		let succeeded = false;
 		try {
 			const resp = await csrfFetch('/api/canvas/' + encodeURIComponent(_canvasShareCanvasId) + '/slot-fill', {
 				method: 'POST',
@@ -806,22 +895,30 @@ function csrfFetch(url, options) {
 			});
 			const data = await resp.json().catch(() => null);
 			if (!resp.ok) {
-				const msg = (data && data.error) || 'HTTP ' + resp.status;
+				const msg = (data && (data.message || data.error)) || 'HTTP ' + resp.status;
 				showBulkToast('Submit failed: ' + msg, 'error');
 				return;
 			}
+			const submitted = Number(data && data.submitted) || 0;
+			if (submitted === 0) {
+				showBulkToast('No contributor requests were submitted. Reload the canvas and try again.', 'error');
+				return;
+			}
+			succeeded = true;
+			setShareRecipientSubmitState('success');
 			showBulkToast(
 				'Submitted ' +
-					(data.appliedCount || fills.length) +
-					' slot' +
-					((data.appliedCount || fills.length) === 1 ? '' : 's') +
-					' back to the sender.',
+					submitted +
+					' request' +
+					(submitted === 1 ? '' : 's') +
+					' to the canvas owner. Nothing was uploaded to Salesforce.',
+				data && data.skipped && data.skipped.length > 0 ? 'warn' : undefined,
 			);
 		} catch (err) {
 			showBulkToast('Submit failed: ' + (err.message || err), 'error');
 		} finally {
-			if (btn) {
-				btn.disabled = false;
+			if (!succeeded) {
+				setShareRecipientSubmitState('idle');
 			}
 		}
 	}
@@ -857,6 +954,7 @@ function csrfFetch(url, options) {
 	refreshCurrentTeam();
 
 	let _meInfo = null;
+	let _workspaceAccessEventSource = null;
 	const DEFAULT_TEAM_SETTINGS = Object.freeze({
 		prod_org_allowlist_enabled: 0,
 		nonprod_org_allowlist_enabled: 0,
@@ -897,6 +995,10 @@ function csrfFetch(url, options) {
 				return;
 			}
 			_meInfo = me;
+			if (me.workspace && me.workspace.id && window.OrgLoom && window.OrgLoom.workspaceContext) {
+				window.OrgLoom.workspaceContext.set(me.workspace.id);
+			}
+			_subscribeWorkspaceAccessEvents();
 			const orgType = me.orgType || 'unknown';
 
 			if (me.workspace && me.workspace.id) {
@@ -941,16 +1043,80 @@ function csrfFetch(url, options) {
 		})
 		.catch(() => {});
 
+	function _subscribeWorkspaceAccessEvents() {
+		if (
+			_workspaceAccessEventSource ||
+			!window.EventSource ||
+			!_meInfo ||
+			!_meInfo.workspace ||
+			!_meInfo.workspace.id
+		) {
+			return;
+		}
+		_workspaceAccessEventSource = new EventSource(
+			'/api/workspaces/' + encodeURIComponent(_meInfo.workspace.id) + '/access-events',
+		);
+		_workspaceAccessEventSource.addEventListener('open', () => {
+			_refreshOrgApprovalState();
+		});
+		_workspaceAccessEventSource.addEventListener('access-change', (event) => {
+			try {
+				const change = JSON.parse(event.data);
+				const connection = _meInfo && _meInfo.connection;
+				if (
+					!connection ||
+					change.capability !== 'connect-sf-org' ||
+					String(change.target || '').slice(0, 15) !== String(connection.sfOrgId || '').slice(0, 15)
+				) {
+					return;
+				}
+				const status = change.status || 'missing';
+				connection.approval = {
+					required: status !== 'approved',
+					status,
+				};
+				renderOrgBanner();
+			} catch (error) {
+				window.ORGLOOM_capture && window.ORGLOOM_capture(error, { where: 'app.js/workspace-access-event' });
+			}
+		});
+	}
+
+	async function _refreshOrgApprovalState() {
+		try {
+			const response = await csrfFetch('/api/me', { credentials: 'same-origin' });
+			const latest = response.ok ? await response.json() : null;
+			if (!latest || !latest.connection || !_meInfo || !_meInfo.connection) {
+				return;
+			}
+			if (latest.connection.id !== _meInfo.connection.id) {
+				return;
+			}
+			_meInfo.connection = latest.connection;
+			_meInfo.orgType = latest.orgType || latest.connection.orgType || _meInfo.orgType;
+			renderOrgBanner();
+		} catch (_) {}
+	}
+
 	function renderOrgBanner() {
 		const banner = graph.querySelector('#org-banner');
 		if (!banner || !_meInfo) {
 			return;
 		}
-		const approval = _meInfo.orgApproval || {
-			required: false,
-			status: 'na',
-		};
-		const blocked = approval.required && (approval.status === 'pending' || approval.status === 'rejected');
+		const current = canvasState.currentCanvas;
+		const params = new URLSearchParams(window.location.search || '');
+		const openingSharedCanvas = (!current || !current.id) && params.has('share');
+		if ((current && current.id && current.ownedByMe === false) || openingSharedCanvas) {
+			banner.classList.add('hidden');
+			banner.innerHTML = '';
+			return;
+		}
+		const approval = (_meInfo.connection && _meInfo.connection.approval) ||
+			_meInfo.orgApproval || {
+				required: false,
+				status: 'na',
+			};
+		const blocked = approval.required;
 		if (_meInfo.orgType !== 'production' && !_readOnlyMode && !blocked) {
 			banner.classList.add('hidden');
 			banner.innerHTML = '';
@@ -962,22 +1128,43 @@ function csrfFetch(url, options) {
 		banner.classList.toggle('org-banner--blocked', blocked);
 		let icon, headline, controls;
 		if (blocked) {
-			icon = approval.status === 'rejected' ? '\u2717' : '\u23F3';
+			const denied = ['denied', 'rejected', 'revoked', 'expired'].includes(approval.status);
+			const approvalOrgLabel =
+				_meInfo.orgType === 'production'
+					? 'production org'
+					: _meInfo.orgType === 'sandbox' || _meInfo.orgType === 'developer'
+						? 'non-production org'
+						: 'Salesforce org';
+			icon = denied ? '\u2717' : '\u23F3';
 			const orgLabel = approval.sfOrgLabel ? ' <code>' + escapeHtml(approval.sfOrgLabel) + '</code>' : '';
-			if (approval.status === 'rejected') {
+			if (denied) {
 				headline =
-					'Writes to this production org' +
+					'Writes to this ' +
+					approvalOrgLabel +
 					orgLabel +
-					' were <strong>rejected</strong> by your team admin.' +
+					' are <strong>not currently approved</strong> by your workspace admin.' +
 					(approval.note ? ' Reason: ' + escapeHtml(approval.note) : '');
-			} else {
+			} else if (approval.status === 'pending') {
 				headline =
-					'Writes to this production org' +
+					'Writes to this ' +
+					approvalOrgLabel +
 					orgLabel +
 					' are <strong>pending admin approval</strong>. ' +
 					'Reads work; uploads are blocked until your team admin approves.';
+			} else {
+				headline =
+					'Writes to this ' +
+					approvalOrgLabel +
+					orgLabel +
+					' <strong>require workspace admin approval</strong>. ' +
+					'Request access now, or Org Loom will create the same request when you try to upload.';
 			}
-			controls = '';
+			controls =
+				approval.status === 'pending'
+					? ''
+					: '<button type="button" class="button secondary ob-request" data-request-org-access>' +
+						(denied ? 'Request access again' : 'Request access') +
+						'</button>';
 		} else {
 			icon = _meInfo.orgType === 'production' ? '\u26A0' : '\uD83D\uDD12';
 			headline =
@@ -1002,6 +1189,53 @@ function csrfFetch(url, options) {
 				renderOrgBanner();
 				if (typeof renderBulkView === 'function' && canvasState.graphView === 'bulk') {
 					renderBulkView();
+				}
+			});
+		}
+		const requestButton = banner.querySelector('[data-request-org-access]');
+		if (requestButton) {
+			requestButton.addEventListener('click', async () => {
+				requestButton.disabled = true;
+				requestButton.textContent = 'Requesting\u2026';
+				try {
+					const response = await csrfFetch('/api/upload/access-check', {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: '{}',
+					});
+					const body = await response.json().catch(() => ({}));
+					if (response.ok) {
+						if (_meInfo.connection) {
+							_meInfo.connection.approval = { required: false, status: 'approved' };
+						} else {
+							_meInfo.orgApproval = { required: false, status: 'approved' };
+						}
+						renderOrgBanner();
+						return;
+					}
+					if (body.error === 'approval-required' && body.approvalStatus === 'pending') {
+						const pendingApproval = Object.assign({}, approval, {
+							required: true,
+							status: 'pending',
+						});
+						if (_meInfo.connection) {
+							_meInfo.connection.approval = pendingApproval;
+						} else {
+							_meInfo.orgApproval = pendingApproval;
+						}
+						renderOrgBanner();
+						return;
+					}
+					throw new Error(body.message || 'Access request could not be created.');
+				} catch (error) {
+					requestButton.disabled = false;
+					requestButton.textContent = denied ? 'Request access again' : 'Request access';
+					const message = banner.querySelector('.ob-msg');
+					if (message) {
+						message.innerHTML =
+							'<strong>Access request failed.</strong> ' +
+							escapeHtml(error && error.message ? error.message : 'Try again.');
+					}
 				}
 			});
 		}
@@ -1159,6 +1393,9 @@ function csrfFetch(url, options) {
 				'<button type="button" class="bec-quick" data-bec-action="blank" data-bulk-empty-add' +
 				_qDis +
 				' title="Pick an object type and drop an empty draft on the canvas">Add a blank record</button>' +
+				'<button type="button" class="bec-quick" data-bec-action="request"' +
+				_qDis +
+				' title="Ask a teammate to create or choose a record">Request a record</button>' +
 				'<button type="button" class="bec-quick" data-bec-action="csv"' +
 				_qDis +
 				' title="Upload one or more CSV files">Import CSV</button>' +
@@ -1191,10 +1428,14 @@ function csrfFetch(url, options) {
 		'<a class="bec-doclink" href="/docs/walkthroughs/quick-start" target="_blank" rel="noopener">Follow the Quick start &rarr;</a>' +
 		'</div>' + // .bulk-empty-card
 		'</div>' + // .bulk-empty-placeholder
+		'<div class="canvas-name-overlay" id="canvas-name-overlay" aria-label="Current canvas: New canvas">' +
+		'<strong id="canvas-name-text">New canvas</strong>' +
+		'</div>' +
 		'<div class="canvas-top-left-overlays">' +
 		'<div class="canvas-status-strip" id="canvas-status-strip">' +
 		'<div class="bulk-count-chip" id="bulk-count-chip"></div>' +
 		'</div>' +
+		'<aside class="shared-task-sidebar" id="shared-task-sidebar" hidden aria-live="polite"></aside>' +
 		'<aside class="canvas-onboarding-progress" id="canvas-onboarding-progress" hidden aria-label="Getting started">' +
 		'<button type="button" class="cog-dismiss" data-cog-dismiss title="Hide this guide" aria-label="Dismiss getting started guide">&times;</button>' +
 		'<h3 class="cog-title">Getting started</h3>' +
@@ -1260,7 +1501,7 @@ function csrfFetch(url, options) {
 		if (blankBtn) {
 			e.stopPropagation();
 			showFindObjectPopover(blankBtn, {
-				header: 'Create blank record',
+				header: 'Create new record',
 				sub: 'Pick the object type for this blank draft.',
 				isAdded: () => false,
 				onPick: (name) => resolvePendingRecord(recId, name),
@@ -2046,11 +2287,12 @@ function csrfFetch(url, options) {
 	}
 
 	const DESCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
-	const DESCRIBE_STORAGE_PREFIX = 'orgloom-describe-v3';
+	const DESCRIBE_STORAGE_PREFIX = 'orgloom-describe-v4';
 	const DESCRIBE_STORAGE_ORG = window.SF_ORG_ID || 'unknown';
-	// Include the org ID so field permissions and custom schema never bleed across connections.
+	const DESCRIBE_STORAGE_USER = window.SF_USER_ID || 'unknown';
+	// Field permissions can differ between users connected to the same org.
 	function _describeStorageKey(name) {
-		return DESCRIBE_STORAGE_PREFIX + '|' + DESCRIBE_STORAGE_ORG + '|' + name;
+		return DESCRIBE_STORAGE_PREFIX + '|' + DESCRIBE_STORAGE_ORG + '|' + DESCRIBE_STORAGE_USER + '|' + name;
 	}
 	function _loadDescribeFromStorage(name) {
 		try {
@@ -2296,6 +2538,7 @@ function csrfFetch(url, options) {
 
 	const _assoc = window.OrgLoom.canvasAssociations.mount({
 		canvasState: canvasState,
+		canEditCanvasStructure: _canEditCanvasStructure,
 		renderBulkView: function () {
 			return renderBulkView();
 		},
@@ -2449,9 +2692,12 @@ function csrfFetch(url, options) {
 		if (!canvasState.bulkInitialized) {
 			canvasState.bulkInitialized = true;
 			seedBulkRecords();
-			canvasState.selectedObjects.forEach((s) => {
-				ensureDescribe(s.name).catch(() => {});
-			});
+			const shareRole = _getCanvasShareRole();
+			if (shareRole !== 'viewer' && shareRole !== 'contributor') {
+				canvasState.selectedObjects.forEach((s) => {
+					ensureDescribe(s.name).catch(() => {});
+				});
+			}
 		}
 		if (!canvasState._autoSpawnedPending) {
 			canvasState._autoSpawnedPending = true;
@@ -2488,12 +2734,13 @@ function csrfFetch(url, options) {
 		const progressGuide = graph.querySelector('#canvas-onboarding-progress');
 		const canvasHint = graph.querySelector('#bulk-canvas-hint');
 		const shortcutHint = graph.querySelector('#canvas-shortcut-hint');
+		const showingSharedTasks = _renderSharedTaskSidebar();
 		if (emptyPh) {
 			const realCount = canvasState.bulkRecords.filter((r) => r && (!r.isTypeNode || r.isPending)).length;
 			const _dismissed = _canvasGuideHas(_canvasGuideDismissKey, _canvasGuideDismissedThisPage);
 			const _completed = _canvasGuideHas(_canvasGuideCompleteKey, _canvasGuideCompletedThisPage);
 			const showPh = realCount === 0 && !_dismissed && !_completed;
-			const showProgress = realCount > 0 && !_dismissed && !_completed;
+			const showProgress = realCount > 0 && !_dismissed && !_completed && !showingSharedTasks;
 			emptyPh.style.display = showPh ? '' : 'none';
 			if (progressGuide) {
 				progressGuide.hidden = !showProgress;
@@ -2565,6 +2812,8 @@ function csrfFetch(url, options) {
 						openSoqlImportModal();
 					} else if (action === 'blank') {
 						spawnPendingRecord();
+					} else if (action === 'request') {
+						openStandaloneRecordRequestPicker(btn);
 					} else if (action === 'ai') {
 						openAiGenModal();
 					} else if (action === 'connect') {
@@ -3061,10 +3310,9 @@ function csrfFetch(url, options) {
 	}
 	window.Orgloom.canvasState._announceChange = _announceCanvasChange;
 
-	function cloneRecord(objectName) {
-		const s = canvasState.selectedObjects.find((so) => so.name === objectName);
-		if (!s) {
-			return;
+	function _nextRecordPosition(objectName, preferredPosition) {
+		if (preferredPosition && Number.isFinite(preferredPosition.x) && Number.isFinite(preferredPosition.y)) {
+			return { x: preferredPosition.x, y: preferredPosition.y };
 		}
 		const canvas = graph.querySelector('#bulk-canvas');
 		const STEP_X = 260;
@@ -3086,14 +3334,22 @@ function csrfFetch(url, options) {
 			x = anchor.x + col * STEP_X;
 			y = anchor.y + r * STEP_Y;
 		}
+		return { x, y };
+	}
 
+	function cloneRecord(objectName) {
+		const s = canvasState.selectedObjects.find((so) => so.name === objectName);
+		if (!s) {
+			return;
+		}
+		const position = _nextRecordPosition(objectName);
 		const _newId = canvasState.bulkIdSeq++;
 		canvasState.bulkRecords.push({
 			id: _newId,
 			objectName: s.name,
 			label: s.label,
-			x,
-			y,
+			x: position.x,
+			y: position.y,
 			values: {},
 			fromSelectionId: s.id,
 		});
@@ -3332,7 +3588,14 @@ function csrfFetch(url, options) {
 	var valuesEquivalent = _vc.valuesEquivalent;
 	var valuesDiffer = _vc.valuesDiffer;
 	var changedFieldNames = _vc.changedFieldNames;
-	var isRecordModified = _vc.isRecordModified;
+	var _isRecordValueModified = _vc.isRecordModified;
+	var relationshipChangesRecord = _vc.relationshipChangesRecord;
+	function isRecordModified(rec) {
+		return (
+			_isRecordValueModified(rec) ||
+			relationshipChangesRecord(rec, canvasState.bulkAssociations, canvasState.bulkRecords)
+		);
+	}
 	var isRecordPendingDelete = _vc.isRecordPendingDelete;
 	var isRecordPendingCreate = _vc.isRecordPendingCreate;
 	var hasPendingChange = _vc.hasPendingChange;
@@ -3766,6 +4029,10 @@ function csrfFetch(url, options) {
 	}
 
 	function deleteRecord(id) {
+		if (!_canEditCanvasStructure()) {
+			showBulkToast('Only the canvas owner or an editor can remove records.', 'info');
+			return false;
+		}
 		const rec = canvasState.bulkRecords.find((r) => r.id === id);
 		const killedAssocs = canvasState.bulkAssociations.filter((a) => a.fromId === id || a.toId === id);
 		const wasSelected = canvasState.bulkSelectedIds.has(id);
@@ -3802,9 +4069,14 @@ function csrfFetch(url, options) {
 		canvasState.bulkSelectedIds.delete(id);
 		canvasState._bulkUserDeleted = true;
 		renderBulkView();
+		return true;
 	}
 
 	function markPendingDelete(id, opts) {
+		if (!_canEditCanvasStructure()) {
+			showBulkToast('Only the canvas owner or an editor can mark records for deletion.', 'info');
+			return false;
+		}
 		const rec = canvasState.bulkRecords.find((r) => r.id === id);
 		if (!rec) {
 			return false;
@@ -3860,6 +4132,10 @@ function csrfFetch(url, options) {
 	}
 
 	function unmarkPendingDelete(id) {
+		if (!_canEditCanvasStructure()) {
+			showBulkToast('Only the canvas owner or an editor can change deletion status.', 'info');
+			return false;
+		}
 		const rec = canvasState.bulkRecords.find((r) => r.id === id);
 		if (!rec || !rec.pendingDelete) {
 			return false;
@@ -4292,6 +4568,7 @@ function csrfFetch(url, options) {
 		isRecordModified: function (r) {
 			return isRecordModified(r);
 		},
+		canEditCanvasStructure: _canEditCanvasStructure,
 		_canAuthorSlots: function () {
 			return _canAuthorSlots();
 		},
@@ -4299,13 +4576,13 @@ function csrfFetch(url, options) {
 			return _hasCap(name);
 		},
 		openInsertModal: function () {
-			return openInsertModal.apply(null, arguments);
-		},
-		convertRecordToSlot: function () {
-			return convertRecordToSlot.apply(null, arguments);
+			return openRecordForCurrentUser.apply(null, arguments);
 		},
 		convertRecordToFieldSlot: function () {
 			return convertRecordToFieldSlot.apply(null, arguments);
+		},
+		configureExistingSlot: function () {
+			return configureExistingSlot.apply(null, arguments);
 		},
 		convertSlotBackToRecord: function () {
 			return convertSlotBackToRecord.apply(null, arguments);
@@ -4331,8 +4608,7 @@ function csrfFetch(url, options) {
 	});
 	const showFieldPicker = _cm.showFieldPicker;
 	const showCardMoreMenu = _cm.showCardMoreMenu;
-	const showFieldSlotPicker = _cm.showFieldSlotPicker;
-	const showSlotMetaPicker = _cm.showSlotMetaPicker;
+	const showSlotConfigurationPicker = _cm.showSlotConfigurationPicker;
 	const _openSlotRecordPicker = _cm._openSlotRecordPicker;
 
 	function renderChips() {
@@ -4550,13 +4826,8 @@ function csrfFetch(url, options) {
 		if (!rec || rec.isTypeNode || rec.isPending) {
 			return;
 		}
-
 		if (!_canAuthorSlots()) {
-			showBulkToast('Slot canvases require Pro or higher. Upgrade at /pricing.', 'error');
-			return;
-		}
-		if (!rec.loadedFromId) {
-			showBulkToast('Field-level slots only apply to loaded records.', 'error');
+			showBulkToast('Contributor requests require Pro or higher. Upgrade at /pricing.', 'error');
 			return;
 		}
 		let describe;
@@ -4566,96 +4837,298 @@ function csrfFetch(url, options) {
 			showBulkToast('Failed to load fields: ' + (e.message || e), 'error');
 			return;
 		}
-		const writable = (describe.fields || []).filter(
-			(f) => f.updateable && f.name !== 'RecordTypeId' && f.type !== 'address' && f.type !== 'location',
-		);
+		const writable = _slotConfigurationFields(rec, describe);
 		if (writable.length === 0) {
 			showBulkToast('No writable fields on ' + rec.objectName + '.', 'error');
 			return;
 		}
-		const picked = await showFieldSlotPicker(rec.objectName, writable);
-		if (!picked || picked.length === 0) {
-			return;
-		}
-		const meta = await showSlotMetaPicker({ title: 'Field-level slot' });
-		if (!meta) {
+		const config = await showSlotConfigurationPicker({
+			title: 'Request fields on ' + _slotRecordDisplayName(rec),
+			objectName: rec.objectName,
+			objectLabel: rec.label || rec.objectName,
+			contextLabel: _slotRecordDisplayName(rec),
+			kind: 'fields',
+			fields: writable,
+			initial: { fields: [] },
+		});
+		if (!config) {
 			return;
 		}
 		rec.slot = {
 			slotId: slotIdSeq++,
 			kind: 'fields',
-			fields: picked,
-			label: meta.label,
-			description: meta.description,
-			assigneeSfUserId: meta.assigneeSfUserId || null,
-			assigneeName: meta.assigneeName || null,
-			assigneeEmail: meta.assigneeEmail || null,
+			fields: config.fields,
+			label: config.label,
+			description: config.description,
+			assigneeSfUserId: config.assigneeSfUserId || null,
+			assigneeName: config.assigneeName || null,
+			assigneeEmail: config.assigneeEmail || null,
 		};
 		renderBulkView();
-		const _assigneeBit = meta.assigneeName
-			? ' (assigned to ' + meta.assigneeName + ')'
+		const _assigneeBit = config.assigneeName
+			? ' (assigned to ' + config.assigneeName + ')'
 			: ' (open to any recipient)';
 		showBulkToast(
 			'Marked ' +
-				picked.length +
+				config.fields.length +
 				' field' +
-				(picked.length === 1 ? '' : 's') +
-				' as slot' +
-				(picked.length === 1 ? '' : 's') +
-				' on this record' +
+				(config.fields.length === 1 ? '' : 's') +
+				' requested on this record' +
 				_assigneeBit +
 				'.',
 		);
 	}
 
-	async function convertRecordToSlot(rec) {
-		if (!rec || rec.isTypeNode || rec.isPending) {
-			return;
-		}
-
+	async function createStandaloneRecordRequest(objectName, preferredPosition) {
 		if (!_canAuthorSlots()) {
-			showBulkToast('Slot canvases require Pro or higher. Upgrade at /pricing.', 'error');
-			return;
+			showBulkToast('Contributor requests require Pro or higher. Upgrade at /pricing.', 'error');
+			return false;
 		}
-		const meta = await showSlotMetaPicker({ title: 'Convert to slot' });
-		if (!meta) {
-			return;
+		const blocked = _canvasCapBlockReason(1);
+		if (blocked) {
+			showBulkToast(blocked, 'error');
+			return false;
 		}
-
-		rec.slot = {
-			slotId: slotIdSeq++,
-			label: meta.label,
-			description: meta.description,
-			assigneeSfUserId: meta.assigneeSfUserId || null,
-			assigneeName: meta.assigneeName || null,
-			assigneeEmail: meta.assigneeEmail || null,
-		};
+		let describe;
+		try {
+			describe = await ensureDescribe(objectName);
+			if (
+				!describe ||
+				!Array.isArray(describe.fields) ||
+				!describe.fields.some((field) => field && field.createable)
+			) {
+				throw new Error('No createable fields are available.');
+			}
+		} catch (error) {
+			showBulkToast(
+				'Could not load the fields needed for this record request. Reconnect Salesforce and try again. ' +
+					(error && error.message ? error.message : ''),
+				'error',
+			);
+			return false;
+		}
+		const objectLabel = describe.label || objectName;
+		const config = await showSlotConfigurationPicker({
+			title: 'Request a new ' + objectLabel,
+			objectName,
+			objectLabel,
+			kind: 'whole-record',
+			initial: {},
+		});
+		if (!config) {
+			return false;
+		}
+		let selection = canvasState.selectedObjects.find((entry) => entry.name === objectName);
+		if (!selection) {
+			try {
+				selection = await addToSelection(objectName);
+			} catch (error) {
+				showBulkToast('Failed to add ' + objectLabel + ': ' + (error.message || error), 'error');
+				return false;
+			}
+		}
+		const position = _nextRecordPosition(objectName, preferredPosition);
+		const recordId = canvasState.bulkIdSeq++;
+		const slotId = slotIdSeq++;
+		canvasState.bulkRecords.push({
+			id: recordId,
+			objectName,
+			label: selection.label || objectLabel,
+			fromSelectionId: selection.id,
+			x: position.x,
+			y: position.y,
+			values: {},
+			slot: {
+				slotId,
+				kind: 'whole-record',
+				origin: 'standalone',
+				label: config.label,
+				description: config.description,
+				assigneeSfUserId: config.assigneeSfUserId || null,
+				assigneeName: config.assigneeName || null,
+				assigneeEmail: config.assigneeEmail || null,
+			},
+		});
 		renderBulkView();
-		const _slotAssigneeBit = meta.assigneeName
-			? ' (assigned to ' + meta.assigneeName + ')'
+		pushUndo('Add record request', () => {
+			canvasState.bulkRecords = canvasState.bulkRecords.filter((record) => record && record.id !== recordId);
+			canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
+				(association) => association && association.fromId !== recordId && association.toId !== recordId,
+			);
+			renderBulkView();
+		});
+		const _slotAssigneeBit = config.assigneeName
+			? ' (assigned to ' + config.assigneeName + ')'
 			: ' (open to any recipient)';
-		showBulkToast('Marked as slot \u201c' + rec.slot.label + '\u201d' + _slotAssigneeBit + '.');
+		showBulkToast('Record request created' + _slotAssigneeBit + '.');
+		return true;
 	}
 
-	function convertSlotBackToRecord(rec) {
+	function openStandaloneRecordRequestPicker(triggerEl, preferredPosition) {
+		if (!_canAuthorSlots()) {
+			showBulkToast('Contributor requests require Pro or higher. Upgrade at /pricing.', 'error');
+			return false;
+		}
+		showFindObjectPopover(triggerEl, {
+			header: 'Request a record',
+			sub: 'Choose the type of record a teammate should create or select.',
+			isAdded: () => false,
+			onPick: (name) => createStandaloneRecordRequest(name, preferredPosition),
+		});
+		return true;
+	}
+
+	function _slotRecordDisplayName(rec) {
+		if (!rec) {
+			return 'this record';
+		}
+		const values = rec.values || {};
+		const fullName = ((values.FirstName || '') + ' ' + (values.LastName || '')).trim();
+		if (fullName) {
+			return fullName;
+		}
+		const describe = canvasState.describeCache[rec.objectName];
+		const nameField =
+			describe && Array.isArray(describe.fields) && describe.fields.find((field) => field.nameField);
+		const display =
+			(nameField && values[nameField.name]) ||
+			values.Name ||
+			values.Subject ||
+			values.Title ||
+			values.CaseNumber ||
+			values.OrderNumber;
+		return display ? String(display) : rec.label || rec.objectName || 'this record';
+	}
+
+	function _slotConfigurationFields(rec, describe) {
+		const permissionName = rec && rec.loadedFromId ? 'updateable' : 'createable';
+		const writable = (describe.fields || []).filter(
+			(field) =>
+				field[permissionName] &&
+				field.name !== 'RecordTypeId' &&
+				field.type !== 'address' &&
+				field.type !== 'location',
+		);
+		const byName = new Set(writable.map((field) => field.name));
+		const current = rec && rec.slot && Array.isArray(rec.slot.fields) ? rec.slot.fields : [];
+		current.forEach((name) => {
+			if (!byName.has(name)) {
+				writable.push({ name, label: name, type: null, unavailable: true });
+			}
+		});
+		return writable;
+	}
+
+	async function configureExistingSlot(rec) {
+		if (!rec || !rec.slot || rec.slot.slotId == null) {
+			return;
+		}
+		if (!_canAuthorSlots()) {
+			showBulkToast('Contributor requests require Pro or higher.', 'error');
+			return;
+		}
+		if (canvasState.currentCanvas && canvasState.currentCanvas.id && !canvasState.currentCanvas.ownedByMe) {
+			showBulkToast('Only the canvas owner can change contributor requests.', 'error');
+			return;
+		}
+		const kind = rec.slot.kind === 'fields' ? 'fields' : 'whole-record';
+		let fields = [];
+		if (kind === 'fields') {
+			try {
+				fields = _slotConfigurationFields(rec, await ensureDescribe(rec.objectName));
+			} catch (error) {
+				showBulkToast('Failed to load fields: ' + (error.message || error), 'error');
+				return;
+			}
+		}
+		const config = await showSlotConfigurationPicker({
+			title:
+				kind === 'fields'
+					? 'Request fields on ' + _slotRecordDisplayName(rec)
+					: 'Request a new ' + (rec.label || rec.objectName),
+			objectName: rec.objectName,
+			objectLabel: rec.label || rec.objectName,
+			contextLabel: _slotRecordDisplayName(rec),
+			kind,
+			fields,
+			initial: rec.slot,
+		});
+		if (!config) {
+			return;
+		}
+		const slotId = rec.slot.slotId;
+		rec.slot = {
+			slotId,
+			kind: config.kind,
+			...(config.kind === 'whole-record' ? { origin: rec.slot.origin || 'standalone' } : {}),
+			label: config.label,
+			description: config.description,
+			assigneeSfUserId: config.assigneeSfUserId || null,
+			assigneeName: config.assigneeName || null,
+			assigneeEmail: config.assigneeEmail || null,
+		};
+		if (config.kind === 'fields') {
+			rec.slot.fields = config.fields.slice();
+		}
+		renderBulkView();
+		showBulkToast(
+			(kind === 'fields' ? 'Field request' : 'Record request') + ' updated for everyone viewing this canvas.',
+		);
+	}
+
+	function convertSlotBackToRecord(rec, options) {
 		if (!rec || !rec.slot) {
 			return;
 		}
-		const wasLabel = rec.slot.label;
 		delete rec.slot;
+		delete rec._recipientSlot;
 		renderBulkView();
-		showBulkToast('Removed slot marker' + (wasLabel ? ' (was \u201c' + wasLabel + '\u201d)' : '') + '.');
+		showBulkToast(
+			options && options.convertedToDraft ? 'Record request converted to a draft.' : 'Removed request.',
+		);
+	}
+
+	function openRecordForCurrentUser(rec, options) {
+		if (!rec) {
+			return false;
+		}
+		const wholeRecordRequest = !!(
+			rec.slot &&
+			rec.slot.slotId != null &&
+			(rec.slot.kind || 'whole-record') === 'whole-record'
+		);
+		if (wholeRecordRequest) {
+			const shareRole = _getCanvasShareRole();
+			if (!shareRole) {
+				void configureExistingSlot(rec);
+				return true;
+			}
+			if (shareRole !== 'contributor' && shareRole !== 'editor') {
+				showBulkToast(
+					'Only the canvas owner can configure this request, and only a contributor can fill it.',
+					'info',
+				);
+				return false;
+			}
+			if (_isSlotLockedForCurrentUser(rec)) {
+				const who = rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate';
+				showBulkToast('Reserved for ' + who + ': only they can fill this request.', 'info');
+				return false;
+			}
+		}
+		openInsertModal(rec.objectName, Object.assign({ record: rec }, options || {}));
+		return true;
 	}
 
 	function _slotNoAccessMessage(rec, e) {
-		const label = (rec && rec.slot && rec.slot.label) || (rec && (rec.label || rec.objectName)) || 'this slot';
+		const label = (rec && (rec.label || rec.objectName)) || 'this request';
 		if (e && e.code === 'object-no-access') {
 			return (
 				'You don’t have access to the “' +
 				label +
 				'” object (' +
 				rec.objectName +
-				') in Salesforce, so you can’t fill this slot. Ask the sender or your Salesforce admin for access.'
+				') in Salesforce, so you can’t complete this request. Ask the sender or your Salesforce admin for access.'
 			);
 		}
 		return 'Couldn’t open “' + label + '”: ' + ((e && e.message) || e);
@@ -4783,6 +5256,14 @@ function csrfFetch(url, options) {
 		if (!rec || !_isEmptySlot(rec)) {
 			return;
 		}
+		if (
+			!['contributor', 'editor'].includes(_getCanvasShareRole()) ||
+			!rec._recipientSlot ||
+			_isSlotLockedForCurrentUser(rec)
+		) {
+			showBulkToast('Only the eligible contributor can fill this record request.', 'info');
+			return;
+		}
 		const blocked = _canvasCapBlockReason(1);
 		if (blocked) {
 			showBulkToast(blocked);
@@ -4796,9 +5277,7 @@ function csrfFetch(url, options) {
 		rec.fromSelectionId = matchingSel ? matchingSel.id : null;
 		rec.label = (matchingSel && matchingSel.label) || rec.objectName;
 		rec.values = {};
-		delete rec.slot;
-		renderBulkView();
-		showBulkToast('Slot filled with a new draft. Edit the fields, then upload to save it.');
+		openInsertModal(rec.objectName, { record: rec });
 	}
 
 	async function runWithConcurrency(tasks, limit) {
@@ -4885,6 +5364,35 @@ function csrfFetch(url, options) {
 				renderBulkView();
 				return true;
 			},
+			setRecordSlot: (id, slot, recipientSlot) => {
+				const rec = canvasState.bulkRecords.find((r) => r.id === id);
+				if (!rec) {
+					return false;
+				}
+				rec.slot = slot
+					? Object.assign({}, slot, {
+							fields: Array.isArray(slot.fields) ? slot.fields.slice() : undefined,
+						})
+					: null;
+				rec._recipientSlot = !!recipientSlot;
+				renderBulkView();
+				return true;
+			},
+			setSharedCanvasRole: (role) => {
+				canvasState.currentCanvas = {
+					id: 'test-shared-canvas',
+					title: 'Test shared canvas',
+					ownedByMe: false,
+					versionId: null,
+					recipientRole: role,
+				};
+				_canvasShareCanvasId = canvasState.currentCanvas.id;
+				_canvasShareRecipientHasAccount = true;
+				_canvasShareRole = role;
+				canvasState._renderCanvasShareRole = role;
+				renderShareRecipientBanner();
+				renderBulkView();
+			},
 			addAssociation: (fromId, toId, fieldName) => {
 				canvasState.bulkAssociations.push({
 					id: canvasState.bulkIdSeq++,
@@ -4933,8 +5441,7 @@ function csrfFetch(url, options) {
 				if (!rec || rec.isTypeNode || rec.isPending || rec._inaccessible) {
 					return false;
 				}
-				openInsertModal(rec.objectName, { record: rec });
-				return true;
+				return openRecordForCurrentUser(rec);
 			},
 
 			confirmAndRecall: async (batchId) => _uh_testConfirmAndRecall(batchId),
@@ -5187,6 +5694,7 @@ function csrfFetch(url, options) {
 	});
 	const _isEmptySlot = _su._isEmptySlot;
 	const _slotAssignmentState = _su._slotAssignmentState;
+	const _isSlotLockedForCurrentUser = _su._isSlotLockedForCurrentUser;
 	const _slotAssigneeBadgeHtml = _su._slotAssigneeBadgeHtml;
 	const _slotAssignmentCardClass = _su._slotAssignmentCardClass;
 	const _slotProgress = _su._slotProgress;
@@ -5247,6 +5755,7 @@ function csrfFetch(url, options) {
 
 	const _bom = window.OrgLoom.bulkOpsMenu.mount({
 		canvasState: canvasState,
+		canEditCanvasStructure: _canEditCanvasStructure,
 		_hasCap: _hasCap,
 		bulkAutoFill: function () {
 			return bulkAutoFill.apply(null, arguments);
@@ -5289,6 +5798,9 @@ function csrfFetch(url, options) {
 		},
 		beginMigration: function () {
 			return beginMigration.apply(null, arguments);
+		},
+		openStandaloneRecordRequestPicker: function () {
+			return openStandaloneRecordRequestPicker.apply(null, arguments);
 		},
 		spawnPendingRecord: function () {
 			return spawnPendingRecord.apply(null, arguments);
@@ -5376,6 +5888,7 @@ function csrfFetch(url, options) {
 	const renderCanvas = _sb.renderCanvas;
 	const makeNode = _sb.makeNode;
 
+	let _publishPresenceLayout = function () {};
 	const _rcv = window.OrgLoom.recordsCanvas.mount({
 		canvasState: canvasState,
 		escapeHtml: escapeHtml,
@@ -5388,7 +5901,13 @@ function csrfFetch(url, options) {
 		attachCyMiddleClickPan: attachCyMiddleClickPan,
 		attachCySpacePan: attachCySpacePan,
 		openInsertModal: function () {
-			return openInsertModal.apply(null, arguments);
+			return openRecordForCurrentUser.apply(null, arguments);
+		},
+		getCanvasShareRole: function () {
+			return _getCanvasShareRole();
+		},
+		publishPresenceLayout: function (records) {
+			return _publishPresenceLayout(records);
 		},
 		showFindObjectPopover: function () {
 			return showFindObjectPopover.apply(null, arguments);
@@ -5403,6 +5922,9 @@ function csrfFetch(url, options) {
 		_isEmptySlot: function (r) {
 			return _isEmptySlot(r);
 		},
+		_slotAssignmentState: function (r) {
+			return _slotAssignmentState(r);
+		},
 		_slotAssigneeBadgeHtml: function (r) {
 			return _slotAssigneeBadgeHtml(r);
 		},
@@ -5411,6 +5933,9 @@ function csrfFetch(url, options) {
 		},
 		_slotAssignmentState: function (r) {
 			return _slotAssignmentState(r);
+		},
+		_isSlotLockedForCurrentUser: function (r) {
+			return _isSlotLockedForCurrentUser(r);
 		},
 		_slotPreflightWarn: function (r) {
 			return _slotPreflightWarn(r);
@@ -5502,6 +6027,68 @@ function csrfFetch(url, options) {
 	});
 	const renderBulkCanvasCy = _rcv.renderBulkCanvasCy;
 
+	async function startNewCanvas() {
+		const previousCanvasId =
+			canvasState.currentCanvas && canvasState.currentCanvas.id ? canvasState.currentCanvas.id : null;
+
+		// Clear the old scope before changing its identity so it cannot be restored on refresh.
+		_autosaveClear();
+		if (previousCanvasId) {
+			try {
+				clearAllSessionDraftsForCanvas(previousCanvasId);
+			} catch (_) {}
+		}
+		try {
+			_presence.unsubscribe();
+		} catch (_) {}
+
+		document.querySelectorAll('.modal.is-inline').forEach((modal) => modal.remove());
+		canvasState.currentCanvas = null;
+		canvasState.currentRecordRef = null;
+		canvasState.savedRecords = {};
+		canvasState.diffSuppressions = {};
+		canvasState.bulkZoom = 1;
+		canvasState.graphZoom = 1;
+		canvasState._pendingPan = null;
+		canvasState._suppressNextViewTransition = false;
+		canvasState._userZoomOverride = false;
+		canvasState._bulkUserZoomOverride = false;
+		canvasState._schemaViewObject = null;
+		canvasState._schemaViewPath = [];
+		canvasState._schemaViewPathEdges = [];
+		canvasState._lastSchemaFocusRecId = null;
+		canvasState._pendingNavOriginPos = null;
+		canvasState._autoSpawnedPending = false;
+		_selectedDerivedEdge = null;
+		_cyPendingEdge = null;
+		undoStack.length = 0;
+		_setStaleRefsFromLoad([]);
+		exitMigrateMode();
+
+		_canvasShareCanvasId = null;
+		_canvasShareRecipientHasAccount = false;
+		_canvasShareRole = null;
+		canvasState._renderCanvasShareRole = null;
+		_shareRecipientSubmitState = 'idle';
+		if (_shareRecipientSubmitResetTimer) {
+			clearTimeout(_shareRecipientSubmitResetTimer);
+			_shareRecipientSubmitResetTimer = null;
+		}
+		document.body.classList.remove('canvas-share-banner-active', 'canvas-recipient-mode');
+		const shareBanner = document.getElementById('share-recipient-banner');
+		if (shareBanner) {
+			shareBanner.remove();
+		}
+
+		_clearDraftCanvasId();
+		_ensureDraftCanvasId();
+		resetToBasePicker();
+		renderOrgBanner();
+		renderBulkToolbar();
+		_watchProposalsForCurrentCanvas();
+		showBulkToast('Started a new canvas. Your saved canvases are unchanged.');
+	}
+
 	const _csl = window.OrgLoom.canvasSaveLoad.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -5511,14 +6098,9 @@ function csrfFetch(url, options) {
 		showPromptModal: function () {
 			return showPromptModal.apply(null, arguments);
 		},
-		showReplaceOrMergeDialog: function () {
-			return showReplaceOrMergeDialog.apply(null, arguments);
-		},
 		_openAnchoredPopup: _openAnchoredPopup,
 		_formatRelativeTime: _formatRelativeTime,
 		_setStaleRefsFromLoad: _setStaleRefsFromLoad,
-		_addStaleRefIds: _addStaleRefIds,
-		_staleIdKey: _staleIdKey,
 		_watchProposalsForCurrentCanvas: function () {
 			return _watchProposalsForCurrentCanvas.apply(null, arguments);
 		},
@@ -5527,6 +6109,9 @@ function csrfFetch(url, options) {
 		},
 		buildCanvasPayload: function () {
 			return buildCanvasPayload.apply(null, arguments);
+		},
+		ensureDraftSlotMetadata: function () {
+			return ensureDraftSlotMetadata.apply(null, arguments);
 		},
 		downloadTemplate: function () {
 			return downloadTemplate.apply(null, arguments);
@@ -5546,6 +6131,9 @@ function csrfFetch(url, options) {
 		renderBulkView: function () {
 			return renderBulkView();
 		},
+		previewCanvasName: function (name) {
+			return renderCanvasName(name);
+		},
 		summarizeCanvasContent: function () {
 			return _importShared.summarizeCanvasContent(canvasState);
 		},
@@ -5555,10 +6143,33 @@ function csrfFetch(url, options) {
 		rehydrateSessionDraftValues: function () {
 			return rehydrateSessionDraftValues.apply(null, arguments);
 		},
+		onCanvasLoaded: function (data, id) {
+			announceMergedContributions(data);
+			if (data && !data.ownedByMe) {
+				_canvasShareCanvasId = id;
+				_canvasShareRecipientHasAccount = !!data.recipientHasAccount;
+				_canvasShareRole = data.recipientRole || 'viewer';
+				canvasState._renderCanvasShareRole = _canvasShareRole;
+				renderShareRecipientBanner();
+			} else {
+				_canvasShareCanvasId = null;
+				_canvasShareRole = null;
+				canvasState._renderCanvasShareRole = null;
+				document.body.classList.remove('canvas-share-banner-active', 'canvas-recipient-mode');
+				const banner = document.getElementById('share-recipient-banner');
+				if (banner) {
+					banner.remove();
+				}
+			}
+			renderOrgBanner();
+			renderBulkView();
+			renderBulkToolbar();
+		},
 		_hasCap: function (name) {
 			return _hasCap(name);
 		},
 		clearAutosave: _autosaveClear,
+		startNewCanvas: startNewCanvas,
 	});
 	const showSaveMenu = _csl.showSaveMenu;
 	const promptCanvasSave = _csl.promptCanvasSave;
@@ -5708,6 +6319,7 @@ function csrfFetch(url, options) {
 
 	const _ps = window.OrgLoom.pendingSpawn.mount({
 		canvasState: canvasState,
+		canEditCanvasStructure: _canEditCanvasStructure,
 		showBulkToast: showBulkToast,
 		pushUndo: pushUndo,
 		_canvasCapBlockReason: _canvasCapBlockReason,
@@ -5856,11 +6468,18 @@ function csrfFetch(url, options) {
 		realRecordCount: _realRecordCount,
 		runSlotPreflight: _runSlotPreflight,
 		clearEmptyStarterCard: clearEmptyStarterCard,
+		getSlotIdSeq: function () {
+			return slotIdSeq;
+		},
+		setSlotIdSeq: function (next) {
+			slotIdSeq = next;
+		},
 		showBulkToastWithAction: showBulkToastWithAction,
 	});
 	const buildTemplate = _tpl.buildTemplate;
 	const sanitizeFilename = _tpl.sanitizeFilename;
 	const buildCanvasPayload = _tpl.buildCanvasPayload;
+	const ensureDraftSlotMetadata = _tpl.ensureDraftSlotMetadata;
 	const downloadTemplate = _tpl.downloadTemplate;
 	const saveTemplateRemote = _tpl.saveTemplateRemote;
 	const validateTemplate = _tpl.validateTemplate;
@@ -5955,6 +6574,7 @@ function csrfFetch(url, options) {
 			await applyCanvasPayload(data.payload || {}, {
 				merge: false,
 				ownedByMe: !!data.ownedByMe,
+				recipientRole: data.recipientRole || null,
 			});
 			_setStaleRefsFromLoad(data.staleRefs);
 			canvasState.currentCanvas = {
@@ -5962,7 +6582,15 @@ function csrfFetch(url, options) {
 				title: data.title || cur.title || '',
 				ownedByMe: !!data.ownedByMe,
 				versionId: data.versionId || null,
+				recipientRole: data.recipientRole || null,
 			};
+			announceMergedContributions(data);
+			if (!data.ownedByMe) {
+				_canvasShareCanvasId = cur.id;
+				_canvasShareRecipientHasAccount = !!data.recipientHasAccount;
+				_canvasShareRole = data.recipientRole || 'viewer';
+				renderShareRecipientBanner();
+			}
 
 			try {
 				rehydrateSessionDraftValues(cur.id);
@@ -5973,6 +6601,7 @@ function csrfFetch(url, options) {
 					});
 			}
 			renderBulkView();
+			renderBulkToolbar();
 			return true;
 		} catch (e) {
 			console.warn('[presence] live-sync reload failed:', e && e.message);
@@ -5998,7 +6627,53 @@ function csrfFetch(url, options) {
 		addToSelection: function () {
 			return addToSelection.apply(null, arguments);
 		},
+		buildCanvasPayload: function () {
+			return buildCanvasPayload.apply(null, arguments);
+		},
+		applyLiveSnapshot: async function (payload) {
+			const current = canvasState.currentCanvas ? Object.assign({}, canvasState.currentCanvas) : null;
+			await applyCanvasPayload(payload || {}, {
+				merge: false,
+				ownedByMe: current ? !!current.ownedByMe : true,
+				recipientRole: current ? current.recipientRole || null : null,
+			});
+			canvasState.currentCanvas = current;
+			renderBulkView();
+			renderBulkToolbar();
+		},
+		onAccessChanged: function (detail) {
+			const current = canvasState.currentCanvas;
+			if (!current || current.ownedByMe) {
+				return;
+			}
+			if (detail && detail.change === 'increased') {
+				return;
+			}
+			const role = detail && detail.role ? detail.role : 'viewer';
+			current.recipientRole = role;
+			_canvasShareRole = role;
+			canvasState._renderCanvasShareRole = role;
+			if (detail && (detail.revoked || detail.change === 'decreased')) {
+				document.querySelectorAll('.modal.is-inline').forEach((modal) => modal.remove());
+				canvasState.bulkSelectedIds.clear();
+				canvasState.bulkSelectedEdgeId = null;
+			}
+			if (detail && detail.revoked) {
+				_autosaveClear();
+				canvasState.bulkRecords = [];
+				canvasState.bulkAssociations = [];
+				canvasState.currentCanvas = null;
+				_canvasShareCanvasId = null;
+				_canvasShareRole = null;
+				canvasState._renderCanvasShareRole = null;
+				_presence.unsubscribe();
+			}
+			renderShareRecipientBanner();
+			renderBulkView();
+			renderBulkToolbar();
+		},
 	});
+	_publishPresenceLayout = _presence.publishLayout;
 	const pushPresenceFocus = _presence.pushFocus;
 
 	const _aip = window.OrgLoom.aiProposals.mount({
@@ -6050,10 +6725,8 @@ function csrfFetch(url, options) {
 		renderChips: renderChips,
 		renderBulkView: renderBulkView,
 		getCanvasShareRole: function () {
-			return _canvasShareRole;
+			return _getCanvasShareRole();
 		},
-		_formatRelativeTime: _formatRelativeTime,
-		_resolveUserName: _resolveUserName,
 		_slotProgress: _slotProgress,
 		_slotProgressClass: _slotProgressClass,
 		recordOrdinal: recordOrdinal,
@@ -6062,12 +6735,18 @@ function csrfFetch(url, options) {
 		unmarkPendingDelete: unmarkPendingDelete,
 		showConfirmDialog: showConfirmDialog,
 		pushPresenceFocus: pushPresenceFocus,
+		publishPresenceLayout: function (records) {
+			return _publishPresenceLayout(records);
+		},
 
 		getCyInstance: function () {
 			return _cyInstance;
 		},
 		getCyContainer: function () {
 			return _cyInstance && typeof _cyInstance.container === 'function' ? _cyInstance.container() : null;
+		},
+		getCyPendingEdge: function () {
+			return _cyPendingEdge;
 		},
 	});
 	const openInsertModal = _ins.openInsertModal;
@@ -6078,6 +6757,28 @@ function csrfFetch(url, options) {
 	const tryFixValidationRules = _ins.tryFixValidationRules;
 	const fieldTypeFilter = _ins.fieldTypeFilter;
 	const sampleValueForField = _ins.sampleValueForField;
+
+	const _sharedTasks = window.OrgLoom.sharedTaskSidebar.mount({
+		canvasState: canvasState,
+		escapeHtml: escapeHtml,
+		getCanvasShareRole: function () {
+			return _getCanvasShareRole();
+		},
+		getCyInstance: function () {
+			return _cyInstance;
+		},
+		openInsertModal: function () {
+			const objectName = arguments[0];
+			const options = arguments[1] || {};
+			return options.record
+				? openRecordForCurrentUser(options.record, { focusField: options.focusField })
+				: openInsertModal(objectName, options);
+		},
+		slotAssignmentState: _slotAssignmentState,
+		slotProgress: _slotProgress,
+		slotPreflightWarn: _slotPreflightWarn,
+	});
+	_renderSharedTaskSidebar = _sharedTasks.render;
 
 	function startElapsedTicker(el) {
 		if (!el) {
@@ -6174,6 +6875,17 @@ function csrfFetch(url, options) {
 	const _restored = _migrationResumed || _orgSwitchRestored || _autosaveRestore();
 	const _quickUploadRestored =
 		!_migrationResumed && !_orgSwitchRestored && _restoreInterruptedQuickUpload && _restoreInterruptedQuickUpload();
+	if (
+		_restored &&
+		canvasState.currentCanvas &&
+		canvasState.currentCanvas.id &&
+		!canvasState.currentCanvas.ownedByMe
+	) {
+		_canvasShareCanvasId = canvasState.currentCanvas.id;
+		_canvasShareRole = canvasState.currentCanvas.recipientRole || 'viewer';
+		canvasState._renderCanvasShareRole = _canvasShareRole;
+		renderShareRecipientBanner();
+	}
 	if (
 		(_restored || _quickUploadRestored) &&
 		!_migrationResumed &&

@@ -1,5 +1,4 @@
-// Canvas API boundary: authentication, workspace policy, audit, and Salesforce orchestration.
-// Lower-level modules own Salesforce mechanics; routes validate and gate before invoking them.
+// Canvas API boundary for authentication, policy, audit, and Salesforce orchestration.
 import { ext as defaultExt } from 'orgloom-canvas/extensions';
 let ext = defaultExt;
 import { connections as connectionsDb } from './database/index.js';
@@ -16,8 +15,16 @@ import { getActiveSfConnection } from './sf-connection.js';
 import { hasAssignedOrgloomPermissionSet } from './sf-permset.js';
 import { isSalesforceSessionExpiredError } from './sf-session-errors.js';
 import { canvasStoreFromSfConnection } from './storage/canvas-store.js';
+import { canvasContributionStoreFromSfConnection } from './storage/canvas-contribution-store.js';
 import { uploadBatchesStoreFromSfConnection } from './storage/upload-batches-store.js';
-import { stripDraftsForNonOwner, planSlotFills, payloadContainsSlots } from './slot-helpers.js';
+import {
+	stripDraftsForNonOwner,
+	mergeSlotFills,
+	applyContributionsToPayload,
+	projectSharedCanvasPayload,
+	projectSharedRelationshipsByVisibility,
+	payloadContainsSlots,
+} from './slot-helpers.js';
 import { recordsToShareFromManifest } from './sf-record-share.js';
 import { recipientRequiresPlan } from './shared-canvas-entitlement.js';
 
@@ -56,6 +63,7 @@ import {
 import {
 	rejectIfOverPayloadCap,
 	rejectIfUploadOrgChanged,
+	rejectSpecializedUploadObjects,
 	makeDescribeCache,
 	stripUnwritableFields,
 	formatUploadError,
@@ -78,6 +86,7 @@ import {
 } from './upload-recall.js';
 import { runBulkJob } from './sf-bulk.js';
 import { listObjects, loadDescribeForObject, getQueryableSObjects, cleanLabel, isNoiseSObject } from './sf-describe.js';
+import { isSpecializedSObject, specializedObjectError } from './sf-object-support.js';
 import {
 	escapeSoqlLiteral,
 	formatSoqlFieldLiteral,
@@ -92,6 +101,34 @@ import { buildOrgApprovalDeniedPayload } from './org-approval-copy.js';
 
 const _activeUploadAttempts = new Set();
 const UPLOAD_ATTEMPT_ID_RE = /^[a-zA-Z0-9-]{16,64}$/;
+export const WORKSPACE_CONTEXT_HEADER = 'x-orgloom-workspace-id';
+const WORKSPACE_ID_RE = /^ws_[A-Za-z0-9-]{1,100}$/;
+
+function _requestedWorkspaceId(req) {
+	const raw =
+		(req && typeof req.get === 'function' && req.get(WORKSPACE_CONTEXT_HEADER)) ||
+		(req && req.headers && req.headers[WORKSPACE_CONTEXT_HEADER]);
+	if (Array.isArray(raw)) {
+		return raw.length === 1 ? String(raw[0]).trim() : '';
+	}
+	return raw == null ? null : String(raw).trim();
+}
+
+async function _requestWorkspaceId(req) {
+	if (req && req.workspaceId) {
+		return req.workspaceId;
+	}
+	const accountId = req && req.account && req.account.id;
+	if (!accountId) {
+		return null;
+	}
+	const workspace = await ext.getActiveWorkspace(req);
+	if (workspace && workspace.id) {
+		return (workspace && workspace.id) || null;
+	}
+	const view = await viewStateDb.get(accountId);
+	return (view && view.current_workspace_id) || null;
+}
 
 export function _requireUploadAttemptIdForTests(req, res) {
 	const raw = req.body && req.body.attemptId;
@@ -249,19 +286,344 @@ async function _findCanvasShareGrant(req, canvasId) {
 	}
 }
 
+function _salesforceIdKey(id) {
+	return String(id || '')
+		.slice(0, 15)
+		.toLowerCase();
+}
+
 async function _removeSfShareForRecipient(store, canvasId, recipientSfUserId) {
 	if (!recipientSfUserId || typeof store.listShares !== 'function' || typeof store.removeShare !== 'function') {
 		return 0;
 	}
 	const listed = await store.listShares(canvasId);
 	const rows = Array.isArray(listed) ? listed : listed && Array.isArray(listed.shares) ? listed.shares : [];
-	const matching = rows.filter((r) => r && r.entityId === recipientSfUserId);
+	const recipientKey = _salesforceIdKey(recipientSfUserId);
+	const matching = rows.filter((r) => r && _salesforceIdKey(r.entityId) === recipientKey);
 	let removed = 0;
 	for (const row of matching) {
 		await store.removeShare(canvasId, row.id);
 		removed += 1;
 	}
 	return removed;
+}
+
+async function _sharedObjectAccessForPayload(conn, payload) {
+	const objectNames = new Set();
+	for (const key of ['loadedRecords', 'drafts']) {
+		for (const record of Array.isArray(payload && payload[key]) ? payload[key] : []) {
+			if (record && record.objectName) {
+				objectNames.add(record.objectName);
+			}
+		}
+	}
+	for (const object of Array.isArray(payload && payload.schema && payload.schema.objects)
+		? payload.schema.objects
+		: []) {
+		if (object && object.name) {
+			objectNames.add(object.name);
+		}
+	}
+	const access = new Map();
+	await Promise.all(
+		Array.from(objectNames).map(async (objectName) => {
+			try {
+				const describe = await loadDescribeForObject(conn, objectName);
+				const fields = (describe.fields || []).filter((field) => field && field.name);
+				access.set(objectName, {
+					visible: true,
+					label: describe.label || objectName,
+					queryable: describe.queryable !== false,
+					createable: !!describe.createable,
+					updateable: !!describe.updateable,
+					readableFields: new Set(fields.map((field) => field.name)),
+					fields: new Map(fields.map((field) => [field.name, field])),
+				});
+			} catch (_error) {
+				access.set(objectName, {
+					visible: false,
+					label: null,
+					queryable: false,
+					createable: false,
+					updateable: false,
+					readableFields: new Set(),
+					fields: new Map(),
+				});
+			}
+		}),
+	);
+	return access;
+}
+
+function _sharedProjectionRemovedContent(source, projected) {
+	const original = source && typeof source === 'object' ? source : {};
+	const safe = projected && typeof projected === 'object' ? projected : {};
+	if ((safe.hiddenRecords || []).length > 0) {
+		return true;
+	}
+	const recordKey = (record, draft) =>
+		draft ? String(record && record.tempId) : _salesforceIdKey(record && record.loadedFromId);
+	const recordMap = (records, draft) =>
+		new Map(
+			(Array.isArray(records) ? records : [])
+				.filter((record) => record && recordKey(record, draft))
+				.map((record) => [recordKey(record, draft), record]),
+		);
+	const sameFieldNames = (left, right) => {
+		const names = (value) => Object.keys(value && typeof value === 'object' ? value : {}).sort();
+		return JSON.stringify(names(left)) === JSON.stringify(names(right));
+	};
+	for (const [key, draft] of [
+		['loadedRecords', false],
+		['drafts', true],
+	]) {
+		const originalRecords = Array.isArray(original[key]) ? original[key] : [];
+		const projectedRecords = Array.isArray(safe[key]) ? safe[key] : [];
+		if (originalRecords.length !== projectedRecords.length) {
+			return true;
+		}
+		const projectedByKey = recordMap(projectedRecords, draft);
+		for (const record of originalRecords) {
+			const visible = projectedByKey.get(recordKey(record, draft));
+			if (!visible) {
+				return true;
+			}
+			if (!sameFieldNames(record.values, visible.values) || !sameFieldNames(record.changes, visible.changes)) {
+				return true;
+			}
+			const originalSlotFields =
+				record.slot && record.slot.kind === 'fields' && Array.isArray(record.slot.fields)
+					? record.slot.fields.slice().sort()
+					: [];
+			const projectedSlotFields =
+				visible.slot && visible.slot.kind === 'fields' && Array.isArray(visible.slot.fields)
+					? visible.slot.fields.slice().sort()
+					: [];
+			if (JSON.stringify(originalSlotFields) !== JSON.stringify(projectedSlotFields)) {
+				return true;
+			}
+		}
+	}
+	if (
+		(Array.isArray(original.associations) ? original.associations.length : 0) !==
+		(Array.isArray(safe.associations) ? safe.associations.length : 0)
+	) {
+		return true;
+	}
+	const schemaFieldNames = (payload) =>
+		new Map(
+			(Array.isArray(payload && payload.schema && payload.schema.objects) ? payload.schema.objects : [])
+				.filter((object) => object && object.name)
+				.map((object) => [
+					object.name,
+					(Array.isArray(object.draftFields) ? object.draftFields : [])
+						.filter((field) => field && field.name)
+						.map((field) => field.name)
+						.sort(),
+				]),
+		);
+	const originalSchema = schemaFieldNames(original);
+	const projectedSchema = schemaFieldNames(safe);
+	if (originalSchema.size !== projectedSchema.size) {
+		return true;
+	}
+	for (const [objectName, fields] of originalSchema) {
+		if (JSON.stringify(fields) !== JSON.stringify(projectedSchema.get(objectName) || [])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function _readableFieldsForAccess(entry) {
+	if (entry instanceof Set) {
+		return entry;
+	}
+	if (entry && entry.readableFields instanceof Set) {
+		return entry.readableFields;
+	}
+	return new Set(Array.isArray(entry && entry.readableFields) ? entry.readableFields : []);
+}
+
+export async function buildSharedPresenceVisibility(conn, payload, objectAccessByName = null) {
+	const source = payload && typeof payload === 'object' ? payload : {};
+	const loadedRecords = Array.isArray(source.loadedRecords) ? source.loadedRecords : [];
+	const drafts = Array.isArray(source.drafts) ? source.drafts : [];
+	const access =
+		objectAccessByName instanceof Map ? objectAccessByName : await _sharedObjectAccessForPayload(conn, source);
+	const visibleIds = new Set();
+	const recordsByObject = new Map();
+	for (const record of loadedRecords) {
+		const objectAccess = access.get(record && record.objectName);
+		const readableFields = _readableFieldsForAccess(objectAccess);
+		const objectVisible =
+			objectAccess instanceof Set
+				? objectAccess.size > 0
+				: !!(objectAccess && objectAccess.visible !== false && objectAccess.queryable !== false);
+		if (
+			!record ||
+			!record.objectName ||
+			!/^[A-Za-z][A-Za-z0-9_]*$/.test(record.objectName) ||
+			!/^[A-Za-z0-9]{15,18}$/.test(String(record.loadedFromId || '')) ||
+			!objectVisible ||
+			readableFields.size === 0
+		) {
+			continue;
+		}
+		if (!recordsByObject.has(record.objectName)) {
+			recordsByObject.set(record.objectName, []);
+		}
+		recordsByObject.get(record.objectName).push(String(record.loadedFromId));
+	}
+	const apiVersion = conn.version || '60.0';
+	for (const [objectName, ids] of recordsByObject) {
+		for (let index = 0; index < ids.length; index += 200) {
+			const chunk = ids.slice(index, index + 200);
+			const inList = chunk.map((id) => "'" + escapeSoqlLiteral(id) + "'").join(',');
+			try {
+				const result = await conn.request({
+					method: 'GET',
+					url:
+						'/services/data/v' +
+						apiVersion +
+						'/query/?q=' +
+						encodeURIComponent('SELECT Id FROM ' + objectName + ' WHERE Id IN (' + inList + ')'),
+				});
+				for (const record of result.records || []) {
+					visibleIds.add(_salesforceIdKey(record.Id));
+				}
+			} catch (_error) {
+				// Presence is fail-closed. The normal canvas load still explains inaccessible records.
+			}
+		}
+	}
+
+	const visibleLoadedRecords = {};
+	const slots = {};
+	for (const record of loadedRecords) {
+		if (!record || typeof record !== 'object') {
+			continue;
+		}
+		const recordKey = _salesforceIdKey(record.loadedFromId);
+		const isVisible = !!recordKey && visibleIds.has(recordKey);
+		if (isVisible) {
+			visibleLoadedRecords[recordKey] = {
+				objectName: record.objectName,
+				readableFields: Array.from(_readableFieldsForAccess(access.get(record.objectName))),
+			};
+		}
+		if (record.slot && record.slot.slotId != null) {
+			slots[String(record.slot.slotId)] = record.loadedFromId
+				? { visible: isVisible, loadedRecordId: String(record.loadedFromId) }
+				: { visible: true, loadedRecordId: null };
+		}
+	}
+	const visibleDrafts = {};
+	for (const draft of drafts) {
+		if (!draft || draft.tempId == null || !draft.objectName) {
+			continue;
+		}
+		const objectAccess = access.get(draft.objectName);
+		const visible =
+			objectAccess instanceof Set ? objectAccess.size > 0 : !!(objectAccess && objectAccess.visible !== false);
+		visibleDrafts[String(draft.tempId)] = visible
+			? {
+					visible: true,
+					objectName: draft.objectName,
+					readableFields: Array.from(_readableFieldsForAccess(objectAccess)),
+				}
+			: { visible: false };
+		if (draft.slot && draft.slot.slotId != null) {
+			slots[String(draft.slot.slotId)] = {
+				visible,
+				loadedRecordId: null,
+				draftId: String(draft.tempId),
+			};
+		}
+	}
+	const objects = {};
+	for (const [objectName, objectAccess] of access) {
+		const visible =
+			objectAccess instanceof Set ? objectAccess.size > 0 : !!(objectAccess && objectAccess.visible !== false);
+		objects[objectName] = visible
+			? {
+					visible: true,
+					readableFields: Array.from(_readableFieldsForAccess(objectAccess)),
+				}
+			: { visible: false };
+	}
+	return { loadedRecords: visibleLoadedRecords, drafts: visibleDrafts, objects, slots };
+}
+
+function _describeErrorResponse(error, objectName) {
+	const codes = new Set();
+	const collect = (value) => {
+		if (!value) {
+			return;
+		}
+		if (Array.isArray(value)) {
+			value.forEach(collect);
+			return;
+		}
+		if (typeof value === 'string') {
+			codes.add(value);
+			return;
+		}
+		if (typeof value === 'object') {
+			collect(value.errorCode);
+			collect(value.code);
+			collect(value.name);
+		}
+	};
+	collect(error);
+	collect(error && error.data);
+	collect(error && error.body);
+	const status = Number(error && (error.statusCode || error.status)) || 0;
+	if (codes.has('NOT_FOUND') || codes.has('INVALID_TYPE') || status === 404) {
+		return {
+			status: 404,
+			body: {
+				error: 'object-not-available',
+				objectName,
+				message:
+					objectName +
+					' is not available through this Salesforce connection. It may have been removed, or your Salesforce user may not have access.',
+			},
+		};
+	}
+	if (codes.has('INSUFFICIENT_ACCESS') || codes.has('INSUFFICIENT_ACCESS_OR_READONLY') || status === 403) {
+		return {
+			status: 403,
+			body: {
+				error: 'object-not-readable',
+				objectName,
+				message:
+					'Your Salesforce user cannot read ' +
+					objectName +
+					'. Ask a Salesforce administrator for object access, then try again.',
+			},
+		};
+	}
+	return null;
+}
+
+function _recordErrorResponse(error, objectName, recordId) {
+	const objectResponse = _describeErrorResponse(error, objectName);
+	if (!objectResponse) {
+		return null;
+	}
+	const unavailable = objectResponse.status === 404;
+	return {
+		status: objectResponse.status,
+		body: {
+			error: unavailable ? 'record-not-available' : 'record-not-readable',
+			objectName,
+			recordId,
+			message: unavailable
+				? 'This Salesforce record is not available through the current connection. It may have been removed, or your Salesforce user may not have access.'
+				: 'Your Salesforce user cannot read this record. Ask a Salesforce administrator for access, then try again.',
+		},
+	};
 }
 
 async function requireSfConnection(req, res, next) {
@@ -333,6 +695,7 @@ async function requireUploadOrgApproval(req, res, next) {
 			return next();
 		}
 		const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+			workspaceId: req.workspaceId || undefined,
 			sfOrgId: sfAuth.sfOrgId,
 			orgType: connection.org_type || 'unknown',
 			createPendingOnDeny: true,
@@ -501,6 +864,18 @@ export async function requireAccount(req, res, next) {
 			return res.status(401).json({ error: 'account-stale' });
 		}
 		req.account = account;
+		const requestedWorkspaceId = _requestedWorkspaceId(req);
+		if (requestedWorkspaceId !== null && _saasAvailable && workspacesDb) {
+			if (!requestedWorkspaceId || !WORKSPACE_ID_RE.test(requestedWorkspaceId)) {
+				return res.status(400).json({ error: 'invalid-workspace-context' });
+			}
+			const role = await workspacesDb.findMemberRole(requestedWorkspaceId, account.id);
+			if (!role) {
+				return res.status(403).json({ error: 'not-a-member' });
+			}
+			req.workspaceId = requestedWorkspaceId;
+			req.workspaceRole = role;
+		}
 		next();
 	} catch (err) {
 		next(err);
@@ -511,8 +886,7 @@ async function _auditWorkspaceAccessDenied(req, attemptedWorkspaceId, errorCode,
 	try {
 		let auditWorkspaceId = attemptedWorkspaceId;
 		if (!actualRole) {
-			const view = await viewStateDb.get(req.account.id);
-			auditWorkspaceId = (view && view.current_workspace_id) || null;
+			auditWorkspaceId = await _requestWorkspaceId(req);
 		}
 		await ext.auditWrite({
 			req,
@@ -589,6 +963,7 @@ export function requireWorkspaceMember(extractWorkspaceId = (req) => req.params.
 async function _gateCapability(req, res, capability, auditAction, opts = {}) {
 	const cap = await ext.getCapability(req.account, capability, {
 		req,
+		workspaceId: req.workspaceId || undefined,
 		auditAction: auditAction + '_denied',
 		auditPayload: opts.auditPayload || undefined,
 		...(opts.extra || {}),
@@ -610,10 +985,9 @@ async function _gateCapability(req, res, capability, auditAction, opts = {}) {
 
 async function _auditCrossAccountConnAccess(req, attemptedConnectionId, ownerAccountId, route) {
 	try {
-		const view = await viewStateDb.get(req.account.id);
 		await ext.auditWrite({
 			req,
-			workspaceId: (view && view.current_workspace_id) || null,
+			workspaceId: await _requestWorkspaceId(req),
 			action: 'connection_access_denied',
 			targetObject: 'connections',
 			targetId: attemptedConnectionId,
@@ -912,7 +1286,23 @@ export function mountCanvasRoutes(app, options = {}) {
 				sessionId: req.session && req.session.id,
 			});
 			const result = await store.list();
-			res.json(result);
+			const roleByCanvas = await canvasRoleGrantsDb.listForRecipient({
+				sfOrgId: req.sf.sfOrgId,
+				recipientSfUserId: req.sf.sfUserId,
+			});
+			const normalizedRoles = new Map(
+				Object.entries(roleByCanvas).map(([canvasId, grant]) => [_salesforceIdKey(canvasId), grant]),
+			);
+			const items = (Array.isArray(result && result.items) ? result.items : [])
+				.map((item) => {
+					if (item && item.ownedByMe) {
+						return item;
+					}
+					const grant = item && normalizedRoles.get(_salesforceIdKey(item.id));
+					return grant ? { ...item, role: grant.role } : null;
+				})
+				.filter(Boolean);
+			res.json({ ...result, items });
 		} catch (err) {
 			next(err);
 		}
@@ -927,9 +1317,23 @@ export function mountCanvasRoutes(app, options = {}) {
 			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
 				sessionId: req.session && req.session.id,
 			});
-			const item = await store.get(id);
+			let item;
+			try {
+				item = await store.get(id);
+			} catch (error) {
+				if (error && (error.statusCode === 404 || error.code === 'canvas-not-accessible')) {
+					return res.status(404).json({
+						error: 'canvas-not-accessible',
+						message: 'This canvas is unavailable or is no longer shared with you.',
+					});
+				}
+				throw error;
+			}
 			if (!item) {
-				return res.status(404).json({ error: 'not-found' });
+				return res.status(404).json({
+					error: 'canvas-not-accessible',
+					message: 'This canvas is unavailable or is no longer shared with you.',
+				});
 			}
 			if (item.ownedByMe) {
 				if (
@@ -939,14 +1343,54 @@ export function mountCanvasRoutes(app, options = {}) {
 				) {
 					return;
 				}
+				try {
+					const contributionStore = canvasContributionStoreFromSfConnection(
+						req.sf.conn,
+						req.sf.sfUserId,
+						req.sf.sfOrgId,
+						{ sessionId: req.session && req.session.id },
+					);
+					const pendingResult = await contributionStore.listPending(id);
+					const merged = applyContributionsToPayload(item.payload, pendingResult.contributions);
+					const skippedContributionIds = merged.skipped.map((entry) => entry.contributionId).filter(Boolean);
+					if (merged.appliedContributionIds.length > 0) {
+						const saved = await store.update(id, {
+							payload: merged.payload,
+							expectedVersionId: item.versionId,
+						});
+						await contributionStore.markMerged(merged.appliedContributionIds);
+						item.payload = merged.payload;
+						item.versionId = saved.versionId;
+						item.contributionsApplied = merged.appliedContributionIds.length;
+					}
+					const rejectedContributionIds = pendingResult.rejectedIds || [];
+					const supersededIds = [...new Set([...skippedContributionIds, ...rejectedContributionIds])];
+					if (supersededIds.length > 0) {
+						await contributionStore.markSuperseded(supersededIds);
+						item.contributionMergeWarning = rejectedContributionIds.length
+							? 'Some contributor submissions were invalid or no longer matched an active request and were not applied.'
+							: 'Some contributor submissions no longer matched an active request and were not applied.';
+					}
+				} catch (error) {
+					console.warn('[canvas-contributions] owner merge skipped:', error.message || error);
+					item.contributionMergeWarning =
+						'Contributor submissions could not be merged. No submitted values were discarded.';
+				}
 			}
 
 			let grant = null;
 			if (!item.ownedByMe) {
-				grant = await _findCanvasShareGrant(req, id);
+				grant = await _findCanvasShareGrant(req, item.id || id);
+				if (!grant) {
+					return res.status(404).json({
+						error: 'canvas-not-accessible',
+						message: 'You no longer have access to this canvas. Ask the owner to share it again.',
+					});
+				}
 				if (recipientRequiresPlan(grant)) {
 					const cap = await ext.getCapability(req.account, 'receive-canvas', {
 						req,
+						workspaceId: req.workspaceId || undefined,
 						auditAction: 'canvas_receive_denied',
 						auditPayload: { canvasId: id, ownerSfUserId: item.ownerId },
 					});
@@ -954,7 +1398,7 @@ export function mountCanvasRoutes(app, options = {}) {
 						return res.status(402).json({
 							error: cap.reason || 'upgrade-required',
 							message:
-								'Contributor and Editor access requires an active Pro trial, Pro subscription, or Team seat. If your trial is unused, open Your workspace to start it. Otherwise, upgrade or ask the owner to share this canvas as Viewer.',
+								'Editor access requires an active Pro trial, Pro subscription, or Team seat. Upgrade, start an unused trial from Your workspace, or ask the owner for Contributor or Viewer access.',
 							required: cap.required,
 							currentPlan: cap.plan,
 						});
@@ -962,22 +1406,40 @@ export function mountCanvasRoutes(app, options = {}) {
 				}
 			}
 
-			const payload = item.ownedByMe ? item.payload : stripDraftsForNonOwner(item.payload);
+			const live = item.contributionsApplied
+				? null
+				: canvasPresence.unsavedLiveSnapshot({
+						canvasId: item.id || id,
+						sfOrgId: req.sf.sfOrgId,
+					});
+			let payload = live ? live.payload : item.payload;
+			let sharedVisibility = null;
+			if (!item.ownedByMe) {
+				payload = stripDraftsForNonOwner(payload);
+				const objectAccess = await _sharedObjectAccessForPayload(req.sf.conn, payload);
+				payload = projectSharedCanvasPayload(payload, objectAccess);
+				sharedVisibility = await buildSharedPresenceVisibility(req.sf.conn, payload, objectAccess);
+				payload = projectSharedRelationshipsByVisibility(payload, sharedVisibility);
+			}
 			let recipientRole = null;
 			let recipientHasAccount = false;
 			if (!item.ownedByMe) {
-				if (grant) {
-					recipientRole = grant.role || 'viewer';
-				} else {
-					recipientRole = 'viewer';
-				}
+				recipientRole = grant.role;
 				recipientHasAccount = !!req.session.accountId;
 			}
 
 			let staleRefs = [];
 			try {
 				const loadedRecs = recordsToShareFromManifest(payload);
-				if (loadedRecs.length > 0) {
+				if (!item.ownedByMe && sharedVisibility) {
+					staleRefs = loadedRecs
+						.filter((record) => !sharedVisibility.loadedRecords[_salesforceIdKey(record.recordId)])
+						.map((record) => ({
+							sfId: record.recordId,
+							objectName: record.objectName,
+							reason: 'no-access',
+						}));
+				} else if (loadedRecs.length > 0) {
 					const byObject = new Map();
 					for (const r of loadedRecs) {
 						if (!byObject.has(r.objectName)) {
@@ -1018,7 +1480,7 @@ export function mountCanvasRoutes(app, options = {}) {
 						}
 					}
 				}
-				if (staleRefs.length > 0) {
+				if (staleRefs.length > 0 && item.ownedByMe) {
 					const apiVersion = req.sf.conn.version || '60.0';
 					const _ownerCanDistinguishDeletion = !!item.ownedByMe;
 					const _classify = async (ref) => {
@@ -1113,6 +1575,8 @@ export function mountCanvasRoutes(app, options = {}) {
 				recipientRole,
 				recipientHasAccount,
 				staleRefs,
+				contributionsApplied: item.contributionsApplied || 0,
+				contributionMergeWarning: item.contributionMergeWarning || null,
 			});
 		} catch (err) {
 			next(err);
@@ -1144,8 +1608,7 @@ export function mountCanvasRoutes(app, options = {}) {
 
 			if (_saasAvailable && workspacesDb && viewStateDb) {
 				try {
-					const view = await viewStateDb.get(req.account.id);
-					const workspaceId = view && view.current_workspace_id;
+					const workspaceId = await _requestWorkspaceId(req);
 					const plan = workspaceId ? (await workspacesDb.getPlan(workspaceId)) || planById(null) : null;
 					const cap = plan && plan.saved_canvas_cap;
 					if (cap != null && typeof store.countOwned === 'function') {
@@ -1225,21 +1688,10 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
 				return res.status(400).json({ error: 'invalid-id' });
 			}
-			if (!(await _gateCapability(req, res, 'save-canvas', 'save_canvas', { auditPayload: { canvasId: id } }))) {
-				return;
-			}
 			const payload = req.body && req.body.payload;
 			const expectedVersionId = req.body && req.body.expectedVersionId;
 			if (!payload || typeof payload !== 'object') {
 				return res.status(400).json({ error: 'payload-required' });
-			}
-			if (
-				payloadContainsSlots(payload) &&
-				!(await _gateCapability(req, res, 'create-slot-canvas', 'save_slot_canvas', {
-					auditPayload: { canvasId: id },
-				}))
-			) {
-				return;
 			}
 			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
 				sessionId: req.session && req.session.id,
@@ -1261,12 +1713,40 @@ export function mountCanvasRoutes(app, options = {}) {
 							: 'Only the canvas owner can save this canvas, unless you were granted editor access.',
 					});
 				}
+				const sourceForRecipient = stripDraftsForNonOwner(existing.payload);
+				const objectAccess = await _sharedObjectAccessForPayload(req.sf.conn, sourceForRecipient);
+				let projectedForRecipient = projectSharedCanvasPayload(sourceForRecipient, objectAccess);
+				const visibility = await buildSharedPresenceVisibility(
+					req.sf.conn,
+					projectedForRecipient,
+					objectAccess,
+				);
+				projectedForRecipient = projectSharedRelationshipsByVisibility(projectedForRecipient, visibility);
+				if (_sharedProjectionRemovedContent(sourceForRecipient, projectedForRecipient)) {
+					return res.status(403).json({
+						error: 'shared-canvas-content-hidden',
+						message:
+							'This canvas contains content hidden by your Salesforce permissions, so Org Loom cannot safely replace the owner’s complete canvas with your partial view. Ask your Salesforce admin for access or ask the owner to make this change.',
+					});
+				}
+			}
+			if (!(await _gateCapability(req, res, 'save-canvas', 'save_canvas', { auditPayload: { canvasId: id } }))) {
+				return;
+			}
+			if (
+				payloadContainsSlots(payload) &&
+				!(await _gateCapability(req, res, 'create-slot-canvas', 'save_slot_canvas', {
+					auditPayload: { canvasId: id },
+				}))
+			) {
+				return;
 			}
 			const safePayload = Object.assign({}, payload, {
 				_meta: Object.assign({}, payload._meta || {}, {
 					savedAt: new Date().toISOString(),
 				}),
 			});
+			const snapshotHash = canvasPresence.canvasSnapshotHash(safePayload);
 			const result = await store.update(id, { payload: safePayload, expectedVersionId });
 			await ext.auditWrite({
 				req,
@@ -1280,15 +1760,28 @@ export function mountCanvasRoutes(app, options = {}) {
 				const me = req.account || {};
 				canvasPresence.broadcastCanvasSaved({
 					canvasId: id,
+					sfOrgId: req.sf.sfOrgId,
 					savedByAccountId: me.id || null,
 					savedByDisplayName: me.display_name || (me.email && me.email.split('@')[0]) || 'Someone',
 					versionId: (result && result.versionId) || existing.versionId,
 					title: existing.title || null,
+					snapshotHash,
+					payload: safePayload,
 				});
 			} catch (_eBroadcast) {
 				/* presence is best-effort */
 			}
-			res.json(Object.assign({ ok: true, backend: store.backend }, result));
+			res.json(
+				Object.assign(
+					{
+						ok: true,
+						backend: store.backend,
+						liveRevision: canvasPresence.revision({ canvasId: id, sfOrgId: req.sf.sfOrgId }),
+						snapshotHash,
+					},
+					result,
+				),
+			);
 		} catch (err) {
 			await auditDb.recordFailure(req, 'canvas_updated', err, {
 				targetObject: 'canvas',
@@ -1354,6 +1847,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			const cap = await ext.getCapability(req.account, 'share-canvas', {
 				req,
+				workspaceId: req.workspaceId || undefined,
 				auditAction: 'canvas_shared',
 				auditPayload: { canvasId: id, mechanism: 'direct' },
 			});
@@ -1366,7 +1860,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				});
 			}
 
-			const recipientSfUserId = String((req.body && req.body.recipientSfUserId) || '').trim();
+			let recipientSfUserId = String((req.body && req.body.recipientSfUserId) || '').trim();
 			if (!recipientSfUserId || !/^[a-zA-Z0-9]{15,18}$/.test(recipientSfUserId)) {
 				return res.status(400).json({ error: 'recipient-sf-user-id-required' });
 			}
@@ -1405,8 +1899,10 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!recipientRecord.Email) {
 				return res.status(400).json({ error: 'recipient-missing-email' });
 			}
+			recipientSfUserId = recipientRecord.Id || recipientSfUserId;
 			const recipientSfEmail = String(recipientRecord.Email).trim().toLowerCase();
 			const recipientSfName = recipientRecord.Name || null;
+			const recipientSfUsername = String(recipientRecord.Username || '').trim();
 
 			const accessLevel = role === 'editor' ? 'Edit' : 'Read';
 			let shareResult = null;
@@ -1427,6 +1923,12 @@ export function mountCanvasRoutes(app, options = {}) {
 					recipientSfUserId,
 					role,
 					grantedByAccountId: req.account.id,
+				});
+				canvasPresence.updateCanvasAccess({
+					canvasId: id,
+					sfOrgId: req.sf.sfOrgId,
+					sfUserId: recipientSfUserId,
+					role,
 				});
 			} catch (e) {
 				console.warn('[canvas-direct-share] role-grant persist failed:', e.message || e);
@@ -1468,6 +1970,7 @@ export function mountCanvasRoutes(app, options = {}) {
 					senderEmail: req.account.email,
 					canvasName: item.title,
 					sfOrgLabel,
+					recipientSfUsername,
 					role,
 					recipientHasAccount,
 					recipientHasConnection,
@@ -1620,15 +2123,6 @@ export function mountCanvasRoutes(app, options = {}) {
 				if (recipientSfUserId === req.sf.sfUserId) {
 					return res.status(400).json({ error: 'cannot-revoke-self' });
 				}
-				let removed = 0;
-				try {
-					removed = await _removeSfShareForRecipient(store, id, recipientSfUserId);
-				} catch (e) {
-					return res.status(e.statusCode || 500).json({
-						error: 'sf-share-revoke-failed',
-						message: (e && e.message) || String(e),
-					});
-				}
 				try {
 					await canvasRoleGrantsDb.remove({
 						sfOrgId: req.sf.sfOrgId,
@@ -1636,7 +2130,27 @@ export function mountCanvasRoutes(app, options = {}) {
 						recipientSfUserId,
 					});
 				} catch (e) {
-					console.warn('[canvas-direct-share] role-grant remove failed:', e.message || e);
+					return res.status(500).json({
+						error: 'role-grant-revoke-failed',
+						message: 'Canvas access could not be revoked. Nothing was changed. Try again.',
+					});
+				}
+				canvasPresence.updateCanvasAccess({
+					canvasId: id,
+					sfOrgId: req.sf.sfOrgId,
+					sfUserId: recipientSfUserId,
+					revoked: true,
+				});
+				let removed = 0;
+				try {
+					removed = await _removeSfShareForRecipient(store, id, recipientSfUserId);
+				} catch (e) {
+					return res.status(e.statusCode || 500).json({
+						error: 'sf-share-revoke-failed',
+						message:
+							'Org Loom access was revoked, but Salesforce sharing cleanup failed. Retry to finish cleanup. ' +
+							((e && e.message) || String(e)),
+					});
 				}
 				await ext.auditWrite({
 					req,
@@ -1687,10 +2201,11 @@ export function mountCanvasRoutes(app, options = {}) {
 				});
 			}
 			if (
+				recipientRequiresPlan(grant) &&
 				!(await _gateCapability(req, res, 'receive-canvas', 'fill_shared_canvas', {
 					auditPayload: { canvasId: id, recipientRole: grant.role },
 					message:
-						'Contributor and Editor access requires an active Pro trial, Pro subscription, or Team seat. If your trial is unused, open Your workspace to start it. Otherwise, upgrade or ask the owner for Viewer access.',
+						'Editor access requires an active Pro trial, Pro subscription, or Team seat. Upgrade, start an unused trial from Your workspace, or ask the owner for Contributor or Viewer access.',
 				}))
 			) {
 				return;
@@ -1714,13 +2229,89 @@ export function mountCanvasRoutes(app, options = {}) {
 				Array.isArray(payload.loadedRecords) ? payload.loadedRecords : [],
 				Array.isArray(payload.drafts) ? payload.drafts : [],
 			);
-			const { skipped, appliedCount, recordPlan } = planSlotFills({
-				records: unifiedRecords,
-				fills,
-				recipientSfUserId: sfBundle.sfUserId,
-			});
+			const recordBySlotId = new Map(
+				unifiedRecords
+					.filter((record) => record && record.slot && record.slot.slotId != null)
+					.map((record) => [String(record.slot.slotId), record]),
+			);
+			const skipped = [];
+			const accepted = [];
+			const describeByObject = new Map();
+			for (const fill of fills) {
+				const slotId = fill && fill.slotId != null ? String(fill.slotId) : '';
+				const record = recordBySlotId.get(slotId);
+				if (!record) {
+					skipped.push({ slotId: fill && fill.slotId, reason: 'unknown_slot' });
+					continue;
+				}
+				const assignee = record.slot.assigneeSfUserId ? String(record.slot.assigneeSfUserId) : null;
+				if (assignee && assignee !== sfBundle.sfUserId) {
+					skipped.push({ slotId: fill.slotId, reason: 'not_assigned_to_you', assignee });
+					continue;
+				}
+				const incoming = fill.values && typeof fill.values === 'object' ? fill.values : {};
+				const requestedFields =
+					record.slot.kind === 'fields' && Array.isArray(record.slot.fields)
+						? new Set(record.slot.fields)
+						: new Set(Object.keys(incoming));
+				let describe = describeByObject.get(record.objectName);
+				try {
+					if (!describe) {
+						describe = await loadDescribeForObject(sfBundle.conn, record.objectName);
+						describeByObject.set(record.objectName, describe);
+					}
+				} catch (_error) {
+					skipped.push({ slotId: fill.slotId, reason: 'salesforce_object_not_available' });
+					continue;
+				}
+				const permittedFields = new Set(
+					(describe.fields || [])
+						.filter(
+							(field) =>
+								field &&
+								field.name &&
+								(record.loadedFromId ? field.updateable === true : field.createable === true),
+						)
+						.map((field) => field.name),
+				);
+				const objectWritable = record.loadedFromId
+					? describe.updateable === true
+					: describe.createable === true;
+				const allowedFields = objectWritable
+					? new Set(Array.from(requestedFields).filter((name) => permittedFields.has(name)))
+					: new Set();
+				if (record.loadedFromId) {
+					try {
+						await sfBundle.conn.sobject(record.objectName).retrieve(record.loadedFromId);
+					} catch (_error) {
+						skipped.push({ slotId: fill.slotId, reason: 'salesforce_record_not_readable' });
+						continue;
+					}
+				}
+				const safeValues = {};
+				for (const [name, value] of Object.entries(incoming)) {
+					if (name !== 'Id' && name !== 'attributes' && allowedFields.has(name)) {
+						safeValues[name] = value;
+					}
+				}
+				if (Object.keys(safeValues).length === 0) {
+					skipped.push({ slotId: fill.slotId, reason: 'no_permitted_requested_fields' });
+					continue;
+				}
+				const safeFill = { slotId: fill.slotId, values: safeValues };
+				const planned = mergeSlotFills({
+					records: unifiedRecords,
+					fills: [safeFill],
+					recipientSfUserId: sfBundle.sfUserId,
+				});
+				if (planned.appliedCount === 0) {
+					skipped.push(...planned.skipped);
+					continue;
+				}
+				accepted.push(safeFill);
+			}
 
-			if (appliedCount === 0) {
+			if (accepted.length === 0) {
 				const allBlockedByAssignment =
 					skipped.length > 0 && skipped.every((s) => s.reason === 'not_assigned_to_you');
 				if (allBlockedByAssignment) {
@@ -1731,62 +2322,78 @@ export function mountCanvasRoutes(app, options = {}) {
 						skipped,
 					});
 				}
-				return res.status(400).json({
-					error: 'no-matching-slots',
+				const allBlockedBySalesforce =
+					skipped.length > 0 &&
+					skipped.every((entry) =>
+						[
+							'salesforce_object_not_available',
+							'salesforce_record_not_readable',
+							'no_permitted_requested_fields',
+						].includes(entry.reason),
+					);
+				if (allBlockedBySalesforce) {
+					return res.status(403).json({
+						error: 'contributor-salesforce-permission-required',
+						message:
+							'Your Salesforce user cannot access or edit the requested Salesforce object and fields. Ask your Salesforce admin to update your permissions, then reload the canvas.',
+						skipped,
+					});
+				}
+				return res.status(409).json({
+					error: 'slot-configuration-changed',
 					message:
-						'None of the submitted fills matched a slot on this canvas. The canvas may have been edited since the link was created.',
+						'The canvas owner changed or removed these slots after you opened the canvas. Reload the canvas before entering the values again.',
 					skipped,
 				});
 			}
-
-			const successes = [];
-			const failures = [];
-			for (const [objectName, updates] of Object.entries(recordPlan)) {
-				const nonEmpty = updates.filter((u) => Object.keys(u).length > 1);
-				if (nonEmpty.length === 0) {
-					continue;
+			const contributionStore = canvasContributionStoreFromSfConnection(
+				sfBundle.conn,
+				sfBundle.sfUserId,
+				sfBundle.sfOrgId,
+				{ sessionId: req.session && req.session.id },
+			);
+			const submitted = [];
+			try {
+				for (const fill of accepted) {
+					submitted.push(
+						await contributionStore.submit({
+							canvasId: id,
+							canvasVersionId: item.versionId,
+							fill,
+						}),
+					);
 				}
-				try {
-					const results = await sfBundle.conn.sobject(objectName).update(nonEmpty);
-					const arr = Array.isArray(results) ? results : [results];
-					arr.forEach((r, i) => {
-						if (r.success) {
-							successes.push({ id: nonEmpty[i].Id, objectName });
-						} else {
-							failures.push({
-								id: nonEmpty[i].Id,
-								objectName,
-								errors: (r.errors || []).map((e) => e.message || String(e)),
-							});
-						}
-					});
-				} catch (err) {
-					console.warn('[slot-fill] batch update failed for ' + objectName + ':', err.message || err);
-					nonEmpty.forEach((u) => {
-						failures.push({
-							id: u.Id,
-							objectName,
-							errors: [err.message || String(err)],
-						});
+			} catch (error) {
+				if (/INVALID_TYPE|Canvas_Contribution__c|sObject type/i.test(error.message || '')) {
+					return res.status(503).json({
+						error: 'contribution-storage-unavailable',
+						message:
+							'This Salesforce org needs the current Org Loom managed package before contributor submissions can be stored.',
 					});
 				}
+				throw error;
 			}
 
 			await ext.auditWrite({
 				req,
-				action: 'canvas_slot_filled',
+				action: 'canvas_contribution_submitted',
 				targetObject: 'canvas',
 				targetId: id,
 				targetSfOrgId: sfBundle.sfOrgId,
 				payload: {
 					recipientSfUserId: sfBundle.sfUserId,
-					applied: successes.length,
-					failed: failures.length,
+					submitted: submitted.length,
 					skipped: skipped.length,
 				},
 			});
 
-			try {
+			res.json({
+				ok: true,
+				submitted: submitted.length,
+				contributions: submitted,
+				skipped,
+			});
+			void (async () => {
 				let ownerEmail = null;
 				if (item.ownerId && /^[a-zA-Z0-9]{15,18}$/.test(item.ownerId)) {
 					try {
@@ -1795,36 +2402,28 @@ export function mountCanvasRoutes(app, options = {}) {
 							ownerEmail = String(owner.Email).trim();
 						}
 					} catch (_eOwner) {
-						/* owner lookup failed - skip notification */
+						return;
 					}
 				}
-				if (ownerEmail) {
-					const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
-					const host = req.get('host');
-					const baseUrl = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, '') : `${proto}://${host}`;
-					await sendCanvasFillNotification({
-						to: ownerEmail,
-						recipientName: sfBundle.connectionRow.display_name || sfBundle.connectionRow.email,
-						recipientEmail: sfBundle.connectionRow.email,
-						canvasName: item.title,
-						appliedCount: successes.length,
-						viewLink: baseUrl + '/?canvas=' + encodeURIComponent(id),
-					});
+				if (!ownerEmail || typeof sendCanvasFillNotification !== 'function') {
+					return;
 				}
-			} catch (e) {
-				console.warn('[slot-fill] owner notification failed:', e.message || e);
-			}
-
-			res.json({
-				ok: true,
-				applied: successes.length,
-				failed: failures.length,
-				successes,
-				failures,
-				skipped,
+				const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+				const host = req.get('host');
+				const baseUrl = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, '') : `${proto}://${host}`;
+				await sendCanvasFillNotification({
+					to: ownerEmail,
+					recipientName: sfBundle.connectionRow.display_name || sfBundle.connectionRow.email,
+					recipientEmail: sfBundle.connectionRow.email,
+					canvasName: item.title,
+					appliedCount: submitted.length,
+					viewLink: baseUrl + '/?canvas=' + encodeURIComponent(id),
+				});
+			})().catch((error) => {
+				console.warn('[slot-fill] owner notification failed:', error.message || error);
 			});
 		} catch (err) {
-			await auditDb.recordFailure(req, 'canvas_slot_filled', err, {
+			await auditDb.recordFailure(req, 'canvas_contribution_submitted', err, {
 				targetObject: 'canvas',
 				targetId: req.params.id,
 				targetSfOrgId: (req.sf && req.sf.sfOrgId) || null,
@@ -1841,8 +2440,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		try {
 			const accountId = req.session && req.session.accountId;
 			if (accountId) {
-				const view = await viewStateDb.get(accountId);
-				const workspaceId = view && view.current_workspace_id;
+				const workspaceId = await _requestWorkspaceId(req);
 				if (workspaceId) {
 					const plan = (await workspacesDb.getPlan(workspaceId)) || PLANS.free;
 					const tokenCap = plan.monthly_ai_tokens;
@@ -1924,12 +2522,11 @@ export function mountCanvasRoutes(app, options = {}) {
 				}
 			}
 
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
+			const workspaceId = await _requestWorkspaceId(req);
 			if (!workspaceId) {
 				return res.status(409).json({ error: 'no-active-workspace' });
 			}
-			const quota = await ext.getQuota(req.account, 'ai_tokens');
+			const quota = await ext.getQuota(req.account, 'ai_tokens', { workspaceId });
 			const inCreditMode = quota.cap != null && quota.used >= quota.cap && !quota.blocked;
 			if (quota.blocked) {
 				try {
@@ -2062,6 +2659,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			let chargeResult = { chargedToPlan: tokensSpent, chargedToCredits: 0 };
 			try {
 				chargeResult = await ext.chargeQuota(req.account, 'ai_tokens', tokensSpent, {
+					workspaceId,
 					spendCents: costCents,
 					generations: 1,
 				});
@@ -2121,8 +2719,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			try {
 				let _wsId = null;
 				try {
-					const _view = await viewStateDb.get(req.account.id);
-					_wsId = (_view && _view.current_workspace_id) || null;
+					_wsId = await _requestWorkspaceId(req);
 				} catch (_eVs) {
 					/* leave _wsId null */
 				}
@@ -2143,8 +2740,50 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	const uploadRouteGuards = [requireAccount, requireUploadOrgApproval, requireSfConnection];
-	app.post('/api/upload/access-check', requireAccount, requireUploadOrgApproval, (_req, res) => {
+	const requireCanvasPublishOwner = async (req, res, next) => {
+		const canvasId = req.body && req.body.canvasId;
+		if (!canvasId) {
+			return next();
+		}
+		if (!/^[a-zA-Z0-9]{15,18}$/.test(String(canvasId))) {
+			return res.status(400).json({ error: 'invalid-canvas-id' });
+		}
+		try {
+			const store = await canvasStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
+			const item = await store.get(canvasId);
+			if (!item) {
+				return res.status(404).json({
+					error: 'canvas-not-accessible',
+					message: 'This saved canvas is unavailable or is no longer shared with you.',
+				});
+			}
+			if (!item.ownedByMe) {
+				return res.status(403).json({
+					error: 'canvas-owner-required-for-upload',
+					message:
+						'Only the canvas owner can upload a shared canvas to Salesforce. Submit your contribution to the owner instead.',
+				});
+			}
+			return next();
+		} catch (error) {
+			if (error && (error.statusCode === 404 || error.code === 'canvas-not-accessible')) {
+				return res.status(404).json({
+					error: 'canvas-not-accessible',
+					message: 'This saved canvas is unavailable or is no longer shared with you.',
+				});
+			}
+			return next(error);
+		}
+	};
+	const uploadRouteGuards = [
+		requireAccount,
+		requireUploadOrgApproval,
+		requireSfConnection,
+		requireCanvasPublishOwner,
+	];
+	app.post('/api/upload/access-check', ...uploadRouteGuards, (_req, res) => {
 		res.json({ ok: true });
 	});
 	app.post('/api/upload', ...uploadRouteGuards, async (req, res, next) => {
@@ -2155,11 +2794,15 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (rejectIfUploadOrgChanged(req, res)) {
 				return;
 			}
+			if (rejectSpecializedUploadObjects(req, res)) {
+				return;
+			}
 			if (!(await _gateCapability(req, res, 'upload-records', 'upload'))) {
 				return;
 			}
 
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+				workspaceId: req.workspaceId || undefined,
 				sfOrgId: req.sf.sfOrgId,
 				orgType: req.sf.orgType || 'unknown',
 				createPendingOnDeny: true,
@@ -2240,14 +2883,13 @@ export function mountCanvasRoutes(app, options = {}) {
 				return _rejectUploadLedgerUnavailable(res, e, 'rest-prepare');
 			}
 
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
+			const workspaceId = await _requestWorkspaceId(req);
 			if (!workspaceId) {
 				return res.status(409).json({ error: 'no-active-workspace' });
 			}
 
 			if (!directUpload) {
-				const uploadQuota = await ext.getQuota(req.account, 'uploads');
+				const uploadQuota = await ext.getQuota(req.account, 'uploads', { workspaceId });
 				if (uploadQuota.blocked) {
 					return res.status(402).json({
 						error: 'upload-cap-reached',
@@ -2460,7 +3102,7 @@ export function mountCanvasRoutes(app, options = {}) {
 
 			if (!directUpload && mutationSuccessCount > 0) {
 				try {
-					await ext.chargeQuota(req.account, 'uploads', 1);
+					await ext.chargeQuota(req.account, 'uploads', 1, { workspaceId });
 				} catch (e) {
 					console.warn('[usage] upload increment failed:', e.message || e);
 				}
@@ -2685,8 +3327,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!(await _gateCapability(req, res, 'upload-records', 'upload_batch_record'))) {
 				return;
 			}
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
+			const workspaceId = await _requestWorkspaceId(req);
 			if (!workspaceId) {
 				return res.status(409).json({ error: 'no-active-workspace' });
 			}
@@ -2776,6 +3417,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				return res.status(409).json({ error: 'already-recalled' });
 			}
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+				workspaceId: req.workspaceId || undefined,
 				sfOrgId: req.sf.sfOrgId,
 				orgType: req.sf.orgType || 'unknown',
 				createPendingOnDeny: true,
@@ -2835,8 +3477,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			let _recallWorkspaceId = null;
 			try {
-				const _view = await viewStateDb.get(req.account.id);
-				_recallWorkspaceId = (_view && _view.current_workspace_id) || null;
+				_recallWorkspaceId = await _requestWorkspaceId(req);
 			} catch (_eVs) {
 				/* leave null */
 			}
@@ -2909,11 +3550,15 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (rejectIfUploadOrgChanged(req, res)) {
 				return;
 			}
+			if (rejectSpecializedUploadObjects(req, res)) {
+				return;
+			}
 			if (!(await _gateCapability(req, res, 'upload-records', 'upload_graph'))) {
 				return;
 			}
 
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+				workspaceId: req.workspaceId || undefined,
 				sfOrgId: req.sf.sfOrgId,
 				orgType: req.sf.orgType || 'unknown',
 				createPendingOnDeny: true,
@@ -2994,13 +3639,12 @@ export function mountCanvasRoutes(app, options = {}) {
 				return _rejectUploadLedgerUnavailable(res, e, 'graph-prepare');
 			}
 
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
+			const workspaceId = await _requestWorkspaceId(req);
 			if (!workspaceId) {
 				return res.status(409).json({ error: 'no-active-workspace' });
 			}
 			if (!directUpload) {
-				const uploadQuota = await ext.getQuota(req.account, 'uploads');
+				const uploadQuota = await ext.getQuota(req.account, 'uploads', { workspaceId });
 				if (uploadQuota.blocked) {
 					return res.status(402).json({
 						error: 'upload-cap-reached',
@@ -3263,7 +3907,7 @@ export function mountCanvasRoutes(app, options = {}) {
 
 			if (!directUpload && mutationSuccessCount > 0) {
 				try {
-					await ext.chargeQuota(req.account, 'uploads', 1);
+					await ext.chargeQuota(req.account, 'uploads', 1, { workspaceId });
 				} catch (e) {
 					console.warn('[usage]:', e.message || e);
 				}
@@ -3551,10 +4195,14 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (rejectIfUploadOrgChanged(req, res)) {
 				return;
 			}
+			if (rejectSpecializedUploadObjects(req, res)) {
+				return;
+			}
 			if (!(await _gateCapability(req, res, 'upload-records', 'upload_preflight'))) {
 				return;
 			}
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+				workspaceId: req.workspaceId || undefined,
 				sfOrgId: req.sf.sfOrgId,
 				orgType: req.sf.orgType || 'unknown',
 				createPendingOnDeny: true,
@@ -3839,10 +4487,14 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (rejectIfUploadOrgChanged(req, res)) {
 				return;
 			}
+			if (rejectSpecializedUploadObjects(req, res)) {
+				return;
+			}
 			if (!(await _gateCapability(req, res, 'upload-records', 'upload_bulk'))) {
 				return;
 			}
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+				workspaceId: req.workspaceId || undefined,
 				sfOrgId: req.sf.sfOrgId,
 				orgType: req.sf.orgType || 'unknown',
 				createPendingOnDeny: true,
@@ -3902,13 +4554,12 @@ export function mountCanvasRoutes(app, options = {}) {
 				rec._csvExternalIdField = fieldCheck.field.name;
 			}
 
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
+			const workspaceId = await _requestWorkspaceId(req);
 			if (!workspaceId) {
 				return res.status(409).json({ error: 'no-active-workspace' });
 			}
 			if (!directUpload) {
-				const uploadQuota = await ext.getQuota(req.account, 'uploads');
+				const uploadQuota = await ext.getQuota(req.account, 'uploads', { workspaceId });
 				if (uploadQuota.blocked) {
 					return res.status(402).json({
 						error: 'upload-cap-reached',
@@ -4405,7 +5056,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				const mutationSuccessCount = _countCommittedMutations(orderedResults);
 				if (!directUpload && mutationSuccessCount > 0) {
 					try {
-						await ext.chargeQuota(req.account, 'uploads', 1);
+						await ext.chargeQuota(req.account, 'uploads', 1, { workspaceId });
 					} catch (e) {
 						console.warn('[usage]:', e.message || e);
 					}
@@ -4721,7 +5372,7 @@ export function mountCanvasRoutes(app, options = {}) {
 
 	app.get('/api/objects', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
-			const list = await listObjects(req.sf.conn, req.sf.sfOrgId);
+			const list = await listObjects(req.sf.conn, req.sf.sfOrgId, req.sf.sfUserId);
 			const out =
 				req.query.raw === '1' ? list : list.filter((o) => o.queryable !== false && !isNoiseSObject(o.name));
 			res.json(out);
@@ -4731,22 +5382,26 @@ export function mountCanvasRoutes(app, options = {}) {
 	});
 
 	app.get('/api/objects/:name/describe', requireAccount, requireSfConnection, async (req, res, next) => {
+		const objectName = req.params.name;
 		try {
-			const objectName = req.params.name;
 			if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(objectName)) {
 				return res.status(400).json({ error: 'invalid-object-name' });
 			}
 			const out = await loadDescribeForObject(req.sf.conn, objectName);
 			res.json(out);
 		} catch (err) {
+			const response = _describeErrorResponse(err, objectName);
+			if (response) {
+				return res.status(response.status).json(response.body);
+			}
 			next(err);
 		}
 	});
 
 	app.get('/api/objects/:name/records/:id', requireAccount, requireSfConnection, async (req, res, next) => {
+		const name = req.params.name;
+		const id = req.params.id;
 		try {
-			const name = req.params.name;
-			const id = req.params.id;
 			if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
 				return res.status(400).json({ error: 'invalid-object-name' });
 			}
@@ -4771,6 +5426,10 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			res.json(record);
 		} catch (err) {
+			const response = _recordErrorResponse(err, name, id);
+			if (response) {
+				return res.status(response.status).json(response.body);
+			}
 			next(err);
 		}
 	});
@@ -4958,6 +5617,9 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			let objectName = fromMatch[1];
 
+			if (isSpecializedSObject(objectName)) {
+				return res.status(400).json(specializedObjectError([objectName], 'import'));
+			}
 			if (SOQL_OBJECT_DENYLIST.has(objectName.toLowerCase())) {
 				return res.status(400).json({
 					error: 'object-not-allowed',
@@ -5043,6 +5705,9 @@ export function mountCanvasRoutes(app, options = {}) {
 							childRel.childSObject +
 							' is not allowed here - SOQL import is for business records, not code, metadata, or security/setup objects.',
 					});
+				}
+				if (childRel.childSObject && isSpecializedSObject(childRel.childSObject)) {
+					return res.status(400).json(specializedObjectError([childRel.childSObject], 'import'));
 				}
 			}
 			const parentFieldNames = new Set((parentDescribe.fields || []).map((f) => f.name));
@@ -5251,14 +5916,14 @@ export function mountCanvasRoutes(app, options = {}) {
 	});
 
 	app.get('/api/objects/:name/graph', requireAccount, requireSfConnection, async (req, res, next) => {
+		const name = req.params.name;
 		try {
 			const conn = req.sf.conn;
-			const name = req.params.name;
 			if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
 				return res.status(400).json({ error: 'invalid-object-name' });
 			}
 			const describe = await conn.sobject(name).describe();
-			const queryableSet = await getQueryableSObjects(conn, req.sf.sfOrgId);
+			const queryableSet = await getQueryableSObjects(conn, req.sf.sfOrgId, req.sf.sfUserId);
 
 			const isNoise = (n) => isNoiseSObject(n);
 
@@ -5320,6 +5985,10 @@ export function mountCanvasRoutes(app, options = {}) {
 				children,
 			});
 		} catch (err) {
+			const response = _describeErrorResponse(err, name);
+			if (response) {
+				return res.status(response.status).json(response.body);
+			}
 			next(err);
 		}
 	});
@@ -6179,9 +6848,16 @@ export function mountCanvasRoutes(app, options = {}) {
 			const apiBase = '/services/data/v' + apiVersion;
 			const recordId = typeof req.query.recordId === 'string' ? req.query.recordId : null;
 			const recordTypeId = typeof req.query.recordTypeId === 'string' ? req.query.recordTypeId : null;
+			const requestedMode =
+				typeof req.query.mode === 'string' && req.query.mode.toLowerCase() === 'view' ? 'View' : 'Create';
 			let url;
 			if (recordId && /^[a-zA-Z0-9]{15,18}$/.test(recordId)) {
 				url = apiBase + '/ui-api/record-ui/' + encodeURIComponent(recordId) + '?layoutTypes=Full&modes=Edit';
+			} else if (requestedMode === 'View') {
+				url = apiBase + '/ui-api/layout/' + encodeURIComponent(name) + '/Full/View';
+				if (recordTypeId) {
+					url += '?recordTypeId=' + encodeURIComponent(recordTypeId);
+				}
 			} else {
 				url = apiBase + '/ui-api/record-defaults/create/' + encodeURIComponent(name);
 				if (recordTypeId) {
@@ -6210,6 +6886,8 @@ export function mountCanvasRoutes(app, options = {}) {
 				layout = layoutWrap && layoutWrap.Full && layoutWrap.Full.Edit ? layoutWrap.Full.Edit : null;
 			} else if (data && data.layout) {
 				layout = data.layout;
+			} else if (data && Array.isArray(data.sections)) {
+				layout = data;
 			}
 			if (!layout) {
 				return res.json({ sections: [], available: false, reason: 'No editable layout returned' });
@@ -6356,6 +7034,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				return;
 			}
 			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+				workspaceId: req.workspaceId || undefined,
 				sfOrgId: req.sf.sfOrgId,
 				orgType: req.sf.orgType || 'unknown',
 				createPendingOnDeny: true,
@@ -6531,7 +7210,7 @@ export function mountCanvasRoutes(app, options = {}) {
 
 			await ext.auditWrite({
 				req,
-				workspaceId: (view && view.current_workspace_id) || null,
+				workspaceId: await _requestWorkspaceId(req),
 				actorConnectionId: c.id,
 				action: 'connection_disconnected',
 				targetObject: 'connections',
@@ -6563,13 +7242,12 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!isDraft && !isSf) {
 				return res.status(400).json({ error: 'invalid-id' });
 			}
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
+			const workspaceId = await _requestWorkspaceId(req);
 			if (!workspaceId) {
 				return res.status(409).json({ error: 'no-active-workspace' });
 			}
 			const all = await proposalsDb.listPendingForCanvas(canvasId);
-			const visible = all.filter((p) => p.workspaceId === workspaceId);
+			const visible = all.filter((p) => p.workspaceId === workspaceId && p.proposingAccountId === req.account.id);
 			res.json({ proposals: visible });
 		} catch (err) {
 			next(err);
@@ -6599,10 +7277,9 @@ export function mountCanvasRoutes(app, options = {}) {
 				if (proposal.status !== 'pending') {
 					return res.status(409).json({ error: 'proposal-not-pending', status: proposal.status });
 				}
-				const view = await viewStateDb.get(req.account.id);
-				const workspaceId = view && view.current_workspace_id;
-				if (workspaceId !== proposal.workspaceId) {
-					return res.status(403).json({ error: 'workspace-mismatch' });
+				const workspaceId = await _requestWorkspaceId(req);
+				if (workspaceId !== proposal.workspaceId || proposal.proposingAccountId !== req.account.id) {
+					return res.status(404).json({ error: 'proposal-not-found' });
 				}
 
 				if (!(await _gateCapability(req, res, 'ai-edit-on-canvas', 'proposal_apply'))) {
@@ -6632,6 +7309,7 @@ export function mountCanvasRoutes(app, options = {}) {
 					liveRead = await mcpRelay.dispatchRequest({
 						workspaceId,
 						canvasId,
+						accountId: req.account.id,
 						method: 'read_canvas',
 						params: { canvasId },
 						timeoutMs: 5000,
@@ -7123,6 +7801,12 @@ export function mountCanvasRoutes(app, options = {}) {
 					},
 				});
 				await proposalsDb.markApplied({ id: proposalId, decidedByAccountId: req.account.id });
+				mcpRelay.broadcastCanvasEvent({
+					workspaceId: proposal.workspaceId,
+					canvasId,
+					accountId: req.account.id,
+					event: 'ai-proposals-changed',
+				});
 
 				res.json({ ok: true, results, mode: 'canvas-only' });
 			} catch (err) {
@@ -7151,10 +7835,9 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (proposal.status !== 'pending') {
 				return res.status(409).json({ error: 'proposal-not-pending', status: proposal.status });
 			}
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
-			if (workspaceId !== proposal.workspaceId) {
-				return res.status(403).json({ error: 'workspace-mismatch' });
+			const workspaceId = await _requestWorkspaceId(req);
+			if (workspaceId !== proposal.workspaceId || proposal.proposingAccountId !== req.account.id) {
+				return res.status(404).json({ error: 'proposal-not-found' });
 			}
 			await ext.auditWrite({
 				req,
@@ -7169,6 +7852,12 @@ export function mountCanvasRoutes(app, options = {}) {
 				},
 			});
 			await proposalsDb.markRejected({ id: proposalId, decidedByAccountId: req.account.id });
+			mcpRelay.broadcastCanvasEvent({
+				workspaceId: proposal.workspaceId,
+				canvasId,
+				accountId: req.account.id,
+				event: 'ai-proposals-changed',
+			});
 			res.json({ ok: true });
 		} catch (err) {
 			await auditDb.recordFailure(req, 'ai_proposal_rejected', err, {
@@ -7188,14 +7877,18 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!isDraft && !isSf) {
 				return res.status(400).json({ error: 'invalid-id' });
 			}
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
+			const workspaceId = await _requestWorkspaceId(req);
 			if (!workspaceId) {
 				return res.status(409).json({ error: 'no-active-workspace' });
 			}
 			const all = await clarificationsDb.listPendingForCanvas(canvasId);
 			const now = Date.now();
-			const visible = all.filter((c) => c.workspaceId === workspaceId && (!c.expiresAt || c.expiresAt > now));
+			const visible = all.filter(
+				(c) =>
+					c.workspaceId === workspaceId &&
+					c.requestingAccountId === req.account.id &&
+					(!c.expiresAt || c.expiresAt > now),
+			);
 			res.json({ clarifications: visible });
 		} catch (err) {
 			next(err);
@@ -7227,10 +7920,9 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (row.status !== 'pending') {
 				return res.status(409).json({ error: 'clarification-not-pending', status: row.status });
 			}
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
-			if (workspaceId !== row.workspaceId) {
-				return res.status(403).json({ error: 'workspace-mismatch' });
+			const workspaceId = await _requestWorkspaceId(req);
+			if (workspaceId !== row.workspaceId || row.requestingAccountId !== req.account.id) {
+				return res.status(404).json({ error: 'clarification-not-found' });
 			}
 			if (responseOption && Array.isArray(row.options) && !row.options.includes(responseOption)) {
 				return res
@@ -7276,12 +7968,23 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!isDraft && !isSf) {
 				return res.status(400).json({ error: 'invalid-id' });
 			}
-			const view = await viewStateDb.get(req.account.id);
-			const workspaceId = view && view.current_workspace_id;
+			if (isDraft) {
+				return res.status(404).json({
+					error: 'canvas-not-accessible',
+					message: 'Live collaboration is available after the canvas is saved and shared.',
+				});
+			}
+			const workspaceId = await _requestWorkspaceId(req);
 			if (!workspaceId) {
 				return res.status(409).json({ error: 'no-active-workspace' });
 			}
 			let canEditPresence = true;
+			let presenceRole = 'owner';
+			let presenceSfOrgId = null;
+			let presenceSfUserId = null;
+			let presenceVisibility = null;
+			let presenceProjectSnapshot = null;
+			let presenceSourcePayload = null;
 			if (isSf) {
 				const bundle = await getActiveSfConnection(req);
 				if (!bundle || !bundle.conn) {
@@ -7300,14 +8003,25 @@ export function mountCanvasRoutes(app, options = {}) {
 					item = null;
 				}
 				if (!item) {
-					return res.status(404).json({ error: 'not-found' });
+					return res.status(404).json({
+						error: 'canvas-not-accessible',
+						message: 'This canvas is unavailable or is no longer shared with you.',
+					});
 				}
+				presenceSourcePayload = item.payload;
 				if (!item.ownedByMe) {
 					req.sf = bundle;
-					const grant = await _findCanvasShareGrant(req, canvasId);
+					const grant = await _findCanvasShareGrant(req, item.id || canvasId);
+					if (!grant) {
+						return res.status(404).json({
+							error: 'canvas-not-accessible',
+							message: 'You no longer have access to this canvas. Ask the owner to share it again.',
+						});
+					}
 					if (recipientRequiresPlan(grant)) {
 						const cap = await ext.getCapability(req.account, 'receive-canvas', {
 							req,
+							workspaceId: req.workspaceId || undefined,
 							auditAction: 'canvas_presence_subscribe_denied',
 							auditPayload: { canvasId, recipientRole: grant && grant.role },
 						});
@@ -7316,12 +8030,24 @@ export function mountCanvasRoutes(app, options = {}) {
 								error: cap.reason || 'permission-denied',
 								capability: 'receive-canvas',
 								message:
-									'Contributor and Editor collaboration requires an active Pro trial, Pro subscription, or Team seat.',
+									'Editor collaboration requires an active Pro trial, Pro subscription, or Team seat.',
 							});
 						}
 					}
-					canEditPresence = !!grant && grant.role === 'editor';
+					canEditPresence = grant.role === 'editor';
+					presenceRole = grant.role;
+					presenceVisibility = await buildSharedPresenceVisibility(bundle.conn, item.payload);
+					presenceProjectSnapshot = async (livePayload) => {
+						const source = stripDraftsForNonOwner(livePayload);
+						const objectAccess = await _sharedObjectAccessForPayload(bundle.conn, source);
+						let projected = projectSharedCanvasPayload(source, objectAccess);
+						const visibility = await buildSharedPresenceVisibility(bundle.conn, projected, objectAccess);
+						projected = projectSharedRelationshipsByVisibility(projected, visibility);
+						return { payload: projected, visibility };
+					};
 				}
+				presenceSfOrgId = bundle.sfOrgId;
+				presenceSfUserId = bundle.sfUserId;
 			}
 			res.setHeader('Content-Type', 'text/event-stream');
 			res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -7329,12 +8055,24 @@ export function mountCanvasRoutes(app, options = {}) {
 			res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering
 			res.flushHeaders && res.flushHeaders();
 			const displayName = (req.account.display_name || req.account.email || 'Someone').toString();
+			if (presenceSourcePayload) {
+				canvasPresence.seedLiveSnapshot({
+					canvasId,
+					sfOrgId: presenceSfOrgId,
+					payload: presenceSourcePayload,
+				});
+			}
 			canvasPresence.subscribe({
 				canvasId,
 				workspaceId,
 				accountId: req.account.id,
 				displayName,
 				canEdit: canEditPresence,
+				role: presenceRole,
+				sfOrgId: presenceSfOrgId,
+				sfUserId: presenceSfUserId,
+				visibility: presenceVisibility,
+				projectSnapshot: presenceProjectSnapshot,
 				sseRes: res,
 			});
 		} catch (err) {
@@ -7365,7 +8103,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!accepted) {
 				return res.status(409).json({ error: 'presence-event-rejected' });
 			}
-			res.json({ ok: true });
+			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
 		} catch (err) {
 			next(err);
 		}
@@ -7390,7 +8128,60 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!accepted) {
 				return res.status(409).json({ error: 'presence-event-rejected' });
 			}
-			res.json({ ok: true });
+			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
+		} catch (err) {
+			next(err);
+		}
+	});
+
+	app.post('/api/canvas/:id/presence/layout', requireAccount, async (req, res, next) => {
+		try {
+			const canvasId = req.params.id;
+			const body = req.body || {};
+			if (!body.connectionId) {
+				return res.status(400).json({ error: 'missing-connectionId' });
+			}
+			const accepted = canvasPresence.updateLayout({
+				canvasId,
+				connectionId: body.connectionId,
+				positions: body.positions,
+				sequence: body.sequence,
+				requestingAccountId: req.account.id,
+			});
+			if (!accepted) {
+				return res.status(409).json({ error: 'presence-event-rejected' });
+			}
+			res.json({
+				ok: true,
+				revision: canvasPresence.revision({ canvasId, connectionId: body.connectionId }),
+			});
+		} catch (err) {
+			next(err);
+		}
+	});
+
+	app.post('/api/canvas/:id/presence/slot', requireAccount, async (req, res, next) => {
+		try {
+			const canvasId = req.params.id;
+			const body = req.body || {};
+			if (!body.connectionId) {
+				return res.status(400).json({ error: 'missing-connectionId' });
+			}
+			const accepted = canvasPresence.updateSlot({
+				canvasId,
+				connectionId: body.connectionId,
+				targetRef: body.targetRef,
+				slot: body.slot === null ? null : body.slot,
+				sequence: body.sequence,
+				requestingAccountId: req.account.id,
+			});
+			if (!accepted) {
+				return res.status(409).json({ error: 'presence-event-rejected' });
+			}
+			res.json({
+				ok: true,
+				revision: canvasPresence.revision({ canvasId, connectionId: body.connectionId }),
+			});
 		} catch (err) {
 			next(err);
 		}
@@ -7408,16 +8199,20 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (kind !== 'add' && kind !== 'remove') {
 				return res.status(400).json({ error: 'invalid-kind' });
 			}
+			const fromRef = body.fromRef;
+			const toRef = body.toRef;
 			const fromSyncId = body.fromSyncId;
 			const toSyncId = body.toSyncId;
 			const fieldName = body.fieldName;
-			if (!fromSyncId || !toSyncId || !fieldName) {
+			if ((!fromRef && !fromSyncId) || (!toRef && !toSyncId) || !fieldName) {
 				return res.status(400).json({ error: 'missing-endpoint-or-field' });
 			}
 			const accepted = canvasPresence.updateDraftLink({
 				canvasId,
 				connectionId,
 				kind,
+				fromRef,
+				toRef,
 				fromSyncId,
 				toSyncId,
 				fieldName,
@@ -7427,7 +8222,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!accepted) {
 				return res.status(409).json({ error: 'presence-event-rejected' });
 			}
-			res.json({ ok: true });
+			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
 		} catch (err) {
 			next(err);
 		}
@@ -7449,13 +8244,51 @@ export function mountCanvasRoutes(app, options = {}) {
 				canvasId,
 				connectionId,
 				sfId,
+				collabRef: body.collabRef,
 				sequence: body.sequence,
 				requestingAccountId: req.account.id,
 			});
 			if (!accepted) {
 				return res.status(409).json({ error: 'presence-event-rejected' });
 			}
-			res.json({ ok: true });
+			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
+		} catch (err) {
+			next(err);
+		}
+	});
+
+	app.post('/api/canvas/:id/presence/loaded-record', requireAccount, async (req, res, next) => {
+		try {
+			const canvasId = req.params.id;
+			const body = req.body || {};
+			if (!body.connectionId) {
+				return res.status(400).json({ error: 'missing-connectionId' });
+			}
+			if (!body.sfId) {
+				return res.status(400).json({ error: 'missing-sfId' });
+			}
+			const accepted = canvasPresence.updateLoadedRecord({
+				canvasId,
+				connectionId: body.connectionId,
+				kind: body.kind,
+				sfId: body.sfId,
+				collabRef: body.collabRef,
+				objectName: body.objectName,
+				fields: body.fields,
+				baseline: body.baseline,
+				x: body.x,
+				y: body.y,
+				pendingDelete: body.pendingDelete,
+				sequence: body.sequence,
+				requestingAccountId: req.account.id,
+			});
+			if (!accepted) {
+				return res.status(409).json({ error: 'presence-event-rejected' });
+			}
+			res.json({
+				ok: true,
+				revision: canvasPresence.revision({ canvasId, connectionId: body.connectionId }),
+			});
 		} catch (err) {
 			next(err);
 		}
@@ -7494,6 +8327,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				position,
 				sequence: body.sequence,
 				objectName: typeof body.objectName === 'string' ? body.objectName : undefined,
+				canvasRecordId: body.canvasRecordId,
 				x: typeof body.x === 'number' ? body.x : undefined,
 				y: typeof body.y === 'number' ? body.y : undefined,
 				requestingAccountId: req.account.id,
@@ -7501,7 +8335,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!accepted) {
 				return res.status(409).json({ error: 'presence-event-rejected' });
 			}
-			res.json({ ok: true });
+			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
 		} catch (err) {
 			next(err);
 		}

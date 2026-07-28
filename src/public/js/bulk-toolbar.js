@@ -8,6 +8,7 @@
 		mount: function mount(deps) {
 			const required = [
 				'canvasState',
+				'canEditCanvasStructure',
 				'isRecordModified',
 				'_aggregateSlotProgress',
 				'_slotProgressClass',
@@ -35,6 +36,7 @@
 				}
 			}
 			const canvasState = deps.canvasState;
+			const canEditCanvasStructure = deps.canEditCanvasStructure;
 			const isRecordModified = deps.isRecordModified;
 			const _aggregateSlotProgress = deps._aggregateSlotProgress;
 			const _slotProgressClass = deps._slotProgressClass;
@@ -53,17 +55,35 @@
 			const _wireCanvasFloatingAdd = deps._wireCanvasFloatingAdd;
 			const openRecordDiffModal = deps.openRecordDiffModal;
 
+			function renderCanvasName(titleOverride) {
+				const canvasName = getGraph().querySelector('#canvas-name-text');
+				const canvasNameOverlay = getGraph().querySelector('#canvas-name-overlay');
+				if (!canvasName || !canvasNameOverlay) {
+					return;
+				}
+				const currentCanvas = canvasState.currentCanvas;
+				const canvasTitle =
+					typeof titleOverride === 'string' && titleOverride.trim()
+						? titleOverride.trim()
+						: currentCanvas && typeof currentCanvas.title === 'string' && currentCanvas.title.trim()
+							? currentCanvas.title.trim()
+							: 'New canvas';
+				canvasName.textContent = canvasTitle;
+				canvasNameOverlay.title = 'Current canvas: ' + canvasTitle;
+				canvasNameOverlay.setAttribute('aria-label', 'Current canvas: ' + canvasTitle);
+			}
+
 			function renderBulkToolbar() {
 				const cloneBar = getGraph().querySelector('#subbar-clone-btns');
 				const recordsBar = getGraph().querySelector('#subbar-records');
 				if (!cloneBar || !recordsBar) {
 					return;
 				}
-				if (canvasState.selectedObjects.length === 0) {
-					cloneBar.innerHTML = '';
-				}
-				const addMenuBtn =
-					'<button type="button" class="batch-btn" data-bulk-add-menu title="Import records from a CSV or saved template">+ Import records</button>';
+				renderCanvasName();
+				cloneBar.innerHTML = '';
+				const addMenuBtn = canEditCanvasStructure()
+					? '<button type="button" class="batch-btn" data-bulk-add-menu title="Add, request, or import records">+ Add records</button>'
+					: '';
 				const draftCountForToolbar = canvasState.bulkRecords.filter(
 					(r) => !r.loadedFromId && !r.isTypeNode,
 				).length;
@@ -76,21 +96,27 @@
 					(r) => !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id),
 				).length;
 				const _hasPartialSelection = _selectedRealCount > 0 && _selectedRealCount < _allRealCount;
-				const uploadBtn = getReadOnlyMode()
-					? '<button type="button" class="upload-btn upload-btn--locked" disabled title="Read-only mode is on; turn it off in the org banner above to upload">\uD83D\uDD12 Read-only</button>'
-					: _uploadEmpty
-						? '<button type="button" class="upload-btn" data-bulk-upload disabled title="Add records to the canvas to enable upload">Upload to Salesforce</button>'
-						: _hasPartialSelection
-							? '<button type="button" class="upload-btn upload-btn--scoped" data-bulk-upload data-upload-scope-default="selected" title="Review and upload only the ' +
-								_selectedRealCount +
-								' selected record' +
-								(_selectedRealCount === 1 ? '' : 's') +
-								'">Upload ' +
-								_selectedRealCount +
-								' selected</button>'
-							: '<button type="button" class="upload-btn" data-bulk-upload title="Review and upload all records to Salesforce">Upload to Salesforce</button>';
+				const cc = canvasState.currentCanvas;
+				const isRecipient = !!(cc && cc.id && !cc.ownedByMe);
+				const uploadBtn = isRecipient
+					? ''
+					: getReadOnlyMode()
+						? '<button type="button" class="upload-btn upload-btn--locked" disabled title="Read-only mode is on; turn it off in the org banner above to upload">\uD83D\uDD12 Read-only</button>'
+						: _uploadEmpty
+							? '<button type="button" class="upload-btn" data-bulk-upload disabled title="Add records to the canvas to enable upload">Upload to Salesforce</button>'
+							: _hasPartialSelection
+								? '<button type="button" class="upload-btn upload-btn--scoped" data-bulk-upload data-upload-scope-default="selected" title="Review and upload only the ' +
+									_selectedRealCount +
+									' selected record' +
+									(_selectedRealCount === 1 ? '' : 's') +
+									'">Upload ' +
+									_selectedRealCount +
+									' selected</button>'
+								: '<button type="button" class="upload-btn" data-bulk-upload title="Review and upload all records to Salesforce">Upload to Salesforce</button>';
 				const saveCanvasBtn =
-					'<button type="button" class="batch-btn" data-bulk-save title="Save this canvas to your Salesforce org (stored as a File). Empty canvases can be saved as a starting point for AI proposals.">Save \u25BE</button>';
+					isRecipient && cc.recipientRole !== 'editor'
+						? ''
+						: '<button type="button" class="batch-btn" data-bulk-save title="Save this canvas to your Salesforce org (stored as a File). Empty canvases can be saved as a starting point for AI proposals.">Save \u25BE</button>';
 				const exportBtn = '';
 				const helpBtn = '';
 				const _shareIconSvg =
@@ -102,8 +128,6 @@
 					'<line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>' +
 					'</svg>';
 
-				const cc = canvasState.currentCanvas;
-				const isRecipient = !!(cc && cc.id && !cc.ownedByMe);
 				const isSavedOwned = !!(cc && cc.id && cc.ownedByMe);
 				const _hasRealRecords = canvasState.bulkRecords.filter((r) => !r.isTypeNode).length > 0;
 				let shareState = 'owned-saved';
@@ -152,7 +176,6 @@
 				const aiGenBtn = getAiGen().isEnabled()
 					? '<button type="button" class="batch-btn ai-gen-btn" data-bulk-ai-gen title="Describe what you want and let Claude draft records + relationships">\u2728 Generate with AI</button>'
 					: '';
-				cloneBar.innerHTML = '';
 				recordsBar.innerHTML =
 					addMenuBtn +
 					aiGenBtn +
@@ -286,23 +309,20 @@
 					'</span>' +
 					(() => {
 						const sp = _aggregateSlotProgress();
-						if (sp.total === 0) {
+						if (sp.total === 0 || sp.recipientMode) {
 							return '';
 						}
+						const label = sp.recordCount + ' request' + (sp.recordCount === 1 ? '' : 's');
 						return (
 							'<span class="bcc-sep" aria-hidden="true">·</span>' +
-							'<span class="slot-progress ' +
-							_slotProgressClass(sp) +
-							'" ' +
-							'title="Slot progress across ' +
+							'<span class="slot-progress slot-progress-configured" ' +
+							'title="' +
 							sp.recordCount +
-							' slot record' +
+							' contributor request' +
 							(sp.recordCount === 1 ? '' : 's') +
-							' on this canvas.">' +
-							'Slots ' +
-							sp.filled +
-							'/' +
-							sp.total +
+							(sp.recipientMode ? ' available to complete.' : ' configured on this canvas.') +
+							'">' +
+							label +
 							'</span>'
 						);
 					})();
@@ -377,6 +397,7 @@
 
 			return {
 				renderBulkToolbar: renderBulkToolbar,
+				renderCanvasName: renderCanvasName,
 				renderBulkCountChip: renderBulkCountChip,
 				renderBulkSelectionChip: renderBulkSelectionChip,
 			};

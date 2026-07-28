@@ -5,6 +5,7 @@ import {
 	inferScpController,
 	cleanLabel,
 	isNoiseSObject,
+	isSpecializedSObject,
 	getQueryableSObjects,
 	listObjects,
 } from '../src/sf-describe.js';
@@ -20,7 +21,7 @@ test('AF-040: describe-global preserves create permission for object gating', as
 			};
 		},
 	};
-	const objects = await listObjects(conn, 'af-040');
+	const objects = await listObjects(conn, 'af-040', 'user-af-040');
 	assert.equal(objects.find((object) => object.name === 'Allowed__c').createable, true);
 	assert.equal(objects.find((object) => object.name === 'Denied__c').createable, false);
 });
@@ -118,10 +119,31 @@ describe('isNoiseSObject', () => {
 		}
 	});
 
-	test('custom objects are ALWAYS kept, even noise-shaped names', () => {
+	test('ordinary custom objects are kept, even noise-shaped names', () => {
 		assert.equal(isNoiseSObject('My_Custom__c'), false);
 		assert.equal(isNoiseSObject('AccountHistory__c'), false, '__c beats the History suffix rule');
 		assert.equal(isNoiseSObject('FlowThing__c'), false, '__c beats the Flow prefix rule');
+	});
+
+	test('specialized object families are filtered from normal discovery', () => {
+		for (const n of [
+			'Telemetry__e',
+			'Rules__mdt',
+			'Archive__b',
+			'ExternalThing__x',
+			'FAQ__kav',
+			'BatchApexErrorEvent',
+			'LogoutEventStream',
+			'KnowledgeArticleVersion',
+			'KnowledgeArticleVersionHistory',
+		]) {
+			assert.equal(isSpecializedSObject(n), true, n + ' should be specialized');
+			assert.equal(isNoiseSObject(n), true, n + ' should be excluded');
+		}
+		assert.equal(isSpecializedSObject('Event'), false, 'calendar Event is an ordinary record object');
+		assert.equal(isNoiseSObject('Event'), false);
+		assert.equal(isSpecializedSObject('Project__c'), false);
+		assert.equal(isNoiseSObject('Project__c'), false);
 	});
 
 	test('system suffixes are filtered', () => {
@@ -150,13 +172,29 @@ describe('isNoiseSObject', () => {
 });
 
 describe('getQueryableSObjects cache isolation', () => {
-	test('caches per truthy orgId (second call skips describeGlobal)', async () => {
+	test('caches per truthy org and Salesforce user (second call skips describeGlobal)', async () => {
 		const conn = fakeConn(['Account', 'Contact']);
-		const set1 = await getQueryableSObjects(conn, 'org-cache-A');
-		const set2 = await getQueryableSObjects(conn, 'org-cache-A');
+		const set1 = await getQueryableSObjects(conn, 'org-cache-A', 'user-cache-A');
+		const set2 = await getQueryableSObjects(conn, 'org-cache-A', 'user-cache-A');
 		assert.ok(set1.has('Account') && set1.has('Contact'));
 		assert.equal(conn.describeGlobalCalls, 1, 'second call served from cache');
 		assert.equal(set1, set2, 'same cached Set instance');
+	});
+
+	test('does not reuse queryable objects across Salesforce users in the same org', async () => {
+		const admin = fakeConn(['Account', 'Admin_Only__c']);
+		const restricted = fakeConn(['Account', 'Restricted_Only__c']);
+		const adminSet = await getQueryableSObjects(admin, 'shared-org', 'admin-user');
+		const restrictedSet = await getQueryableSObjects(
+			restricted,
+			'shared-org',
+			'restricted-user',
+		);
+		assert.ok(adminSet.has('Admin_Only__c'));
+		assert.ok(!restrictedSet.has('Admin_Only__c'));
+		assert.ok(restrictedSet.has('Restricted_Only__c'));
+		assert.equal(admin.describeGlobalCalls, 1);
+		assert.equal(restricted.describeGlobalCalls, 1);
 	});
 
 	test('falsy orgId is NEVER cached: two orgs never cross-contaminate', async () => {

@@ -38,7 +38,6 @@
 					: function () {
 							return { ok: true, blocked: false, reason: null };
 						};
-			let _proposalsPollTimer = null;
 			let _proposalsLastCanvasId = null;
 			function _upsertSingleLookupAssociation(associations, nextAssociation) {
 				const current = Array.isArray(associations) ? associations : [];
@@ -80,6 +79,155 @@
 				}
 				return false;
 			}
+
+			function _stableConflictValue(value) {
+				if (value == null || typeof value !== 'object') {
+					return JSON.stringify(value);
+				}
+				if (Array.isArray(value)) {
+					return '[' + value.map(_stableConflictValue).join(',') + ']';
+				}
+				return (
+					'{' +
+					Object.keys(value)
+						.sort()
+						.map((key) => JSON.stringify(key) + ':' + _stableConflictValue(value[key]))
+						.join(',') +
+					'}'
+				);
+			}
+
+			function _proposalEndpointKey(endpoint, proposalId) {
+				if (!endpoint || endpoint.ref == null) {
+					return null;
+				}
+				const kind = String(endpoint.kind || '').toLowerCase();
+				if (kind === 'loaded') {
+					return 'record:' + String(endpoint.ref).toLowerCase();
+				}
+				if (kind === 'draft') {
+					return 'draft:' + String(endpoint.ref);
+				}
+				if (kind === 'tempref') {
+					return 'new-draft:' + String(proposalId) + ':' + String(endpoint.ref);
+				}
+				return null;
+			}
+
+			function _proposalConflictEntries(proposal) {
+				const entries = [];
+				const proposalId = String((proposal && proposal.id) || '');
+				const changes = proposal && Array.isArray(proposal.changes) ? proposal.changes : [];
+				changes.forEach((change, changeIndex) => {
+					if (!change || typeof change !== 'object') {
+						return;
+					}
+					let targetKey = null;
+					if (change.kind === 'record' && change.recordId != null) {
+						targetKey = 'record:' + String(change.recordId).toLowerCase();
+					} else if (change.kind === 'draft' && change.tempId != null) {
+						targetKey = 'draft:' + String(change.tempId);
+					}
+					if (
+						(change.kind === 'delete-record' && change.recordId != null) ||
+						(change.kind === 'delete-draft' && change.tempId != null)
+					) {
+						targetKey =
+							change.kind === 'delete-record'
+								? 'record:' + String(change.recordId).toLowerCase()
+								: 'draft:' + String(change.tempId);
+						entries.push({
+							key: targetKey + '|delete',
+							targetKey,
+							label: (change.objectName || 'Record') + ' · record removal',
+							proposalId,
+							changeIndex,
+							valueKey: change.kind,
+							deletesTarget: true,
+						});
+						return;
+					}
+					if (targetKey && change.fields && typeof change.fields === 'object') {
+						Object.keys(change.fields).forEach((fieldName) => {
+							entries.push({
+								key: targetKey + '|field:' + fieldName.toLowerCase(),
+								targetKey,
+								label: (change.objectName || 'Record') + ' · ' + fieldName,
+								proposalId,
+								changeIndex,
+								valueKey: 'value:' + _stableConflictValue(change.fields[fieldName]),
+							});
+						});
+						return;
+					}
+					if (change.kind === 'new-association' || change.kind === 'delete-association') {
+						targetKey = _proposalEndpointKey(change.from, proposalId);
+						if (!targetKey || !change.fieldName) {
+							return;
+						}
+						const destination =
+							change.kind === 'delete-association'
+								? 'unlinked'
+								: _proposalEndpointKey(change.to, proposalId) || 'unknown';
+						entries.push({
+							key: targetKey + '|field:' + String(change.fieldName).toLowerCase(),
+							targetKey,
+							label: (change.objectName || 'Record') + ' · ' + change.fieldName,
+							proposalId,
+							changeIndex,
+							valueKey: change.kind + ':' + destination,
+						});
+					}
+				});
+				return entries;
+			}
+
+			function _proposalConflictGroups(proposals) {
+				const byKey = new Map();
+				const byTarget = new Map();
+				(Array.isArray(proposals) ? proposals : []).forEach((proposal) => {
+					_proposalConflictEntries(proposal).forEach((entry) => {
+						if (!byKey.has(entry.key)) {
+							byKey.set(entry.key, []);
+						}
+						byKey.get(entry.key).push(entry);
+						if (entry.targetKey) {
+							if (!byTarget.has(entry.targetKey)) {
+								byTarget.set(entry.targetKey, []);
+							}
+							byTarget.get(entry.targetKey).push(entry);
+						}
+					});
+				});
+				const groups = [];
+				for (const [key, entries] of byKey.entries()) {
+					if (
+						new Set(entries.map((entry) => entry.proposalId)).size > 1 &&
+						new Set(entries.map((entry) => entry.valueKey)).size > 1
+					) {
+						groups.push({
+							key,
+							label: entries[0].label,
+							entries,
+						});
+					}
+				}
+				for (const [targetKey, entries] of byTarget.entries()) {
+					if (
+						entries.some((entry) => entry.deletesTarget) &&
+						entries.some((entry) => !entry.deletesTarget) &&
+						new Set(entries.map((entry) => entry.proposalId)).size > 1
+					) {
+						groups.push({
+							key: targetKey + '|record-lifecycle',
+							label: entries.find((entry) => entry.deletesTarget).label,
+							entries,
+						});
+					}
+				}
+				return groups;
+			}
+
 			const _proposalsBanner = document.createElement('div');
 			_proposalsBanner.className = 'proposals-banner';
 			_proposalsBanner.hidden = true;
@@ -100,7 +248,10 @@
 			_proposalsBanner.appendChild(_proposalsBannerText);
 			_proposalsBanner.appendChild(_proposalsReviewBtn);
 			_proposalsBanner.appendChild(_proposalsCloseBtn);
-			document.body.appendChild(_proposalsBanner);
+			const _proposalsBannerHost =
+				(typeof document.querySelector === 'function' && document.querySelector('#graph-bulk')) ||
+				document.body;
+			_proposalsBannerHost.appendChild(_proposalsBanner);
 			_proposalsReviewBtn.addEventListener('click', () => {
 				const cur = _proposalsPollCanvasId();
 				if (cur) {
@@ -142,7 +293,12 @@
 						return;
 					}
 					const data = await r.json();
-					const proposals = data && Array.isArray(data.proposals) ? data.proposals : [];
+					const proposals =
+						data && Array.isArray(data.proposals)
+							? data.proposals
+									.slice()
+									.sort((left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0))
+							: [];
 					if (proposals.length === 0) {
 						_proposalsBanner.hidden = true;
 						return;
@@ -194,10 +350,6 @@
 				if (window.ORGLOOM_MCP_ACTIVE !== true) {
 					_proposalsBanner.hidden = true;
 					_proposalsLastCanvasId = null;
-					if (_proposalsPollTimer) {
-						clearInterval(_proposalsPollTimer);
-						_proposalsPollTimer = null;
-					}
 					return;
 				}
 				const id = _proposalsPollCanvasId();
@@ -205,11 +357,6 @@
 					_proposalsLastCanvasId = id;
 					_refreshProposals();
 				}
-
-				if (_proposalsPollTimer) {
-					clearInterval(_proposalsPollTimer);
-				}
-				_proposalsPollTimer = setInterval(_refreshProposals, 5000);
 			}
 
 			_watchProposalsForCurrentCanvas();
@@ -224,6 +371,12 @@
 			});
 			window.addEventListener('orgloom:mcp-availability', () => {
 				_watchProposalsForCurrentCanvas();
+			});
+			window.addEventListener('orgloom:ai-proposals-changed', (event) => {
+				const detail = event.detail || {};
+				if (detail.canvasId && detail.canvasId === _proposalsPollCanvasId()) {
+					_refreshProposals();
+				}
 			});
 
 			function _autoApplyStorageKey(canvasId) {
@@ -272,8 +425,13 @@
 					'<span><strong>Auto-apply AI proposals to this canvas</strong>: future proposals land on the canvas without opening this review. Each change still echoes into the canvas state as if you clicked Apply; Salesforce uploads still require a separate Save + Upload. Per-canvas, browser-only.</span>' +
 					'</label>' +
 					'</div>' +
+					'<div class="proposal-conflict-summary" id="proposal-conflict-summary" hidden></div>' +
 					'<div class="modal-content" id="proposals-review-content">' +
 					'<p class="center tag">Loading…</p>' +
+					'</div>' +
+					'<div class="modal-actions proposal-batch-actions" id="proposal-batch-actions" hidden>' +
+					'<span class="proposal-batch-status" id="proposal-batch-status"></span>' +
+					'<button type="button" class="button proposal-batch-apply" id="proposal-batch-apply">Apply reviewed changes</button>' +
 					'</div>' +
 					'</div>';
 				document.body.appendChild(modal);
@@ -308,98 +466,277 @@
 						return;
 					}
 					const data = await r.json();
-					const proposals = data && Array.isArray(data.proposals) ? data.proposals : [];
+					const proposals =
+						data && Array.isArray(data.proposals)
+							? data.proposals
+									.slice()
+									.sort((left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0))
+							: [];
 					if (proposals.length === 0) {
 						modal.querySelector('#proposals-review-content').innerHTML =
 							'<p class="acct-empty">No pending proposals.</p>';
 						return;
 					}
-					const html = proposals.map((p) => _renderProposalCard(p)).join('');
+					const html = proposals
+						.map((proposal, index) =>
+							_renderProposalCard(proposal, {
+								batch: true,
+								position: index + 1,
+								total: proposals.length,
+							}),
+						)
+						.join('');
 					modal.querySelector('#proposals-review-content').innerHTML = html;
 
-					modal.querySelectorAll('.proposal-card').forEach((card) => {
-						const checkboxes = card.querySelectorAll('.proposal-change-checkbox');
-						const countEl = card.querySelector('.proposal-selected-count');
-						const applyBtn = card.querySelector('.proposal-card-apply');
-						const total = checkboxes.length;
-						const updateCount = () => {
-							let selected = 0;
-							checkboxes.forEach((cb) => {
-								if (cb.checked) {
-									selected++;
+					const cards = Array.from(modal.querySelectorAll('.proposal-card'));
+					const conflictGroups = _proposalConflictGroups(proposals);
+					const conflictSummary = modal.querySelector('#proposal-conflict-summary');
+					const batchActions = modal.querySelector('#proposal-batch-actions');
+					const batchStatus = modal.querySelector('#proposal-batch-status');
+					const batchApply = modal.querySelector('#proposal-batch-apply');
+					let batchBusy = false;
+
+					const indexesFor = (checkbox) =>
+						String(checkbox.getAttribute('data-change-indexes') || '')
+							.split(',')
+							.map((value) => Number(value))
+							.filter((value) => Number.isInteger(value));
+					const controlForEntry = (entry) => {
+						const card = cards.find(
+							(item) => String(item.getAttribute('data-proposal-id')) === String(entry.proposalId),
+						);
+						if (!card) {
+							return null;
+						}
+						return Array.from(card.querySelectorAll('.proposal-change-checkbox')).find((checkbox) =>
+							indexesFor(checkbox).includes(entry.changeIndex),
+						);
+					};
+					const conflictControls = conflictGroups.map((group) => ({
+						group,
+						controls: Array.from(
+							new Set(group.entries.map((entry) => controlForEntry(entry)).filter(Boolean)),
+						),
+					}));
+
+					if (conflictSummary && conflictGroups.length > 0) {
+						conflictSummary.hidden = false;
+						conflictSummary.innerHTML =
+							'<strong>Resolve overlapping changes</strong>' +
+							'<p>More than one proposal changes the same field or relationship. Deselect alternatives until only one remains for each item.</p>' +
+							'<ul>' +
+							conflictGroups.map((group) => '<li>' + escapeHtml(group.label) + '</li>').join('') +
+							'</ul>';
+					}
+
+					const updateBatchState = () => {
+						let selectedTotal = 0;
+						let rowTotal = 0;
+						cards.forEach((card) => {
+							const checkboxes = Array.from(card.querySelectorAll('.proposal-change-checkbox'));
+							const selected = checkboxes.filter((checkbox) => checkbox.checked).length;
+							selectedTotal += selected;
+							rowTotal += checkboxes.length;
+							const countEl = card.querySelector('.proposal-selected-count');
+							if (countEl) {
+								countEl.textContent = selected + ' of ' + checkboxes.length + ' selected';
+							}
+						});
+
+						let unresolved = 0;
+						conflictControls.forEach(({ controls }) => {
+							const selected = controls.filter((control) => control.checked);
+							const isUnresolved = selected.length > 1;
+							if (isUnresolved) {
+								unresolved++;
+							}
+							controls.forEach((control) => {
+								const row = control.closest('.proposal-change-row');
+								if (row) {
+									row.classList.add('proposal-change-row--conflict');
+									row.classList.toggle(
+										'proposal-change-row--conflict-active',
+										isUnresolved && control.checked,
+									);
+									row.classList.toggle('proposal-change-row--conflict-resolved', !isUnresolved);
 								}
 							});
-							if (countEl) {
-								countEl.textContent = selected + ' of ' + total + ' selected';
-							}
-							if (applyBtn) {
-								applyBtn.disabled = selected === 0;
-								applyBtn.textContent =
-									selected === total
-										? 'Apply'
-										: selected === 0
-											? 'Apply (none selected)'
-											: 'Apply selected (' + selected + ')';
-							}
-						};
-						checkboxes.forEach((cb) => cb.addEventListener('change', updateCount));
+						});
+
+						if (batchStatus) {
+							batchStatus.textContent =
+								unresolved > 0
+									? unresolved + ' conflict' + (unresolved === 1 ? '' : 's') + ' still need a choice'
+									: selectedTotal +
+										' of ' +
+										rowTotal +
+										' proposal item' +
+										(rowTotal === 1 ? '' : 's') +
+										' selected';
+						}
+						if (batchApply) {
+							batchApply.disabled = batchBusy || unresolved > 0;
+							batchApply.textContent =
+								selectedTotal === 0 ? 'Discard all proposals' : 'Apply reviewed changes';
+						}
+						return { selectedTotal, rowTotal, unresolved };
+					};
+
+					cards.forEach((card) => {
+						const checkboxes = Array.from(card.querySelectorAll('.proposal-change-checkbox'));
+						checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateBatchState));
 						const selAll = card.querySelector('.proposal-select-all');
 						if (selAll) {
 							selAll.addEventListener('click', () => {
-								checkboxes.forEach((cb) => {
-									cb.checked = true;
+								checkboxes.forEach((checkbox) => {
+									checkbox.checked = true;
 								});
-								updateCount();
+								updateBatchState();
 							});
 						}
 						const selNone = card.querySelector('.proposal-select-none');
 						if (selNone) {
 							selNone.addEventListener('click', () => {
-								checkboxes.forEach((cb) => {
-									cb.checked = false;
+								checkboxes.forEach((checkbox) => {
+									checkbox.checked = false;
 								});
-								updateCount();
+								updateBatchState();
 							});
 						}
-						updateCount();
 					});
-					modal.querySelectorAll('.proposal-card-apply').forEach((btn) => {
-						btn.addEventListener('click', async () => {
-							const pid = btn.getAttribute('data-proposal-id');
-							const card = btn.closest('.proposal-card');
-							const skipChangeIndexes = [];
-							let skipItemCount = 0;
-							if (card) {
-								card.querySelectorAll('.proposal-change-checkbox').forEach((cb) => {
-									if (!cb.checked) {
-										skipItemCount += 1;
-										String(cb.getAttribute('data-change-indexes') || '')
-											.split(',')
-											.map((value) => Number(value))
-											.filter((value) => Number.isInteger(value))
-											.forEach((value) => skipChangeIndexes.push(value));
+
+					if (batchActions) {
+						batchActions.hidden = false;
+					}
+					updateBatchState();
+
+					if (batchApply) {
+						batchApply.addEventListener('click', async () => {
+							const state = updateBatchState();
+							if (batchBusy || state.unresolved > 0) {
+								return;
+							}
+							const plans = cards.map((card) => {
+								const checkboxes = Array.from(card.querySelectorAll('.proposal-change-checkbox'));
+								const skipChangeIndexes = [];
+								checkboxes.forEach((checkbox) => {
+									if (!checkbox.checked) {
+										indexesFor(checkbox).forEach((index) => skipChangeIndexes.push(index));
 									}
 								});
-							}
-							await _applyProposal(canvasId, pid, modal, {
-								skipChangeIndexes,
-								skipItemCount,
+								return {
+									proposalId: card.getAttribute('data-proposal-id'),
+									selectedCount: checkboxes.filter((checkbox) => checkbox.checked).length,
+									skipItemCount:
+										checkboxes.length - checkboxes.filter((checkbox) => checkbox.checked).length,
+									skipChangeIndexes: Array.from(new Set(skipChangeIndexes)),
+								};
 							});
+							const discarded = plans.filter((plan) => plan.selectedCount === 0).length;
+							const ok = await showConfirmDialog({
+								title:
+									state.selectedTotal === 0 ? 'Discard these proposals?' : 'Apply this review batch?',
+								message:
+									state.selectedTotal === 0
+										? 'All pending proposals in this review will be discarded. Salesforce records will not be modified.'
+										: state.selectedTotal +
+											' selected proposal item' +
+											(state.selectedTotal === 1 ? '' : 's') +
+											' will land on the canvas' +
+											(discarded > 0
+												? '; ' +
+													discarded +
+													' proposal' +
+													(discarded === 1 ? '' : 's') +
+													' with no selected changes will be discarded'
+												: '') +
+											'. Nothing is written to Salesforce yet.',
+								confirmLabel: state.selectedTotal === 0 ? 'Discard proposals' : 'Apply to canvas',
+								cancelLabel: 'Cancel',
+								danger: false,
+							});
+							if (!ok) {
+								return;
+							}
+
+							batchBusy = true;
+							updateBatchState();
+							const batchUndoSnapshot = _captureProposalUndoSnapshot();
+							const closeProgress = _showProposalApplyProgress(modal, {
+								title: 'Applying proposal batch',
+								message: 'Applying the reviewed changes to the canvas…',
+							});
+							let completed = 0;
+							let succeeded = true;
+							try {
+								for (const plan of plans) {
+									const settled =
+										plan.selectedCount === 0
+											? await _rejectProposal(canvasId, plan.proposalId, null, {
+													skipConfirm: true,
+													silentToast: true,
+												})
+											: await _applyProposal(canvasId, plan.proposalId, null, {
+													skipConfirm: true,
+													silentToast: true,
+													skipUndo: true,
+													skipChangeIndexes: plan.skipChangeIndexes,
+													skipItemCount: plan.skipItemCount,
+												});
+									if (!settled) {
+										succeeded = false;
+										break;
+									}
+									completed++;
+								}
+							} finally {
+								closeProgress();
+							}
+
+							if (completed > 0 && state.selectedTotal > 0) {
+								_registerProposalUndo(
+									batchUndoSnapshot,
+									'AI proposal batch apply',
+									'AI proposal batch undone.',
+								);
+							}
+							modal.remove();
+							await _refreshProposals();
+							if (succeeded) {
+								showBulkToast(
+									state.selectedTotal === 0
+										? 'Proposal batch discarded.'
+										: state.selectedTotal +
+												' reviewed proposal item' +
+												(state.selectedTotal === 1 ? '' : 's') +
+												' applied to the canvas.',
+									'success',
+								);
+							} else if (completed > 0) {
+								showBulkToast(
+									'The batch stopped after ' +
+										completed +
+										' proposal' +
+										(completed === 1 ? '' : 's') +
+										'. Reopen the remaining proposals and review them again.',
+									'error',
+								);
+							} else {
+								showBulkToast(
+									'The proposal batch could not be applied. Reopen the review and try again.',
+									'error',
+								);
+							}
 						});
-					});
-					modal.querySelectorAll('.proposal-card-reject').forEach((btn) => {
-						btn.addEventListener('click', async () => {
-							const pid = btn.getAttribute('data-proposal-id');
-							await _rejectProposal(canvasId, pid, modal);
-						});
-					});
+					}
 				} catch (e) {
 					modal.querySelector('#proposals-review-content').innerHTML =
 						'<div class="banner error">' + escapeHtml(e.message || String(e)) + '</div>';
 				}
 			}
 
-			function _renderProposalCard(p) {
+			function _renderProposalCard(p, options) {
+				options = options || {};
 				const summary = p.summary ? '<p class="proposal-card-summary">' + escapeHtml(p.summary) + '</p>' : '';
 				const ts = p.createdAt ? new Date(p.createdAt).toLocaleString() : '';
 				const changes = Array.isArray(p.changes) ? p.changes : [];
@@ -852,7 +1189,9 @@
 					'">' +
 					'<div class="proposal-card-head">' +
 					'<div>' +
-					'<strong>Proposal</strong> ' +
+					'<strong>Proposal' +
+					(options.total > 1 ? ' ' + options.position + ' of ' + options.total : '') +
+					'</strong> ' +
 					'<span class="tag">' +
 					escapeHtml(ts) +
 					'</span> ' +
@@ -866,12 +1205,14 @@
 					'<div class="proposal-card-actions">' +
 					'<button type="button" class="link-button proposal-select-all">Select all</button>' +
 					'<button type="button" class="link-button proposal-select-none">None</button>' +
-					'<button type="button" class="button secondary proposal-card-reject" data-proposal-id="' +
-					escapeHtml(p.id) +
-					'">Reject</button>' +
-					'<button type="button" class="button proposal-card-apply" data-proposal-id="' +
-					escapeHtml(p.id) +
-					'">Apply selected</button>' +
+					(options.batch
+						? ''
+						: '<button type="button" class="button secondary proposal-card-reject" data-proposal-id="' +
+							escapeHtml(p.id) +
+							'">Reject</button>' +
+							'<button type="button" class="button proposal-card-apply" data-proposal-id="' +
+							escapeHtml(p.id) +
+							'">Apply selected</button>') +
 					'</div>' +
 					'</div>' +
 					summary +
@@ -882,10 +1223,101 @@
 				);
 			}
 
+			function _captureProposalUndoSnapshot() {
+				if (!pushUndo) {
+					return null;
+				}
+				const snapshot = {
+					selectedObjects: structuredClone(canvasState.selectedObjects || []),
+					selectedIdSeq: canvasState.selectedIdSeq,
+					activeIndex: canvasState.activeIndex,
+					hiddenObjects: new Set(canvasState.hiddenObjects || []),
+					bulkRecords: structuredClone(canvasState.bulkRecords || []),
+					bulkAssociations: structuredClone(canvasState.bulkAssociations || []),
+					bulkIdSeq: canvasState.bulkIdSeq,
+					bulkInitialized: canvasState.bulkInitialized,
+				};
+				snapshot.fingerprint = _proposalCanvasFingerprint();
+				return snapshot;
+			}
+
+			function _proposalCanvasFingerprint() {
+				return JSON.stringify({
+					selectedObjects: canvasState.selectedObjects || [],
+					hiddenObjects: Array.from(canvasState.hiddenObjects || []).sort(),
+					bulkRecords: canvasState.bulkRecords || [],
+					bulkAssociations: canvasState.bulkAssociations || [],
+				});
+			}
+
+			function _registerProposalUndo(snapshot, label, successMessage) {
+				if (!snapshot || !pushUndo) {
+					return;
+				}
+				const appliedFingerprint = _proposalCanvasFingerprint();
+				if (snapshot.fingerprint === appliedFingerprint) {
+					return;
+				}
+				pushUndo(label, function () {
+					if (_proposalCanvasFingerprint() !== appliedFingerprint) {
+						showBulkToast('Can’t undo the AI proposal because the canvas was edited afterward.', 'info');
+						return false;
+					}
+					canvasState.selectedObjects = snapshot.selectedObjects;
+					canvasState.selectedIdSeq = snapshot.selectedIdSeq;
+					canvasState.activeIndex = snapshot.activeIndex;
+					canvasState.hiddenObjects.clear();
+					snapshot.hiddenObjects.forEach((value) => canvasState.hiddenObjects.add(value));
+					canvasState.bulkRecords = snapshot.bulkRecords;
+					canvasState.bulkAssociations = snapshot.bulkAssociations;
+					canvasState.bulkIdSeq = snapshot.bulkIdSeq;
+					canvasState.bulkInitialized = snapshot.bulkInitialized;
+					canvasState.bulkSelectedIds = new Set();
+					canvasState.bulkSelectedEdgeId = null;
+					renderBulkView();
+					showBulkToast(successMessage);
+				});
+			}
+
+			function _showProposalApplyProgress(reviewModal, options) {
+				options = options || {};
+				if (reviewModal) {
+					reviewModal.setAttribute('aria-hidden', 'true');
+					reviewModal.setAttribute('inert', '');
+				}
+				const progressModal = document.createElement('div');
+				progressModal.className = 'modal app-confirm-modal proposal-apply-progress-modal';
+				progressModal.innerHTML =
+					'<div class="modal-overlay"></div>' +
+					'<div class="modal-body" style="max-width:440px" aria-busy="true">' +
+					'<div class="modal-header"><h3>' +
+					escapeHtml(options.title || 'Applying proposal') +
+					'</h3></div>' +
+					'<div class="modal-content" role="status" aria-live="polite">' +
+					'<p class="center busy-row" style="justify-content:center">' +
+					'<span class="busy-spinner" aria-hidden="true"></span>' +
+					'<span>' +
+					escapeHtml(options.message || 'Applying the selected changes to the canvas…') +
+					'</span>' +
+					'</p>' +
+					'</div>' +
+					'</div>';
+				document.body.appendChild(progressModal);
+				return function closeProgress() {
+					progressModal.remove();
+					if (reviewModal && reviewModal.isConnected) {
+						reviewModal.removeAttribute('aria-hidden');
+						reviewModal.removeAttribute('inert');
+					}
+				};
+			}
+
 			async function _applyProposal(canvasId, proposalId, modal, opts) {
 				opts = opts || {};
 				const skipChangeIndexes = Array.isArray(opts.skipChangeIndexes) ? opts.skipChangeIndexes : [];
 				const skipCount = Number.isInteger(opts.skipItemCount) ? opts.skipItemCount : skipChangeIndexes.length;
+				let closeProgress = null;
+				let settled = false;
 
 				if (!opts.skipConfirm) {
 					const ok = await showConfirmDialog({
@@ -902,22 +1334,11 @@
 						danger: false,
 					});
 					if (!ok) {
-						return;
+						return false;
 					}
+					closeProgress = _showProposalApplyProgress(modal);
 				}
-				// Snapshot before the server apply so the entire accepted proposal is one undo action.
-				const undoSnapshot = pushUndo
-					? {
-							selectedObjects: structuredClone(canvasState.selectedObjects || []),
-							selectedIdSeq: canvasState.selectedIdSeq,
-							activeIndex: canvasState.activeIndex,
-							hiddenObjects: new Set(canvasState.hiddenObjects || []),
-							bulkRecords: structuredClone(canvasState.bulkRecords || []),
-							bulkAssociations: structuredClone(canvasState.bulkAssociations || []),
-							bulkIdSeq: canvasState.bulkIdSeq,
-							bulkInitialized: canvasState.bulkInitialized,
-						}
-					: null;
+				const undoSnapshot = opts.skipUndo ? null : _captureProposalUndoSnapshot();
 				try {
 					const r = await csrfFetch(
 						'/api/canvas/' +
@@ -935,9 +1356,10 @@
 					if (!r.ok) {
 						const body = await r.json().catch(() => ({}));
 						showBulkToast((body && body.error) || 'Could not apply (HTTP ' + r.status + ').', 'error');
-						return;
+						return false;
 					}
 					const data = await r.json();
+					settled = true;
 					const results = data && Array.isArray(data.results) ? data.results : [];
 					const applied = results.filter((x) => x.status === 'applied').length;
 					const failed = results.filter((x) => x.status === 'failed');
@@ -1012,7 +1434,7 @@
 						const _cap = canvasCapCheck(_addResultCount);
 						if (_cap.blocked) {
 							showBulkToast(_cap.reason, 'error');
-							return;
+							return true;
 						}
 
 						function _canonicalizeFields(objectName, fields) {
@@ -1251,42 +1673,7 @@
 							}
 						}
 						if (touched) {
-							if (undoSnapshot && pushUndo) {
-								const appliedFingerprint = JSON.stringify({
-									selectedObjects: canvasState.selectedObjects || [],
-									hiddenObjects: Array.from(canvasState.hiddenObjects || []).sort(),
-									bulkRecords: canvasState.bulkRecords || [],
-									bulkAssociations: canvasState.bulkAssociations || [],
-								});
-								pushUndo('AI proposal apply', function () {
-									const currentFingerprint = JSON.stringify({
-										selectedObjects: canvasState.selectedObjects || [],
-										hiddenObjects: Array.from(canvasState.hiddenObjects || []).sort(),
-										bulkRecords: canvasState.bulkRecords || [],
-										bulkAssociations: canvasState.bulkAssociations || [],
-									});
-									if (currentFingerprint !== appliedFingerprint) {
-										showBulkToast(
-											'Can’t undo the AI proposal because the canvas was edited afterward.',
-											'info',
-										);
-										return false;
-									}
-									canvasState.selectedObjects = undoSnapshot.selectedObjects;
-									canvasState.selectedIdSeq = undoSnapshot.selectedIdSeq;
-									canvasState.activeIndex = undoSnapshot.activeIndex;
-									canvasState.hiddenObjects.clear();
-									undoSnapshot.hiddenObjects.forEach((value) => canvasState.hiddenObjects.add(value));
-									canvasState.bulkRecords = undoSnapshot.bulkRecords;
-									canvasState.bulkAssociations = undoSnapshot.bulkAssociations;
-									canvasState.bulkIdSeq = undoSnapshot.bulkIdSeq;
-									canvasState.bulkInitialized = undoSnapshot.bulkInitialized;
-									canvasState.bulkSelectedIds = new Set();
-									canvasState.bulkSelectedEdgeId = null;
-									renderBulkView();
-									showBulkToast('AI proposal apply undone.');
-								});
-							}
+							_registerProposalUndo(undoSnapshot, 'AI proposal apply', 'AI proposal apply undone.');
 							try {
 								renderBulkView();
 							} catch (renderErr) {
@@ -1296,19 +1683,28 @@
 					}
 				} catch (e) {
 					showBulkToast('Could not apply: ' + (e.message || e), 'error');
+					return false;
+				} finally {
+					if (closeProgress) {
+						closeProgress();
+					}
 				}
+				return settled;
 			}
 
-			async function _rejectProposal(canvasId, proposalId, modal) {
-				const ok = await showConfirmDialog({
-					title: 'Reject this proposal?',
-					message: 'The proposed changes will be discarded. Salesforce records will not be modified.',
-					confirmLabel: 'Reject',
-					cancelLabel: 'Cancel',
-					danger: false,
-				});
-				if (!ok) {
-					return;
+			async function _rejectProposal(canvasId, proposalId, modal, options) {
+				options = options || {};
+				if (!options.skipConfirm) {
+					const ok = await showConfirmDialog({
+						title: 'Reject this proposal?',
+						message: 'The proposed changes will be discarded. Salesforce records will not be modified.',
+						confirmLabel: 'Reject',
+						cancelLabel: 'Cancel',
+						danger: false,
+					});
+					if (!ok) {
+						return false;
+					}
 				}
 				try {
 					const r = await csrfFetch(
@@ -1321,15 +1717,21 @@
 					);
 					if (!r.ok) {
 						const body = await r.json().catch(() => ({}));
-						showBulkToast((body && body.error) || 'Could not reject (HTTP ' + r.status + ').', 'error');
-						return;
+						if (!options.silentToast) {
+							showBulkToast((body && body.error) || 'Could not reject (HTTP ' + r.status + ').', 'error');
+						}
+						return false;
 					}
 					if (modal) {
 						modal.remove();
 					}
 					_refreshProposals();
+					return true;
 				} catch (e) {
-					showBulkToast('Could not reject: ' + (e.message || e), 'error');
+					if (!options.silentToast) {
+						showBulkToast('Could not reject: ' + (e.message || e), 'error');
+					}
+					return false;
 				}
 			}
 
@@ -1337,6 +1739,7 @@
 				getPollCanvasId: _proposalsPollCanvasId,
 				openProposalsReview: _openProposalsReview,
 				renderProposalCard: _renderProposalCard,
+				proposalConflictGroups: _proposalConflictGroups,
 				syncLookupFieldValue: _syncLookupFieldValue,
 				upsertSingleLookupAssociation: _upsertSingleLookupAssociation,
 				refreshProposals: _refreshProposals,

@@ -21,6 +21,8 @@
 				'realRecordCount',
 				'runSlotPreflight',
 				'clearEmptyStarterCard',
+				'getSlotIdSeq',
+				'setSlotIdSeq',
 			];
 			for (const k of _required) {
 				if (deps == null || deps[k] == null) {
@@ -41,6 +43,11 @@
 			const _realRecordCount = deps.realRecordCount;
 			const _runSlotPreflight = deps.runSlotPreflight;
 			const clearEmptyStarterCard = deps.clearEmptyStarterCard;
+			const getSlotIdSeq = deps.getSlotIdSeq;
+			const setSlotIdSeq = deps.setSlotIdSeq;
+			const _observeSlotId = (slotId) => {
+				setSlotIdSeq(Math.max(getSlotIdSeq(), Number(slotId) + 1));
+			};
 			const canvasCapCheck =
 				typeof deps.canvasCapCheck === 'function'
 					? deps.canvasCapCheck
@@ -87,6 +94,27 @@
 				return out;
 			}
 
+			function _mintCanvasRecordId() {
+				try {
+					if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+						return window.crypto.randomUUID();
+					}
+				} catch (_) {}
+				return 'card_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+			}
+
+			function _ensureCanvasRecordId(record) {
+				if (
+					record._canvasRecordId != null &&
+					String(record._canvasRecordId) &&
+					String(record._canvasRecordId).length <= 128
+				) {
+					return String(record._canvasRecordId);
+				}
+				record._canvasRecordId = _mintCanvasRecordId();
+				return record._canvasRecordId;
+			}
+
 			function loadedEditDelta(r) {
 				// Preserve only edits relative to the loaded Salesforce baseline when requested.
 				if (!r.loadedValues) {
@@ -102,9 +130,134 @@
 				}
 				const changes = {};
 				changed.forEach((f) => {
-					changes[f] = (r.values || {})[f];
+					const value = (r.values || {})[f];
+					changes[f] = value === undefined ? null : value;
 				});
 				return changes;
+			}
+
+			function draftFieldMetadata(objects, draftRecords) {
+				const namesByObject = new Map();
+				const wholeRecordRequests = new Set();
+				for (const record of draftRecords) {
+					if (!record || !record.objectName) {
+						continue;
+					}
+					if (!namesByObject.has(record.objectName)) {
+						namesByObject.set(record.objectName, new Set());
+					}
+					Object.keys(record.values || {}).forEach((name) => namesByObject.get(record.objectName).add(name));
+					if (record.slot && record.slot.kind === 'fields') {
+						(record.slot.fields || []).forEach((name) => namesByObject.get(record.objectName).add(name));
+					} else if (record.slot) {
+						wholeRecordRequests.add(record.objectName);
+					}
+				}
+				return objects.map((object) => {
+					const describe =
+						canvasState.describeCache[object.name] ||
+						(canvasState.draftDescribeCache && canvasState.draftDescribeCache[object.name]);
+					const requested = namesByObject.get(object.name) || new Set();
+					const sourceFields = describe && Array.isArray(describe.fields) ? describe.fields : [];
+					if (wholeRecordRequests.has(object.name)) {
+						sourceFields
+							.filter((field) => field && field.createable)
+							.forEach((field) => requested.add(field.name));
+					}
+					const fields = sourceFields
+						.filter((field) => field && requested.has(field.name))
+						.map((field) => ({
+							name: field.name,
+							label: field.label || field.name,
+							type: field.type || 'string',
+							createable: wholeRecordRequests.has(object.name) ? !!field.createable : true,
+							updateable: !!field.updateable,
+							required: !!field.required,
+							nillable: field.nillable !== false,
+							defaultedOnCreate: !!field.defaultedOnCreate,
+							calculated: !!field.calculated,
+							autoNumber: !!field.autoNumber,
+							nameField: !!field.nameField,
+							length: field.length,
+							precision: field.precision,
+							scale: field.scale,
+							referenceTo: Array.isArray(field.referenceTo) ? field.referenceTo.slice() : [],
+							relationshipName: field.relationshipName || null,
+							picklistValues: Array.isArray(field.picklistValues)
+								? field.picklistValues
+										.filter((value) => value && value.active !== false)
+										.map((value) => ({
+											label: value.label,
+											value: value.value,
+											active: true,
+											defaultValue: !!value.defaultValue,
+										}))
+								: [],
+						}));
+					for (const name of requested) {
+						if (!fields.some((field) => field.name === name)) {
+							fields.push({ name, label: name, type: 'string', createable: true, updateable: false });
+						}
+					}
+					return fields.length > 0 ? Object.assign({}, object, { draftFields: fields }) : object;
+				});
+			}
+
+			async function ensureDraftSlotMetadata() {
+				const objectNames = Array.from(
+					new Set(
+						(canvasState.bulkRecords || [])
+							.filter(
+								(record) =>
+									record &&
+									!record.isTypeNode &&
+									!record.isPending &&
+									!record.loadedFromId &&
+									record.slot &&
+									(record.slot.kind || 'whole-record') === 'whole-record' &&
+									record.objectName,
+							)
+							.map((record) => record.objectName),
+					),
+				);
+				for (const objectName of objectNames) {
+					let describe = canvasState.describeCache && canvasState.describeCache[objectName];
+					const mayReuseSharedSnapshot =
+						canvasState.currentCanvas && canvasState.currentCanvas.ownedByMe === false;
+					if (
+						(!describe || !Array.isArray(describe.fields) || describe.fields.length === 0) &&
+						mayReuseSharedSnapshot
+					) {
+						describe = canvasState.draftDescribeCache && canvasState.draftDescribeCache[objectName];
+					}
+					if (!describe || !Array.isArray(describe.fields) || describe.fields.length === 0) {
+						try {
+							describe = await ensureDescribe(objectName, { force: true });
+						} catch (error) {
+							throw new Error(
+								'Could not prepare the ' +
+									objectName +
+									' record request for sharing. Reconnect Salesforce and try again. ' +
+									(error && error.message ? error.message : ''),
+							);
+						}
+					}
+					if (
+						!describe ||
+						!Array.isArray(describe.fields) ||
+						!describe.fields.some((field) => field && field.createable)
+					) {
+						throw new Error(
+							'Could not prepare the ' +
+								objectName +
+								' record request because no createable fields are available.',
+						);
+					}
+					if (!mayReuseSharedSnapshot || describe !== canvasState.draftDescribeCache?.[objectName]) {
+						canvasState.describeCache[objectName] = describe;
+					}
+				}
+				return objectNames;
 			}
 
 			function buildTemplate(opts) {
@@ -192,14 +345,17 @@
 			}
 
 			function buildCanvasPayload() {
-				const objects = serializeObjects(true);
+				let objects = serializeObjects(true);
 				const real = canvasState.bulkRecords.filter((r) => !r.isTypeNode && !r.isPending);
+				const stableDraftRef = (record) =>
+					record._persistedTempId != null ? record._persistedTempId : record._collabId || record.id;
 				const loadedRecords = real
 					.filter((r) => !!r.loadedFromId)
 					.map((r) => {
 						const base = Object.assign(
 							{
 								loadedFromId: r.loadedFromId,
+								canvasRecordId: _ensureCanvasRecordId(r),
 								objectName: r.objectName,
 								x: r.x,
 								y: r.y,
@@ -217,7 +373,8 @@
 					.map((r) =>
 						Object.assign(
 							{
-								tempId: r.id,
+								tempId: stableDraftRef(r),
+								canvasRecordId: _ensureCanvasRecordId(r),
 								objectName: r.objectName,
 								x: r.x,
 								y: r.y,
@@ -226,6 +383,7 @@
 							recordCommonParts(r),
 						),
 					);
+				objects = draftFieldMetadata(objects, drafts);
 				const resolveRefKey = (rec) => {
 					if (!rec) {
 						return null;
@@ -236,7 +394,7 @@
 					if (rec.loadedFromId) {
 						return { kind: 'loaded', ref: rec.loadedFromId };
 					}
-					return { kind: 'draft', ref: rec.id };
+					return { kind: 'draft', ref: stableDraftRef(rec) };
 				};
 				const draftIds = new Set(drafts.filter((d) => !d.slot).map((d) => d.tempId));
 				const loadedSet = new Set(loadedRecords.filter((l) => !l.slot).map((l) => l.loadedFromId));
@@ -369,6 +527,63 @@
 
 			function _cleanValues(v) {
 				return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+			}
+
+			function _savedCoordinate(value, fallback) {
+				const number = Number(value);
+				return Number.isFinite(number) ? number : fallback;
+			}
+
+			function _payloadCanvasRecordIds(loadedRecords, drafts) {
+				const ids = new Map();
+				const counts = new Map();
+				const assign = (record, kind, naturalRef) => {
+					if (
+						record &&
+						record.canvasRecordId != null &&
+						String(record.canvasRecordId) &&
+						String(record.canvasRecordId).length <= 128
+					) {
+						ids.set(record, String(record.canvasRecordId));
+						return;
+					}
+					const base = kind + ':' + String(naturalRef || 'unknown');
+					const occurrence = (counts.get(base) || 0) + 1;
+					counts.set(base, occurrence);
+					ids.set(record, 'legacy:' + base + ':' + occurrence);
+				};
+				for (const record of loadedRecords) {
+					const naturalRef =
+						record && record.slot && record.slot.slotId != null
+							? 'slot:' + record.slot.slotId
+							: record && record.loadedFromId;
+					assign(record, 'loaded', naturalRef);
+				}
+				for (const record of drafts) {
+					const naturalRef =
+						record && record.slot && record.slot.slotId != null
+							? 'slot:' + record.slot.slotId
+							: record && record.tempId;
+					assign(record, 'draft', naturalRef);
+				}
+				return ids;
+			}
+
+			function _restoreSlot(slot) {
+				const restored = {
+					slotId: slot.slotId,
+					label: slot.label,
+					description: slot.description || null,
+					kind: slot.kind || 'whole-record',
+					origin: slot.origin || null,
+					assigneeSfUserId: slot.assigneeSfUserId || null,
+					assigneeName: slot.assigneeName || null,
+					assigneeEmail: slot.assigneeEmail || null,
+				};
+				if (restored.kind === 'fields' && Array.isArray(slot.fields)) {
+					restored.fields = slot.fields.slice();
+				}
+				return restored;
 			}
 
 			const _admitAssociation = window.OrgLoom.importShared.admitAssociation;
@@ -541,7 +756,7 @@
 						}
 						if (r.slot && r.slot.slotId != null) {
 							rec.slot = r.slot;
-							slotIdSeq = Math.max(slotIdSeq, r.slot.slotId + 1);
+							_observeSlotId(r.slot.slotId);
 						}
 						canvasState.bulkRecords.push(rec);
 					});
@@ -634,6 +849,7 @@
 			async function applyCanvasPayload(payload, opts) {
 				opts = opts || {};
 				const merge = !!opts.merge;
+				const loadingCanvasShareRole = opts.ownedByMe === false ? opts.recipientRole || 'viewer' : null;
 				if (!payload || typeof payload !== 'object') {
 					showBulkToast('Empty payload: nothing to load.', 'error');
 					return;
@@ -641,9 +857,13 @@
 				const schemaObjects = (payload.schema && payload.schema.objects) || [];
 				const loadedRefs = Array.isArray(payload.loadedRecords) ? payload.loadedRecords : [];
 				const drafts = Array.isArray(payload.drafts) ? payload.drafts : [];
+				const hiddenRecords = Array.isArray(payload.hiddenRecords) ? payload.hiddenRecords : [];
 				const associations = Array.isArray(payload.associations) ? payload.associations : [];
+				const canvasRecordIds = _payloadCanvasRecordIds(loadedRefs, drafts);
+				const recipientUsesSavedMetadata =
+					loadingCanvasShareRole === 'viewer' || loadingCanvasShareRole === 'contributor';
 
-				const incomingCount = loadedRefs.length + drafts.length;
+				const incomingCount = loadedRefs.length + drafts.length + hiddenRecords.length;
 				let _cap;
 				if (merge) {
 					_cap = canvasCapCheck(incomingCount);
@@ -658,6 +878,7 @@
 					showBulkToast(_cap.reason, 'error');
 					return;
 				}
+				canvasState._renderCanvasShareRole = loadingCanvasShareRole;
 				clearEmptyStarterCard();
 				if (!merge) {
 					canvasState.selectedObjects = [];
@@ -680,12 +901,58 @@
 					canvasState._prefetchedTypeNodeKeys.clear();
 					canvasState._renderedRecIds.clear();
 					canvasState._autoSpawnedPending = true; // suppress auto-spawn after load
+					canvasState.draftDescribeCache = {};
+				}
+				for (const object of schemaObjects) {
+					if (!object || !object.name || !Array.isArray(object.draftFields)) {
+						continue;
+					}
+					canvasState.draftDescribeCache[object.name] = {
+						name: object.name,
+						label: object.label || object.name,
+						fields: object.draftFields.map((field) => Object.assign({}, field)),
+						recordTypes: [],
+						_canvasSnapshot: true,
+					};
+				}
+				for (const draft of drafts) {
+					if (!draft || !draft.objectName || canvasState.draftDescribeCache[draft.objectName]) {
+						continue;
+					}
+					canvasState.draftDescribeCache[draft.objectName] = {
+						name: draft.objectName,
+						label: draft.objectName,
+						fields: Object.keys(draft.values || {}).map((name) => ({
+							name,
+							label: name,
+							type: 'string',
+							createable: true,
+							updateable: false,
+						})),
+						recordTypes: [],
+						_canvasSnapshot: true,
+					};
 				}
 
 				const idByIdx = [];
 				for (let i = 0; i < schemaObjects.length; i++) {
 					const obj = schemaObjects[i];
 					const parentId = obj.addedFromIdx != null ? idByIdx[obj.addedFromIdx] : null;
+					if (recipientUsesSavedMetadata) {
+						const entry = {
+							id: canvasState.selectedIdSeq++,
+							name: obj.name,
+							label: obj.label || obj.name,
+							data: null,
+							addedFrom: parentId != null ? parentId : null,
+							addedVia: obj.addedVia || null,
+							worldPos: obj.worldPos || { x: 0, y: i * 260 },
+						};
+						canvasState.selectedObjects.push(entry);
+						canvasState.activeIndex = canvasState.selectedObjects.length - 1;
+						idByIdx.push(entry.id);
+						continue;
+					}
 					try {
 						const entry = await addToSelection(
 							obj.name,
@@ -708,39 +975,58 @@
 					merge,
 					loadedRefs
 						.filter(_isRecordEntry)
-						.map((r) => Number(r.y) || 200)
-						.concat(drafts.filter(_isRecordEntry).map((d) => Number(d.y) || 200)),
+						.map((r) => _savedCoordinate(r.y, 200))
+						.concat(drafts.filter(_isRecordEntry).map((d) => _savedCoordinate(d.y, 200)))
+						.concat(hiddenRecords.map((record) => _savedCoordinate(record && record.y, 200))),
 				);
 				const pushInaccessiblePlaceholder = (ref, isSlot) => {
 					droppedFromAccess++;
-					const matchingSel = canvasState.selectedObjects.find((s) => s.name === ref.objectName);
+					const hideMetadata = !!loadingCanvasShareRole;
+					const matchingSel = hideMetadata
+						? null
+						: canvasState.selectedObjects.find((s) => s.name === ref.objectName);
 					const newId = canvasState.bulkIdSeq++;
 					if (ref.loadedFromId) {
 						loadedById.set(ref.loadedFromId, newId);
 					}
 					const recObj = {
 						id: newId,
-						objectName: ref.objectName,
-						label: (matchingSel && matchingSel.label) || ref.objectName,
+						objectName: hideMetadata ? null : ref.objectName,
+						label: hideMetadata
+							? 'Hidden Salesforce content'
+							: (matchingSel && matchingSel.label) || ref.objectName,
 						fromSelectionId: matchingSel ? matchingSel.id : null,
-						loadedFromId: ref.loadedFromId || null,
-						x: Number(ref.x) || 200,
-						y: (Number(ref.y) || 200) + _offY,
+						loadedFromId: hideMetadata ? null : ref.loadedFromId || null,
+						x: _savedCoordinate(ref.x, 200),
+						y: _savedCoordinate(ref.y, 200) + _offY,
 						values: {},
+						...(hideMetadata ? {} : { _canvasRecordId: canvasRecordIds.get(ref) }),
 						_inaccessible: true,
+						_permissionHidden: hideMetadata,
 					};
-					if (isSlot && ref.slot && ref.slot.slotId != null) {
-						recObj.slot = {
-							label: ref.slot.label,
-							slotId: ref.slot.slotId,
-							description: ref.slot.description || null,
-							kind: ref.slot.kind || 'whole-record',
-						};
+					if (!hideMetadata && isSlot && ref.slot && ref.slot.slotId != null) {
+						recObj.slot = _restoreSlot(ref.slot);
 						slotById.set(ref.slot.slotId, newId);
-						slotIdSeq = Math.max(slotIdSeq, ref.slot.slotId + 1);
+						_observeSlotId(ref.slot.slotId);
 					}
 					canvasState.bulkRecords.push(recObj);
 				};
+				for (const hidden of hiddenRecords) {
+					if (!hidden || typeof hidden !== 'object') {
+						continue;
+					}
+					droppedFromAccess++;
+					canvasState.bulkRecords.push({
+						id: canvasState.bulkIdSeq++,
+						objectName: null,
+						label: 'Hidden Salesforce content',
+						x: _savedCoordinate(hidden.x, 200),
+						y: _savedCoordinate(hidden.y, 200) + _offY,
+						values: {},
+						_inaccessible: true,
+						_permissionHidden: true,
+					});
+				}
 				const mergeExistingByKey = new Map();
 				if (merge) {
 					canvasState.bulkRecords.forEach((br) => {
@@ -771,21 +1057,17 @@
 						const matchingSel = canvasState.selectedObjects.find((s) => s.name === ref.objectName);
 						const newId = canvasState.bulkIdSeq++;
 						slotById.set(ref.slot.slotId, newId);
-						slotIdSeq = Math.max(slotIdSeq, ref.slot.slotId + 1);
+						_observeSlotId(ref.slot.slotId);
 						canvasState.bulkRecords.push({
 							id: newId,
 							objectName: ref.objectName,
 							label: (matchingSel && matchingSel.label) || ref.objectName,
 							fromSelectionId: matchingSel ? matchingSel.id : null,
-							x: Number(ref.x) || 200,
-							y: (Number(ref.y) || 200) + _offY,
+							x: _savedCoordinate(ref.x, 200),
+							y: _savedCoordinate(ref.y, 200) + _offY,
 							values: {},
-							slot: {
-								label: ref.slot.label,
-								slotId: ref.slot.slotId,
-								description: ref.slot.description || null,
-								kind: ref.slot.kind || 'whole-record',
-							},
+							_canvasRecordId: canvasRecordIds.get(ref),
+							slot: _restoreSlot(ref.slot),
 							_recipientSlot: true,
 						});
 						continue;
@@ -836,8 +1118,9 @@
 						label: (matchingSel && matchingSel.label) || ref.objectName,
 						fromSelectionId: matchingSel ? matchingSel.id : null,
 						loadedFromId: ref.loadedFromId,
-						x: Number(ref.x) || 200,
-						y: (Number(ref.y) || 200) + _offY,
+						x: _savedCoordinate(ref.x, 200),
+						y: _savedCoordinate(ref.y, 200) + _offY,
+						_canvasRecordId: canvasRecordIds.get(ref),
 						loadedValues: Object.assign({}, _fresh),
 						values:
 							ref.changes && typeof ref.changes === 'object'
@@ -848,20 +1131,14 @@
 						recObj.pendingDelete = true;
 					}
 					if (isSlot) {
-						recObj.slot = {
-							label: ref.slot.label,
-							slotId: ref.slot.slotId,
-							description: ref.slot.description || null,
-							kind: ref.slot.kind || 'whole-record',
-						};
-						if (ref.slot.kind === 'fields' && Array.isArray(ref.slot.fields)) {
-							recObj.slot.fields = ref.slot.fields.slice();
+						recObj.slot = _restoreSlot(ref.slot);
+						if (recObj.slot.kind === 'fields') {
 							if (!opts.ownedByMe) {
 								recObj._recipientSlot = true;
 							}
 						}
 						slotById.set(ref.slot.slotId, newId);
-						slotIdSeq = Math.max(slotIdSeq, ref.slot.slotId + 1);
+						_observeSlotId(ref.slot.slotId);
 					}
 					canvasState.bulkRecords.push(recObj);
 				});
@@ -880,23 +1157,16 @@
 						objectName: d.objectName,
 						label: (matchingSel && matchingSel.label) || d.objectName,
 						fromSelectionId: matchingSel ? matchingSel.id : null,
-						x: Number(d.x) || 200,
-						y: (Number(d.y) || 200) + _offY,
+						x: _savedCoordinate(d.x, 200),
+						y: _savedCoordinate(d.y, 200) + _offY,
 						values: _cleanValues(d.values),
 						_persistedTempId: d.tempId,
+						_canvasRecordId: canvasRecordIds.get(d),
 					};
 					if (d.slot && d.slot.slotId != null) {
-						recObj.slot = {
-							label: d.slot.label,
-							slotId: d.slot.slotId,
-							description: d.slot.description || null,
-							kind: d.slot.kind || 'whole-record',
-						};
-						if (recObj.slot.kind === 'fields') {
-							recObj.slot.kind = 'whole-record';
-						}
+						recObj.slot = _restoreSlot(d.slot);
 						slotById.set(d.slot.slotId, newId);
-						slotIdSeq = Math.max(slotIdSeq, d.slot.slotId + 1);
+						_observeSlotId(d.slot.slotId);
 						if (!opts.ownedByMe) {
 							recObj._recipientSlot = true;
 						}
@@ -935,6 +1205,14 @@
 					}
 					const fromId = resolveEndpoint(a.from);
 					const toId = resolveEndpoint(a.to);
+					if (loadingCanvasShareRole) {
+						const fromRecord = canvasState.bulkRecords.find((record) => record && record.id === fromId);
+						const toRecord = canvasState.bulkRecords.find((record) => record && record.id === toId);
+						if ((fromRecord && fromRecord._inaccessible) || (toRecord && toRecord._inaccessible)) {
+							skippedAssoc += 1;
+							return;
+						}
+					}
 					const key = fromId + '->' + toId + '::' + a.fieldName;
 					if (merge && existingAssocKey.has(key)) {
 						return;
@@ -959,7 +1237,9 @@
 					setGraphView('bulk');
 				}
 				renderAll();
-				_runSlotPreflight().catch((e) => console.warn('slot preflight failed:', e));
+				if (!recipientUsesSavedMetadata) {
+					_runSlotPreflight().catch((e) => console.warn('slot preflight failed:', e));
+				}
 				let msg =
 					'Loaded canvas: ' +
 					loadedById.size +
@@ -974,11 +1254,9 @@
 					msg +=
 						' (' +
 						droppedFromAccess +
-						' record' +
+						' item' +
 						(droppedFromAccess === 1 ? '' : 's') +
-						' shown as \u201cno access\u201d, since Salesforce didn\u2019t return ' +
-						(droppedFromAccess === 1 ? 'it' : 'them') +
-						'.)';
+						' hidden by your Salesforce permissions.)';
 				}
 				if (skippedExistingMerge > 0) {
 					msg +=
@@ -987,9 +1265,6 @@
 						' record' +
 						(skippedExistingMerge === 1 ? '' : 's') +
 						' already on the canvas.';
-				}
-				if (opts.ownedByMe === false) {
-					msg += ' Draft values from the original author are hidden.';
 				}
 				const _skips = _skipSuffix(skippedRecords, skippedAssoc);
 				msg += _skips;
@@ -1016,6 +1291,7 @@
 				buildTemplate: buildTemplate,
 				sanitizeFilename: sanitizeFilename,
 				buildCanvasPayload: buildCanvasPayload,
+				ensureDraftSlotMetadata: ensureDraftSlotMetadata,
 				downloadTemplate: downloadTemplate,
 				saveTemplateRemote: saveTemplateRemote,
 				validateTemplate: validateTemplate,

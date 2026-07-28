@@ -101,6 +101,11 @@ function createHarness(source, moduleName, responseKey) {
 				handler({ detail: { active } });
 			}
 		},
+		emit(event, detail) {
+			for (const handler of windowListeners.get(event) || []) {
+				handler({ detail: detail || {} });
+			}
+		},
 	};
 }
 
@@ -112,6 +117,7 @@ for (const scenario of [
 		responseKey: 'proposals',
 		refreshMethod: 'refreshProposals',
 		path: '/proposals',
+		polls: false,
 	},
 	{
 		name: 'clarification',
@@ -120,9 +126,10 @@ for (const scenario of [
 		responseKey: 'clarifications',
 		refreshMethod: 'refreshClarifications',
 		path: '/clarifications',
+		polls: true,
 	},
 ]) {
-	describe(`${scenario.name} polling`, () => {
+	describe(`${scenario.name} queue refresh`, () => {
 		test('stays idle without an MCP token and follows availability changes', async () => {
 			const harness = createHarness(scenario.source, scenario.moduleName, scenario.responseKey);
 			assert.equal(harness.requests.length, 0);
@@ -135,13 +142,25 @@ for (const scenario of [
 			harness.setActive(true);
 			assert.equal(harness.requests.length, 1);
 			assert.match(harness.requests[0], new RegExp(`${scenario.path}$`));
-			assert.equal(harness.intervals.size, 1);
-			const scheduledRefresh = [...harness.intervals.values()][0];
+			assert.equal(harness.intervals.size, scenario.polls ? 1 : 0);
+			const scheduledRefresh = scenario.polls ? [...harness.intervals.values()][0] : null;
+
+			if (!scenario.polls) {
+				harness.emit('orgloom:ai-proposals-changed', { canvasId: 'another-canvas' });
+				assert.equal(harness.requests.length, 1, 'an unrelated canvas event is ignored');
+				harness.emit('orgloom:ai-proposals-changed', { canvasId: 'draft-test' });
+				assert.equal(harness.requests.length, 2, 'the target canvas refreshes immediately');
+			}
 
 			harness.setActive(false);
 			assert.equal(harness.intervals.size, 0);
-			await scheduledRefresh();
-			assert.equal(harness.requests.length, 1, 'a queued callback is harmless after revocation');
+			if (scenario.polls) {
+				await scheduledRefresh();
+				assert.equal(harness.requests.length, 1, 'a queued callback is harmless after revocation');
+			} else {
+				harness.emit('orgloom:ai-proposals-changed', { canvasId: 'draft-test' });
+				assert.equal(harness.requests.length, 2, 'an event is harmless after revocation');
+			}
 		});
 	});
 }

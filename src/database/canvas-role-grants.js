@@ -103,3 +103,21 @@ export async function listForCanvas({ sfOrgId, canvasId }) {
 	}
 	return out;
 }
+
+export async function listForRecipient({ sfOrgId, recipientSfUserId }) {
+	if (!sfOrgId || !recipientSfUserId) {
+		return {};
+	}
+	const db = ext.getDb();
+	const rows = await db
+		.selectFrom('canvas_role_grants')
+		.select(['canvas_id', 'role', 'updated_at'])
+		.where('sf_org_id', '=', sfOrgId)
+		.where('recipient_sf_user_id', '=', recipientSfUserId)
+		.execute();
+	const out = {};
+	for (const r of rows) {
+		out[r.canvas_id] = { role: r.role, updatedAt: r.updated_at };
+	}
+	return out;
+}

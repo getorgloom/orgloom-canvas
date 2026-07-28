@@ -106,6 +106,18 @@
 			}
 			_handleRequest(data);
 		});
+		_eventSource.addEventListener('ai-proposals-changed', (ev) => {
+			try {
+				const data = JSON.parse(ev.data);
+				window.dispatchEvent(
+					new CustomEvent('orgloom:ai-proposals-changed', {
+						detail: { canvasId: data.canvasId || null },
+					}),
+				);
+			} catch (e) {
+				_log('bad proposal-change payload:', e);
+			}
+		});
 		_eventSource.onerror = (err) => {
 			_log('SSE error, will auto-retry:', err);
 			if (_eventSource && _eventSource.readyState === EventSource.CLOSED) {

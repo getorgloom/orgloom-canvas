@@ -34,6 +34,7 @@
 			const _relatedCountCache = deps._relatedCountCache;
 
 			const _chipProbeState = new Map();
+			let _activeRelatedPopoverCleanup = null;
 
 			const _RELCHIP_SYSTEM_CHILD_NAMES = new Set([
 				'ContentDocumentLink',
@@ -110,6 +111,53 @@
 					return false;
 				}
 				return _RELCHIP_SYSTEM_PARENT_FIELDS.has(fieldName);
+			}
+
+			function _normalizeRelatedTypeahead(value) {
+				return String(value || '')
+					.toLocaleLowerCase()
+					.normalize('NFKD')
+					.replace(/[\u0300-\u036f]/g, '')
+					.replace(/[^a-z0-9]+/g, '');
+			}
+
+			function _findRelatedTypeaheadMatchIndex(items, query) {
+				const normalizedQuery = _normalizeRelatedTypeahead(query);
+				if (!normalizedQuery || !Array.isArray(items)) {
+					return -1;
+				}
+				const candidates = items.map((item) => [
+					_normalizeRelatedTypeahead(item && item.label),
+					_normalizeRelatedTypeahead(item && item.objectName),
+				]);
+				let index = candidates.findIndex((values) => values.some((value) => value.startsWith(normalizedQuery)));
+				if (index !== -1) {
+					return index;
+				}
+				index = candidates.findIndex((values) => values.some((value) => value.includes(normalizedQuery)));
+				return index;
+			}
+
+			function _jumpToRelatedTypeahead(rows, query) {
+				const rowList = Array.from(rows || []);
+				const items = rowList.map((row) => ({
+					label: row.querySelector('.fop-label')?.textContent || '',
+					objectName: row.dataset.relObject || '',
+				}));
+				let effectiveQuery = query;
+				let index = _findRelatedTypeaheadMatchIndex(items, effectiveQuery);
+				if (index === -1 && effectiveQuery.length > 1) {
+					effectiveQuery = effectiveQuery.slice(-1);
+					index = _findRelatedTypeaheadMatchIndex(items, effectiveQuery);
+				}
+				rowList.forEach((row) => row.classList.remove('is-typeahead-match'));
+				if (index !== -1) {
+					const match = rowList[index];
+					match.classList.add('is-typeahead-match');
+					match.focus({ preventScroll: true });
+					match.scrollIntoView({ block: 'nearest' });
+				}
+				return { index, query: effectiveQuery };
 			}
 
 			function _selectionForRecord(rec) {
@@ -278,7 +326,9 @@
 				if (parents.length === 0 && children.length === 0) {
 					return;
 				}
-				document.querySelectorAll('.related-pop').forEach((el) => el.remove());
+				if (_activeRelatedPopoverCleanup) {
+					_activeRelatedPopoverCleanup();
+				}
 				const pop = document.createElement('div');
 				pop.className = 'find-object-popup related-pop';
 				pop.style.width = '320px';
@@ -332,26 +382,63 @@
 					'</div>';
 				document.body.appendChild(pop);
 				const cleanup = () => {
+					if (typeaheadTimer) {
+						clearTimeout(typeaheadTimer);
+					}
 					if (pop.parentNode) {
 						pop.remove();
 					}
 					document.removeEventListener('mousedown', outside, true);
-					document.removeEventListener('keydown', onEsc, true);
+					document.removeEventListener('keydown', onKeydown, true);
+					if (_activeRelatedPopoverCleanup === cleanup) {
+						_activeRelatedPopoverCleanup = null;
+					}
 				};
 				const outside = (ev) => {
 					if (!pop.contains(ev.target)) {
 						cleanup();
 					}
 				};
-				const onEsc = (ev) => {
+				let typeaheadBuffer = '';
+				let typeaheadTimer = null;
+				const clearTypeahead = () => {
+					typeaheadBuffer = '';
+					typeaheadTimer = null;
+				};
+				const jumpToTypedObject = () => {
+					const rows = Array.from(pop.querySelectorAll('[data-rel-object]'));
+					const result = _jumpToRelatedTypeahead(rows, typeaheadBuffer);
+					typeaheadBuffer = result.query;
+				};
+				const onKeydown = (ev) => {
 					if (ev.key === 'Escape') {
 						cleanup();
+						return;
 					}
+					if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.key.length !== 1 || /^\s$/.test(ev.key)) {
+						return;
+					}
+					const target = ev.target;
+					if (
+						target &&
+						target.matches &&
+						target.matches('input, textarea, select, [contenteditable="true"]')
+					) {
+						return;
+					}
+					ev.preventDefault();
+					typeaheadBuffer += ev.key;
+					jumpToTypedObject();
+					if (typeaheadTimer) {
+						clearTimeout(typeaheadTimer);
+					}
+					typeaheadTimer = setTimeout(clearTypeahead, 900);
 				};
 				setTimeout(() => {
 					document.addEventListener('mousedown', outside, true);
-					document.addEventListener('keydown', onEsc, true);
+					document.addEventListener('keydown', onKeydown, true);
 				}, 0);
+				_activeRelatedPopoverCleanup = cleanup;
 				pop.addEventListener('click', (ev) => {
 					const btn = ev.target.closest('[data-rel-direction]');
 					if (!btn) {
@@ -684,6 +771,8 @@
 				_selectionForRecord: _selectionForRecord,
 				_sfIdValue: _sfIdValue,
 				_sfIdMatch: _sfIdMatch,
+				_findRelatedTypeaheadMatchIndex: _findRelatedTypeaheadMatchIndex,
+				_jumpToRelatedTypeahead: _jumpToRelatedTypeahead,
 			};
 		},
 	};

@@ -18,6 +18,7 @@
 			const canvasState = deps.canvasState;
 
 			const _CANVAS_DRAFT_KEY = 'orgloom:canvas-draft:v1';
+			const _CANVAS_DRAFT_ACTIVE_KEY = 'orgloom:canvas-draft-active:v1';
 			const _ORGSWITCH_STASH_KEY = 'orgloom:org-switch-stash:v1';
 			const _MIGRATION_KEY = 'orgloom:migration:v1';
 			try {
@@ -379,11 +380,17 @@
 				return result;
 			}
 
-			function _autosaveScopeKey() {
+			function _autosaveIdentityKey() {
 				return [
 					window.ORGLOOM_ACCOUNT_ID || 'anon',
 					window.SF_ORG_ID || 'no-org',
 					window.SF_USER_ID || 'no-user',
+				].join(':');
+			}
+
+			function _autosaveScopeKey() {
+				return [
+					_autosaveIdentityKey(),
 					(canvasState.currentCanvas && canvasState.currentCanvas.id) || 'new',
 				].join(':');
 			}
@@ -392,10 +399,24 @@
 				return _CANVAS_DRAFT_KEY + '|' + _autosaveScopeKey();
 			}
 
+			function _activeDraftPointerKey() {
+				return _CANVAS_DRAFT_ACTIVE_KEY + '|' + _autosaveIdentityKey();
+			}
+
+			function _snapshotHasContent(payload) {
+				const state = payload && payload.state;
+				return !!(
+					state &&
+					((Array.isArray(state.bulkRecords) && state.bulkRecords.length > 0) ||
+						(Array.isArray(state.selectedObjects) && state.selectedObjects.length > 0))
+				);
+			}
+
 			function _autosaveSnapshot() {
 				try {
 					const payload = {
 						v: 1,
+						identity: _autosaveIdentityKey(),
 						scope: _autosaveScopeKey(),
 						ts: Date.now(),
 						state: {
@@ -413,7 +434,9 @@
 							diffSuppressions: canvasState.diffSuppressions || {},
 						},
 					};
-					sessionStorage.setItem(_scopedDraftKey(), JSON.stringify(payload));
+					const draftKey = _scopedDraftKey();
+					sessionStorage.setItem(draftKey, JSON.stringify(payload));
+					sessionStorage.setItem(_activeDraftPointerKey(), draftKey);
 				} catch (_e) {}
 				_migrationSyncIfActive();
 			}
@@ -426,19 +449,37 @@
 				_autosaveTimer = setTimeout(_autosaveSnapshot, 500);
 			}
 
+			function _autosaveFlush() {
+				if (_autosaveTimer) {
+					clearTimeout(_autosaveTimer);
+					_autosaveTimer = null;
+				}
+				_autosaveSnapshot();
+			}
+
 			function _autosaveClear() {
 				if (_autosaveTimer) {
 					clearTimeout(_autosaveTimer);
 					_autosaveTimer = null;
 				}
 				try {
-					sessionStorage.removeItem(_scopedDraftKey());
+					const draftKey = _scopedDraftKey();
+					const pointerKey = _activeDraftPointerKey();
+					sessionStorage.removeItem(draftKey);
+					if (sessionStorage.getItem(pointerKey) === draftKey) {
+						sessionStorage.removeItem(pointerKey);
+					}
 				} catch (_e) {}
 			}
 
 			function _autosaveRestore() {
 				try {
-					const raw = sessionStorage.getItem(_scopedDraftKey());
+					const expectedKey = _scopedDraftKey();
+					const draftKey = sessionStorage.getItem(_activeDraftPointerKey());
+					if (!draftKey || draftKey.indexOf(_CANVAS_DRAFT_KEY + '|') !== 0) {
+						return false;
+					}
+					const raw = sessionStorage.getItem(draftKey);
 					if (!raw) {
 						return false;
 					}
@@ -446,15 +487,20 @@
 					if (!payload || payload.v !== 1) {
 						return false;
 					}
-					if (payload.scope !== _autosaveScopeKey()) {
-						_autosaveClear();
+					const identity = _autosaveIdentityKey();
+					const isExactScope = payload.scope === _autosaveScopeKey();
+					const isActiveSavedCanvas =
+						draftKey !== expectedKey &&
+						(!payload.identity || payload.identity === identity) &&
+						payload.state &&
+						payload.state.currentCanvas &&
+						payload.state.currentCanvas.id &&
+						payload.scope === identity + ':' + payload.state.currentCanvas.id;
+					if (!isExactScope && !isActiveSavedCanvas) {
 						return false;
 					}
 					const s = payload.state || {};
-					const hasContent =
-						(Array.isArray(s.bulkRecords) && s.bulkRecords.length > 0) ||
-						(Array.isArray(s.selectedObjects) && s.selectedObjects.length > 0);
-					if (!hasContent) {
+					if (!_snapshotHasContent(payload)) {
 						return false;
 					}
 					if (Array.isArray(s.selectedObjects)) {
@@ -499,6 +545,10 @@
 				}
 			}
 
+			if (typeof window.addEventListener === 'function') {
+				window.addEventListener('pagehide', _autosaveFlush);
+			}
+
 			window.Orgloom = window.Orgloom || {};
 			window.Orgloom.canvasOrgSwitch = {
 				stash: _orgSwitchStash,
@@ -515,6 +565,7 @@
 				orgSwitchStash: _orgSwitchStash,
 				orgSwitchRestore: _orgSwitchRestore,
 				autosaveSchedule: _autosaveSchedule,
+				autosaveFlush: _autosaveFlush,
 				autosaveClear: _autosaveClear,
 				autosaveRestore: _autosaveRestore,
 				migrationStash: _migrationStash,

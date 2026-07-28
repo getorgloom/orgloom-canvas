@@ -205,6 +205,25 @@ describe('auth resolution', () => {
 		assert.equal(res.body.error.code, ERR_AUTH);
 	});
 
+	test('token is rejected after its owner loses workspace membership', async () => {
+		const { account, ws, token } = await makeMcpFixture();
+		if (!(await hasTestTable('workspace_members'))) {
+			return;
+		}
+		const { ext } = await import('../src/extensions.js');
+		await ext
+			.getDb()
+			.deleteFrom('workspace_members')
+			.where('workspace_id', '=', ws.id)
+			.where('account_id', '=', account.id)
+			.execute();
+
+		const res = await callMcp({ body: rpc('ping'), token });
+		assert.equal(res.statusCode, 401);
+		assert.equal(res.body.error.code, ERR_AUTH);
+		assert.match(res.body.error.message, /no longer a member/);
+	});
+
 	test('expired token is rejected before every request method is dispatched', async () => {
 		const { token, tokenId } = await makeMcpFixture();
 		const { ext } = await import('../src/extensions.js');
@@ -320,6 +339,64 @@ describe('protocol methods', () => {
 });
 
 describe('tools/call', () => {
+	test('list_canvases excludes another account browser in the same workspace', async () => {
+		const { account, ws, token } = await makeMcpFixture();
+		const otherAccount = await makeAccount('other-mcp@x.com');
+		if (await hasTestTable('workspace_members')) {
+			const { ext } = await import('../src/extensions.js');
+			await ext
+				.getDb()
+				.insertInto('workspace_members')
+				.values({
+					workspace_id: ws.id,
+					account_id: otherAccount.id,
+					role: 'member',
+					joined_at: Date.now(),
+				})
+				.execute();
+		}
+		const relay = await import('../src/mcp/relay.js');
+		const ownerSse = fakeSseRes();
+		const otherSse = fakeSseRes();
+		const ownerConnectionId = relay.registerConnection({
+			accountId: account.id,
+			workspaceId: ws.id,
+			sseRes: ownerSse,
+		});
+		const otherConnectionId = relay.registerConnection({
+			accountId: otherAccount.id,
+			workspaceId: ws.id,
+			sseRes: otherSse,
+		});
+		relay.registerCanvas({
+			connectionId: ownerConnectionId,
+			canvasId: '001000000000011AAA',
+			accountId: account.id,
+			meta: { title: 'Mine' },
+		});
+		relay.registerCanvas({
+			connectionId: otherConnectionId,
+			canvasId: '001000000000012AAA',
+			accountId: otherAccount.id,
+			meta: { title: 'Not mine' },
+		});
+
+		try {
+			const response = await callMcp({
+				body: rpc('tools/call', { name: 'list_canvases', arguments: {} }),
+				token,
+			});
+			const payload = JSON.parse(response.body.result.content[0].text);
+			assert.deepEqual(
+				payload.canvases.map((canvas) => canvas.id),
+				['001000000000011AAA'],
+			);
+		} finally {
+			ownerSse.fireClose();
+			otherSse.fireClose();
+		}
+	});
+
 	test('list_canvases tells the AI to ask the user when several canvases are open', async () => {
 		const { account, ws, token } = await makeMcpFixture();
 		const relay = await import('../src/mcp/relay.js');
@@ -544,6 +621,8 @@ describe('tools/call', () => {
 					to: { kind: 'draft', ref: 21 },
 				},
 			]);
+			assert.match(sse.writes.join(''), /event: ai-proposals-changed/);
+			assert.deepEqual(sse.lastDataEvent(), { canvasId });
 		} finally {
 			sse.fireClose();
 		}

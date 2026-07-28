@@ -5,6 +5,7 @@ export const SHARED_CANVAS_ENTRY = Object.freeze({
 	INACCESSIBLE: 'inaccessible',
 	OWNER: 'owner',
 	FREE_VIEWER: 'free-viewer',
+	FREE_CONTRIBUTOR: 'free-contributor',
 	PAID_RECIPIENT: 'paid-recipient',
 	UNCLASSIFIED_RECIPIENT: 'unclassified-recipient',
 });
@@ -13,8 +14,12 @@ export function isFreeViewerGrant(grant) {
 	return !!grant && grant.role === 'viewer';
 }
 
+export function isFreeSharedRecipientGrant(grant) {
+	return !!grant && (grant.role === 'viewer' || grant.role === 'contributor');
+}
+
 export function recipientRequiresPlan(grant) {
-	return !isFreeViewerGrant(grant);
+	return !isFreeSharedRecipientGrant(grant);
 }
 
 export function canvasEntryStartsTrial(kind) {
@@ -44,7 +49,10 @@ export async function classifySharedCanvasEntry({ canvasId, sfOrgId, sfUserId, g
 	if (isFreeViewerGrant(grant)) {
 		return { kind: SHARED_CANVAS_ENTRY.FREE_VIEWER, item, grant };
 	}
-	if (grant && (grant.role === 'contributor' || grant.role === 'editor')) {
+	if (grant && grant.role === 'contributor') {
+		return { kind: SHARED_CANVAS_ENTRY.FREE_CONTRIBUTOR, item, grant };
+	}
+	if (grant && grant.role === 'editor') {
 		return { kind: SHARED_CANVAS_ENTRY.PAID_RECIPIENT, item, grant };
 	}
 	return { kind: SHARED_CANVAS_ENTRY.UNCLASSIFIED_RECIPIENT, item, grant: grant || null };

@@ -15,11 +15,12 @@
 				'showBulkToast',
 				'showConfirmDialog',
 				'isRecordModified',
+				'canEditCanvasStructure',
 				'_canAuthorSlots',
 				'_hasCap',
 				'openInsertModal',
-				'convertRecordToSlot',
 				'convertRecordToFieldSlot',
+				'configureExistingSlot',
 				'convertSlotBackToRecord',
 				'refreshRecordFromSf',
 				'deleteRecord',
@@ -44,11 +45,12 @@
 			const showBulkToast = deps.showBulkToast;
 			const showConfirmDialog = deps.showConfirmDialog;
 			const isRecordModified = deps.isRecordModified;
+			const canEditCanvasStructure = deps.canEditCanvasStructure;
 			const _canAuthorSlots = deps._canAuthorSlots;
 			const _hasCap = deps._hasCap;
 			const openInsertModal = deps.openInsertModal;
-			const convertRecordToSlot = deps.convertRecordToSlot;
 			const convertRecordToFieldSlot = deps.convertRecordToFieldSlot;
+			const configureExistingSlot = deps.configureExistingSlot;
 			const convertSlotBackToRecord = deps.convertSlotBackToRecord;
 			const refreshRecordFromSf = deps.refreshRecordFromSf;
 			const deleteRecord = deps.deleteRecord;
@@ -121,6 +123,10 @@
 			}
 
 			function showCardMoreMenu(triggerEl, rec) {
+				if (!canEditCanvasStructure()) {
+					showBulkToast('Only the canvas owner or an editor can manage card actions.', 'info');
+					return false;
+				}
 				document.querySelectorAll('.card-more-popup').forEach((el) => el.remove());
 				const pop = document.createElement('div');
 				pop.className = 'find-object-popup card-more-popup';
@@ -135,9 +141,13 @@
 				const isPendingDelete = !!rec.pendingDelete;
 				const isPending = !!rec.isPending;
 				const slotKind = isSlot ? rec.slot.kind || 'whole-record' : null;
+				const isWholeRecordRequest = isSlot && slotKind === 'whole-record';
+				const currentCanvas = canvasState.currentCanvas;
+				const ownsCanvas = !currentCanvas || !currentCanvas.id || !!currentCanvas.ownedByMe;
+				const canConfigureSlot = ownsCanvas && _canAuthorSlots();
 
 				let editItem = '';
-				if (!isTypeNode && !isInaccessible && !isPending) {
+				if (!isTypeNode && !isInaccessible && !isPending && !isWholeRecordRequest) {
 					editItem =
 						'<button type="button" class="fop-item" data-card-action="edit">' +
 						'<span class="fop-label">Edit</span>' +
@@ -162,47 +172,48 @@
 				}
 				let slotItems;
 				if (isSlot) {
-					slotItems =
-						'<button type="button" class="fop-item" data-card-action="unslot">' +
-						'<span class="fop-label">Convert back to record</span>' +
-						'<span class="fop-name">Remove the slot marker' +
-						(slotKind === 'fields' ? ' (currently field-level)' : '') +
-						'</span>' +
-						'</button>';
+					if (canConfigureSlot) {
+						slotItems =
+							'<button type="button" class="fop-item" data-card-action="configure-slot">' +
+							'<span class="fop-label">Configure ' +
+							(slotKind === 'fields' ? 'field request' : 'record request') +
+							'&hellip;</span>' +
+							'<span class="fop-name">' +
+							(slotKind === 'fields'
+								? 'Change the requested fields, instructions, or assigned teammate'
+								: 'Change the request instructions or assigned teammate') +
+							'</span></button>' +
+							'<button type="button" class="fop-item" data-card-action="unslot">' +
+							'<span class="fop-label">' +
+							(slotKind === 'whole-record' ? 'Convert to draft' : 'Remove request') +
+							'</span>' +
+							'<span class="fop-name">' +
+							(slotKind === 'whole-record'
+								? 'End the request and turn this placeholder into a draft you can edit'
+								: 'Keep the record but stop asking a teammate to complete it') +
+							'</span></button>';
+					} else {
+						slotItems =
+							'<button type="button" class="fop-item is-disabled" disabled aria-disabled="true">' +
+							'<span class="fop-label">Request configuration</span>' +
+							'<span class="fop-name">Only the canvas owner can change this request</span></button>';
+					}
 				} else {
 					const slotsAllowed = _canAuthorSlots();
 					if (slotsAllowed) {
 						slotItems =
-							'<button type="button" class="fop-item" data-card-action="to-slot">' +
-							'<span class="fop-label">Convert to slot</span>' +
-							'<span class="fop-name">Whole record: recipient creates a fresh draft</span>' +
+							'<button type="button" class="fop-item" data-card-action="to-field-slot">' +
+							'<span class="fop-label">Request fields on this ' +
+							(isLoaded ? 'record' : 'draft') +
+							'&hellip;</span>' +
+							'<span class="fop-name">Ask a teammate to complete only the fields you choose</span>' +
 							'</button>';
-						if (isLoaded) {
-							slotItems +=
-								'<button type="button" class="fop-item" data-card-action="to-field-slot">' +
-								'<span class="fop-label">Mark fields for recipient&hellip;</span>' +
-								'<span class="fop-name">Field-level: recipient updates only the fields you pick</span>' +
-								'</button>';
-						} else {
-							slotItems +=
-								'<button type="button" class="fop-item is-disabled" disabled aria-disabled="true" ' +
-								'title="Field-level slots target an existing Salesforce record. Upload this draft first, then return here.">' +
-								'<span class="fop-label">Mark fields for recipient&hellip;</span>' +
-								'<span class="fop-name">Upload this draft first: field-level slots target an existing record</span>' +
-								'</button>';
-						}
 					} else {
 						slotItems =
 							'<button type="button" class="fop-item is-disabled" disabled aria-disabled="true" ' +
 							'title="Slot canvases require Pro or higher.">' +
-							'<span class="fop-label">Convert to slot <span class="tag">Pro</span></span>' +
-							'<span class="fop-name">Upgrade to Pro to author slot canvases</span>' +
-							'</button>';
-						slotItems +=
-							'<button type="button" class="fop-item is-disabled" disabled aria-disabled="true" ' +
-							'title="Slot canvases require Pro or higher.">' +
-							'<span class="fop-label">Mark fields for recipient&hellip; <span class="tag">Pro</span></span>' +
-							'<span class="fop-name">Upgrade to Pro to mark fields as recipient slots</span>' +
+							'<span class="fop-label">Request fields on this record&hellip; <span class="tag">Pro</span></span>' +
+							'<span class="fop-name">Upgrade to Pro to add contributor requests</span>' +
 							'</button>';
 					}
 				}
@@ -284,14 +295,32 @@
 					}
 					const action = btn.dataset.cardAction;
 					cleanup();
+					if (!canEditCanvasStructure()) {
+						showBulkToast('Only the canvas owner or an editor can manage card actions.', 'info');
+						return;
+					}
 					if (action === 'edit') {
 						openInsertModal(rec.objectName, { record: rec });
-					} else if (action === 'to-slot') {
-						await convertRecordToSlot(rec);
 					} else if (action === 'to-field-slot') {
 						await convertRecordToFieldSlot(rec);
+					} else if (action === 'configure-slot') {
+						await configureExistingSlot(rec);
 					} else if (action === 'unslot') {
-						convertSlotBackToRecord(rec);
+						const convertingRecordRequest = slotKind === 'whole-record';
+						const ok = await showConfirmDialog({
+							title: convertingRecordRequest
+								? 'Convert this record request to a draft?'
+								: 'Remove this field request?',
+							message: convertingRecordRequest
+								? 'The request will end and the placeholder will become a normal draft you can edit. Save the canvas to publish the change.'
+								: 'The record stays on the canvas, but teammates will no longer be asked to complete these fields. Save the canvas to publish the change.',
+							confirmLabel: convertingRecordRequest ? 'Convert to draft' : 'Remove request',
+							cancelLabel: 'Cancel',
+							danger: !convertingRecordRequest,
+						});
+						if (ok) {
+							convertSlotBackToRecord(rec, { convertedToDraft: convertingRecordRequest });
+						}
 					} else if (action === 'refresh-sf') {
 						await refreshRecordFromSf(rec);
 					} else if (action === 'remove-from-canvas') {
@@ -468,6 +497,338 @@
 				});
 			}
 
+			function showSlotConfigurationPicker(opts) {
+				opts = opts || {};
+				const initial = opts.initial || {};
+				const fieldMode = opts.kind === 'fields';
+				const objectLabel = opts.objectLabel || opts.objectName || 'record';
+				const contextLabel = opts.contextLabel || objectLabel;
+				const objectNoun = String(objectLabel).toLocaleLowerCase();
+				const objectArticle =
+					/^(?:[aeiou]|honest|hour|heir)/i.test(objectNoun) && !/^user\b/i.test(objectNoun) ? 'an' : 'a';
+				const automaticLabel = fieldMode
+					? 'Fill in fields for ' + contextLabel
+					: 'Add ' + objectArticle + ' ' + objectNoun;
+				const selectedFields = new Set(Array.isArray(initial.fields) ? initial.fields : []);
+				const availableFields = Array.isArray(opts.fields) ? opts.fields : [];
+				return new Promise((resolve) => {
+					document.querySelectorAll('.slot-config-modal').forEach((el) => el.remove());
+					const overlay = document.createElement('div');
+					overlay.className = 'modal slot-config-modal';
+					const fieldRows = fieldMode
+						? availableFields
+								.map((field) => {
+									const checked = selectedFields.has(field.name) ? ' checked' : '';
+									const unavailable = field.unavailable
+										? '<span class="slot-config-field-warning">Unavailable through this connection</span>'
+										: '';
+									return (
+										'<label class="field-slot-pick-row" data-slot-field-row data-search="' +
+										escapeHtml((field.label || '') + ' ' + field.name) +
+										'">' +
+										'<input type="checkbox" data-fname="' +
+										escapeHtml(field.name) +
+										'"' +
+										checked +
+										'>' +
+										'<span class="slot-config-field-copy"><span class="field-slot-pick-label">' +
+										escapeHtml(field.label || field.name) +
+										'</span><span class="meta">' +
+										escapeHtml(field.name) +
+										(field.type ? ' · ' + escapeHtml(field.type) : '') +
+										'</span>' +
+										unavailable +
+										'</span></label>'
+									);
+								})
+								.join('')
+						: '';
+					const fieldSection = fieldMode
+						? '<div class="slot-config-section">' +
+							'<div class="slot-config-section-heading"><div><strong>Fields to complete</strong><div class="help">The teammate can update only the fields selected here. Other fields remain read-only.</div></div><span class="meta" data-slot-field-count></span></div>' +
+							'<input type="search" class="slot-config-field-search" data-slot-field-search placeholder="Find a field" autocomplete="off">' +
+							'<div class="field-slot-pick-list">' +
+							fieldRows +
+							'</div></div>'
+						: '';
+					overlay.innerHTML =
+						'<div class="modal-overlay" data-slot-config-close></div>' +
+						'<div class="modal-body slot-config-body">' +
+						'<div class="modal-header"><div class="slot-config-title"><span class="slot-config-title-icon slot-config-title-icon--' +
+						(fieldMode ? 'fields' : 'record') +
+						'" aria-hidden="true">' +
+						(fieldMode ? '&#9998;' : '&#43;') +
+						'</span><h3>' +
+						escapeHtml(opts.title || (fieldMode ? 'Request fields' : 'Request a new record')) +
+						'</h3></div><button class="modal-close" data-slot-config-close>&times;</button></div>' +
+						'<div class="modal-content slot-config-content">' +
+						fieldSection +
+						'<div class="field slot-config-instructions"><label for="slot-config-description">Instructions for the contributor <span class="meta">optional</span></label>' +
+						'<textarea id="slot-config-description" rows="3" placeholder="Add context only if the request needs it.">' +
+						escapeHtml(initial.description || '') +
+						'</textarea></div>' +
+						'<div class="slot-config-section"><div class="slot-config-section-heading"><div><strong>Who should complete this?</strong><div class="help">Assign one teammate, or leave it open to any contributor with access to the canvas.</div></div></div><div class="field"><label>Assigned teammate <span class="meta">optional</span></label>' +
+						'<div data-slot-assignee-picker></div>' +
+						'<div class="slot-assignee-access" data-slot-assignee-access aria-live="polite" hidden></div></div></div>' +
+						'<div class="slot-config-error" data-slot-config-error hidden></div>' +
+						'</div><div class="modal-footer"><button class="button secondary" data-slot-config-close>Cancel</button>' +
+						'<button class="button" data-slot-config-save>Save ' +
+						(fieldMode ? 'field request' : 'record request') +
+						'</button></div></div>';
+					document.body.appendChild(overlay);
+
+					const descriptionInput = overlay.querySelector('#slot-config-description');
+					const errorEl = overlay.querySelector('[data-slot-config-error]');
+					const accessEl = overlay.querySelector('[data-slot-assignee-access]');
+					let accessCheckSequence = 0;
+					let picker = null;
+
+					const sameSfUser = (left, right) =>
+						String(left || '')
+							.slice(0, 15)
+							.toLowerCase() ===
+						String(right || '')
+							.slice(0, 15)
+							.toLowerCase();
+					const currentCanvasId = () => {
+						const current = canvasState.currentCanvas;
+						return current && current.id && current.ownedByMe && /^[a-zA-Z0-9]{15,18}$/.test(current.id)
+							? current.id
+							: null;
+					};
+					const showAccessState = (kind, copy, actionLabel, onAction) => {
+						accessEl.hidden = false;
+						accessEl.className = 'slot-assignee-access slot-assignee-access--' + kind;
+						accessEl.innerHTML = '<span class="slot-assignee-access-copy">' + escapeHtml(copy) + '</span>';
+						if (actionLabel && onAction) {
+							const action = document.createElement('button');
+							action.type = 'button';
+							action.className = 'button secondary slot-assignee-access-action';
+							action.textContent = actionLabel;
+							action.addEventListener('click', onAction);
+							accessEl.appendChild(action);
+						}
+					};
+					const grantContributorAccess = async (assignee, existingRole) => {
+						const canvasId = currentCanvasId();
+						if (!canvasId || !assignee || !assignee.id) {
+							return;
+						}
+						const selectedId = assignee.id;
+						showAccessState(
+							'loading',
+							existingRole === 'viewer' ? 'Changing canvas access...' : 'Sharing the canvas...',
+						);
+						try {
+							const response = await csrfFetch(
+								'/api/canvas/' + encodeURIComponent(canvasId) + '/direct-share',
+								{
+									method: 'POST',
+									headers: { 'Content-Type': 'application/json' },
+									credentials: 'same-origin',
+									body: JSON.stringify({
+										recipientSfUserId: selectedId,
+										role: 'contributor',
+									}),
+								},
+							);
+							const data = await response.json().catch(() => null);
+							if (!response.ok) {
+								throw new Error((data && (data.message || data.error)) || 'HTTP ' + response.status);
+							}
+							const currentPick = picker && picker.getPicked();
+							if (!currentPick || !sameSfUser(currentPick.id, selectedId)) {
+								return;
+							}
+							showAccessState(
+								'success',
+								(currentPick.name || 'This teammate') +
+									' now has Contributor access. They can complete the request after the canvas is saved and reloaded.',
+							);
+						} catch (error) {
+							const currentPick = picker && picker.getPicked();
+							if (!currentPick || !sameSfUser(currentPick.id, selectedId)) {
+								return;
+							}
+							showAccessState(
+								'warning',
+								'Canvas access could not be updated: ' +
+									(error.message || String(error)) +
+									'. Try again or use Manage access.',
+								existingRole === 'viewer' ? 'Change to Contributor' : 'Share as Contributor',
+								() => grantContributorAccess(currentPick, existingRole),
+							);
+						}
+					};
+					const refreshAssigneeAccess = async () => {
+						const sequence = ++accessCheckSequence;
+						const assignee = picker && picker.getPicked();
+						if (!assignee || !assignee.id) {
+							accessEl.hidden = true;
+							accessEl.textContent = '';
+							return;
+						}
+						const canvasId = currentCanvasId();
+						if (!canvasId) {
+							showAccessState(
+								'warning',
+								'Save this canvas before sharing it with the assigned teammate.',
+							);
+							return;
+						}
+						if (window.SF_USER_ID && sameSfUser(window.SF_USER_ID, assignee.id)) {
+							showAccessState(
+								fieldMode ? 'success' : 'warning',
+								fieldMode
+									? 'You own this canvas and can complete these fields.'
+									: 'A record request must be completed by another canvas recipient. Choose a teammate or leave it open.',
+							);
+							return;
+						}
+						showAccessState('loading', 'Checking this teammate’s canvas access...');
+						try {
+							const response = await csrfFetch(
+								'/api/canvas/' + encodeURIComponent(canvasId) + '/share-links',
+								{ credentials: 'same-origin' },
+							);
+							const data = await response.json().catch(() => null);
+							if (!response.ok) {
+								throw new Error((data && (data.message || data.error)) || 'HTTP ' + response.status);
+							}
+							if (sequence !== accessCheckSequence) {
+								return;
+							}
+							const currentPick = picker && picker.getPicked();
+							if (!currentPick || !sameSfUser(currentPick.id, assignee.id)) {
+								return;
+							}
+							const share = ((data && data.directShares) || []).find((item) =>
+								sameSfUser(item.sfUserId, assignee.id),
+							);
+							const role =
+								share && (share.role || (share.accessLevel === 'Collaborator' ? 'editor' : 'viewer'));
+							if (role === 'contributor' || role === 'editor') {
+								showAccessState(
+									'success',
+									(currentPick.name || 'This teammate') +
+										' can complete this request with ' +
+										(role === 'editor' ? 'Editor' : 'Contributor') +
+										' access.',
+								);
+								return;
+							}
+							if (role === 'viewer') {
+								showAccessState(
+									'warning',
+									(currentPick.name || 'This teammate') +
+										' currently has Viewer access and cannot complete this request.',
+									'Change to Contributor',
+									() => grantContributorAccess(currentPick, role),
+								);
+								return;
+							}
+							showAccessState(
+								'warning',
+								(currentPick.name || 'This teammate') +
+									' cannot open this canvas yet. Assigning the request does not share the canvas.',
+								'Share as Contributor',
+								() => grantContributorAccess(currentPick, null),
+							);
+						} catch {
+							if (sequence !== accessCheckSequence) {
+								return;
+							}
+							showAccessState(
+								'warning',
+								'Canvas access could not be verified. You can save the request, then check Manage access.',
+							);
+						}
+					};
+
+					picker = attachSfUserPicker(overlay.querySelector('[data-slot-assignee-picker]'), {
+						placeholder: 'Search a teammate to assign…',
+						onPick: refreshAssigneeAccess,
+					});
+					if (initial.assigneeSfUserId) {
+						picker.setPicked({
+							id: initial.assigneeSfUserId,
+							name: initial.assigneeName || initial.assigneeEmail || 'Assigned teammate',
+							email: initial.assigneeEmail || '',
+						});
+					}
+
+					const updateFieldCount = () => {
+						const count = overlay.querySelectorAll('[data-slot-field-row] input:checked').length;
+						const countEl = overlay.querySelector('[data-slot-field-count]');
+						if (countEl) {
+							countEl.textContent = count + ' selected';
+						}
+					};
+					overlay.querySelectorAll('[data-slot-field-row] input').forEach((input) => {
+						input.addEventListener('change', updateFieldCount);
+					});
+					const search = overlay.querySelector('[data-slot-field-search]');
+					if (search) {
+						search.addEventListener('input', () => {
+							const query = search.value.trim().toLowerCase();
+							overlay.querySelectorAll('[data-slot-field-row]').forEach((row) => {
+								row.hidden =
+									!!query &&
+									!String(row.dataset.search || '')
+										.toLowerCase()
+										.includes(query);
+							});
+						});
+					}
+					updateFieldCount();
+
+					const cleanup = (result) => {
+						overlay.remove();
+						document.removeEventListener('keydown', onKey);
+						resolve(result);
+					};
+					const onKey = (event) => {
+						if (event.key === 'Escape') {
+							cleanup(null);
+						}
+					};
+					document.addEventListener('keydown', onKey);
+					overlay.querySelectorAll('[data-slot-config-close]').forEach((button) => {
+						button.addEventListener('click', () => cleanup(null));
+					});
+					overlay.querySelector('[data-slot-config-save]').addEventListener('click', () => {
+						const fields = fieldMode
+							? Array.from(overlay.querySelectorAll('[data-slot-field-row] input:checked')).map(
+									(input) => input.dataset.fname,
+								)
+							: undefined;
+						if (fieldMode && fields.length === 0) {
+							errorEl.hidden = false;
+							errorEl.textContent = 'Select at least one field for the recipient.';
+							search.focus();
+							return;
+						}
+						const assignee = picker.getPicked();
+						if (!fieldMode && assignee && window.SF_USER_ID && sameSfUser(window.SF_USER_ID, assignee.id)) {
+							errorEl.hidden = false;
+							errorEl.textContent =
+								'Choose another teammate for this record request, or leave it open to any contributor.';
+							return;
+						}
+						cleanup({
+							kind: fieldMode ? 'fields' : 'whole-record',
+							fields,
+							label: automaticLabel,
+							description: descriptionInput.value.trim() || null,
+							assigneeSfUserId: assignee ? assignee.id : null,
+							assigneeName: assignee ? assignee.name : null,
+							assigneeEmail: assignee ? assignee.email : null,
+						});
+					});
+					setTimeout(() => (fieldMode && search ? search : descriptionInput).focus(), 0);
+				});
+			}
+
 			function _openSlotRecordPicker(rec, anchorEl) {
 				document
 					.querySelectorAll('.find-object-popup, .free-tn-picker, .slot-picker')
@@ -484,10 +845,10 @@
 					pop.style.top = '20%';
 					pop.style.transform = 'translateX(-50%)';
 				}
-				const slotLabel = rec.slot && rec.slot.label ? rec.slot.label : rec.label || rec.objectName;
 				pop.innerHTML =
-					'<div class="fop-header">Fill slot: ' +
-					escapeHtml(slotLabel) +
+					'<div class="fop-header">Choose ' +
+					escapeHtml(rec.label || rec.objectName) +
+					' for this request' +
 					'</div>' +
 					'<div class="fop-sub">Search ' +
 					escapeHtml(rec.label || rec.objectName) +
@@ -626,7 +987,7 @@
 				showFieldPicker: showFieldPicker,
 				showCardMoreMenu: showCardMoreMenu,
 				showFieldSlotPicker: showFieldSlotPicker,
-				showSlotMetaPicker: showSlotMetaPicker,
+				showSlotConfigurationPicker: showSlotConfigurationPicker,
 				_openSlotRecordPicker: _openSlotRecordPicker,
 			};
 		},

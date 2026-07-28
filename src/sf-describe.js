@@ -1,5 +1,8 @@
 // Salesforce schema projection shared by object pickers, editors, imports, and upload validation.
 import { withSfRetry } from './sf-upload.js';
+import { isSpecializedSObject } from './sf-object-support.js';
+
+export { isSpecializedSObject } from './sf-object-support.js';
 import { isRequiredOnCreate, isPolymorphicReference } from './sf-field-structure.js';
 
 export function cleanLabel(label, fallback) {
@@ -42,8 +45,15 @@ export function decodeValidForBitmap(validFor) {
 	return indices;
 }
 
-const _queryableCache = new Map(); // orgId -> { set, expiresAt }
+const _queryableCache = new Map(); // orgId|userId -> { set, expiresAt }
 const QUERYABLE_TTL_MS = 30 * 60 * 1000;
+
+function _queryableCacheKey(orgId, userId) {
+	if (!orgId || !userId) {
+		return null;
+	}
+	return String(orgId).slice(0, 15) + '|' + String(userId).slice(0, 15);
+}
 
 function _buildQueryableSet(describeGlobalResult) {
 	const set = new Set();
@@ -55,35 +65,37 @@ function _buildQueryableSet(describeGlobalResult) {
 	return set;
 }
 
-function _primeQueryableCache(orgId, describeGlobalResult) {
+function _primeQueryableCache(orgId, userId, describeGlobalResult) {
 	const set = _buildQueryableSet(describeGlobalResult);
-	if (orgId) {
-		_queryableCache.set(orgId, { set, expiresAt: Date.now() + QUERYABLE_TTL_MS });
+	const cacheKey = _queryableCacheKey(orgId, userId);
+	if (cacheKey) {
+		_queryableCache.set(cacheKey, { set, expiresAt: Date.now() + QUERYABLE_TTL_MS });
 	}
 	return set;
 }
 
-export async function getQueryableSObjects(conn, orgId) {
-	// Never cache without an org ID; a shared fallback key could mix schemas across connections.
+export async function getQueryableSObjects(conn, orgId, userId) {
+	// Queryability reflects the Salesforce user's permissions, not only the org schema.
 	const now = Date.now();
-	if (orgId) {
-		const cached = _queryableCache.get(orgId);
+	const cacheKey = _queryableCacheKey(orgId, userId);
+	if (cacheKey) {
+		const cached = _queryableCache.get(cacheKey);
 		if (cached && cached.expiresAt > now) {
 			return cached.set;
 		}
 	}
 	try {
 		const result = await withSfRetry(() => conn.describeGlobal());
-		return _primeQueryableCache(orgId, result);
+		return _primeQueryableCache(orgId, userId, result);
 	} catch (err) {
 		console.warn('[describeGlobal] failed for queryable cache:', err && err.message);
 		return null;
 	}
 }
 
-export async function listObjects(conn, orgId) {
+export async function listObjects(conn, orgId, userId) {
 	const result = await withSfRetry(() => conn.describeGlobal());
-	_primeQueryableCache(orgId, result);
+	_primeQueryableCache(orgId, userId, result);
 	return result.sobjects
 		.map((o) => ({
 			name: o.name,
@@ -274,10 +286,13 @@ const _NOISE_SOBJECT_NAMES = new Set([
 	'DataIntegrationRecordPurchasePermission',
 ]);
 export function isNoiseSObject(name) {
-	// Custom objects are always retained; this filter targets setup and generated system tables.
 	if (!name) {
 		return true;
 	}
+	if (isSpecializedSObject(name)) {
+		return true;
+	}
+	// Ordinary custom objects stay visible even when their names resemble generated tables.
 	if (name.endsWith('__c')) {
 		return false;
 	}

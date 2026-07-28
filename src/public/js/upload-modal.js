@@ -864,6 +864,18 @@
 					return;
 				}
 				const migrateApi = window.Orgloom && window.Orgloom.canvasMigrate;
+				const currentCanvas = canvasState.currentCanvas;
+				if (currentCanvas && currentCanvas.id && !currentCanvas.ownedByMe) {
+					showBulkToast(
+						'Only the canvas owner can upload this shared canvas to Salesforce. Submit your contribution instead.',
+						'error',
+					);
+					return;
+				}
+				const publishCanvasId =
+					currentCanvas && currentCanvas.id && !(migrateApi && migrateApi.isActive())
+						? currentCanvas.id
+						: null;
 				if (migrateApi && migrateApi.isActive()) {
 					const unresolvedMatches = realRecords.filter(
 						(r) => r._migrateMatchAmbiguous && !r._migrateMatchResolution,
@@ -936,7 +948,7 @@
 					const accessResponse = await csrfFetch('/api/upload/access-check', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
-						body: '{}',
+						body: JSON.stringify({ canvasId: publishCanvasId }),
 						credentials: 'same-origin',
 						signal: accessController.signal,
 					});
@@ -984,6 +996,7 @@
 				// Build one immutable request snapshot so later canvas edits cannot change this attempt.
 				const scopedIds = new Set(recordsForPayload.map((r) => r.id));
 				const payload = {
+					canvasId: publishCanvasId,
 					records: recordsForPayload.map((r) => ({
 						tempId: r.id,
 						objectName: r.objectName,

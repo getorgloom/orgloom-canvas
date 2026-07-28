@@ -45,3 +45,50 @@ test('Find related keeps an imported card bound to its exact schema selection wh
 		13,
 	);
 });
+
+test('Find related typeahead matches object labels and API names', () => {
+	const related = mountRelatedRecords({ selectedObjects: [], bulkRecords: [], bulkAssociations: [] });
+	const items = [
+		{ label: 'Account', objectName: 'Account' },
+		{ label: 'OLQA Work Item', objectName: 'OLQA_Work_Item__c' },
+		{ label: 'Contact Roles', objectName: 'OpportunityContactRole' },
+	];
+
+	assert.equal(related._findRelatedTypeaheadMatchIndex(items, 'acc'), 0);
+	assert.equal(related._findRelatedTypeaheadMatchIndex(items, 'olqawork'), 1);
+	assert.equal(related._findRelatedTypeaheadMatchIndex(items, 'opportunitycontact'), 2);
+	assert.equal(related._findRelatedTypeaheadMatchIndex(items, 'roles'), 2, 'falls back to a contained match');
+	assert.equal(related._findRelatedTypeaheadMatchIndex(items, 'missing'), -1);
+});
+
+test('Find related typeahead focuses, highlights, and scrolls the matching row', () => {
+	const related = mountRelatedRecords({ selectedObjects: [], bulkRecords: [], bulkAssociations: [] });
+	const row = (label, objectName) => {
+		const classes = new Set();
+		return {
+			dataset: { relObject: objectName },
+			querySelector: () => ({ textContent: label }),
+			classList: {
+				add: (name) => classes.add(name),
+				remove: (name) => classes.delete(name),
+				contains: (name) => classes.has(name),
+			},
+			focusOptions: null,
+			scrollOptions: null,
+			focus(options) {
+				this.focusOptions = options;
+			},
+			scrollIntoView(options) {
+				this.scrollOptions = options;
+			},
+		};
+	};
+	const rows = [row('Account', 'Account'), row('OLQA Work Item', 'OLQA_Work_Item__c')];
+	const result = related._jumpToRelatedTypeahead(rows, 'work');
+
+	assert.equal(result.index, 1);
+	assert.equal(rows[0].classList.contains('is-typeahead-match'), false);
+	assert.equal(rows[1].classList.contains('is-typeahead-match'), true);
+	assert.equal(rows[1].focusOptions.preventScroll, true);
+	assert.equal(rows[1].scrollOptions.block, 'nearest');
+});

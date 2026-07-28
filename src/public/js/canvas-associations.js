@@ -8,6 +8,7 @@
 		mount: function mount(deps) {
 			const required = [
 				'canvasState',
+				'canEditCanvasStructure',
 				'renderBulkView',
 				'showBulkToast',
 				'ensureDescribe',
@@ -27,6 +28,7 @@
 				}
 			}
 			const canvasState = deps.canvasState;
+			const canEditCanvasStructure = deps.canEditCanvasStructure;
 			const renderBulkView = deps.renderBulkView;
 			const showBulkToast = deps.showBulkToast;
 			const ensureDescribe = deps.ensureDescribe;
@@ -119,14 +121,22 @@
 					fieldName,
 				});
 
-				if (holderRec && targetEndRec && targetEndRec.loadedFromId) {
+				if (holderRec && targetEndRec) {
 					holderRec.values = holderRec.values || {};
-					holderRec.values[fieldName] = targetEndRec.loadedFromId;
+					if (targetEndRec.loadedFromId) {
+						holderRec.values[fieldName] = targetEndRec.loadedFromId;
+					} else {
+						delete holderRec.values[fieldName];
+					}
 				}
 				renderBulkView();
 			}
 
 			function finalizeAssociation(srcRec, targetRec, clientX, clientY) {
+				if (!canEditCanvasStructure()) {
+					showBulkToast('Only the canvas owner or an editor can change record relationships.', 'info');
+					return false;
+				}
 				Promise.all([ensureDescribe(srcRec.objectName), ensureDescribe(targetRec.objectName)])
 					.then(() => {
 						const all = inferAllReferences(srcRec.objectName, targetRec.objectName);
@@ -180,6 +190,10 @@
 			}
 
 			function deleteAssociation(id) {
+				if (!canEditCanvasStructure()) {
+					showBulkToast('Only the canvas owner or an editor can change record relationships.', 'info');
+					return false;
+				}
 				const killed = canvasState.bulkAssociations.find((a) => a.id === id);
 				const wasSelectedEdge = canvasState.bulkSelectedEdgeId === id;
 
@@ -224,9 +238,14 @@
 					canvasState.bulkSelectedEdgeId = null;
 				}
 				renderBulkView();
+				return true;
 			}
 
 			function deleteDerivedFkEdge(recId, fieldName) {
+				if (!canEditCanvasStructure()) {
+					showBulkToast('Only the canvas owner or an editor can change record relationships.', 'info');
+					return false;
+				}
 				const rec = canvasState.bulkRecords.find((r) => r.id === recId);
 				if (!rec || !rec.values || rec.values[fieldName] == null) {
 					return;

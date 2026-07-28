@@ -4,7 +4,32 @@
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	function reconcileExistingEdge(cy, existing, desired) {
+		const desiredData = desired && desired.data;
+		if (!existing || !desiredData) {
+			return false;
+		}
+		const endpointsChanged =
+			existing.data('source') !== desiredData.source || existing.data('target') !== desiredData.target;
+		if (endpointsChanged) {
+			existing.remove();
+			cy.add(desired);
+			return true;
+		}
+		for (const [key, value] of Object.entries(desiredData)) {
+			if (key !== 'id' && key !== 'source' && key !== 'target' && existing.data(key) !== value) {
+				existing.data(key, value);
+			}
+		}
+		return false;
+	}
+
+	function canRenderDerivedRecordLink(sourceRecord, targetRecord) {
+		return !!(sourceRecord && targetRecord && !sourceRecord._inaccessible && !targetRecord._inaccessible);
+	}
+
 	window.OrgLoom.recordsCanvas = {
+		_test: { reconcileExistingEdge, canRenderDerivedRecordLink },
 		mount: function mount(deps) {
 			const required = [
 				'canvasState',
@@ -18,14 +43,17 @@
 				'attachCyMiddleClickPan',
 				'attachCySpacePan',
 				'openInsertModal',
+				'getCanvasShareRole',
+				'publishPresenceLayout',
 				'showFindObjectPopover',
 				'renderBulkView',
 				'renderCanvas',
 				'_runAfterSchemaTransition',
 				'_isEmptySlot',
+				'_slotAssignmentState',
 				'_slotAssigneeBadgeHtml',
 				'_slotAssignmentCardClass',
-				'_slotAssignmentState',
+				'_isSlotLockedForCurrentUser',
 				'_slotPreflightWarn',
 				'_slotProgress',
 				'_slotProgressClass',
@@ -75,14 +103,17 @@
 			const attachCyMiddleClickPan = deps.attachCyMiddleClickPan;
 			const attachCySpacePan = deps.attachCySpacePan;
 			const openInsertModal = deps.openInsertModal;
+			const getCanvasShareRole = deps.getCanvasShareRole;
+			const publishPresenceLayout = deps.publishPresenceLayout;
 			const showFindObjectPopover = deps.showFindObjectPopover;
 			const renderBulkView = deps.renderBulkView;
 			const renderCanvas = deps.renderCanvas;
 			const _runAfterSchemaTransition = deps._runAfterSchemaTransition;
 			const _isEmptySlot = deps._isEmptySlot;
+			const _slotAssignmentState = deps._slotAssignmentState;
 			const _slotAssigneeBadgeHtml = deps._slotAssigneeBadgeHtml;
 			const _slotAssignmentCardClass = deps._slotAssignmentCardClass;
-			const _slotAssignmentState = deps._slotAssignmentState;
+			const _isSlotLockedForCurrentUser = deps._isSlotLockedForCurrentUser;
 			const _slotPreflightWarn = deps._slotPreflightWarn;
 			const _slotProgress = deps._slotProgress;
 			const _slotProgressClass = deps._slotProgressClass;
@@ -112,6 +143,23 @@
 			const getSkipNextCyAutoPan = deps.getSkipNextCyAutoPan;
 			const setSkipNextCyAutoPan = deps.setSkipNextCyAutoPan;
 			const unmarkPendingDelete = deps.unmarkPendingDelete;
+			const canArrangeCanvas = () => {
+				const role = getCanvasShareRole();
+				return !role || role === 'editor';
+			};
+			const restoreNodeGrabState = () => {
+				const cy = getCyInstance();
+				if (!cy) {
+					return;
+				}
+				cy.nodes().forEach((node) => {
+					if (canArrangeCanvas()) {
+						node.grabify();
+					} else {
+						node.ungrabify();
+					}
+				});
+			};
 
 			function renderBulkCanvasCy() {
 				const container = getGraph().querySelector('#bulk-canvas-cy');
@@ -136,12 +184,17 @@
 							'" data-rec-id="' +
 							rec.id +
 							'">' +
-							'<button class="record-delete" data-record-delete title="Remove">\u00D7</button>' +
-							'<div class="record-pending-title">New record</div>' +
-							'<div class="record-pending-ctas">' +
-							'<button class="record-pending-cta record-pending-cta-blank" data-pending-pick-blank>+ Create blank</button>' +
-							'<button class="record-pending-cta record-pending-cta-load" data-pending-pick-load title="Search and load an existing record from Salesforce">\u2197 Load existing</button>' +
-							'</div>' +
+							(canArrangeCanvas()
+								? '<button type="button" class="record-delete" data-record-delete title="Cancel adding a record" aria-label="Cancel adding a record">\u00D7</button>'
+								: '') +
+							'<div class="record-pending-title">Add a record</div>' +
+							'<div class="record-pending-desc">Choose how you want to start.</div>' +
+							(canArrangeCanvas()
+								? '<div class="record-pending-ctas">' +
+									'<button type="button" class="record-pending-cta record-pending-cta-blank" data-pending-pick-blank>Create new record</button>' +
+									'<button type="button" class="record-pending-cta record-pending-cta-load" data-pending-pick-load title="Search and load an existing record from Salesforce">Load from Salesforce</button>' +
+									'</div>'
+								: '') +
 							'</div></div>'
 						);
 					}
@@ -164,9 +217,11 @@
 								escapeHtml(objLabel) +
 								'</div>' +
 								'<div class="record-noaccess-note">This record is no longer reachable in Salesforce.</div>' +
-								'<button type="button" class="record-stale-action" data-stale-menu="' +
-								rec.id +
-								'" title="Choose how to handle this stale reference">fix \u25BE</button>' +
+								(canArrangeCanvas()
+									? '<button type="button" class="record-stale-action" data-stale-menu="' +
+										rec.id +
+										'" title="Choose how to handle this stale reference">fix \u25BE</button>'
+									: '') +
 								'</div></div>'
 							);
 						}
@@ -186,57 +241,70 @@
 						);
 					}
 					if (_isEmptySlot(rec)) {
-						let scls = 'record-card record-card-slot';
+						let scls = 'record-card record-card-slot record-card--record-request';
 						if (canvasState.bulkSelectedIds.has(rec.id)) {
 							scls += ' selected';
 						}
 						scls += _slotAssignmentCardClass(rec);
-						const slotLabel = rec.slot && rec.slot.label ? rec.slot.label : 'Slot';
-						const desc = rec.slot && rec.slot.description ? rec.slot.description : '';
 						const objLabel = rec.label || rec.objectName;
-						const warnBadge = _slotPreflightWarn(rec)
-							? '<span class="record-slot-warn" title="You may not have access to records of this type.">\u26A0</span>'
+						const objectNoun = String(objLabel || 'record')
+							.trim()
+							.toLocaleLowerCase();
+						const article =
+							/^(?:[aeiou]|honest|hour|heir)/i.test(objectNoun) && !/^user\b/i.test(objectNoun)
+								? 'an'
+								: 'a';
+						const requestTitle = 'New ' + objLabel + ' needed';
+						const blockedByAccess = _slotPreflightWarn(rec);
+						const isLocked = _isSlotLockedForCurrentUser(rec);
+						const shareRole = getCanvasShareRole();
+						const contributorTask =
+							(shareRole === 'contributor' || shareRole === 'editor') && rec._recipientSlot;
+						const assigneeBadge = shareRole ? '' : _slotAssigneeBadgeHtml(rec);
+						const canEditStructure = !shareRole || shareRole === 'editor';
+						const canCompleteRequest = contributorTask;
+						const accessNotice = blockedByAccess
+							? '<div class="record-request-access-warning" role="note">' +
+								'<strong>Salesforce access required</strong>' +
+								'<span>This connection cannot access ' +
+								escapeHtml(objLabel) +
+								' records, so this request cannot be completed.</span>' +
+								'</div>'
 							: '';
-						const assigneeBadge = _slotAssigneeBadgeHtml(rec);
-						const isLocked = _slotAssignmentState(rec) === 'other';
-						const ctas = isLocked
-							? '<div class="record-slot-locked-note">Reserved for ' +
-								escapeHtml(rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate') +
-								'; they need to fill this slot.</div>'
-							: '<div class="record-slot-ctas">' +
-								'<button class="record-slot-cta record-slot-cta-load" data-slot-fill-load title="Search and load an existing record into this slot">\u2197 Load existing</button>' +
-								'<button class="record-slot-cta record-slot-cta-blank" data-slot-fill-blank title="Create a blank draft for this slot">+ Create blank</button>' +
-								'</div>';
+						const ctas = !canCompleteRequest
+							? ''
+							: isLocked
+								? '<div class="record-slot-locked-note">Assigned to ' +
+									escapeHtml(rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate') +
+									'; they need to complete this record request.</div>'
+								: blockedByAccess
+									? accessNotice
+									: '<div class="record-slot-ctas">' +
+										'<button class="record-slot-cta record-slot-cta-blank" data-slot-fill-blank title="Complete this ' +
+										escapeHtml(objLabel) +
+										' request">Fill request</button>' +
+										'</div>';
 						return (
 							'<div class="cy-card-shell"><div class="' +
 							scls +
 							'" data-rec-id="' +
 							rec.id +
 							'">' +
-							'<button class="record-delete" data-record-delete title="Remove">\u00D7</button>' +
-							'<div class="record-slot-tag">SLOT' +
-							warnBadge +
-							(() => {
-								const sp = _slotProgress(rec);
-								return sp
-									? '<span class="slot-progress ' +
-											_slotProgressClass(sp) +
-											'" style="margin-left:0.4em">' +
-											sp.filled +
-											'/' +
-											sp.total +
-											'</span>'
-									: '';
-							})() +
-							(assigneeBadge ? '<span style="margin-left:0.4em">' + assigneeBadge + '</span>' : '') +
+							(canEditStructure
+								? '<button class="record-delete" data-record-delete title="Remove">\u00D7</button>'
+								: '') +
+							'<div class="record-slot-tag">RECORD REQUEST' +
+							(assigneeBadge ? '<span class="slot-assignee-wrap">' + assigneeBadge + '</span>' : '') +
 							'</div>' +
 							'<div class="record-slot-title">' +
-							escapeHtml(slotLabel) +
+							escapeHtml(requestTitle) +
 							'</div>' +
 							'<div class="record-slot-type">' +
-							escapeHtml(objLabel) +
+							'Create ' +
+							article +
+							' ' +
+							escapeHtml(objectNoun) +
 							'</div>' +
-							(desc ? '<div class="record-slot-desc">' + escapeHtml(desc) + '</div>' : '') +
 							ctas +
 							'</div></div>'
 						);
@@ -244,6 +312,8 @@
 					const isExisting = !!rec.loadedFromId;
 					const isModified = isExisting && isRecordModified(rec);
 					const isPendingDelete = isExisting && !!rec.pendingDelete;
+					const shareRole = getCanvasShareRole();
+					const slotKind = rec.slot && rec.slot.slotId != null ? rec.slot.kind || 'whole-record' : null;
 					let cls = 'record-card';
 					if (isPendingDelete) {
 						cls += ' has-pending-delete';
@@ -270,6 +340,10 @@
 						cls += ' record-card-deleted-in-sf';
 					}
 					cls += _slotAssignmentCardClass(rec);
+					if (rec.slot && rec.slot.slotId != null && !shareRole) {
+						cls +=
+							rec.slot.kind === 'fields' ? ' record-card--field-request' : ' record-card--record-request';
+					}
 					const titleText = (() => {
 						if (rec.values) {
 							const fn = rec.values.FirstName,
@@ -318,10 +392,12 @@
 					if (_isRecordStale(rec)) {
 						badge +=
 							'<span class="record-stale-badge" title="This record was deleted in Salesforce (or your access to it was removed) after it was loaded onto the canvas. Uploading changes to it will fail until you resolve it.">deleted in SF</span>';
-						badge +=
-							'<button type="button" class="record-stale-action" data-stale-menu="' +
-							rec.id +
-							'" title="Choose how to handle this stale reference">fix ▾</button>';
+						if (canArrangeCanvas()) {
+							badge +=
+								'<button type="button" class="record-stale-action" data-stale-menu="' +
+								rec.id +
+								'" title="Choose how to handle this stale reference">fix ▾</button>';
+						}
 					}
 					if (Array.isArray(rec._loadedFieldNames)) {
 						const n = rec._loadedFieldNames.length;
@@ -332,33 +408,28 @@
 							(n === 1 ? '' : 's') +
 							' only; the rest are preserved on Salesforce, not editable here. Re-import via SOQL with Load all fields checked to see them.">partial</span>';
 					}
+					const requestedFieldCount =
+						slotKind === 'fields' && Array.isArray(rec.slot.fields) ? rec.slot.fields.length : 0;
 					const slotBadge =
-						rec.slot && rec.slot.slotId != null
-							? '<span class="record-slot-badge" title="Marked as slot for recipients of this canvas. Label: ' +
-								escapeHtml(rec.slot.label || '') +
-								'">slot</span>'
+						slotKind && !(shareRole && rec._recipientSlot)
+							? slotKind === 'fields'
+								? '<span class="record-slot-badge field-request-badge" title="' +
+									'The recipient is being asked to complete ' +
+									requestedFieldCount +
+									' field' +
+									(requestedFieldCount === 1 ? '' : 's') +
+									' on this record.">' +
+									requestedFieldCount +
+									' field' +
+									(requestedFieldCount === 1 ? '' : 's') +
+									' requested</span>'
+								: '<span class="record-slot-badge record-request-badge" title="' +
+									'The recipient is being asked to create or choose a new ' +
+									escapeHtml(rec.label || rec.objectName) +
+									'.">record request</span>'
 							: '';
-					const slotProgress = _slotProgress(rec);
-					const slotProgressBadge = slotProgress
-						? '<span class="slot-progress ' +
-							_slotProgressClass(slotProgress) +
-							'" title="' +
-							(slotProgress.filled === slotProgress.total
-								? 'All slot fields filled.'
-								: slotProgress.filled +
-									' of ' +
-									slotProgress.total +
-									' slot field' +
-									(slotProgress.total === 1 ? '' : 's') +
-									' filled.') +
-							'">' +
-							slotProgress.filled +
-							'/' +
-							slotProgress.total +
-							'</span>'
-						: '';
-					const assigneeBadge = _slotAssigneeBadgeHtml(rec);
-					badge = badge + slotBadge + slotProgressBadge + assigneeBadge;
+					const assigneeBadge = shareRole ? '' : _slotAssigneeBadgeHtml(rec);
+					badge = badge + slotBadge + assigneeBadge;
 					const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
 					const lightningUrl =
 						isExisting && rec.loadedFromId && sfBase
@@ -377,16 +448,19 @@
 							'</a>'
 						: escapeHtml(titleText);
 					let chipHtml = '';
-					if (isExisting) {
+					if (isExisting && canArrangeCanvas()) {
 						chipHtml =
 							'<button class="record-related-chip" data-related-pick title="See records related to this one">' +
 							'\u2194 Find related' +
 							'</button>';
 					}
-					const moreBtn = '<button class="record-more" data-card-more title="More actions">\u22EE</button>';
-					const keepBtn = isPendingDelete
-						? '<button class="record-keep" data-card-keep title="Unmark: cancels the delete">Keep</button>'
+					const moreBtn = canArrangeCanvas()
+						? '<button class="record-more" data-card-more title="More actions">\u22EE</button>'
 						: '';
+					const keepBtn =
+						isPendingDelete && canArrangeCanvas()
+							? '<button class="record-keep" data-card-keep title="Unmark: cancels the delete">Keep</button>'
+							: '';
 					return (
 						'<div class="cy-card-shell"><div class="' +
 						cls +
@@ -450,6 +524,9 @@
 						return 'Blank record';
 					}
 					if (rec._inaccessible) {
+						if (rec._permissionHidden) {
+							return 'Hidden content\nSalesforce permissions';
+						}
 						return 'No access\n' + (rec.label || rec.objectName);
 					}
 					if (rec.isTypeNode) {
@@ -510,7 +587,7 @@
 							pendingDelete: r.pendingDelete ? 1 : 0,
 						},
 						position: { x: typeof r.x === 'number' ? r.x : 0, y: typeof r.y === 'number' ? r.y : 0 },
-						grabbable: true,
+						grabbable: canArrangeCanvas(),
 						selectable: !r.isTypeNode || r.isPending,
 					});
 				});
@@ -553,7 +630,12 @@
 								continue;
 							}
 							const tgt = recByLoadedId.get(idKey15(val));
-							if (!tgt || tgt.id === r.id || _hiddenRecIds.has(tgt.id)) {
+							if (
+								!tgt ||
+								tgt.id === r.id ||
+								_hiddenRecIds.has(tgt.id) ||
+								!canRenderDerivedRecordLink(r, tgt)
+							) {
 								continue;
 							}
 							const k = r.id + '->' + tgt.id + '::' + fieldName;
@@ -835,7 +917,7 @@
 							}
 							if (hitInRect(blankBtn)) {
 								showFindObjectPopover(blankBtn, {
-									header: 'Create blank record',
+									header: 'Create new record',
 									sub: 'Pick the object type for this blank draft.',
 									isAdded: () => false,
 									onPick: (name) => resolvePendingRecord(rec.id, name),
@@ -911,7 +993,7 @@
 							);
 							return;
 						}
-						if (_slotAssignmentState(rec) === 'other') {
+						if (_isSlotLockedForCurrentUser(rec)) {
 							const who = rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate';
 							showBulkToast('Reserved for ' + who + ': only they can fill this slot.', 'info');
 							return;
@@ -1018,12 +1100,14 @@
 						});
 					});
 					getCyInstance().on('free', 'node', (evt) => {
+						const movedRecords = [];
 						const recId = evt.target.data('recId');
 						const rec = canvasState.bulkRecords.find((r) => r.id === recId);
 						if (rec) {
 							const p = evt.target.position();
 							rec.x = p.x;
 							rec.y = p.y;
+							movedRecords.push(rec);
 						}
 						if (_cyDragGroup && evt.target.id() === _cyDragGroup.anchorId) {
 							_cyDragGroup.others.forEach((o) => {
@@ -1035,11 +1119,15 @@
 								const op = o.node.position();
 								orec.x = op.x;
 								orec.y = op.y;
+								movedRecords.push(orec);
 								try {
 									o.node.scratch('_dragFollower', false);
 								} catch (_) {}
 							});
 							_cyDragGroup = null;
+						}
+						if (movedRecords.length > 0 && canArrangeCanvas()) {
+							publishPresenceLayout(movedRecords);
 						}
 					});
 
@@ -1090,6 +1178,18 @@
 								return;
 							}
 							ev.stopPropagation();
+							if (
+								!canArrangeCanvas() &&
+								cta.matches(
+									'[data-record-delete], [data-card-more], [data-card-keep], [data-related-pick], [data-pending-pick-blank], [data-pending-pick-load], [data-stale-menu]',
+								)
+							) {
+								showBulkToast(
+									'Only the canvas owner or an editor can change canvas structure.',
+									'info',
+								);
+								return;
+							}
 							if (cta.matches('[data-record-delete]')) {
 								deleteRecord(rec.id);
 								return;
@@ -1104,7 +1204,7 @@
 							}
 							if (cta.matches('[data-pending-pick-blank]')) {
 								showFindObjectPopover(cta, {
-									header: 'Create blank record',
+									header: 'Create new record',
 									sub: 'Pick the object type for this blank draft.',
 									isAdded: () => false,
 									onPick: (name) => resolvePendingRecord(rec.id, name),
@@ -1168,7 +1268,7 @@
 								);
 								return;
 							}
-							if (_slotAssignmentState(rec) === 'other') {
+							if (_isSlotLockedForCurrentUser(rec)) {
 								const who = rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate';
 								showBulkToast('Reserved for ' + who + ': only they can fill this slot.', 'info');
 								return;
@@ -1336,6 +1436,11 @@
 					const _isInlineResizeHandleTarget = (target) =>
 						Boolean(target && target.closest && target.closest('.modal.is-inline .inline-resize-handle'));
 					document.addEventListener('mousemove', (ev) => {
+						if (!canArrangeCanvas()) {
+							container.classList.remove('cy-edge-hover');
+							_setEdgeHoverCard(null);
+							return;
+						}
 						if (_isInlineResizeHandleTarget(ev.target)) {
 							container.classList.remove('cy-edge-hover');
 							_setEdgeHoverCard(null);
@@ -1365,6 +1470,9 @@
 					document.addEventListener(
 						'mousedown',
 						(ev) => {
+							if (!canArrangeCanvas()) {
+								return;
+							}
 							if (ev.button !== 0) {
 								return;
 							}
@@ -1504,9 +1612,7 @@
 						_setConnectClass(false);
 						container.classList.remove('cy-edge-hover');
 						getCyInstance().userPanningEnabled(false);
-						getCyInstance()
-							.nodes()
-							.forEach((n) => n.grabify());
+						restoreNodeGrabState();
 						const srcCyNode = getCyInstance().getElementById('r' + srcId);
 						if (srcCyNode && srcCyNode.length) {
 							srcCyNode.data('rev', (srcCyNode.data('rev') || 0) + 1);
@@ -1596,9 +1702,7 @@
 						_setConnectClass(false);
 						container.classList.remove('cy-edge-hover');
 						getCyInstance().userPanningEnabled(false);
-						getCyInstance()
-							.nodes()
-							.forEach((n) => n.grabify());
+						restoreNodeGrabState();
 						const srcCyNode = getCyInstance().getElementById('r' + srcId);
 						if (srcCyNode && srcCyNode.length) {
 							srcCyNode.data('rev', (srcCyNode.data('rev') || 0) + 1);
@@ -1639,10 +1743,19 @@
 							}
 							return;
 						}
+						const existing = getCyInstance().getElementById(el.data.id);
+						if (el.group === 'edges') {
+							reconcileExistingEdge(getCyInstance(), existing, el);
+							return;
+						}
 						if (el.group !== 'nodes') {
 							return;
 						}
-						const existing = getCyInstance().getElementById(el.data.id);
+						if (el.grabbable) {
+							existing.grabify();
+						} else {
+							existing.ungrabify();
+						}
 						if (el.data.label !== existing.data('label')) {
 							existing.data('label', el.data.label);
 						}

@@ -5,9 +5,10 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../src/public/js/mcp-relay-client.js', import.meta.url), 'utf8');
 
-test('relay availability controls canvas registration and notifies MCP pollers', async () => {
+test('relay availability controls canvas registration and forwards proposal changes', async () => {
 	const requests = [];
 	const availability = [];
+	const proposalChanges = [];
 	const windowListeners = new Map();
 	const documentListeners = new Map();
 	const eventSources = [];
@@ -25,6 +26,8 @@ test('relay availability controls canvas registration and notifies MCP pollers',
 		dispatchEvent(event) {
 			if (event.type === 'orgloom:mcp-availability') {
 				availability.push(event.detail.active);
+			} else if (event.type === 'orgloom:ai-proposals-changed') {
+				proposalChanges.push(event.detail);
 			}
 		},
 	};
@@ -90,6 +93,10 @@ test('relay availability controls canvas registration and notifies MCP pollers',
 	assert.equal(window.ORGLOOM_MCP_ACTIVE, true);
 	assert.deepEqual(availability, [false, true]);
 	assert.equal(requests.filter((request) => request.url.endsWith('/register')).length, 1);
+
+	eventSources[0].emit('ai-proposals-changed', { canvasId: 'draft-test' });
+	assert.equal(proposalChanges.length, 1);
+	assert.equal(proposalChanges[0].canvasId, 'draft-test');
 
 	eventSources[0].emit('mcp-availability', { active: false });
 	await Promise.resolve();

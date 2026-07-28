@@ -8,6 +8,7 @@
 		mount: function mount(deps) {
 			const required = [
 				'canvasState',
+				'canEditCanvasStructure',
 				'_hasCap',
 				'bulkAutoFill',
 				'bulkClearAllFields',
@@ -23,6 +24,7 @@
 				'openFindDuplicatesModal',
 				'openBulkRefreshFlow',
 				'beginMigration',
+				'openStandaloneRecordRequestPicker',
 				'spawnPendingRecord',
 				'triggerTemplateFileInput',
 				'getGraph',
@@ -43,6 +45,7 @@
 				}
 			}
 			const canvasState = deps.canvasState;
+			const canEditCanvasStructure = deps.canEditCanvasStructure;
 			const _hasCap = deps._hasCap;
 			const beginMigration = deps.beginMigration;
 			const bulkAutoFill = deps.bulkAutoFill;
@@ -58,6 +61,7 @@
 			const openCanvasSearchModal = deps.openCanvasSearchModal;
 			const openFindDuplicatesModal = deps.openFindDuplicatesModal;
 			const openBulkRefreshFlow = deps.openBulkRefreshFlow;
+			const openStandaloneRecordRequestPicker = deps.openStandaloneRecordRequestPicker;
 			const spawnPendingRecord = deps.spawnPendingRecord;
 			const triggerTemplateFileInput = deps.triggerTemplateFileInput;
 			const getGraph = deps.getGraph;
@@ -119,6 +123,9 @@
 					if (!worldPos) {
 						return;
 					} // outside canvas: let browser default fire
+					if (!canEditCanvasStructure()) {
+						return;
+					}
 					if (overInteractive(ev.target)) {
 						return;
 					}
@@ -191,11 +198,14 @@
 			}
 
 			function _showCanvasContextMenu(clientX, clientY, worldPos) {
+				if (!canEditCanvasStructure()) {
+					return false;
+				}
 				document.querySelectorAll('.canvas-context-menu').forEach((el) => el.remove());
 				const menu = document.createElement('div');
 				menu.className = 'canvas-context-menu';
 				const width = 220;
-				const estHeight = 48; // single-item menu, small
+				const estHeight = 96;
 				const left = Math.min(clientX, window.innerWidth - width - 8);
 				const top = Math.min(clientY, window.innerHeight - estHeight - 8);
 				menu.style.left = Math.max(8, left) + 'px';
@@ -204,6 +214,10 @@
 					'<button type="button" class="ccm-item" data-ccm-action="spawn">' +
 					'<span class="ccm-label">Add record here</span>' +
 					'<span class="ccm-sub">Drop a pending placeholder at the click point</span>' +
+					'</button>' +
+					'<button type="button" class="ccm-item" data-ccm-action="request">' +
+					'<span class="ccm-label">Request record here</span>' +
+					'<span class="ccm-sub">Ask a teammate to create or choose a record</span>' +
 					'</button>';
 				document.body.appendChild(menu);
 				const cleanup = () => {
@@ -234,13 +248,29 @@
 					}
 					const action = btn.dataset.ccmAction;
 					cleanup();
-					if (action === 'spawn') {
+					if (action === 'spawn' && canEditCanvasStructure()) {
 						spawnPendingRecord(worldPos.x, worldPos.y);
+					} else if (action === 'request' && canEditCanvasStructure()) {
+						openStandaloneRecordRequestPicker(
+							{
+								getBoundingClientRect: () => ({
+									left: clientX,
+									right: clientX,
+									top: clientY,
+									bottom: clientY,
+								}),
+							},
+							worldPos,
+						);
 					}
 				});
+				return true;
 			}
 
 			function showAddRecordsMenu(triggerEl) {
+				if (!canEditCanvasStructure()) {
+					return false;
+				}
 				document.querySelectorAll('.fill-menu-popup').forEach((el) => el.remove());
 				const pop = document.createElement('div');
 				pop.className = 'fill-menu-popup';
@@ -250,6 +280,9 @@
 				pop.style.left = Math.max(8, left) + 'px';
 				pop.style.top = rect.bottom + 6 + 'px';
 				pop.innerHTML =
+					'<div class="fm-header">On the canvas</div>' +
+					'<button type="button" data-add-menu="blank" title="Add an empty draft and choose its object type">Add a blank record</button>' +
+					'<button type="button" data-add-menu="request" title="Ask a teammate to create or choose a record">Request a record</button>' +
 					'<div class="fm-header">From Salesforce</div>' +
 					'<button type="button" data-add-menu="browse" title="Filter records by field values, see live counts, then load matches onto the canvas, no SOQL knowledge required">Browse records</button>' +
 					'<button type="button" data-add-menu="soql" title="Write a SOQL SELECT to pull records (and their related children via subqueries) into the canvas">Import via SOQL query</button>' +
@@ -268,7 +301,14 @@
 					b.addEventListener('click', () => {
 						const action = b.dataset.addMenu;
 						cleanup();
-						if (action === 'csv') {
+						if (!canEditCanvasStructure()) {
+							return;
+						}
+						if (action === 'blank') {
+							spawnPendingRecord();
+						} else if (action === 'request') {
+							openStandaloneRecordRequestPicker(triggerEl);
+						} else if (action === 'csv') {
 							openLinkedCsvModal();
 						} else if (action === 'soql') {
 							openSoqlImportModal();
@@ -293,6 +333,7 @@
 					document.addEventListener('mousedown', outside, true);
 					document.addEventListener('keydown', onEsc, true);
 				}, 0);
+				return true;
 			}
 
 			function showBulkOperationsMenu(triggerEl) {
@@ -558,7 +599,7 @@
 					'<li><strong>Drag</strong> a card to move it. Select several to move as a group.</li>' +
 					'<li><strong>Drag from a card\u2019s edge</strong> to another card to connect them.</li>' +
 					'<li><strong>Click an edge</strong>, then \u00D7 on its badge to disconnect.</li>' +
-					'<li><strong>Ctrl/Cmd+Z</strong> to undo the last delete.</li>' +
+					'<li><strong>Ctrl/Cmd+Z</strong> to undo the last canvas operation.</li>' +
 					'<li>On the schema graph: <strong>click</strong> a related (dashed) node to add and navigate to it.</li>' +
 					'</ul>';
 				document.body.appendChild(pop);

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../src/public/js/ai-proposals.js', import.meta.url), 'utf8');
+const cssSource = readFileSync(new URL('../src/public/css/app.css', import.meta.url), 'utf8');
 
 function element() {
 	return {
@@ -18,7 +19,12 @@ function element() {
 
 function createApi(bulkRecords = [], bulkAssociations = [], describeCache = {}) {
 	const window = { OrgLoom: {}, Orgloom: {}, addEventListener() {}, localStorage: { getItem: () => null } };
-	const document = { body: element(), createElement: element, addEventListener() {} };
+	const document = {
+		body: element(),
+		createElement: element,
+		querySelector: () => element(),
+		addEventListener() {},
+	};
 	vm.runInNewContext(source, {
 		window,
 		document,
@@ -46,6 +52,155 @@ function createApi(bulkRecords = [], bulkAssociations = [], describeCache = {}) 
 		renderBulkView() {},
 	});
 }
+
+test('proposal notification is mounted on the canvas instead of over the page header', () => {
+	assert.match(source, /document\.querySelector\('#graph-bulk'\)/);
+	assert.doesNotMatch(source, /document\.body\.appendChild\(_proposalsBanner\)/);
+	assert.match(cssSource, /\.proposals-banner\s*\{[^}]*position:\s*absolute;/);
+	assert.doesNotMatch(cssSource, /\.proposals-banner\s*\{[^}]*position:\s*fixed;/);
+});
+
+test('batch review detects competing values for the same record field', () => {
+	const api = createApi();
+	const conflicts = api.proposalConflictGroups([
+		{
+			id: 'proposal-a',
+			changes: [
+				{
+					kind: 'record',
+					recordId: '001000000000001AAA',
+					objectName: 'Account',
+					fields: { Industry: 'Energy', Phone: '555-0100' },
+				},
+			],
+		},
+		{
+			id: 'proposal-b',
+			changes: [
+				{
+					kind: 'record',
+					recordId: '001000000000001AAA',
+					objectName: 'Account',
+					fields: { Industry: 'Technology' },
+				},
+			],
+		},
+	]);
+
+	assert.equal(conflicts.length, 1);
+	assert.equal(conflicts[0].label, 'Account · Industry');
+	assert.deepEqual(
+		Array.from(conflicts[0].entries, (entry) => entry.proposalId),
+		['proposal-a', 'proposal-b'],
+	);
+});
+
+test('batch review ignores duplicate outcomes and independent fields', () => {
+	const api = createApi();
+	const conflicts = api.proposalConflictGroups([
+		{
+			id: 'proposal-a',
+			changes: [
+				{
+					kind: 'record',
+					recordId: '001000000000001AAA',
+					objectName: 'Account',
+					fields: { Industry: 'Energy', Phone: '555-0100' },
+				},
+			],
+		},
+		{
+			id: 'proposal-b',
+			changes: [
+				{
+					kind: 'record',
+					recordId: '001000000000001AAA',
+					objectName: 'Account',
+					fields: { Industry: 'Energy', Website: 'https://example.com' },
+				},
+			],
+		},
+	]);
+
+	assert.equal(conflicts.length, 0);
+});
+
+test('batch review detects competing relationship destinations', () => {
+	const api = createApi();
+	const conflicts = api.proposalConflictGroups([
+		{
+			id: 'proposal-a',
+			changes: [
+				{
+					kind: 'new-association',
+					fieldName: 'AccountId',
+					from: { kind: 'loaded', ref: '003000000000001AAA' },
+					to: { kind: 'loaded', ref: '001000000000001AAA' },
+				},
+			],
+		},
+		{
+			id: 'proposal-b',
+			changes: [
+				{
+					kind: 'new-association',
+					fieldName: 'AccountId',
+					from: { kind: 'loaded', ref: '003000000000001AAA' },
+					to: { kind: 'loaded', ref: '001000000000002AAA' },
+				},
+			],
+		},
+	]);
+
+	assert.equal(conflicts.length, 1);
+	assert.equal(conflicts[0].key, 'record:003000000000001aaa|field:accountid');
+});
+
+test('batch review treats removing and editing the same record as a conflict', () => {
+	const conflicts = createApi().proposalConflictGroups([
+		{
+			id: 'proposal-a',
+			changes: [
+				{
+					kind: 'record',
+					recordId: '001000000000001AAA',
+					objectName: 'Account',
+					fields: { Name: 'Updated name' },
+				},
+			],
+		},
+		{
+			id: 'proposal-b',
+			changes: [
+				{
+					kind: 'delete-record',
+					recordId: '001000000000001AAA',
+					objectName: 'Account',
+				},
+			],
+		},
+	]);
+
+	assert.equal(conflicts.length, 1);
+	assert.equal(conflicts[0].key, 'record:001000000000001aaa|record-lifecycle');
+});
+
+test('batch proposal cards have one review position and no per-proposal commit buttons', () => {
+	const html = createApi().renderProposalCard(
+		{
+			id: 'proposal-a',
+			changes: [{ kind: 'record', recordId: '001000000000001AAA', fields: { Name: 'Acme' } }],
+		},
+		{ batch: true, position: 1, total: 2 },
+	);
+
+	assert.match(html, /Proposal 1 of 2/);
+	assert.doesNotMatch(html, /proposal-card-apply/);
+	assert.doesNotMatch(html, /proposal-card-reject/);
+	assert.match(source, /id="proposal-batch-apply">Apply reviewed changes/);
+	assert.match(source, /skipUndo:\s*true/);
+	assert.match(source, /'AI proposal batch apply'/);
+});
 
 function createRenderer(bulkRecords = [], bulkAssociations = [], describeCache = {}) {
 	return createApi(bulkRecords, bulkAssociations, describeCache).renderProposalCard;
@@ -294,4 +449,13 @@ test('applying a lookup proposal replaces any existing value for that child fiel
 	assert.equal(records[0].values.AccountId, '001NEW000000001AAA');
 	assert.equal(api.syncLookupFieldValue(records, 10, 22, 'AccountId'), true);
 	assert.equal(Object.hasOwn(records[0].values, 'AccountId'), false);
+});
+
+test('manual proposal acceptance stays covered by an accessible progress state', () => {
+	assert.match(source, /function _showProposalApplyProgress\(reviewModal, options\)/);
+	assert.match(source, /proposal-apply-progress-modal/);
+	assert.match(source, /aria-busy="true"/);
+	assert.match(source, /Applying the selected changes to the canvas/);
+	assert.match(source, /reviewModal\.setAttribute\('inert', ''\)/);
+	assert.match(source, /finally \{[\s\S]*?closeProgress\(\)/);
 });

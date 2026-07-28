@@ -56,11 +56,87 @@
 		}
 	}
 
+	function formatReadOnlyFieldValue(value, fieldType) {
+		if (value === null || value === undefined || value === '') {
+			return '';
+		}
+		if (fieldType === 'boolean') {
+			return value === true || value === 'true' ? 'Yes' : 'No';
+		}
+		if (fieldType === 'datetime') {
+			const parsed = new Date(value);
+			if (!isNaN(parsed.getTime())) {
+				return parsed.toLocaleString();
+			}
+		}
+		if (Array.isArray(value)) {
+			return value.join('; ');
+		}
+		return formatCarryoverValue(value);
+	}
+
+	function isGuidedFieldComplete(fieldType, state) {
+		if (!state || !state.touched || state.valid === false) {
+			return false;
+		}
+		if (fieldType === 'boolean') {
+			return true;
+		}
+		if (fieldType === 'multipicklist') {
+			return Array.isArray(state.values) && state.values.some((value) => value !== '');
+		}
+		if (state.value === null || state.value === undefined) {
+			return false;
+		}
+		return typeof state.value === 'string' ? state.value.trim() !== '' : true;
+	}
+
+	function sharedRecordEditAccess(role, record, assignmentState) {
+		const wholeRecordRequest = !!(
+			record &&
+			record.slot &&
+			record.slot.slotId != null &&
+			(record.slot.kind || 'whole-record') === 'whole-record'
+		);
+		if (wholeRecordRequest && !role) {
+			return false;
+		}
+		if (!role || role === 'editor') {
+			return true;
+		}
+		if (role !== 'contributor') {
+			return false;
+		}
+		const hasRecipientRequest = !!(record && record._recipientSlot && record.slot && record.slot.slotId != null);
+		return hasRecipientRequest && assignmentState !== 'other';
+	}
+
+	function resolveSharedDraftDescribe(ensureDescribe, objectName, sharedSnapshot) {
+		return ensureDescribe(objectName).catch((error) => {
+			if (sharedSnapshot) {
+				return sharedSnapshot;
+			}
+			throw error;
+		});
+	}
+
+	function sharedDraftLayoutMode(role, record, assignmentState) {
+		if (!role || !record || record.loadedFromId) {
+			return null;
+		}
+		return sharedRecordEditAccess(role, record, assignmentState) ? 'Create' : 'View';
+	}
+
 	window.OrgLoom.insertModal = {
 		_test: {
 			unlinkRelationshipImpact,
 			applyLoadedRecordUnlink,
 			formatCarryoverValue,
+			formatReadOnlyFieldValue,
+			isGuidedFieldComplete,
+			sharedRecordEditAccess,
+			resolveSharedDraftDescribe,
+			sharedDraftLayoutMode,
 		},
 		mount: function mount(deps) {
 			if (
@@ -76,8 +152,6 @@
 				!deps.renderChips ||
 				!deps.renderBulkView ||
 				!deps.getCanvasShareRole ||
-				!deps._formatRelativeTime ||
-				!deps._resolveUserName ||
 				!deps._slotProgress ||
 				!deps._slotProgressClass ||
 				!deps.recordOrdinal ||
@@ -85,7 +159,8 @@
 				!deps.markPendingDelete ||
 				!deps.unmarkPendingDelete ||
 				!deps.showConfirmDialog ||
-				!deps.pushPresenceFocus
+				!deps.pushPresenceFocus ||
+				!deps.publishPresenceLayout
 			) {
 				throw new Error('insert-modal.mount: missing required deps');
 			}
@@ -100,8 +175,6 @@
 			const renderChips = deps.renderChips;
 			const renderBulkView = deps.renderBulkView;
 			const getCanvasShareRole = deps.getCanvasShareRole;
-			const _formatRelativeTime = deps._formatRelativeTime;
-			const _resolveUserName = deps._resolveUserName;
 			const _slotProgress = deps._slotProgress;
 			const _slotProgressClass = deps._slotProgressClass;
 			const recordOrdinal = deps.recordOrdinal;
@@ -110,8 +183,41 @@
 			const unmarkPendingDelete = deps.unmarkPendingDelete;
 			const showConfirmDialog = deps.showConfirmDialog;
 			const pushPresenceFocus = deps.pushPresenceFocus;
+			const publishPresenceLayout = deps.publishPresenceLayout;
+			const canEditCanvasStructure = () => {
+				const role = getCanvasShareRole();
+				return !role || role === 'editor';
+			};
+			const canEditCurrentRecord = () =>
+				sharedRecordEditAccess(
+					getCanvasShareRole(),
+					canvasState.currentRecordRef,
+					_slotAssignmentState(canvasState.currentRecordRef),
+				);
 			const _getCyInstance = typeof deps.getCyInstance === 'function' ? deps.getCyInstance : null;
 			const _getCyContainer = typeof deps.getCyContainer === 'function' ? deps.getCyContainer : null;
+			const _getCyPendingEdge = typeof deps.getCyPendingEdge === 'function' ? deps.getCyPendingEdge : null;
+
+			function _presenceFocusForRecord(record) {
+				if (!record) {
+					return null;
+				}
+				if (record.slot && record.slot.slotId != null) {
+					return { kind: 'record', refKind: 'slot', ref: String(record.slot.slotId) };
+				}
+				if (record.loadedFromId) {
+					return { kind: 'record', refKind: 'loaded', ref: String(record.loadedFromId) };
+				}
+				const ref = record._persistedTempId != null ? record._persistedTempId : record.id;
+				if (ref == null) {
+					return null;
+				}
+				const focus = { kind: 'record', refKind: 'draft', ref: String(ref) };
+				if (record._collabId) {
+					focus.collabRef = String(record._collabId);
+				}
+				return focus;
+			}
 
 			function chooseUnlinkRelationshipBehavior(record, impact) {
 				return new Promise((resolve) => {
@@ -220,6 +326,15 @@
 				}
 			});
 
+			function _syncSubmitButtonAccess(options) {
+				const submitBtn = modal.querySelector('#modal-submit');
+				const canSubmit = canEditCurrentRecord();
+				submitBtn.hidden = !canSubmit;
+				submitBtn.disabled = !canSubmit || !!(options && options.loading);
+				submitBtn.title = canSubmit ? '' : 'This record is read-only for your canvas role.';
+				return submitBtn;
+			}
+
 			const _markDeleteBtn = modal.querySelector('#modal-mark-delete');
 			function _updateMarkDeleteButton() {
 				if (!_markDeleteBtn) {
@@ -229,7 +344,7 @@
 				const isLoaded = !!(rec && rec.loadedFromId);
 				const isTypeNode = !!(rec && rec.isTypeNode);
 				const isInaccessible = !!(rec && rec.isInaccessible);
-				if (!rec || !isLoaded || isTypeNode || isInaccessible) {
+				if (!canEditCanvasStructure() || !rec || !isLoaded || isTypeNode || isInaccessible) {
 					_markDeleteBtn.hidden = true;
 					return;
 				}
@@ -249,6 +364,11 @@
 			}
 			if (_markDeleteBtn) {
 				_markDeleteBtn.addEventListener('click', async () => {
+					if (!canEditCanvasStructure()) {
+						_markDeleteBtn.hidden = true;
+						showBulkToast('Only the canvas owner or an editor can mark records for deletion.', 'info');
+						return;
+					}
 					const rec = canvasState.currentRecordRef;
 					if (!rec || !rec.loadedFromId) {
 						return;
@@ -283,7 +403,7 @@
 				if (!body) {
 					return;
 				}
-				const dirs = ['nw', 'ne', 'sw', 'se'];
+				const dirs = ['n', 'e', 's', 'w', 'nw', 'ne', 'sw', 'se'];
 				dirs.forEach((dir) => {
 					const h = document.createElement('div');
 					h.className = 'inline-resize-handle inline-resize-handle--' + dir;
@@ -299,14 +419,15 @@
 				const startY = ev.clientY;
 				const startW = body.offsetWidth;
 				const startH = body.offsetHeight;
-				const minW = 320;
-				const minH = 280;
-				const maxW = window.innerWidth * 0.9;
-				const maxH = window.innerHeight * 0.9;
 				modal.classList.add('is-resizing');
 				const onMove = (mev) => {
 					const dx = mev.clientX - startX;
 					const dy = mev.clientY - startY;
+					const bounds = _getInlineUsableBounds(_getCyContainer && _getCyContainer());
+					const maxW = bounds.width;
+					const maxH = bounds.height;
+					const minW = Math.min(320, maxW);
+					const minH = Math.min(280, maxH);
 					let newW = startW;
 					let newH = startH;
 					if (dir.indexOf('e') >= 0) {
@@ -326,6 +447,9 @@
 					modal.style.setProperty('--inline-width', newW + 'px');
 					modal.style.setProperty('--inline-height', newH + 'px');
 					_syncCyNodeSizeToModal();
+					if (_inlineCyNode && _getCyInstance && _getCyContainer) {
+						_inlinePinToNode(_getCyInstance(), _inlineCyNode, _getCyContainer());
+					}
 				};
 				const onUp = () => {
 					modal.classList.remove('is-resizing');
@@ -343,6 +467,66 @@
 			let _inlineOutsideClickHandler = null; // doc-level click-outside listener (inline mode only)
 			let _inlineRenderHandler = null; // cy render listener ref for un-binding
 			let _inlineSelectObserver = null; // MutationObserver mirroring card.selected → modal.is-selected
+			let _inlineBoundsObserver = null;
+			let _inlineViewportHandler = null;
+
+			function _getInlineUsableBounds(container) {
+				const margin = 10;
+				const viewportRight = Math.max(margin + 1, window.innerWidth - margin);
+				const viewportBottom = Math.max(margin + 1, window.innerHeight - margin);
+				const rect = container && container.getBoundingClientRect ? container.getBoundingClientRect() : null;
+				let left = Math.max(margin, rect && rect.width > 0 ? rect.left + margin : margin);
+				let top = Math.max(margin, rect && rect.height > 0 ? rect.top + margin : margin);
+				let right = Math.min(viewportRight, rect && rect.width > 0 ? rect.right - margin : viewportRight);
+				let bottom = Math.min(viewportBottom, rect && rect.height > 0 ? rect.bottom - margin : viewportBottom);
+				if (right <= left) {
+					left = margin;
+					right = viewportRight;
+				}
+				if (bottom <= top) {
+					top = margin;
+					bottom = viewportBottom;
+				}
+				return {
+					left,
+					top,
+					right,
+					bottom,
+					width: Math.max(1, right - left),
+					height: Math.max(1, bottom - top),
+				};
+			}
+
+			function _fitInlineModalToBounds(body, container) {
+				if (!body) {
+					return;
+				}
+				const bounds = _getInlineUsableBounds(container);
+				const width = Math.max(Math.min(320, bounds.width), Math.min(body.offsetWidth || 460, bounds.width));
+				const height = Math.max(
+					Math.min(280, bounds.height),
+					Math.min(body.offsetHeight || 600, bounds.height),
+				);
+				modal.style.setProperty('--inline-max-width', Math.floor(bounds.width) + 'px');
+				modal.style.setProperty('--inline-max-height', Math.floor(bounds.height) + 'px');
+				modal.style.setProperty('--inline-width', Math.floor(width) + 'px');
+				modal.style.setProperty('--inline-height', Math.floor(height) + 'px');
+			}
+
+			function _refreshInlineBounds() {
+				if (!modal.classList.contains('is-inline') || !_inlineCyNode || !_getCyInstance || !_getCyContainer) {
+					return;
+				}
+				const cy = _getCyInstance();
+				const container = _getCyContainer();
+				if (!cy || !container) {
+					return;
+				}
+				_fitInlineModalToBounds(modal.querySelector('.modal-body'), container);
+				_syncCyNodeSizeToModal();
+				_inlinePinToNode(cy, _inlineCyNode, container);
+			}
+
 			function _enterInlineMode(rec) {
 				if (!_getCyInstance || !_getCyContainer) {
 					return false;
@@ -362,6 +546,7 @@
 				const _body = modal.querySelector('.modal-body');
 				if (_body) {
 					_body.setAttribute('data-inline-rec-id', String(rec.id));
+					_fitInlineModalToBounds(_body, container);
 				}
 				cyNode.data('_inlineLocked', true);
 				_syncCyNodeSizeToModal();
@@ -379,6 +564,12 @@
 					attributes: true,
 					attributeFilter: ['class'],
 				});
+				_inlineViewportHandler = _refreshInlineBounds;
+				window.addEventListener('resize', _inlineViewportHandler);
+				if (typeof ResizeObserver === 'function') {
+					_inlineBoundsObserver = new ResizeObserver(_refreshInlineBounds);
+					_inlineBoundsObserver.observe(container);
+				}
 				_syncSelected();
 				const header = modal.querySelector('.modal-header');
 				if (header) {
@@ -386,6 +577,9 @@
 				}
 				_inlineOutsideClickHandler = (ev) => {
 					if (!modal.classList.contains('is-inline')) {
+						return;
+					}
+					if (_getCyPendingEdge && _getCyPendingEdge()) {
 						return;
 					}
 					const t = ev.target;
@@ -443,28 +637,22 @@
 				const body = modal.querySelector('.modal-body');
 				const bodyW = body ? body.offsetWidth : 460;
 				const bodyH = body ? body.offsetHeight : 600;
-				const vpW = window.innerWidth;
-				const vpH = window.innerHeight;
-				const margin = 8;
+				const bounds = _getInlineUsableBounds(container);
 				const halfW = bodyW / 2;
 				const halfH = bodyH / 2;
-				if (left - halfW < margin) {
-					left = margin + halfW;
-				}
-				if (left + halfW > vpW - margin) {
-					left = vpW - margin - halfW;
-				}
-				if (top - halfH < margin) {
-					top = margin + halfH;
-				}
-				if (top + halfH > vpH - margin) {
-					top = vpH - margin - halfH;
-				}
+				const minLeft = bounds.left + halfW;
+				const maxLeft = bounds.right - halfW;
+				const minTop = bounds.top + halfH;
+				const maxTop = bounds.bottom - halfH;
+				left =
+					minLeft <= maxLeft ? Math.max(minLeft, Math.min(maxLeft, left)) : (bounds.left + bounds.right) / 2;
+				top = minTop <= maxTop ? Math.max(minTop, Math.min(maxTop, top)) : (bounds.top + bounds.bottom) / 2;
 				modal.style.setProperty('--inline-left', left + 'px');
 				modal.style.setProperty('--inline-top', top + 'px');
 			}
 			function _attachInlineDrag(header, cy, cyNode, container) {
 				let dragging = false;
+				let didMove = false;
 				let startClientX = 0;
 				let startClientY = 0;
 				let startNodeX = 0;
@@ -474,6 +662,7 @@
 						return;
 					}
 					dragging = true;
+					didMove = false;
 					startClientX = ev.clientX;
 					startClientY = ev.clientY;
 					const pos = cyNode.position();
@@ -491,6 +680,7 @@
 					const zoom = cy.zoom() || 1;
 					const dx = (ev.clientX - startClientX) / zoom;
 					const dy = (ev.clientY - startClientY) / zoom;
+					didMove = didMove || dx !== 0 || dy !== 0;
 					cyNode.position({ x: startNodeX + dx, y: startNodeY + dy });
 					const rec = canvasState.bulkRecords.find((r) => r.id === _inlineRecId);
 					if (rec) {
@@ -499,10 +689,15 @@
 					}
 				};
 				const onUp = () => {
+					const movedRec = didMove && canvasState.bulkRecords.find((record) => record.id === _inlineRecId);
 					dragging = false;
+					didMove = false;
 					modal.classList.remove('is-dragging');
 					document.removeEventListener('mousemove', onMove);
 					document.removeEventListener('mouseup', onUp);
+					if (movedRec) {
+						publishPresenceLayout([movedRec]);
+					}
 				};
 				header.addEventListener('mousedown', onDown);
 				header._inlineDragOnDown = onDown;
@@ -517,6 +712,8 @@
 				modal.style.removeProperty('--inline-top');
 				modal.style.removeProperty('--inline-width');
 				modal.style.removeProperty('--inline-height');
+				modal.style.removeProperty('--inline-max-width');
+				modal.style.removeProperty('--inline-max-height');
 				if (_inlineRenderHandler && _getCyInstance) {
 					const cy = _getCyInstance();
 					try {
@@ -531,6 +728,16 @@
 						_inlineSelectObserver.disconnect();
 					} catch (_) {}
 					_inlineSelectObserver = null;
+				}
+				if (_inlineBoundsObserver) {
+					try {
+						_inlineBoundsObserver.disconnect();
+					} catch (_) {}
+					_inlineBoundsObserver = null;
+				}
+				if (_inlineViewportHandler) {
+					window.removeEventListener('resize', _inlineViewportHandler);
+					_inlineViewportHandler = null;
 				}
 				modal.classList.remove('is-selected');
 				const header = modal.querySelector('.modal-header');
@@ -597,10 +804,11 @@
 			let currentRecordTypes = []; // [{ id, name, label, isDefault }] for the open object
 			let currentRecordTypeId = null; // selected record type id; filters picklist values
 			let currentLayout = null; // { sections: [...], available: bool } from /api/objects/:name/layout
+			let currentLayoutMode = null;
 			const layoutCache = {}; // keyed by `${objectName}|${recordTypeId || ''}|${recordId || 'new'}`
 			const _prefetchedLayoutKeys = new Set();
-			function _layoutCacheKey(objectName, recordTypeId, recordId) {
-				return objectName + '|' + (recordTypeId || '') + '|' + (recordId || 'new');
+			function _layoutCacheKey(objectName, recordTypeId, recordId, mode) {
+				return objectName + '|' + (recordTypeId || '') + '|' + (recordId || 'new') + '|' + (mode || '');
 			}
 			function _prefetchLayoutForRecord(rec) {
 				if (!rec || !rec.objectName || rec.isTypeNode) {
@@ -608,15 +816,17 @@
 				}
 				const rt = (rec.values && rec.values.RecordTypeId) || null;
 				const recId = rec.loadedFromId || null;
-				const key = _layoutCacheKey(rec.objectName, rt, recId);
+				const role = getCanvasShareRole();
+				const mode = sharedDraftLayoutMode(role, rec, _slotAssignmentState(rec));
+				const key = _layoutCacheKey(rec.objectName, rt, recId, mode);
 				if (_prefetchedLayoutKeys.has(key)) {
 					return;
 				}
 				_prefetchedLayoutKeys.add(key);
-				fetchEditLayout(rec.objectName, rt, recId).catch(() => {});
+				fetchEditLayout(rec.objectName, rt, recId, mode).catch(() => {});
 			}
-			async function fetchEditLayout(objectName, recordTypeId, recordId) {
-				const key = _layoutCacheKey(objectName, recordTypeId, recordId);
+			async function fetchEditLayout(objectName, recordTypeId, recordId, mode) {
+				const key = _layoutCacheKey(objectName, recordTypeId, recordId, mode);
 				if (layoutCache[key]) {
 					return layoutCache[key];
 				}
@@ -627,6 +837,9 @@
 				if (recordId) {
 					params.set('recordId', recordId);
 				}
+				if (mode) {
+					params.set('mode', mode);
+				}
 				const url =
 					'/api/objects/' +
 					encodeURIComponent(objectName) +
@@ -635,20 +848,24 @@
 				try {
 					const r = await csrfFetch(url, { credentials: 'same-origin' });
 					if (!r.ok) {
-						layoutCache[key] = { sections: [], available: false };
-						return layoutCache[key];
+						return { sections: [], available: false };
 					}
 					const data = await r.json();
-					layoutCache[key] = data && data.sections ? data : { sections: [], available: false };
-					return layoutCache[key];
-				} catch (e) {
-					layoutCache[key] = { sections: [], available: false };
-					return layoutCache[key];
+					const result = data && data.sections ? data : { sections: [], available: false };
+					if (result.available) {
+						layoutCache[key] = result;
+					}
+					return result;
+				} catch (_error) {
+					return { sections: [], available: false };
 				}
 			}
 			let currentFormValues = {};
 			const sectionCollapsed = { optional: true, rules: true };
 			let modalEditMode = 'new';
+			const guidedTouchedFields = new Set();
+			const guidedCompletedFields = new Set();
+			let guidedAdvanceTimer = null;
 
 			var _formula = (window.OrgLoom && window.OrgLoom.formula) || null;
 			if (!_formula) {
@@ -857,8 +1074,185 @@
 				}
 			}
 
+			function _guidedRequestedFieldNames() {
+				const record = canvasState.currentRecordRef;
+				if (
+					getCanvasShareRole() !== 'contributor' ||
+					!record ||
+					!record._recipientSlot ||
+					!record.slot ||
+					(record.slot.kind || 'whole-record') !== 'fields' ||
+					_slotAssignmentState(record) === 'other'
+				) {
+					return [];
+				}
+				return Array.isArray(record.slot.fields) ? record.slot.fields : [];
+			}
+
+			function _guidedFieldControl(field) {
+				if (!field) {
+					return null;
+				}
+				return field.querySelector(
+					'input:not([type="hidden"]):not([disabled]):not([hidden]), ' +
+						'textarea:not([disabled]):not([hidden]), ' +
+						'select:not([disabled]):not([hidden]), ' +
+						'.lookup-clear:not([disabled]):not([hidden])',
+				);
+			}
+
+			function _guidedFieldState(field) {
+				if (!field) {
+					return null;
+				}
+				const fieldName = field.dataset.field;
+				const fieldType = field.dataset.type;
+				const touched = guidedTouchedFields.has(fieldName);
+				if (fieldType === 'boolean') {
+					const control = field.querySelector('input[type="checkbox"]');
+					return {
+						touched,
+						valid: !control || typeof control.checkValidity !== 'function' || control.checkValidity(),
+						value: control ? control.checked : false,
+					};
+				}
+				if (fieldType === 'multipicklist') {
+					const control = field.querySelector('select');
+					return {
+						touched,
+						valid: !control || typeof control.checkValidity !== 'function' || control.checkValidity(),
+						values: control
+							? Array.from(control.selectedOptions)
+									.map((option) => option.value)
+									.filter(Boolean)
+							: [],
+					};
+				}
+				const control =
+					fieldType === 'reference'
+						? field.querySelector('input[type="hidden"]')
+						: field.querySelector('input:not([type="hidden"]), textarea, select');
+				return {
+					touched,
+					valid: !control || typeof control.checkValidity !== 'function' || control.checkValidity(),
+					value: control ? control.value : '',
+				};
+			}
+
+			function _updateGuidedFieldCompletion(field) {
+				if (!field || !field.classList.contains('is-slot-field')) {
+					return false;
+				}
+				const fieldName = field.dataset.field;
+				if (!_guidedRequestedFieldNames().includes(fieldName)) {
+					return false;
+				}
+				guidedTouchedFields.add(fieldName);
+				const complete = isGuidedFieldComplete(field.dataset.type, _guidedFieldState(field));
+				if (complete) {
+					guidedCompletedFields.add(fieldName);
+				} else {
+					guidedCompletedFields.delete(fieldName);
+				}
+				return complete;
+			}
+
+			function _scrollTaskFieldIntoView(field) {
+				const scroller = modal.querySelector('#modal-content');
+				const reduceMotion =
+					typeof window.matchMedia === 'function' &&
+					window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+				if (!scroller || typeof scroller.scrollTo !== 'function') {
+					field.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+					return;
+				}
+				const fieldRect = field.getBoundingClientRect();
+				const scrollerRect = scroller.getBoundingClientRect();
+				const targetTop =
+					scroller.scrollTop +
+					fieldRect.top -
+					scrollerRect.top -
+					Math.max(0, (scroller.clientHeight - fieldRect.height) / 2);
+				scroller.scrollTo({
+					top: Math.max(0, targetTop),
+					behavior: reduceMotion ? 'auto' : 'smooth',
+				});
+			}
+
+			function focusTaskField(fieldName) {
+				if (!fieldName) {
+					return;
+				}
+				window.requestAnimationFrame(() => {
+					const field = modal.querySelector('.field[data-field="' + CSS.escape(fieldName) + '"]');
+					if (!field) {
+						return;
+					}
+					const section = field.closest('.field-section.collapsible');
+					if (section && section.classList.contains('collapsed')) {
+						section.classList.remove('collapsed');
+						const key = section.dataset.section;
+						if (key && key in sectionCollapsed) {
+							sectionCollapsed[key] = false;
+						}
+					}
+					field.classList.add('field--task-focus');
+					_scrollTaskFieldIntoView(field);
+					const control = _guidedFieldControl(field);
+					if (control) {
+						control.focus({ preventScroll: true });
+					}
+					setTimeout(() => field.classList.remove('field--task-focus'), 1800);
+				});
+			}
+
+			function _nextIncompleteGuidedField(fieldName) {
+				const requested = new Set(_guidedRequestedFieldNames());
+				const ordered = Array.from(modal.querySelectorAll('.field.is-slot-field')).filter((field) => {
+					const name = field.dataset.field;
+					return requested.has(name) && !!_guidedFieldControl(field);
+				});
+				const currentIndex = ordered.findIndex((field) => field.dataset.field === fieldName);
+				if (currentIndex < 0) {
+					return null;
+				}
+				const afterCurrent = ordered.slice(currentIndex + 1).concat(ordered.slice(0, currentIndex));
+				return afterCurrent.find((field) => !guidedCompletedFields.has(field.dataset.field)) || null;
+			}
+
+			function _scheduleGuidedAdvance(fieldName, sourceControl, allowSourceFocus) {
+				if (guidedAdvanceTimer) {
+					clearTimeout(guidedAdvanceTimer);
+				}
+				guidedAdvanceTimer = setTimeout(() => {
+					guidedAdvanceTimer = null;
+					if (modal.classList.contains('hidden') || !guidedCompletedFields.has(fieldName)) {
+						return;
+					}
+					const active = document.activeElement;
+					if (
+						active &&
+						active !== document.body &&
+						active !== modal &&
+						(!allowSourceFocus || active !== sourceControl)
+					) {
+						return;
+					}
+					const next = _nextIncompleteGuidedField(fieldName);
+					if (next) {
+						focusTaskField(next.dataset.field);
+					}
+				}, 0);
+			}
+
 			function openInsertModal(objectName, opts) {
 				opts = opts || {};
+				guidedTouchedFields.clear();
+				guidedCompletedFields.clear();
+				if (guidedAdvanceTimer) {
+					clearTimeout(guidedAdvanceTimer);
+					guidedAdvanceTimer = null;
+				}
 				currentObject = objectName;
 				canvasState.currentRecordRef = opts.record || null;
 				currentFields = [];
@@ -869,15 +1263,17 @@
 				sectionCollapsed.rules = true;
 				modalEditMode =
 					canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId ? 'existing' : 'new';
+				currentLayoutMode = sharedDraftLayoutMode(
+					getCanvasShareRole(),
+					canvasState.currentRecordRef,
+					_slotAssignmentState(canvasState.currentRecordRef),
+				);
 				_exitInlineMode();
 				modal.classList.remove('hidden');
-				if (canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId) {
+				const presenceFocus = _presenceFocusForRecord(canvasState.currentRecordRef);
+				if (presenceFocus) {
 					try {
-						pushPresenceFocus({
-							kind: 'record',
-							ref: canvasState.currentRecordRef.loadedFromId,
-							objectName: canvasState.currentRecordRef.objectName,
-						});
+						pushPresenceFocus(presenceFocus);
 					} catch (_) {
 						/* presence is best-effort */
 					}
@@ -886,21 +1282,31 @@
 					_enterInlineMode(opts.record);
 				}
 				modal.querySelector('#modal-title').textContent = 'Loading ' + objectName + '…';
-				modal.querySelector('#modal-submit').disabled = true;
+				_syncSubmitButtonAccess({ loading: true });
 				modal.querySelector('#modal-content').innerHTML = '<p class="center">Loading fields…</p>';
 				_updateMarkDeleteButton();
 
 				const encoded = encodeURIComponent(objectName);
 				// Fields and validation rules load together so the first render is internally consistent.
-				const describePromise = ensureDescribe(objectName);
-				const rulesPromise = csrfFetch('/api/objects/' + encoded + '/validation-rules').then((r) =>
-					r.ok ? r.json() : [],
+				const sharedDraft = !!(
+					getCanvasShareRole() &&
+					canvasState.currentRecordRef &&
+					!canvasState.currentRecordRef.loadedFromId
 				);
-
+				const sharedSnapshot =
+					sharedDraft && canvasState.draftDescribeCache && canvasState.draftDescribeCache[objectName];
+				const describePromise = sharedDraft
+					? resolveSharedDraftDescribe(ensureDescribe, objectName, sharedSnapshot)
+					: ensureDescribe(objectName);
+				const rulesPromise = sharedDraft
+					? Promise.resolve([])
+					: csrfFetch('/api/objects/' + encoded + '/validation-rules')
+							.then((r) => (r.ok ? r.json() : []))
+							.catch(() => []);
 				Promise.all([describePromise, rulesPromise])
 					.then(([describe, rules]) => {
 						// Describe metadata, not hard-coded object rules, determines what this user may edit.
-						currentFields = describe.fields;
+						currentFields = describe.fields || [];
 						currentRecordTypes = describe.recordTypes || [];
 						const draftRt =
 							canvasState.currentRecordRef &&
@@ -976,7 +1382,7 @@
 						}
 						_updateMarkDeleteButton();
 						const recId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
-						return fetchEditLayout(currentObject, currentRecordTypeId, recId)
+						return fetchEditLayout(currentObject, currentRecordTypeId, recId, currentLayoutMode)
 							.then((layout) => {
 								currentLayout = layout;
 								if (layout && layout.picklistValues && currentFields) {
@@ -998,14 +1404,11 @@
 								currentLayout = null;
 							})
 							.then(() => {
-								renderForm();
+								renderForm('');
 								wireLiveValidation();
-								const submitBtn = modal.querySelector('#modal-submit');
-								submitBtn.disabled = false;
-								if (getCanvasShareRole() === 'viewer') {
-									submitBtn.disabled = true;
-									submitBtn.title = 'View only: you can’t make changes to this canvas.';
-								} else if (
+								const submitBtn = _syncSubmitButtonAccess();
+								if (
+									!submitBtn.hidden &&
 									canvasState.currentRecordRef &&
 									canvasState.currentRecordRef._recipientSlot &&
 									_slotAssignmentState(canvasState.currentRecordRef) === 'other'
@@ -1033,6 +1436,7 @@
 									}
 									evaluateAllRules();
 								}
+								focusTaskField(opts.focusField);
 							});
 					})
 					.catch((err) => {
@@ -1042,6 +1446,10 @@
 			}
 
 			function closeModal() {
+				if (guidedAdvanceTimer) {
+					clearTimeout(guidedAdvanceTimer);
+					guidedAdvanceTimer = null;
+				}
 				_exitInlineMode();
 				modal.classList.add('hidden');
 				currentObject = null;
@@ -1049,6 +1457,7 @@
 				canvasState.currentRecordRef = null;
 				currentRecordTypes = [];
 				currentRecordTypeId = null;
+				currentLayoutMode = null;
 				try {
 					pushPresenceFocus(null);
 				} catch (_) {
@@ -1059,7 +1468,35 @@
 			function renderForm(banner) {
 				const byLabel = (a, b) => a.label.localeCompare(b.label);
 				const isCompound = (f) => f && (f.type === 'address' || f.type === 'location');
-				const isWritable = (f) => (modalEditMode === 'new' ? !!f.createable : !!f.updateable);
+				const recipientRecord = canvasState.currentRecordRef;
+				const recipientSlot = recipientRecord && recipientRecord._recipientSlot ? recipientRecord.slot : null;
+				const recipientSlotFields =
+					recipientSlot && (recipientSlot.kind || 'whole-record') === 'fields'
+						? new Set(Array.isArray(recipientSlot.fields) ? recipientSlot.fields : [])
+						: null;
+				const shareRole = getCanvasShareRole();
+				const recipientCanEdit = canEditCurrentRecord();
+				const salesforceFieldWritable = (field) =>
+					modalEditMode === 'new' ? !!field.createable : !!field.updateable;
+				const contributorCanPropose = (field) => {
+					if (shareRole !== 'contributor' || !recipientCanEdit || !recipientSlot || !field || !field.name) {
+						return false;
+					}
+					const requested = !recipientSlotFields || recipientSlotFields.has(field.name);
+					if (!requested) {
+						return false;
+					}
+					return salesforceFieldWritable(field);
+				};
+				const isWritable = (field) => {
+					if (shareRole === 'viewer') {
+						return false;
+					}
+					if (shareRole === 'contributor') {
+						return contributorCanPropose(field);
+					}
+					return salesforceFieldWritable(field);
+				};
 				const partialFieldSet =
 					canvasState.currentRecordRef && Array.isArray(canvasState.currentRecordRef._loadedFieldNames)
 						? new Set(canvasState.currentRecordRef._loadedFieldNames)
@@ -1074,14 +1511,20 @@
 				};
 				const regular = currentFields.filter(
 					(f) =>
-						f.name !== 'RecordTypeId' &&
+						!(f.name === 'RecordTypeId' && currentRecordTypes.length > 1) &&
 						!isCompound(f) &&
 						!isStateCountryTextLegacy(f) &&
-						isWritable(f) &&
 						inPartial(f.name),
 				);
-				const required = regular.filter((f) => f.required).sort(byLabel);
-				const optional = regular.filter((f) => !f.required).sort(byLabel);
+				const writable = regular.filter(isWritable);
+				const visibleFields =
+					modalEditMode === 'new'
+						? recipientCanEdit
+							? writable
+							: regular.filter(salesforceFieldWritable)
+						: regular;
+				const required = writable.filter((f) => f.required).sort(byLabel);
+				const additional = visibleFields.filter((f) => !f.required || !isWritable(f)).sort(byLabel);
 
 				const slotFieldNames = (() => {
 					const rec = canvasState.currentRecordRef;
@@ -1117,8 +1560,8 @@
 					canvasState.currentRecordRef._recipientSlot &&
 					_slotAssignmentState(canvasState.currentRecordRef) === 'other'
 				);
-				const viewerReadOnly = getCanvasShareRole() === 'viewer';
-				const forceReadOnly = slotAssignedToOther || viewerReadOnly;
+				const viewerReadOnly = shareRole === 'viewer';
+				const forceReadOnly = !recipientCanEdit || slotAssignedToOther;
 
 				let html = banner ? banner : '';
 				if (isPartialLoad) {
@@ -1135,156 +1578,54 @@
 						'To edit other fields, re-import via SOQL with <strong>Load all fields</strong> checked.' +
 						'</div>';
 				}
-				const _bannerProgressChip = (() => {
-					if (!slotFieldNames || slotFieldNames.size === 0) {
-						return '';
-					}
-					const sp = _slotProgress(canvasState.currentRecordRef);
-					if (!sp) {
-						return '';
-					}
-					return (
-						' <span class="slot-progress ' +
-						_slotProgressClass(sp) +
-						'">' +
-						sp.filled +
-						'/' +
-						sp.total +
-						'</span>'
-					);
-				})();
-				const _bannerLastModifiedHtml = (() => {
-					if (!slotFieldNames || slotFieldNames.size === 0) {
-						return '';
-					}
-					if (!canvasState.currentRecordRef || !canvasState.currentRecordRef.loadedFromId) {
-						return '';
-					}
-					const v = canvasState.currentRecordRef.values || {};
-					const when = v.LastModifiedDate;
-					if (!when) {
-						return '';
-					}
-					const rel = _formatRelativeTime(when);
-					const abs = new Date(when).toLocaleString();
-					const userId = v.LastModifiedById || '';
-					const userAttr = userId ? ' data-slot-lastmod-userid="' + escapeHtml(userId) + '"' : '';
-					return (
-						'<div class="slot-lastmod"' +
-						userAttr +
-						' title="' +
-						escapeHtml(abs) +
-						'">' +
-						'Last modified <span>' +
-						escapeHtml(rel) +
-						'</span>' +
-						(userId ? ' by <span data-user-placeholder>…</span>' : '') +
-						'</div>'
-					);
-				})();
-				if (slotAssignedToOther) {
-					const who =
-						(canvasState.currentRecordRef.slot &&
-							(canvasState.currentRecordRef.slot.assigneeName ||
-								canvasState.currentRecordRef.slot.assigneeEmail)) ||
-						'another teammate';
-					html +=
-						'<div class="banner info slot-banner">' +
-						'<strong>Reserved for ' +
-						escapeHtml(who) +
-						'.</strong>' +
-						_bannerProgressChip +
-						' ' +
-						'Only the assigned teammate can fill this slot; everything is read-only for you.' +
-						_bannerLastModifiedHtml +
-						'</div>';
-				} else if (viewerReadOnly && slotFieldNames && slotFieldNames.size > 0) {
-					html +=
-						'<div class="banner info slot-banner">' +
-						'<strong>View only.</strong>' +
-						_bannerProgressChip +
-						' ' +
-						'These fields were marked as slots, but this canvas was shared with you as view-only; they’re read-only for you.' +
-						_bannerLastModifiedHtml +
-						'</div>';
-				} else if (slotLockNonSlot) {
-					const count = slotFieldNames.size;
-					const inaccessible = slotFieldsInaccessible;
-					const fillable = count - inaccessible;
-					const sp = _slotProgress(canvasState.currentRecordRef) || { filled: 0, total: count };
-					const hiddenNote =
-						inaccessible > 0
-							? ' <strong>' +
-								inaccessible +
-								' slot field' +
-								(inaccessible === 1 ? '' : 's') +
-								' ' +
-								(inaccessible === 1 ? 'isn’t' : 'aren’t') +
-								' shown</strong>: ' +
-								(inaccessible === 1 ? "it's" : "they're") +
-								' hidden by field-level security or read-only for your Salesforce user, so ' +
-								(inaccessible === 1 ? "it can't" : "they can't") +
-								' be filled here.'
-							: '';
-					if (fillable <= 0) {
+				if (!viewerReadOnly) {
+					if (slotAssignedToOther) {
+						const who =
+							(canvasState.currentRecordRef.slot &&
+								(canvasState.currentRecordRef.slot.assigneeName ||
+									canvasState.currentRecordRef.slot.assigneeEmail)) ||
+							'another teammate';
 						html +=
-							'<div class="banner warn slot-banner">' +
-							'<strong>' +
-							(count === 1
-								? 'The field marked for you isn’t'
-								: 'None of the ' + count + ' fields marked for you are') +
-							' available to your Salesforce user.</strong>' +
-							_bannerProgressChip +
-							' ' +
-							(count === 1 ? "It's" : "They're") +
-							' hidden by field-level security or read-only for you, so this slot can’t be filled. ' +
-							'Ask the sender or your Salesforce admin for access.' +
-							_bannerLastModifiedHtml +
+							'<div class="banner info slot-banner">' +
+							'<strong>Reserved for ' +
+							escapeHtml(who) +
+							'.</strong> ' +
+							'Only the assigned teammate can complete this field request; everything is read-only for you.' +
 							'</div>';
-					} else {
-						const lead =
-							sp.filled === sp.total
-								? 'All ' + sp.total + ' slot field' + (sp.total === 1 ? '' : 's') + ' filled.'
-								: sp.filled +
-									' of ' +
-									sp.total +
-									' slot field' +
-									(sp.total === 1 ? '' : 's') +
-									' filled.';
-						html +=
-							'<div class="banner ' +
-							(inaccessible > 0 ? 'warn' : 'info') +
-							' slot-banner">' +
-							'<strong>' +
-							lead +
-							'</strong>' +
-							_bannerProgressChip +
-							' ' +
-							'Update the highlighted field' +
-							(fillable === 1 ? '' : 's') +
-							'; the rest of the record is read-only.' +
-							hiddenNote +
-							_bannerLastModifiedHtml +
-							'</div>';
+					} else if (slotLockNonSlot) {
+						const count = slotFieldNames.size;
+						const inaccessible = slotFieldsInaccessible;
+						const fillable = count - inaccessible;
+						const hiddenNote =
+							inaccessible > 0
+								? ' <strong>' +
+									inaccessible +
+									' requested field' +
+									(inaccessible === 1 ? '' : 's') +
+									' ' +
+									(inaccessible === 1 ? 'isn’t' : 'aren’t') +
+									' shown</strong>: ' +
+									(inaccessible === 1 ? "it's" : "they're") +
+									' hidden by field-level security or read-only for your Salesforce user, so ' +
+									(inaccessible === 1 ? "it can't" : "they can't") +
+									' be filled here.'
+								: '';
+						if (fillable <= 0) {
+							html +=
+								'<div class="banner warn slot-banner">' +
+								'<strong>' +
+								(count === 1
+									? 'The field marked for you isn’t'
+									: 'None of the ' + count + ' fields marked for you are') +
+								' available to your Salesforce user.</strong> ' +
+								(count === 1 ? "It's" : "They're") +
+								' hidden by field-level security or read-only for you, so this field request can’t be completed. ' +
+								'Ask the sender or your Salesforce admin for access.' +
+								'</div>';
+						} else if (inaccessible > 0) {
+							html += '<div class="banner warn slot-banner">' + hiddenNote + '</div>';
+						}
 					}
-				} else if (slotFieldNames && slotFieldNames.size > 0) {
-					const count = slotFieldNames.size;
-					html +=
-						'<div class="banner info slot-banner">' +
-						'<strong>' +
-						count +
-						' field' +
-						(count === 1 ? '' : 's') +
-						' marked as slot' +
-						(count === 1 ? '' : 's') +
-						'.</strong>' +
-						_bannerProgressChip +
-						' ' +
-						'Recipients of this canvas will only be able to update ' +
-						(count === 1 ? 'that field' : 'those fields') +
-						'.' +
-						_bannerLastModifiedHtml +
-						'</div>';
 				}
 				html += '<form id="insert-form">';
 
@@ -1306,12 +1647,19 @@
 							escapeHtml(loadedId) +
 							'</code></a>'
 						: '<code>' + escapeHtml(loadedId) + '</code>';
+					const existingRecordMessage = !recipientCanEdit
+						? ': Read-only on this shared canvas.</span>'
+						: shareRole === 'contributor'
+							? ': Your changes will be submitted to the canvas owner for review.</span>'
+							: ': Upload will update it in Salesforce.</span>';
 					html +=
 						'<div class="edit-mode-existing-banner">' +
 						'<span>Editing existing record ' +
 						idHtml +
-						': Upload will update it in Salesforce.</span>' +
-						'<button type="button" class="link-button" data-unlink-existing>Unlink</button>' +
+						existingRecordMessage +
+						(canEditCanvasStructure()
+							? '<button type="button" class="link-button" data-unlink-existing>Unlink</button>'
+							: '') +
 						'</div>';
 				}
 
@@ -1352,7 +1700,7 @@
 					currentFields.forEach((f) => {
 						fieldByName[f.name] = f;
 					});
-					const renderedNames = new Set(['RecordTypeId']);
+					const renderedNames = new Set(currentRecordTypes.length > 1 ? ['RecordTypeId'] : []);
 					currentLayout.sections.forEach((section) => {
 						const rowsHtml = section.rows
 							.map((row) => {
@@ -1371,14 +1719,16 @@
 										if (!inPartial(cell.apiName)) {
 											return '';
 										}
+										if (cell.apiName === 'RecordTypeId' && currentRecordTypes.length > 1) {
+											return '';
+										}
+										if (modalEditMode === 'new' && !isWritable(f)) {
+											return '';
+										}
 										renderedNames.add(cell.apiName);
-										const layoutEditable =
-											modalEditMode === 'new' ? cell.editableForNew : cell.editableForUpdate;
 										const isSlotField = !!(slotFieldNames && slotFieldNames.has(cell.apiName));
 										const readOnly =
-											!(layoutEditable && isWritable(f)) ||
-											forceReadOnly ||
-											(slotLockNonSlot && !isSlotField);
+											!isWritable(f) || forceReadOnly || (slotLockNonSlot && !isSlotField);
 										return (
 											'<div class="layout-cell">' +
 											renderFieldHtml(f, { readOnly, isSlotField }) +
@@ -1412,7 +1762,7 @@
 							'</div>' +
 							'</div>';
 					});
-					const remaining = regular.filter((f) => !renderedNames.has(f.name));
+					const remaining = visibleFields.filter((f) => !renderedNames.has(f.name));
 					if (remaining.length > 0) {
 						const optClass = sectionCollapsed.optional ? ' collapsed' : '';
 						html +=
@@ -1429,7 +1779,8 @@
 								.sort(byLabel)
 								.map((f) => {
 									const isSlotField = !!(slotFieldNames && slotFieldNames.has(f.name));
-									const readOnly = forceReadOnly || !!(slotLockNonSlot && !isSlotField);
+									const readOnly =
+										!isWritable(f) || forceReadOnly || !!(slotLockNonSlot && !isSlotField);
 									return renderFieldHtml(f, { readOnly, isSlotField });
 								})
 								.join('') +
@@ -1455,22 +1806,23 @@
 						'</div>' +
 						'</div>';
 
-					if (optional.length > 0) {
+					if (additional.length > 0) {
 						const optClass = sectionCollapsed.optional ? ' collapsed' : '';
 						html +=
 							'<div class="field-section collapsible' +
 							optClass +
 							'" data-section="optional">' +
-							'<div class="field-section-header" data-toggle>Optional <span class="count">(' +
-							optional.length +
+							'<div class="field-section-header" data-toggle>Additional fields <span class="count">(' +
+							additional.length +
 							')</span>' +
 							'<span class="chevron">\u25BC</span>' +
 							'</div>' +
 							'<div class="fields">' +
-							optional
+							additional
 								.map((f) => {
 									const isSlotField = !!(slotFieldNames && slotFieldNames.has(f.name));
-									const readOnly = forceReadOnly || !!(slotLockNonSlot && !isSlotField);
+									const readOnly =
+										!isWritable(f) || forceReadOnly || !!(slotLockNonSlot && !isSlotField);
 									return renderFieldHtml(f, { readOnly, isSlotField });
 								})
 								.join('') +
@@ -1708,21 +2060,6 @@
 
 				modal.querySelector('#modal-content').innerHTML = html;
 
-				modal.querySelectorAll('[data-slot-lastmod-userid]').forEach((el) => {
-					const userId = el.dataset.slotLastmodUserid;
-					const placeholder = el.querySelector('[data-user-placeholder]');
-					if (!userId || !placeholder) {
-						return;
-					}
-					_resolveUserName(userId).then((name) => {
-						if (!name) {
-							placeholder.textContent = 'unknown';
-							return;
-						}
-						placeholder.textContent = name;
-					});
-				});
-
 				modal.querySelectorAll('[data-toggle]').forEach((h) => {
 					h.addEventListener('click', () => {
 						const section = h.parentElement;
@@ -1736,6 +2073,14 @@
 				modal.querySelectorAll('[data-disconnect-assoc]').forEach((btn) => {
 					btn.addEventListener('click', (e) => {
 						e.preventDefault();
+						if (!canEditCanvasStructure()) {
+							btn.remove();
+							showBulkToast(
+								'Only the canvas owner or an editor can change record relationships.',
+								'info',
+							);
+							return;
+						}
 						const assocId = parseInt(btn.dataset.disconnectAssoc, 10);
 						deleteAssociation(assocId);
 						rerenderFormPreservingValues();
@@ -1745,6 +2090,11 @@
 				const unlinkBtn = modal.querySelector('[data-unlink-existing]');
 				if (unlinkBtn) {
 					unlinkBtn.addEventListener('click', async () => {
+						if (!canEditCanvasStructure()) {
+							unlinkBtn.remove();
+							showBulkToast('Only the canvas owner or an editor can unlink records.', 'info');
+							return;
+						}
 						const record = canvasState.currentRecordRef;
 						if (!record) {
 							return;
@@ -1773,7 +2123,7 @@
 					rtSelect.addEventListener('change', () => {
 						currentRecordTypeId = rtSelect.value;
 						const recId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
-						fetchEditLayout(currentObject, currentRecordTypeId, recId)
+						fetchEditLayout(currentObject, currentRecordTypeId, recId, currentLayoutMode)
 							.then((layout) => {
 								currentLayout = layout;
 							})
@@ -2034,9 +2384,23 @@
 					if (div) {
 						div.classList.remove('field-invalid-ref');
 					}
+					const guidedField = e.target.closest && e.target.closest('.field.is-slot-field');
+					if (guidedField) {
+						_updateGuidedFieldCompletion(guidedField);
+					}
 					evaluateAllRules();
 				});
 				form.addEventListener('change', (e) => {
+					const guidedField = e.target.closest && e.target.closest('.field.is-slot-field');
+					const guidedComplete = guidedField && _updateGuidedFieldCompletion(guidedField);
+					if (
+						guidedComplete &&
+						(e.target.tagName === 'SELECT' ||
+							guidedField.dataset.type === 'boolean' ||
+							guidedField.dataset.type === 'reference')
+					) {
+						_scheduleGuidedAdvance(guidedField.dataset.field, e.target, true);
+					}
 					evaluateAllRules();
 					if (e.target.tagName !== 'SELECT') {
 						return;
@@ -2057,6 +2421,20 @@
 						return;
 					}
 					rerenderFormPreservingValues();
+				});
+				form.addEventListener('focusout', (e) => {
+					const guidedField = e.target.closest && e.target.closest('.field.is-slot-field');
+					if (
+						!guidedField ||
+						e.target.tagName === 'SELECT' ||
+						guidedField.dataset.type === 'boolean' ||
+						guidedField.dataset.type === 'reference'
+					) {
+						return;
+					}
+					if (_updateGuidedFieldCompletion(guidedField)) {
+						_scheduleGuidedAdvance(guidedField.dataset.field, e.target, false);
+					}
 				});
 				evaluateAllRules();
 			}
@@ -2216,7 +2594,7 @@
 				const isSlotField = !!(opts && opts.isSlotField);
 				const req = f.required ? '<span class="req" title="Required">*</span>' : '';
 				const slotBadge = isSlotField
-					? ' <span class="meta meta-slot" title="The author marked this field as a slot for you to fill in.">slot</span>'
+					? ' <span class="meta meta-slot" title="The author requested that a contributor complete this field.">requested</span>'
 					: '';
 				const roBadge = readOnly
 					? ' <span class="meta meta-readonly" title="Read-only in Salesforce for your profile or because the field is system-managed">read-only</span>'
@@ -2242,10 +2620,13 @@
 					lock && lock.target
 						? '<div class="assoc-help">Linked via association to <strong>' +
 							escapeHtml(describeLinkedTarget(lock.target)) +
-							'</strong>. ' +
-							'<button type="button" class="link-button" data-disconnect-assoc="' +
-							lock.association.id +
-							'">Disconnect</button> to edit manually.</div>'
+							'</strong>.' +
+							(canEditCanvasStructure()
+								? ' <button type="button" class="link-button" data-disconnect-assoc="' +
+									lock.association.id +
+									'">Disconnect</button> to edit manually.'
+								: '') +
+							'</div>'
 						: '';
 				const fullWidth = f.type === 'textarea' || f.type === 'multipicklist';
 				const classes =
@@ -2285,7 +2666,7 @@
 					id +
 					'" name="' +
 					name +
-					'" disabled aria-readonly="true" value=""' +
+					'" disabled aria-readonly="true" tabindex="-1" value=""' +
 					targetAttr +
 					'>'
 				);
@@ -2408,6 +2789,7 @@
 
 				clearBtn.addEventListener('click', () => {
 					hidden.value = '';
+					hidden.dispatchEvent(new Event('change', { bubbles: true }));
 					_showSearchMode();
 					setTimeout(() => searchInput.focus(), 0);
 				});
@@ -2505,6 +2887,7 @@
 						btn.addEventListener('click', () => {
 							hidden.value = btn.getAttribute('data-pick-id') || '';
 							_showSelectedMode(btn.getAttribute('data-pick-title') || hidden.value);
+							hidden.dispatchEvent(new Event('change', { bubbles: true }));
 						});
 					});
 				}
@@ -2989,7 +3372,7 @@
 			}
 
 			modal.querySelector('#modal-submit').addEventListener('click', () => {
-				if (!currentObject) {
+				if (!currentObject || !canEditCurrentRecord()) {
 					return;
 				}
 				const form = modal.querySelector('#insert-form');
@@ -3151,6 +3534,13 @@
 					}
 					const ftype = div.dataset.type;
 					const val = values[field];
+					if (div.dataset.readonly === 'true' && ftype !== 'reference') {
+						const display = div.querySelector('input');
+						if (display) {
+							display.value = formatReadOnlyFieldValue(val, ftype);
+						}
+						return;
+					}
 					if (ftype === 'boolean') {
 						const cb = div.querySelector('input[type="checkbox"]');
 						if (cb) {

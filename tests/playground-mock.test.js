@@ -98,6 +98,28 @@ describe('interception policy: default-block for /api/*', () => {
 });
 
 describe('dataset integrity: describes vs records', () => {
+	test('owner fields match writable Salesforce describe metadata', async () => {
+		const ownerableObjects = [
+			'Account',
+			'Contact',
+			'Opportunity',
+			'Lead',
+			'Case',
+			'Task',
+			'Event',
+			'Campaign',
+			'Contract',
+			'Order',
+		];
+		for (const objectName of ownerableObjects) {
+			const response = await call('GET', '/api/objects/' + objectName + '/describe');
+			const ownerField = response.body.fields.find((field) => field.name === 'OwnerId');
+			assert.ok(ownerField, objectName + ' exposes OwnerId');
+			assert.equal(ownerField.createable, true, objectName + '.OwnerId is createable');
+			assert.equal(ownerField.updateable, true, objectName + '.OwnerId is updateable');
+		}
+	});
+
 	test('every seeded record type has a describe; every describe FK targets a dataset object', async () => {
 		const MOCK = W.OrgLoomMock;
 		const objectNames = new Set(Object.keys(MOCK.records));

@@ -407,7 +407,7 @@ const TOOLS = [
 			'or already-rejected proposals cannot be unwound; use ' +
 			'list_pending_proposals to confirm before calling.\n\n' +
 			'Withdrawn proposals stay in the audit log but disappear ' +
-			'from the user-facing review banner on the next ~5s poll.',
+			'from the user-facing review banner automatically.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -581,7 +581,7 @@ function _validateCanvasId(rawCanvasId) {
 }
 
 async function _toolListCanvases(ctx) {
-	const rows = relay.listCanvasesInWorkspace(ctx.workspaceId);
+	const rows = relay.listCanvasesInWorkspace(ctx.workspaceId, ctx.account.id);
 	return _textResult(
 		JSON.stringify({
 			canvases: rows.map((r) => ({
@@ -609,6 +609,7 @@ async function _toolReadCanvas(ctx, args) {
 		result = await relay.dispatchRequest({
 			workspaceId: ctx.workspaceId,
 			canvasId,
+			accountId: ctx.account.id,
 			method: 'read_canvas',
 			params: { canvasId },
 			timeoutMs: RELAY_REQUEST_TIMEOUT_MS,
@@ -660,6 +661,7 @@ async function _toolProposeRecordChanges(ctx, args) {
 		liveRead = await relay.dispatchRequest({
 			workspaceId: ctx.workspaceId,
 			canvasId,
+			accountId: ctx.account.id,
 			method: 'read_canvas',
 			params: { canvasId },
 			timeoutMs: RELAY_REQUEST_TIMEOUT_MS,
@@ -1040,6 +1042,12 @@ async function _toolProposeRecordChanges(ctx, args) {
 		summary: args.summary || null,
 		changes: normalized,
 	});
+	relay.broadcastCanvasEvent({
+		workspaceId: ctx.workspaceId,
+		canvasId,
+		accountId: ctx.account.id,
+		event: 'ai-proposals-changed',
+	});
 
 	const reviewUrl = '/?openCanvas=' + encodeURIComponent(canvasId);
 	const recordCount = normalized.filter((c) => c.kind === 'record').length;
@@ -1134,7 +1142,7 @@ async function _toolListPendingProposals(ctx, args) {
 	}
 	const rows = await proposalsDb.listPendingForCanvas(canvasId);
 
-	const visible = rows.filter((p) => p.workspaceId === ctx.workspaceId);
+	const visible = rows.filter((p) => p.workspaceId === ctx.workspaceId && p.proposingAccountId === ctx.account.id);
 	return _textResult(
 		JSON.stringify({
 			canvasId,
@@ -1160,7 +1168,7 @@ async function _toolDescribeObject(ctx, args) {
 	const fields = Array.isArray(args && args.fields) ? args.fields : null;
 	const requestedCanvasId = args && args.canvasId != null ? _validateCanvasId(args.canvasId) : null;
 
-	const liveCanvases = relay.listCanvasesInWorkspace(ctx.workspaceId);
+	const liveCanvases = relay.listCanvasesInWorkspace(ctx.workspaceId, ctx.account.id);
 	if (liveCanvases.length === 0) {
 		return _textErrorResult(
 			'No canvases are currently open in any browser in this workspace, so I have no browser to fetch the describe cache from. Ask the user to open a canvas in Org Loom - any object on the canvas is auto-cached.',
@@ -1184,6 +1192,7 @@ async function _toolDescribeObject(ctx, args) {
 			const result = await relay.dispatchRequest({
 				workspaceId: ctx.workspaceId,
 				canvasId,
+				accountId: ctx.account.id,
 				method: 'describe_object',
 				params: { objectName, fields },
 				timeoutMs: RELAY_REQUEST_TIMEOUT_MS,
@@ -1236,6 +1245,9 @@ async function _toolWithdrawProposal(ctx, args) {
 	if (proposal.workspaceId !== ctx.workspaceId) {
 		throw _appError(ERR_NOT_FOUND, 'Proposal ' + proposalId + ' not found.');
 	}
+	if (proposal.proposingAccountId !== ctx.account.id) {
+		throw _appError(ERR_NOT_FOUND, 'Proposal ' + proposalId + ' not found.');
+	}
 
 	if (proposal.proposingTokenId && ctx.mcpToken && ctx.mcpToken.id !== proposal.proposingTokenId) {
 		throw _appError(
@@ -1262,6 +1274,12 @@ async function _toolWithdrawProposal(ctx, args) {
 				' is no longer pending - another action changed its status between read and withdraw.',
 		);
 	}
+	relay.broadcastCanvasEvent({
+		workspaceId: ctx.workspaceId,
+		canvasId: proposal.canvasId,
+		accountId: ctx.account.id,
+		event: 'ai-proposals-changed',
+	});
 	try {
 		await ext.auditWrite({
 			workspaceId: ctx.workspaceId,
@@ -1280,7 +1298,7 @@ async function _toolWithdrawProposal(ctx, args) {
 		JSON.stringify({
 			proposalId,
 			status: 'withdrawn',
-			message: 'Proposal withdrawn. It will disappear from the user-facing review banner on their next poll.',
+			message: 'Proposal withdrawn. The open canvas will update automatically.',
 		}),
 	);
 }
@@ -1362,6 +1380,7 @@ async function _toolGetCanvasSummary(ctx, args) {
 		canvas = await relay.dispatchRequest({
 			workspaceId: ctx.workspaceId,
 			canvasId,
+			accountId: ctx.account.id,
 			method: 'read_canvas',
 			params: { canvasId },
 			timeoutMs: RELAY_REQUEST_TIMEOUT_MS,
@@ -1818,6 +1837,26 @@ async function _resolveContext(req) {
 	const workspaceId = tokenRow.workspace_id;
 	if (!workspaceId) {
 		throw _appError(ERR_NO_WORKSPACE, 'MCP token is not bound to a workspace');
+	}
+	try {
+		const membership = await ext
+			.getDb()
+			.selectFrom('workspace_members')
+			.select('role')
+			.where('workspace_id', '=', workspaceId)
+			.where('account_id', '=', account.id)
+			.executeTakeFirst();
+		if (!membership) {
+			throw _appError(ERR_AUTH, 'Token owner is no longer a member of this workspace');
+		}
+	} catch (err) {
+		if (err && err.jsonRpcCode === ERR_AUTH) {
+			throw err;
+		}
+		if (ext.saasMounted) {
+			throw _appError(ERR_AUTH, 'Workspace membership could not be verified');
+		}
+		// Standalone installs do not have workspace membership tables.
 	}
 
 	return { account, workspaceId, mcpToken: tokenRow };

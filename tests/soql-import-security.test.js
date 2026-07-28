@@ -50,6 +50,7 @@ function makeMockConn() {
 				{ relationshipName: 'Contacts', childSObject: 'Contact', field: 'AccountId' },
 				{ relationshipName: 'Tasks', childSObject: 'Task', field: 'WhatId' },
 				{ relationshipName: 'SetupAuditTrails', childSObject: 'SetupAuditTrail', field: 'CreatedById' },
+				{ relationshipName: 'SpecializedEvents', childSObject: 'Notice__e', field: 'Account__c' },
 			],
 		},
 		Contact: {
@@ -311,6 +312,20 @@ describe('Finding #3: denylist scope', () => {
 		assert.equal(r.status, 400);
 		assert.equal((await r.json()).error, 'object-not-allowed');
 		assert.equal(activeMock.captured.queries.length, 0, 'denied child must not reach SF');
+	});
+
+	test('specialized outer and child objects cannot be imported onto the canvas', async () => {
+		const outer = await post({ soql: 'SELECT Id FROM Config__mdt', fullFields: false });
+		assert.equal(outer.status, 400);
+		assert.equal((await outer.json()).error, 'specialized-object-unsupported');
+
+		const child = await post({
+			soql: 'SELECT Id, (SELECT Id FROM SpecializedEvents) FROM Account',
+			fullFields: false,
+		});
+		assert.equal(child.status, 400);
+		assert.equal((await child.json()).error, 'specialized-object-unsupported');
+		assert.equal(activeMock.captured.queries.length, 0, 'specialized objects must not reach SF');
 	});
 });
 

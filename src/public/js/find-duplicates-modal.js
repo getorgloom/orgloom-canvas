@@ -697,7 +697,7 @@
 						objectOptions +
 						'</select>' +
 						'</label>' +
-						'<div class="fdm-config-row fdm-config-row--block">' +
+						'<div class="fdm-config-row fdm-config-row--block fdm-config-row--mode">' +
 						'<span class="fdm-config-label">Match fields</span>' +
 						'<div class="fdm-fields">' +
 						fieldRows +

@@ -152,12 +152,18 @@
 					_debounce = setTimeout(() => runSearch(q), 220);
 				});
 				input.addEventListener('focus', (event) => {
-					if (event.isTrusted && !_picked && results.innerHTML === '') {
+					if (_picked) {
+						return;
+					}
+					if (results.innerHTML !== '') {
+						results.hidden = false;
+					} else if (event.isTrusted) {
 						runSearch('');
 					}
 				});
 				document.addEventListener('click', (ev) => {
-					if (!hostEl.contains(ev.target)) {
+					const eventPath = typeof ev.composedPath === 'function' ? ev.composedPath() : [];
+					if (!eventPath.includes(hostEl) && !hostEl.contains(ev.target)) {
 						results.hidden = true;
 					}
 				});
@@ -165,6 +171,13 @@
 				return {
 					getPicked() {
 						return _picked;
+					},
+					setPicked(user) {
+						if (user && user.id) {
+							pick(user);
+						} else {
+							clear();
+						}
 					},
 					clear,
 					focus() {

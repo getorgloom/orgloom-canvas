@@ -10,7 +10,7 @@ const _ts_onCanvas = _ts_path === '/';
 const _ts_onDocs = _ts_path === '/docs';
 const _ts_saas = (typeof saasEnabled !== 'undefined') ? !!saasEnabled : false;
 const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMode : false;
-const _ts_sfControlPaths = new Set(['/', '/workspace', '/quick-upload', '/connect', '/setup']);
+const _ts_sfControlPaths = new Set(['/', '/quick-upload']);
 const _ts_showSfControl = _ts_sfControlPaths.has(_ts_path);
 %>
 <header class="app-top-strip">
@@ -138,6 +138,7 @@ const _ts_showSfControl = _ts_sfControlPaths.has(_ts_path);
 	</script>
 <% } %>
 <% if (_ts_user && _ts_saas && !_ts_playground) { %>
+	<script src="/js/workspace-context.js" data-account-id="<%= _ts_user.id || '' %>"></script>
 	<script src="/js/workspace-switcher.js" defer></script>
 	<script src="/js/support.js" defer></script>
 	<% if (_ts_showSfControl) { %>

@@ -4,6 +4,7 @@ import {
 	SHARED_CANVAS_ENTRY,
 	canvasEntryStartsTrial,
 	classifySharedCanvasEntry,
+	isFreeSharedRecipientGrant,
 	isFreeViewerGrant,
 	recipientRequiresPlan,
 } from '../src/shared-canvas-entitlement.js';
@@ -30,13 +31,16 @@ function classify({ item = { ownedByMe: false }, grant = { role: 'viewer' } } = 
 }
 
 describe('shared canvas recipient entitlement', () => {
-	test('only an explicit Viewer grant is free', () => {
+	test('Viewer and Contributor grants are free while Editor remains paid', () => {
 		assert.equal(isFreeViewerGrant({ role: 'viewer' }), true);
-		for (const grant of [null, {}, { role: 'contributor' }, { role: 'editor' }]) {
+		assert.equal(isFreeSharedRecipientGrant({ role: 'viewer' }), true);
+		assert.equal(isFreeSharedRecipientGrant({ role: 'contributor' }), true);
+		for (const grant of [null, {}, { role: 'editor' }]) {
 			assert.equal(isFreeViewerGrant(grant), false);
 			assert.equal(recipientRequiresPlan(grant), true);
 		}
 		assert.equal(recipientRequiresPlan({ role: 'viewer' }), false);
+		assert.equal(recipientRequiresPlan({ role: 'contributor' }), false);
 	});
 
 	test('only owner and paid-recipient deep links start an unused trial', () => {
@@ -44,6 +48,7 @@ describe('shared canvas recipient entitlement', () => {
 		assert.equal(canvasEntryStartsTrial(SHARED_CANVAS_ENTRY.PAID_RECIPIENT), true);
 		for (const kind of [
 			SHARED_CANVAS_ENTRY.FREE_VIEWER,
+			SHARED_CANVAS_ENTRY.FREE_CONTRIBUTOR,
 			SHARED_CANVAS_ENTRY.INACCESSIBLE,
 			SHARED_CANVAS_ENTRY.INVALID,
 			SHARED_CANVAS_ENTRY.UNCLASSIFIED_RECIPIENT,
@@ -58,11 +63,14 @@ describe('shared canvas recipient entitlement', () => {
 		assert.equal(result.grant.role, 'viewer');
 	});
 
-	test('Contributor and Editor entries require a trial, subscription, or seat', async () => {
-		for (const role of ['contributor', 'editor']) {
-			const result = await classify({ grant: { role } });
-			assert.equal(result.kind, SHARED_CANVAS_ENTRY.PAID_RECIPIENT);
-		}
+	test('Contributor entry is free and Editor requires a trial, subscription, or seat', async () => {
+		const contributor = await classify({ grant: { role: 'contributor' } });
+		assert.equal(contributor.kind, SHARED_CANVAS_ENTRY.FREE_CONTRIBUTOR);
+		assert.equal(canvasEntryStartsTrial(contributor.kind), false);
+
+		const editor = await classify({ grant: { role: 'editor' } });
+		assert.equal(editor.kind, SHARED_CANVAS_ENTRY.PAID_RECIPIENT);
+		assert.equal(canvasEntryStartsTrial(editor.kind), true);
 	});
 
 	test('an owner opening their own canvas counts as product use', async () => {

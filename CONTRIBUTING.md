@@ -5,6 +5,7 @@ Welcome, and thanks for considering a contribution. This is a short guide to how
 ## What kinds of changes we accept
 
 **Easy yeses:**
+
 - Bug fixes (with a clear reproduction).
 - Salesforce API compatibility updates (new field types, new SObject metadata, etc.).
 - Documentation improvements: README, walkthroughs, code comments.
@@ -14,12 +15,14 @@ Welcome, and thanks for considering a contribution. This is a short guide to how
 - Performance fixes that don't change behavior.
 
 **Discuss first (open an issue):**
+
 - New features in the canvas itself. We want to keep the open core focused; sprawl is the enemy. If you're not sure whether a feature belongs in the open canvas or in the hosted Org Loom product, ask.
 - Changes to the plug-point registry (`src/extensions.js`). The interface is load-bearing for the open-core split; design changes need a conversation.
 - Schema changes (new migrations, new tables). We add these conservatively because they're hard to undo.
 - Anything that touches the canvas's frontend (`src/public/js/app.js`) significantly: it's 24k lines of carefully-tuned UI code; small fixes welcome, redesigns need discussion.
 
 **Hard nos:**
+
 - Features that duplicate what the hosted product offers (multi-user workspaces, billing, audit retention, SSO). These belong in the hosted product, not the source-available core. The PolyForm Internal Use License also restricts use of this software to internal company purposes: providing it to third parties (managed service, consulting use, redistribution) is not permitted.
 - Telemetry / phone-home additions. Self-hosted Org Loom makes no outbound connections other than to the user's Salesforce org and the optional integrations they explicitly configure.
 - Changes that require a separate paid service (cloud-only deps, proprietary APIs, etc.).
@@ -60,7 +63,7 @@ are especially welcome around:
 - ESM modules (`import`/`export`); no CommonJS.
 - Async/await over callbacks.
 - Avoid adding new dependencies casually: every dep is a future supply-chain decision. If you need to add one, mention why in the PR description.
-- Comments explain *why*, not *what*. The code already says what it does.
+- Comments explain _why_, not _what_. Prefer one line and rarely exceed two; put longer explanations in documentation or the PR.
 - One file per concept. We'd rather have 10 short files than 1 sprawling one.
 
 ## PR process
@@ -75,16 +78,17 @@ overwrite public commits.
 1. Open an issue first if the change is non-trivial (more than 50 lines, new feature, schema change). Saves both sides the back-and-forth.
 2. Branch from `main`. Name the branch something descriptive (`fix-soql-empty-result`, `add-bulk-edit-find-replace`).
 3. Keep PRs focused. One concept per PR: separate bug fixes from feature work.
-4. Keep useful comments. Comments should explain constraints, security boundaries, or non-obvious decisions. Do not include secrets, customer data, or internal incident details.
+4. Keep useful, concise comments for constraints, security boundaries, or non-obvious decisions. Do not include secrets, customer data, or internal incident details.
 5. Run `npm test` locally. CI will run it again.
 6. In the PR description, include:
-   - What changed and why
-   - How to verify (browser steps, curl commands, screenshots if UI)
-   - Anything reviewers should pay particular attention to
+    - What changed and why
+    - How to verify (browser steps, curl commands, screenshots if UI)
+    - Anything reviewers should pay particular attention to
 
 ## Reporting bugs
 
 Open an issue with:
+
 - Org Loom Canvas version (run `npm ls orgloom-canvas`)
 - Node version (`node --version`)
 - OS + Docker version if using Docker

@@ -1802,8 +1802,7 @@
 					let sel = canvasState.selectedObjects.find((s) => s.name === file.objectName);
 					if (!sel) {
 						if (skipCanvas) {
-							// Mapping already loaded the object describe. Direct upload only needs
-							// identity and labels, not a second round of full schema-graph requests.
+							// Mapping already loaded the describe; direct upload only needs its identity and labels.
 							sel = {
 								id: canvasState.selectedIdSeq++,
 								name: file.objectName,
