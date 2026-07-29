@@ -271,17 +271,52 @@ span.app-plan-chip:hover {
 		border-color 80ms;
 	max-width: 220px;
 }
+.aws-trigger-avatar {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 21px;
+	width: 21px;
+	height: 21px;
+	border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+	border-radius: 50%;
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-size: 0.62rem;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+}
 .aws-trigger:hover {
 	background: var(--bg-hover);
 	color: var(--accent);
 	border-color: var(--accent);
 }
 .aws-trigger-label {
+	display: flex;
+	align-items: center;
+	min-width: 0;
 	max-width: 180px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	font-weight: 500;
+}
+.aws-trigger-account,
+.aws-trigger-workspace {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.aws-trigger-account {
+	flex: 0 1 auto;
+	color: var(--ink);
+}
+.aws-trigger-workspace {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.aws-trigger-separator {
+	margin: 0 0.28em;
+	color: var(--ink-faint);
 }
 .aws-trigger-caret {
 	font-size: 0.72rem;
@@ -291,8 +326,7 @@ span.app-plan-chip:hover {
 	position: absolute;
 	top: calc(100% + 6px);
 	right: 0;
-	min-width: 240px;
-	max-width: 320px;
+	width: min(330px, calc(100vw - 16px));
 	background: var(--bg-elev);
 	border: 1px solid var(--border);
 	border-radius: 6px;
@@ -300,6 +334,57 @@ span.app-plan-chip:hover {
 	z-index: 100;
 	padding: 0.45em 0;
 	font-size: 0.85rem;
+}
+.aws-identity {
+	padding: 0.5em 0.85em 0.65em;
+}
+.aws-identity-account {
+	display: flex;
+	align-items: center;
+	gap: 0.65em;
+	min-width: 0;
+}
+.aws-identity-avatar {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 32px;
+	width: 32px;
+	height: 32px;
+	border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+	border-radius: 50%;
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-size: 0.72rem;
+	font-weight: 700;
+}
+.aws-identity-account-copy {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.aws-identity-eyebrow {
+	color: var(--ink-faint);
+	font-size: 0.63rem;
+	font-weight: 600;
+	letter-spacing: 0.07em;
+	line-height: 1.2;
+	text-transform: uppercase;
+}
+.aws-identity-name,
+.aws-identity-email {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.aws-identity-name {
+	color: var(--ink);
+	font-size: 0.88rem;
+	line-height: 1.35;
+}
+.aws-identity-email {
+	color: var(--ink-soft);
+	font-size: 0.72rem;
 }
 .aws-menu-divider {
 	height: 1px;
@@ -374,6 +459,13 @@ span.app-plan-chip:hover {
 	border: 1px solid var(--border-soft);
 	border-radius: 999px;
 }
+.aws-item-id {
+	margin-left: 0.35em;
+	color: var(--ink-faint);
+	font-family: var(--font-mono);
+	font-size: 0.72rem;
+	font-weight: 400;
+}
 .aws-item--selected {
 	background: transparent;
 	color: var(--ink);
@@ -404,6 +496,12 @@ span.app-plan-chip:hover {
 }
 .aws-item--signout:hover {
 	background: color-mix(in srgb, var(--danger, #c44) 10%, transparent);
+}
+@media (max-width: 780px) {
+	.aws-trigger-workspace,
+	.aws-trigger-separator {
+		display: none;
+	}
 }
 
 .app-help-chip {
@@ -11692,11 +11790,10 @@ tbody tr[data-row-open]:nth-child(10) {
 	flex-wrap: wrap;
 	gap: 0.85em 1.25em;
 	align-items: end;
-	padding: 0.85em 1em;
-	background: var(--bg-elev);
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	margin-bottom: 1em;
+	padding: 0;
+	background: transparent;
+	border: 0;
+	margin-bottom: 0;
 }
 .activity-filter {
 	display: flex;
@@ -11751,7 +11848,7 @@ tbody tr[data-row-open]:nth-child(10) {
 	cursor: default;
 }
 .activity-table-wrap {
-	background: var(--bg-elev);
+	background: var(--bg-inset);
 	border: 1px solid var(--border);
 	border-radius: 6px;
 	overflow-x: auto;
@@ -12732,7 +12829,7 @@ tbody tr[data-row-open]:nth-child(10) {
 	padding: 1.1em 1.2em;
 	border: 1px solid var(--border);
 	border-radius: 8px;
-	background: var(--bg-card);
+	background: var(--bg-inset);
 }
 .billing-summary-copy {
 	min-width: 0;
@@ -12791,7 +12888,7 @@ tbody tr[data-row-open]:nth-child(10) {
 	padding: 1em;
 	border: 1px solid var(--border-soft);
 	border-radius: 8px;
-	background: var(--bg-card);
+	background: var(--bg-inset);
 }
 .billing-card-head {
 	display: flex;
@@ -12915,6 +13012,34 @@ tbody tr[data-row-open]:nth-child(10) {
 	font-size: 0.7rem;
 	text-align: right;
 }
+.billing-cancel-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1em;
+	margin-top: 0.2em;
+	padding-top: 1em;
+	border-top: 1px solid var(--border-soft);
+}
+.billing-cancel-row p {
+	margin: 0;
+	color: var(--muted);
+	font-size: 0.78rem;
+}
+.billing-cancel-row button {
+	flex-shrink: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--danger);
+	cursor: pointer;
+	font: inherit;
+	font-size: 0.78rem;
+	text-decoration: underline;
+}
+.billing-cancel-row button:hover {
+	color: color-mix(in srgb, var(--danger) 80%, white);
+}
 .billing-usage-list {
 	grid-template-columns: 88px minmax(0, 1fr);
 }
@@ -12929,6 +13054,11 @@ tbody tr[data-row-open]:nth-child(10) {
 	}
 	.billing-detail-grid {
 		grid-template-columns: minmax(0, 1fr);
+	}
+	.billing-cancel-row {
+		align-items: flex-start;
+		flex-direction: column;
+		gap: 0.45em;
 	}
 }
 
@@ -13201,6 +13331,32 @@ tbody tr[data-row-open]:nth-child(10) {
 	padding: 0.35em 0.1em;
 	font-size: 0.95rem;
 	color: var(--ink);
+}
+.team-workspace-id-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75em;
+	margin-top: 0.75em;
+	padding-top: 0.75em;
+	border-top: 1px solid var(--border-soft);
+}
+.team-workspace-id-copy {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15em;
+	min-width: 0;
+}
+.team-workspace-id-label {
+	color: var(--muted);
+	font-size: 0.75rem;
+}
+.team-workspace-id-copy code {
+	overflow: hidden;
+	color: var(--ink-soft);
+	font-size: 0.78rem;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .team-domain-input {
 	padding: 0.35em 0.55em;
