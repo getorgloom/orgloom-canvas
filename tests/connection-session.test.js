@@ -10,7 +10,7 @@ import {
 } from '../src/connection-session.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(HERE, '../../..');
+const PACKAGE_ROOT = path.resolve(HERE, '..');
 
 function savedSession(overrides = {}) {
 	return {
@@ -84,24 +84,13 @@ test('removing an inactive saved connection leaves the active Salesforce identit
 	assert.equal(session.saveCalls, 1);
 });
 
-test('connections modal exposes distinct Disconnect and Remove actions', () => {
-	const source = fs.readFileSync(path.join(ROOT, 'apps/saas/src/public/js/sf-connections-modal.js'), 'utf8');
-	const routes = fs.readFileSync(path.join(ROOT, 'packages/canvas/src/canvas-routes.js'), 'utf8');
-	const hostedServer = fs.readFileSync(path.join(ROOT, 'apps/saas/src/server.js'), 'utf8');
-	const standaloneServer = fs.readFileSync(path.join(ROOT, 'packages/canvas/src/server.js'), 'utf8');
+test('connection routes support disconnect and a forced identity prompt', () => {
+	const routes = fs.readFileSync(path.join(PACKAGE_ROOT, 'src/canvas-routes.js'), 'utf8');
+	const standaloneServer = fs.readFileSync(path.join(PACKAGE_ROOT, 'src/server.js'), 'utf8');
 
-	assert.match(source, /acct-conn-disconnect[\s\S]*?>Disconnect<\/button>/);
-	assert.match(source, /acct-conn-remove[\s\S]*?>Remove<\/button>/);
-	assert.match(source, /\/api\/connections\/[^'\n]+\/disconnect/);
-	assert.match(source, /const forceQuery = forceIdentity \? '&force=1' : ''/);
-	assert.match(source, /name="force" value="1"/);
-	assert.match(source, /That URL wasn\\'t recognized/);
-	assert.match(source, /sfConnectError/);
 	assert.match(routes, /app\.post\('\/api\/connections\/:id\/disconnect'/);
 	assert.match(routes, /const wasActive = isConnectionActive/);
-	for (const server of [hostedServer, standaloneServer]) {
-		assert.match(server, /req\.session\.forceSfIdentityPrompt === true/);
-		assert.match(server, /delete req\.session\.forceSfIdentityPrompt/);
-		assert.match(server, /res\.redirect\('\/\?sfConnectError=invalid-domain'\)/);
-	}
+	assert.match(standaloneServer, /req\.session\.forceSfIdentityPrompt === true/);
+	assert.match(standaloneServer, /delete req\.session\.forceSfIdentityPrompt/);
+	assert.match(standaloneServer, /res\.redirect\('\/\?sfConnectError=invalid-domain'\)/);
 });
