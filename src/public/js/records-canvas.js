@@ -52,7 +52,7 @@
 				'_runAfterSchemaTransition',
 				'_isEmptySlot',
 				'_slotAssignmentState',
-				'_slotAssigneeBadgeHtml',
+				'_slotRequestBadgeHtml',
 				'_slotAssignmentCardClass',
 				'_isSlotLockedForCurrentUser',
 				'_slotPreflightWarn',
@@ -113,7 +113,7 @@
 			const _runAfterSchemaTransition = deps._runAfterSchemaTransition;
 			const _isEmptySlot = deps._isEmptySlot;
 			const _slotAssignmentState = deps._slotAssignmentState;
-			const _slotAssigneeBadgeHtml = deps._slotAssigneeBadgeHtml;
+			const _slotRequestBadgeHtml = deps._slotRequestBadgeHtml;
 			const _slotAssignmentCardClass = deps._slotAssignmentCardClass;
 			const _isSlotLockedForCurrentUser = deps._isSlotLockedForCurrentUser;
 			const _slotPreflightWarn = deps._slotPreflightWarn;
@@ -262,7 +262,7 @@
 						const shareRole = getCanvasShareRole();
 						const contributorTask =
 							(shareRole === 'contributor' || shareRole === 'editor') && rec._recipientSlot;
-						const assigneeBadge = shareRole === 'viewer' ? '' : _slotAssigneeBadgeHtml(rec);
+						const requestBadge = shareRole === 'viewer' ? '' : _slotRequestBadgeHtml(rec);
 						const canEditStructure = !shareRole || shareRole === 'editor';
 						const canCompleteRequest = !shareRole || shareRole === 'editor' || contributorTask;
 						const accessNotice = blockedByAccess
@@ -295,7 +295,7 @@
 								? '<button class="record-delete" data-record-delete title="Remove">\u00D7</button>'
 								: '') +
 							'<div class="record-slot-tag">RECORD REQUEST' +
-							(assigneeBadge ? '<span class="slot-assignee-wrap">' + assigneeBadge + '</span>' : '') +
+							(requestBadge ? '<span class="slot-assignee-wrap">' + requestBadge + '</span>' : '') +
 							'</div>' +
 							'<div class="record-slot-title">' +
 							escapeHtml(requestTitle) +
@@ -410,47 +410,10 @@
 							(n === 1 ? '' : 's') +
 							' only; the rest are preserved on Salesforce, not editable here. Re-import via SOQL with Load all fields checked to see them.">partial</span>';
 					}
-					const unavailableFieldCount =
-						slotKind === 'fields' && Number.isSafeInteger(Number(rec.slot.unavailableFieldCount))
-							? Math.max(0, Number(rec.slot.unavailableFieldCount))
-							: 0;
-					const requestedFieldCount =
-						(slotKind === 'fields' && Array.isArray(rec.slot.fields) ? rec.slot.fields.length : 0) +
-						unavailableFieldCount;
-					const unavailableFieldText = unavailableFieldCount
-						? ' · ' + unavailableFieldCount + ' unavailable'
+					const requestBadge = slotKind && showRequestContext ? _slotRequestBadgeHtml(rec) : '';
+					const requestBadges = requestBadge
+						? '<div class="record-request-badges">' + requestBadge + '</div>'
 						: '';
-					const slotBadge =
-						slotKind && showRequestContext
-							? slotKind === 'fields'
-								? '<span class="record-slot-badge field-request-badge" title="' +
-									'The recipient is being asked to complete ' +
-									requestedFieldCount +
-									' field' +
-									(requestedFieldCount === 1 ? '' : 's') +
-									' on this record.' +
-									(unavailableFieldCount
-										? ' ' +
-											unavailableFieldCount +
-											' cannot be viewed through this Salesforce connection.'
-										: '') +
-									'">' +
-									requestedFieldCount +
-									' field' +
-									(requestedFieldCount === 1 ? '' : 's') +
-									' requested' +
-									unavailableFieldText +
-									'</span>'
-								: '<span class="record-slot-badge record-request-badge" title="' +
-									'The recipient is being asked to create or choose a new ' +
-									escapeHtml(rec.label || rec.objectName) +
-									'.">record request</span>'
-							: '';
-					const assigneeBadge = shareRole === 'viewer' ? '' : _slotAssigneeBadgeHtml(rec);
-					const requestBadges =
-						slotBadge || assigneeBadge
-							? '<div class="record-request-badges">' + slotBadge + assigneeBadge + '</div>'
-							: '';
 					badge += requestBadges;
 					const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
 					const lightningUrl =

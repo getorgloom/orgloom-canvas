@@ -442,11 +442,7 @@ app.get('/auth/login', (req, res) => {
 	if (config.salesforce.scope) {
 		authParams.scope = config.salesforce.scope;
 	}
-	if (
-		req.query.force === '1' ||
-		req.query.force === 'login' ||
-		req.session.forceSfIdentityPrompt === true
-	) {
+	if (req.query.force === '1' || req.query.force === 'login' || req.session.forceSfIdentityPrompt === true) {
 		authParams.prompt = 'login';
 	}
 	res.redirect(oauth2.getAuthorizationUrl(authParams));

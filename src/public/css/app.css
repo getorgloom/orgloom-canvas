@@ -6600,20 +6600,6 @@ button.confirm-danger:hover {
 	font-style: italic;
 	line-height: 1.35;
 }
-.record-card .record-slot-badge {
-	position: absolute;
-	top: -8px;
-	left: 60px;
-	background: var(--info);
-	color: var(--bg);
-	font-size: 0.6rem;
-	font-weight: 500;
-	padding: 1px 6px;
-	border-radius: 10px;
-	font-family: var(--font-mono);
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-}
 .record-card .record-request-badges {
 	display: flex;
 	width: 100%;
@@ -6625,26 +6611,11 @@ button.confirm-danger:hover {
 	margin-bottom: 0.45em;
 	padding-right: 1.4em;
 }
-.record-card .record-request-badges .record-slot-badge {
-	position: static;
-	max-width: 100%;
-	line-height: 1.35;
-	white-space: normal;
-}
-.record-card .record-request-badges .slot-assignee-badge {
+.record-card .record-request-badges .record-request-summary-badge {
 	max-width: 100%;
 }
 .record-card.record-card--field-request {
 	box-shadow: inset 3px 0 0 color-mix(in srgb, var(--info) 55%, var(--border));
-}
-.record-card .record-slot-badge.field-request-badge {
-	background: color-mix(in srgb, var(--info) 12%, var(--bg-card));
-	color: var(--info);
-	border: 1px solid color-mix(in srgb, var(--info) 45%, var(--border));
-}
-.record-card .record-slot-badge.record-request-badge {
-	background: var(--info);
-	color: var(--bg);
 }
 .record-card .record-partial-badge {
 	display: inline-flex;
@@ -9100,15 +9071,25 @@ tbody tr[data-row-open]:nth-child(10) {
 	overflow: hidden;
 }
 .canvas-save-control {
-	border: 1px solid var(--border);
-	background: var(--bg-inset);
+	border: 1px solid rgba(224, 146, 64, 0.58);
+	background: linear-gradient(180deg, rgba(224, 146, 64, 0.2), rgba(224, 146, 64, 0.1));
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.04),
+		0 1px 3px rgba(0, 0, 0, 0.24);
 }
 .canvas-save-control:hover {
-	border-color: var(--border-hot);
+	border-color: var(--accent);
+	background: linear-gradient(180deg, rgba(224, 146, 64, 0.27), rgba(224, 146, 64, 0.14));
 }
 .canvas-save-control .batch-btn {
 	border: 0;
 	background: transparent;
+}
+.canvas-save-control--clean,
+.canvas-save-control--saving {
+	border-color: var(--border-hot);
+	background: var(--bg-elev);
+	box-shadow: none;
 }
 .batch-btn-split .batch-btn-split-main {
 	border-top-right-radius: 0;
@@ -9121,6 +9102,9 @@ tbody tr[data-row-open]:nth-child(10) {
 	border-bottom-left-radius: 0;
 	border-left: 1px solid var(--border);
 	min-width: auto;
+}
+.canvas-save-control .batch-btn-split-arrow {
+	border-left-color: rgba(224, 146, 64, 0.38);
 }
 .batch-btn-split .batch-btn-split-arrow:hover {
 	background: var(--bg-hover);
@@ -14446,7 +14430,7 @@ body.canvas-recipient-mode .graph-bulk {
 	font-weight: 500;
 }
 
-.slot-assignee-badge {
+.record-request-summary-badge {
 	display: inline-block;
 	box-sizing: border-box;
 	vertical-align: middle;
@@ -14465,12 +14449,14 @@ body.canvas-recipient-mode .graph-bulk {
 	white-space: nowrap;
 	line-height: 1.4;
 }
-.slot-assignee-badge--mine {
+.record-request-summary-badge--mine,
+.record-request-summary-badge--complete {
 	color: var(--success, #2e7d32);
 	background: color-mix(in srgb, var(--success, #2e7d32) 14%, transparent);
 	border-color: color-mix(in srgb, var(--success, #2e7d32) 55%, transparent);
 }
-.slot-assignee-badge--other {
+.record-request-summary-badge--other,
+.record-request-summary-badge--generic {
 	color: var(--muted);
 	background: var(--bg-inset);
 	border-color: var(--border);

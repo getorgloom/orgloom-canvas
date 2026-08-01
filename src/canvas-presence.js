@@ -2062,7 +2062,6 @@ export function updateLoadedRecord({
 	}
 	if (kind === 'create') {
 		const live = _liveSnapshotsByCanvas.get(scoped.scopeId);
-		const createPosition = _availableCreatePosition(live && live.payload, x, y);
 		const cleanSlot = _cleanSlot(slot);
 		const cleanPromotedFrom = promotedFrom == null ? null : _cleanRecordReference(promotedFrom);
 		if (slot !== undefined && cleanSlot === undefined) {
@@ -2071,6 +2070,21 @@ export function updateLoadedRecord({
 		if (promotedFrom != null && !cleanPromotedFrom) {
 			return false;
 		}
+		const promotedRecord = cleanPromotedFrom ? _payloadRecordForRef(live && live.payload, cleanPromotedFrom) : null;
+		const createPosition = cleanPromotedFrom
+			? {
+					x: Number.isFinite(promotedRecord && promotedRecord.x)
+						? promotedRecord.x
+						: Number.isFinite(x)
+							? x
+							: 200,
+					y: Number.isFinite(promotedRecord && promotedRecord.y)
+						? promotedRecord.y
+						: Number.isFinite(y)
+							? y
+							: 200,
+				}
+			: _availableCreatePosition(live && live.payload, x, y);
 		payload.objectName = objectName;
 		payload.baseline = baseline || {};
 		payload.x = createPosition.x;

@@ -338,6 +338,32 @@ test('renders separate record and field sections with remaining counts', () => {
 	assert.match(api.host.innerHTML, /shared-task--record[\s\S]*&#43;/);
 });
 
+test('hides the task sidebar after every request is complete', () => {
+	const api = mount([
+		{
+			id: 1,
+			objectName: 'Contact',
+			label: 'Contact',
+			values: { LastName: 'Complete' },
+			slot: { slotId: 'record-complete', kind: 'whole-record' },
+			_recipientSlot: true,
+		},
+		{
+			id: 2,
+			objectName: 'Account',
+			label: 'Account',
+			values: { Name: 'Acme', Phone: '555-0100' },
+			slot: { slotId: 'fields-complete', kind: 'fields', fields: ['Phone'] },
+			_recipientSlot: true,
+		},
+	]);
+
+	assert.equal(api.buildTasks().length, 2);
+	assert.equal(api.render(), false);
+	assert.equal(api.host.hidden, true);
+	assert.equal(api.host.innerHTML, '');
+});
+
 test('preserves task-list scroll position when the sidebar rerenders', () => {
 	const api = mount([
 		{

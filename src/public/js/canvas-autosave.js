@@ -20,6 +20,7 @@
 			const _CANVAS_DRAFT_KEY = 'orgloom:canvas-draft:v1';
 			const _CANVAS_DRAFT_ACTIVE_KEY = 'orgloom:canvas-draft-active:v1';
 			const _ORGSWITCH_STASH_KEY = 'orgloom:org-switch-stash:v1';
+			const _REAUTH_FALLBACK_KEY = 'orgloom:reauth-fallback:v1';
 			const _MIGRATION_KEY = 'orgloom:migration:v1';
 			const _salesforceIdKey = (value) =>
 				String(value || '')
@@ -119,37 +120,90 @@
 				if (s.graphView) {
 					canvasState.graphView = s.graphView;
 				}
+				if (!isCrossOrg && s.currentCanvas) {
+					canvasState.currentCanvas = s.currentCanvas;
+				}
+				if (!isCrossOrg && s._draftCanvasId) {
+					canvasState._draftCanvasId = s._draftCanvasId;
+				}
 				if (typeof s.bulkZoom === 'number') {
 					canvasState.bulkZoom = s.bulkZoom;
+				}
+				if (s.diffSuppressions && typeof s.diffSuppressions === 'object') {
+					canvasState.diffSuppressions = s.diffSuppressions;
+				}
+				if (!isCrossOrg && s._presenceCanvasId) {
+					canvasState._presenceCanvasId = s._presenceCanvasId;
+				}
+				if (!isCrossOrg && Number.isSafeInteger(s._presenceRevision)) {
+					canvasState._presenceRevision = s._presenceRevision;
 				}
 				canvasState._autoSpawnedPending = true;
 				return { convertedCount: convertedCount, isCrossOrg: isCrossOrg };
 			}
 
-			function _orgSwitchStash() {
+			function _orgSwitchStash(options) {
 				// A short-lived, account-bound session snapshot bridges the OAuth org switch.
+				options = options || {};
+				const preserveState = options.preserveState !== false;
+				const sourceCanvasId = (canvasState.currentCanvas && canvasState.currentCanvas.id) || null;
 				try {
 					const payload = {
 						v: 1,
 						ts: Date.now(),
+						intent: options.intent || 'switch',
+						preserveState: preserveState,
+						hadUnsavedChanges: options.hadUnsavedChanges === true,
 						sourceSfOrgId: window.SF_ORG_ID || null,
 						sourceSfUserId: window.SF_USER_ID || null,
 						sourceAccountId: window.ORGLOOM_ACCOUNT_ID || null,
-						sourceCanvasId: (canvasState.currentCanvas && canvasState.currentCanvas.id) || null,
-						state: {
-							selectedObjects: canvasState.selectedObjects,
-							selectedIdSeq: canvasState.selectedIdSeq,
-							activeIndex: canvasState.activeIndex,
-							bulkRecords: canvasState.bulkRecords,
-							bulkAssociations: canvasState.bulkAssociations,
-							bulkIdSeq: canvasState.bulkIdSeq,
-							hiddenObjects: Array.from(canvasState.hiddenObjects || []),
-							graphView: canvasState.graphView,
-							bulkZoom: canvasState.bulkZoom,
-						},
+						sourceCanvasId: sourceCanvasId,
+						state: preserveState
+							? {
+									selectedObjects: canvasState.selectedObjects,
+									selectedIdSeq: canvasState.selectedIdSeq,
+									activeIndex: canvasState.activeIndex,
+									bulkRecords: canvasState.bulkRecords,
+									bulkAssociations: canvasState.bulkAssociations,
+									bulkIdSeq: canvasState.bulkIdSeq,
+									hiddenObjects: Array.from(canvasState.hiddenObjects || []),
+									graphView: canvasState.graphView,
+									currentCanvas: canvasState.currentCanvas,
+									_draftCanvasId: canvasState._draftCanvasId,
+									bulkZoom: canvasState.bulkZoom,
+									diffSuppressions: canvasState.diffSuppressions || {},
+									_presenceCanvasId: canvasState._presenceCanvasId || null,
+									_presenceRevision: Number.isSafeInteger(canvasState._presenceRevision)
+										? canvasState._presenceRevision
+										: null,
+								}
+							: null,
 					};
 					sessionStorage.setItem(_ORGSWITCH_STASH_KEY, JSON.stringify(payload));
-				} catch (_e) {}
+					return true;
+				} catch (_e) {
+					// If the full snapshot cannot be serialized, retain enough context to reopen
+					// the latest saved version after Salesforce returns.
+					try {
+						sessionStorage.setItem(
+							_ORGSWITCH_STASH_KEY,
+							JSON.stringify({
+								v: 1,
+								ts: Date.now(),
+								intent: options.intent || 'switch',
+								preserveState: preserveState,
+								hadUnsavedChanges: options.hadUnsavedChanges === true,
+								sourceSfOrgId: window.SF_ORG_ID || null,
+								sourceSfUserId: window.SF_USER_ID || null,
+								sourceAccountId: window.ORGLOOM_ACCOUNT_ID || null,
+								sourceCanvasId: sourceCanvasId,
+								state: null,
+							}),
+						);
+						return true;
+					} catch (_fallbackError) {}
+				}
+				return false;
 			}
 
 			function _consumeUserSwitchCanvasId() {
@@ -180,7 +234,15 @@
 					!!payload.sourceSfUserId &&
 					!!currentUserId &&
 					_salesforceIdKey(payload.sourceSfUserId) !== _salesforceIdKey(currentUserId);
-				if (!sameAccount || !sameOrg || !changedUser) {
+				const sameUser =
+					!!payload.sourceSfUserId &&
+					!!currentUserId &&
+					_salesforceIdKey(payload.sourceSfUserId) === _salesforceIdKey(currentUserId);
+				const discardedIntentionalSwitch =
+					payload.intent === 'switch' && payload.preserveState === false && sameAccount && sameOrg;
+				const reauthNeedsFallback =
+					payload.intent === 'reauth' && sameAccount && sameOrg && sameUser && !_snapshotHasContent(payload);
+				if (!sameAccount || !sameOrg || (!changedUser && !discardedIntentionalSwitch && !reauthNeedsFallback)) {
 					return null;
 				}
 				try {
@@ -190,7 +252,22 @@
 					return null;
 				}
 				const canvasId = String(payload.sourceCanvasId || '');
+				if (reauthNeedsFallback && /^[a-zA-Z0-9]{15,18}$/.test(canvasId)) {
+					try {
+						sessionStorage.setItem(_REAUTH_FALLBACK_KEY, canvasId);
+					} catch (_e) {}
+				}
 				return /^[a-zA-Z0-9]{15,18}$/.test(canvasId) ? canvasId : null;
+			}
+
+			function _consumeReauthFallbackCanvasId() {
+				try {
+					const canvasId = String(sessionStorage.getItem(_REAUTH_FALLBACK_KEY) || '');
+					sessionStorage.removeItem(_REAUTH_FALLBACK_KEY);
+					return /^[a-zA-Z0-9]{15,18}$/.test(canvasId) ? canvasId : null;
+				} catch (_e) {
+					return null;
+				}
 			}
 
 			function _orgSwitchRestore() {
@@ -222,8 +299,25 @@
 				if (payload.sourceAccountId !== currentAccountId) {
 					return false;
 				}
+				if (payload.preserveState === false) {
+					return false;
+				}
+				if (payload.intent === 'reauth') {
+					const sameOrg =
+						_salesforceIdKey(payload.sourceSfOrgId) === _salesforceIdKey(window.SF_ORG_ID || null);
+					const sameUser =
+						_salesforceIdKey(payload.sourceSfUserId) === _salesforceIdKey(window.SF_USER_ID || null);
+					if (!sameOrg || !sameUser) {
+						return false;
+					}
+				}
 				const s = payload.state || {};
-				if (!s || !Array.isArray(s.bulkRecords) || s.bulkRecords.length === 0) {
+				if (
+					!s ||
+					(!s.currentCanvas &&
+						(!Array.isArray(s.bulkRecords) || s.bulkRecords.length === 0) &&
+						(!Array.isArray(s.selectedObjects) || s.selectedObjects.length === 0))
+				) {
 					return false;
 				}
 				const targetOrg = window.SF_ORG_ID || null;
@@ -453,7 +547,8 @@
 				const state = payload && payload.state;
 				return !!(
 					state &&
-					((Array.isArray(state.bulkRecords) && state.bulkRecords.length > 0) ||
+					((state.currentCanvas && state.currentCanvas.id) ||
+						(Array.isArray(state.bulkRecords) && state.bulkRecords.length > 0) ||
 						(Array.isArray(state.selectedObjects) && state.selectedObjects.length > 0))
 				);
 			}
@@ -478,6 +573,10 @@
 							_draftCanvasId: canvasState._draftCanvasId,
 							bulkZoom: canvasState.bulkZoom,
 							diffSuppressions: canvasState.diffSuppressions || {},
+							_presenceCanvasId: canvasState._presenceCanvasId || null,
+							_presenceRevision: Number.isSafeInteger(canvasState._presenceRevision)
+								? canvasState._presenceRevision
+								: null,
 						},
 					};
 					const draftKey = _scopedDraftKey();
@@ -585,6 +684,12 @@
 					if (s.diffSuppressions && typeof s.diffSuppressions === 'object') {
 						canvasState.diffSuppressions = s.diffSuppressions;
 					}
+					if (s._presenceCanvasId) {
+						canvasState._presenceCanvasId = s._presenceCanvasId;
+					}
+					if (Number.isSafeInteger(s._presenceRevision)) {
+						canvasState._presenceRevision = s._presenceRevision;
+					}
 					return true;
 				} catch (_e) {
 					return false;
@@ -600,6 +705,7 @@
 				stash: _orgSwitchStash,
 				restore: _orgSwitchRestore,
 				consumeUserSwitchCanvasId: _consumeUserSwitchCanvasId,
+				consumeReauthFallbackCanvasId: _consumeReauthFallbackCanvasId,
 				migrationStash: _migrationStash,
 				migrationResume: _migrationResume,
 				migrationRestore: _migrationRestore,
@@ -612,6 +718,7 @@
 				orgSwitchStash: _orgSwitchStash,
 				orgSwitchRestore: _orgSwitchRestore,
 				consumeUserSwitchCanvasId: _consumeUserSwitchCanvasId,
+				consumeReauthFallbackCanvasId: _consumeReauthFallbackCanvasId,
 				autosaveSchedule: _autosaveSchedule,
 				autosaveFlush: _autosaveFlush,
 				autosaveClear: _autosaveClear,

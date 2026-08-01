@@ -5,21 +5,21 @@ import { readFileSync } from 'node:fs';
 const css = readFileSync(new URL('../src/public/css/app.css', import.meta.url), 'utf8');
 const recordsCanvas = readFileSync(new URL('../src/public/js/records-canvas.js', import.meta.url), 'utf8');
 
-test('long slot assignee badges stay within record request cards', () => {
+test('long request summary badges stay within record request cards', () => {
 	assert.match(recordsCanvas, /class="slot-assignee-wrap"/);
 	assert.match(css, /\.record-card-slot \.record-slot-tag\s*\{[^}]*width:\s*100%[^}]*flex-wrap:\s*wrap/s);
 	assert.match(css, /\.record-card-slot \.slot-assignee-wrap\s*\{[^}]*min-width:\s*0[^}]*max-width:\s*100%/s);
 	assert.match(
 		css,
-		/\.slot-assignee-badge\s*\{[^}]*max-width:\s*100%[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/s,
+		/\.record-request-summary-badge\s*\{[^}]*max-width:\s*100%[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/s,
 	);
 });
 
-test('field-request progress and assignee badges wrap without overlapping', () => {
+test('field-request summary badges wrap without overlapping', () => {
 	assert.match(recordsCanvas, /class="record-request-badges"/);
 	assert.match(css, /\.record-card \.record-request-badges\s*\{[^}]*width:\s*100%[^}]*flex-wrap:\s*wrap/s);
 	assert.match(
 		css,
-		/\.record-card \.record-request-badges \.record-slot-badge\s*\{[^}]*position:\s*static[^}]*max-width:\s*100%/s,
+		/\.record-card \.record-request-badges \.record-request-summary-badge\s*\{[^}]*max-width:\s*100%/s,
 	);
 });

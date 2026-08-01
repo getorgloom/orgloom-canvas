@@ -136,9 +136,10 @@ test('successful upload promotes a completed request and retires its request met
 test('successful upload immediately publishes its reconciled canvas state', () => {
 	assert.match(
 		source,
-		/reconcileSyncedRecords\(canvasState\.bulkRecords, synced, canonicalValues\);[\s\S]*?publishPresenceChanges\(\);/,
+		/reconcileSyncedRecords\(canvasState\.bulkRecords, synced, canonicalValues\);[\s\S]*?publishPresenceChanges\(\);[\s\S]*?flushAutosave\(\);/,
 	);
 	assert.match(appSource, /publishPresenceChanges: function \(\) \{[\s\S]*?_publishPresenceChanges\(\)/);
+	assert.match(appSource, /flushAutosave: function \(\) \{[\s\S]*?_autosaveFlush\(\)/);
 });
 
 test('field requests remain uploadable and incomplete requests are warnings', () => {
