@@ -75,10 +75,14 @@ function csrfFetch(url, options) {
 			summary: null,
 		},
 	};
+	const _canvasLaunchParamsAtLoad = new URLSearchParams(window.location.search || '');
+	let _hasCanvasLaunchRequest = !!(
+		_canvasLaunchParamsAtLoad.get('openCanvas') || _canvasLaunchParamsAtLoad.get('share')
+	);
 
 	function _canEditCanvasStructure() {
-		const current = canvasState.currentCanvas;
-		return !(current && current.id && !current.ownedByMe && current.recipientRole !== 'editor');
+		const shareRole = _getCanvasShareRole();
+		return !shareRole || shareRole === 'editor';
 	}
 
 	const _canvasGuideScope =
@@ -120,6 +124,20 @@ function csrfFetch(url, options) {
 	}
 
 	const _autosave = window.OrgLoom.canvasAutosave.mount({
+		canvasState: canvasState,
+	});
+	const _userSwitchCanvasId = _autosave.consumeUserSwitchCanvasId();
+	if (_userSwitchCanvasId && !_hasCanvasLaunchRequest) {
+		_canvasLaunchParamsAtLoad.set('openCanvas', _userSwitchCanvasId);
+		const query = _canvasLaunchParamsAtLoad.toString();
+		window.history.replaceState(
+			{},
+			'',
+			window.location.pathname + (query ? '?' + query : '') + window.location.hash,
+		);
+		_hasCanvasLaunchRequest = true;
+	}
+	const _canvasSaveState = window.OrgLoom.canvasSaveState.mount({
 		canvasState: canvasState,
 	});
 	const _orgSwitchStash = _autosave.orgSwitchStash;
@@ -539,17 +557,24 @@ function csrfFetch(url, options) {
 		openCanvasEmailLinkModal: function () {
 			return openCanvasEmailLinkModal.apply(null, arguments);
 		},
-		openCanvasShareManagementModal: function () {
-			return openCanvasShareManagementModal.apply(null, arguments);
-		},
 		openRecordDiffModal: function () {
 			return openRecordDiffModal.apply(null, arguments);
+		},
+		getCanvasSaveState: function () {
+			return _canvasSaveState.getState();
+		},
+		getCanvasShareRole: function () {
+			return _getCanvasShareRole();
+		},
+		saveExistingCanvas: function () {
+			return saveExistingCanvas.apply(null, arguments);
 		},
 	});
 	const renderBulkToolbar = _bt.renderBulkToolbar;
 	const renderCanvasName = _bt.renderCanvasName;
 	const renderBulkCountChip = _bt.renderBulkCountChip;
 	const renderBulkSelectionChip = _bt.renderBulkSelectionChip;
+	window.addEventListener('orgloom:canvas-save-state', () => renderBulkToolbar());
 
 	function _loadCaps() {
 		return csrfFetch('/api/me/capabilities', { credentials: 'same-origin' })
@@ -572,7 +597,6 @@ function csrfFetch(url, options) {
 	});
 
 	let _canvasShareCanvasId = null;
-	let _canvasShareRecipientHasAccount = false;
 	let _canvasShareRole = null;
 	let _shareRecipientSubmitState = 'idle';
 	let _shareRecipientSubmitResetTimer = null;
@@ -651,6 +675,43 @@ function csrfFetch(url, options) {
 		}
 	}
 
+	let _canvasReplacementLoads = 0;
+	function beginCanvasReplacementLoad(message) {
+		_canvasReplacementLoads += 1;
+		let mask = document.getElementById('canvas-replacement-loading');
+		if (!mask) {
+			mask = document.createElement('div');
+			mask.id = 'canvas-replacement-loading';
+			mask.className = 'canvas-replacement-loading';
+			mask.setAttribute('role', 'status');
+			mask.setAttribute('aria-live', 'polite');
+			mask.innerHTML =
+				'<span class="canvas-replacement-loading-spinner" aria-hidden="true"></span>' +
+				'<strong class="canvas-replacement-loading-label"></strong>';
+			document.body.appendChild(mask);
+		}
+		const label = mask.querySelector('.canvas-replacement-loading-label');
+		if (label) {
+			label.textContent = message || 'Loading canvas\u2026';
+		}
+		mask.hidden = false;
+		document.body.setAttribute('aria-busy', 'true');
+
+		let finished = false;
+		return function finishCanvasReplacementLoad() {
+			if (finished) {
+				return;
+			}
+			finished = true;
+			_canvasReplacementLoads = Math.max(0, _canvasReplacementLoads - 1);
+			if (_canvasReplacementLoads > 0) {
+				return;
+			}
+			mask.hidden = true;
+			document.body.removeAttribute('aria-busy');
+		};
+	}
+
 	(function autoOpenSharedCanvas() {
 		const params = new URLSearchParams(window.location.search || '');
 		const shareCanvasId = params.get('share');
@@ -659,6 +720,7 @@ function csrfFetch(url, options) {
 		}
 		document.body.classList.add('canvas-share-banner-active');
 		document.body.classList.add('canvas-recipient-mode');
+		const finishCanvasLoad = beginCanvasReplacementLoad('Opening shared canvas\u2026');
 		_allObjectsReady.then(async () => {
 			try {
 				const r = await csrfFetch('/api/canvas/' + encodeURIComponent(shareCanvasId), {
@@ -680,6 +742,13 @@ function csrfFetch(url, options) {
 					merge: false,
 					ownedByMe: !!data.ownedByMe,
 					recipientRole: data.recipientRole || null,
+					canvasIdentity: {
+						id: shareCanvasId,
+						title: data.title || '',
+						ownedByMe: !!data.ownedByMe,
+						versionId: data.versionId || null,
+						recipientRole: data.recipientRole || null,
+					},
 				});
 				_setStaleRefsFromLoad(data.staleRefs);
 				canvasState.currentCanvas = {
@@ -689,10 +758,10 @@ function csrfFetch(url, options) {
 					versionId: data.versionId || null,
 					recipientRole: data.recipientRole || null,
 				};
+				_canvasSaveState.captureSaved({ savedAt: data.updatedAt });
 				announceMergedContributions(data);
 				_watchProposalsForCurrentCanvas();
 				_canvasShareCanvasId = shareCanvasId;
-				_canvasShareRecipientHasAccount = !!data.recipientHasAccount;
 				_canvasShareRole = data.recipientRole || 'contributor';
 				renderShareRecipientBanner();
 				renderBulkView();
@@ -702,27 +771,67 @@ function csrfFetch(url, options) {
 			} catch (err) {
 				console.warn('[canvas-share] auto-open failed:', err);
 				showBulkToast('Could not open the shared canvas: ' + (err.message || err), 'error');
+			} finally {
+				finishCanvasLoad();
 			}
 		});
 	})();
 
+	function clearCanvasLaunchParam(name) {
+		const params = new URLSearchParams(window.location.search || '');
+		if (!params.has(name)) {
+			return;
+		}
+		params.delete(name);
+		const query = params.toString();
+		window.history.replaceState(
+			{},
+			'',
+			window.location.pathname + (query ? '?' + query : '') + window.location.hash,
+		);
+	}
+
+	function showCanvasLaunchError(message) {
+		if (typeof window.olAlert === 'function') {
+			void window.olAlert(message, {
+				title: 'Canvas unavailable',
+				showConfirm: false,
+			});
+			return;
+		}
+		if (typeof window.olToast === 'function') {
+			window.olToast(message, 'error');
+			return;
+		}
+		showBulkToast(message, 'error');
+	}
+
 	(function autoOpenLinkedCanvas() {
 		const params = new URLSearchParams(window.location.search || '');
 		const openId = params.get('openCanvas');
-		if (!openId || !/^[a-zA-Z0-9]{15,18}$/.test(openId)) {
+		if (!openId) {
 			return;
 		}
 		if (params.get('share')) {
 			return;
 		} // share flow takes precedence
+		if (!/^[a-zA-Z0-9]{15,18}$/.test(openId)) {
+			clearCanvasLaunchParam('openCanvas');
+			showCanvasLaunchError('This canvas link is invalid. Your current canvas has not changed.');
+			return;
+		}
+		const finishCanvasLoad = beginCanvasReplacementLoad('Opening canvas\u2026');
 		_allObjectsReady.then(async () => {
 			try {
 				const r = await csrfFetch('/api/canvas/' + encodeURIComponent(openId), { credentials: 'same-origin' });
 				const data = await r.json().catch(() => null);
 				if (!r.ok) {
-					showBulkToast(
-						(data && (data.message || data.error)) || 'Could not open the canvas (HTTP ' + r.status + ').',
-						'error',
+					const unavailable = r.status === 404 || (data && data.error === 'canvas-not-accessible');
+					showCanvasLaunchError(
+						unavailable
+							? 'Org Loom could not open this canvas. It may have been deleted, or it may not be shared with your current Salesforce user. Your current canvas has not changed.'
+							: (data && (data.message || data.error)) ||
+									'Could not open the canvas (HTTP ' + r.status + ').',
 					);
 					return;
 				}
@@ -730,6 +839,13 @@ function csrfFetch(url, options) {
 					merge: false,
 					ownedByMe: !!data.ownedByMe,
 					recipientRole: data.recipientRole || null,
+					canvasIdentity: {
+						id: openId,
+						title: data.title || '',
+						ownedByMe: !!data.ownedByMe,
+						versionId: data.versionId || null,
+						recipientRole: data.recipientRole || null,
+					},
 				});
 				_setStaleRefsFromLoad(data.staleRefs);
 				canvasState.currentCanvas = {
@@ -739,6 +855,7 @@ function csrfFetch(url, options) {
 					versionId: data.versionId || null,
 					recipientRole: data.recipientRole || null,
 				};
+				_canvasSaveState.captureSaved({ savedAt: data.updatedAt });
 				announceMergedContributions(data);
 				try {
 					const restored = rehydrateSessionDraftValues(openId);
@@ -754,17 +871,19 @@ function csrfFetch(url, options) {
 				_watchProposalsForCurrentCanvas();
 				if (!data.ownedByMe && data.recipientRole) {
 					_canvasShareCanvasId = openId;
-					_canvasShareRecipientHasAccount = !!data.recipientHasAccount;
 					_canvasShareRole = data.recipientRole;
 					renderShareRecipientBanner();
 				}
 				renderBulkView();
 				renderBulkToolbar();
-				const cleanUrl = window.location.pathname + window.location.hash;
-				window.history.replaceState({}, '', cleanUrl);
 			} catch (err) {
 				console.warn('[canvas open-deep-link] failed:', err);
-				showBulkToast('Could not open the canvas: ' + (err.message || err), 'error');
+				showCanvasLaunchError(
+					'Could not open the canvas: ' + (err.message || err) + '. Your current canvas has not changed.',
+				);
+			} finally {
+				clearCanvasLaunchParam('openCanvas');
+				finishCanvasLoad();
 			}
 		});
 	})();
@@ -786,6 +905,11 @@ function csrfFetch(url, options) {
 		if (!host) {
 			host = document.createElement('div');
 			host.id = 'share-recipient-banner';
+		}
+		const subbar = document.getElementById('graph-subbar');
+		if (subbar && host.previousElementSibling !== subbar) {
+			subbar.insertAdjacentElement('afterend', host);
+		} else if (!host.parentElement) {
 			document.body.appendChild(host);
 		}
 		host.className = isEditor
@@ -793,45 +917,23 @@ function csrfFetch(url, options) {
 			: isViewer
 				? 'share-recipient-banner share-recipient-banner--viewer'
 				: 'share-recipient-banner';
-		const backLinkHtml = _canvasShareRecipientHasAccount
-			? '<a href="/" class="share-recipient-back" data-share-back title="Leave this shared canvas and open your own Org Loom workspace">' +
-				'← Your workspace' +
-				'</a>'
-			: '';
 		if (isEditor) {
 			host.innerHTML =
-				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
 				'<strong>Editor mode.</strong> ' +
 				'You’re co-authoring a canvas owned by someone else. You can save canvas changes, but only the owner can upload them to Salesforce.' +
 				'</span>';
 		} else if (isViewer) {
 			host.innerHTML =
-				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
 				'<strong>View only.</strong> ' +
 				'You can explore this shared canvas, but you can’t make changes. Ask the owner for contributor access if you need to complete requests.' +
 				'</span>';
 		} else {
-			const submitPending = _shareRecipientSubmitState === 'pending';
-			const submitSucceeded = _shareRecipientSubmitState === 'success';
 			host.innerHTML =
-				backLinkHtml +
 				'<span class="share-recipient-banner-text">' +
-				"<strong>Contributor mode.</strong> Use Your tasks to complete the owner's requests, then submit your changes. Nothing is uploaded to Salesforce." +
-				'</span>' +
-				'<button type="button" class="button share-recipient-submit' +
-				(submitSucceeded ? ' share-recipient-submit--success' : '') +
-				'" id="share-recipient-submit"' +
-				(submitPending || submitSucceeded ? ' disabled' : '') +
-				(submitPending ? ' aria-busy="true"' : '') +
-				' aria-live="polite">' +
-				(submitPending ? 'Submittingâ€¦' : submitSucceeded ? 'Changes submitted' : 'Submit changes') +
-				'</button>';
-			const btn = host.querySelector('#share-recipient-submit');
-			if (btn) {
-				btn.addEventListener('click', submitShareRecipientFills);
-			}
+				"<strong>Contributor mode.</strong> Use Your tasks to complete the owner's requests. Open a task, add the requested information, then choose <strong>Save changes</strong>. Your changes are shared with the canvas owner and are not uploaded to Salesforce." +
+				'</span>';
 		}
 	}
 
@@ -878,7 +980,19 @@ function csrfFetch(url, options) {
 					submittedValues[fieldName] = values[fieldName];
 				}
 			}
-			fills.push({ slotId: r.slot.slotId, values: submittedValues });
+			const relationshipFields =
+				r._slotChangedRelationshipFields instanceof Set
+					? Array.from(r._slotChangedRelationshipFields).filter(
+							(fieldName) =>
+								(!requestedFields || requestedFields.has(fieldName)) &&
+								Object.prototype.hasOwnProperty.call(submittedValues, fieldName),
+						)
+					: [];
+			fills.push({
+				slotId: r.slot.slotId,
+				values: submittedValues,
+				...(relationshipFields.length > 0 ? { relationshipFields } : {}),
+			});
 		}
 		if (fills.length === 0) {
 			showBulkToast('No contributor requests to submit. Complete a highlighted request first.', 'error');
@@ -1431,6 +1545,7 @@ function csrfFetch(url, options) {
 		'<div class="canvas-name-overlay" id="canvas-name-overlay" aria-label="Current canvas: New canvas">' +
 		'<strong id="canvas-name-text">New canvas</strong>' +
 		'</div>' +
+		'<div class="canvas-save-status-overlay canvas-save-status-overlay--new" id="canvas-save-status-overlay" aria-live="polite">Not saved</div>' +
 		'<div class="canvas-top-left-overlays">' +
 		'<div class="canvas-status-strip" id="canvas-status-strip">' +
 		'<div class="bulk-count-chip" id="bulk-count-chip"></div>' +
@@ -1872,6 +1987,20 @@ function csrfFetch(url, options) {
 				}
 			}
 			const recordEditorOpen = Boolean(document.querySelector('.record-editor-modal:not(.hidden)'));
+			if (!recordEditorOpen && cmd && (e.key === 's' || e.key === 'S')) {
+				e.preventDefault();
+				const saveState = _canvasSaveState.getState();
+				if (saveState.phase === 'clean' || saveState.phase === 'saving') {
+					return;
+				}
+				const current = canvasState.currentCanvas;
+				if (current && current.id) {
+					saveExistingCanvas();
+				} else {
+					promptCanvasSave();
+				}
+				return;
+			}
 			if (!isInputTarget && !recordEditorOpen && cmd && (e.key === 'f' || e.key === 'F')) {
 				e.preventDefault();
 				try {
@@ -2146,7 +2275,54 @@ function csrfFetch(url, options) {
 		renderAll();
 	}
 
+	function _spreadExactlyStackedRecords() {
+		const placed = [];
+		const gapX = 260;
+		const gapY = 180;
+		const isOpen = (candidate) =>
+			!placed.some(
+				(position) => Math.abs(position.x - candidate.x) < gapX && Math.abs(position.y - candidate.y) < gapY,
+			);
+		for (const record of canvasState.bulkRecords || []) {
+			if (!record || record.isTypeNode) {
+				continue;
+			}
+			const origin = {
+				x: Number.isFinite(record.x) ? record.x : 200,
+				y: Number.isFinite(record.y) ? record.y : 200,
+			};
+			const stacked = placed.some(
+				(position) => Math.abs(position.x - origin.x) < 1 && Math.abs(position.y - origin.y) < 1,
+			);
+			if (stacked) {
+				for (let ring = 1; ring <= 100; ring++) {
+					const candidates = [
+						{ x: origin.x, y: origin.y + ring * gapY },
+						{ x: origin.x + ring * gapX, y: origin.y },
+						{ x: origin.x - ring * gapX, y: origin.y },
+						{ x: origin.x, y: origin.y - ring * gapY },
+						{ x: origin.x + ring * gapX, y: origin.y + ring * gapY },
+						{ x: origin.x - ring * gapX, y: origin.y + ring * gapY },
+						{ x: origin.x + ring * gapX, y: origin.y - ring * gapY },
+						{ x: origin.x - ring * gapX, y: origin.y - ring * gapY },
+					];
+					const open = candidates.find(isOpen);
+					if (open) {
+						record.x = open.x;
+						record.y = open.y;
+						break;
+					}
+				}
+			} else {
+				record.x = origin.x;
+				record.y = origin.y;
+			}
+			placed.push({ x: record.x, y: record.y });
+		}
+	}
+
 	function renderAll() {
+		_spreadExactlyStackedRecords();
 		canvasState.graphView = 'bulk';
 		const split = graph.querySelector('#graph-split');
 		if (split) {
@@ -2287,7 +2463,7 @@ function csrfFetch(url, options) {
 	}
 
 	const DESCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
-	const DESCRIBE_STORAGE_PREFIX = 'orgloom-describe-v4';
+	const DESCRIBE_STORAGE_PREFIX = 'orgloom-describe-v5';
 	const DESCRIBE_STORAGE_ORG = window.SF_ORG_ID || 'unknown';
 	const DESCRIBE_STORAGE_USER = window.SF_USER_ID || 'unknown';
 	// Field permissions can differ between users connected to the same org.
@@ -2301,7 +2477,13 @@ function csrfFetch(url, options) {
 				return null;
 			}
 			const obj = JSON.parse(raw);
-			if (!obj || !obj.savedAt || Date.now() - obj.savedAt > DESCRIBE_TTL_MS) {
+			if (
+				!obj ||
+				!obj.savedAt ||
+				Date.now() - obj.savedAt > DESCRIBE_TTL_MS ||
+				!obj.describe ||
+				typeof obj.describe.deletable !== 'boolean'
+			) {
 				return null;
 			}
 			return obj.describe;
@@ -2316,7 +2498,9 @@ function csrfFetch(url, options) {
 	}
 	function ensureDescribe(name, options) {
 		if (!name || typeof name !== 'string') {
-			return Promise.reject(new Error('ensureDescribe: name required'));
+			return Promise.reject(
+				new Error('This record is missing its Salesforce object type. Reload the canvas and try again.'),
+			);
 		}
 		const force = !!(options && options.force);
 		if (force && canvasState.describeRequests[name]) {
@@ -2686,6 +2870,7 @@ function csrfFetch(url, options) {
 
 	function renderBulkView() {
 		_autosaveSchedule();
+		_canvasSaveState.refresh();
 		recomputeMigrationAnnotationsSync();
 		_renderMigrateBar();
 		const container = graph.querySelector('#graph-bulk');
@@ -3602,27 +3787,10 @@ function csrfFetch(url, options) {
 	var computeRecordDiff = _vc.computeRecordDiff;
 
 	function _hasUnsavedCanvasWork() {
-		if (_modifiedLoadedCount() > 0) {
-			return true;
-		}
-		const hasSavedCanvas = !!(canvasState.currentCanvas && canvasState.currentCanvas.id);
-		if (hasSavedCanvas) {
-			return false;
-		}
-		for (const r of canvasState.bulkRecords || []) {
-			if (!r || r.isTypeNode) {
-				continue;
-			}
-			if (!r.loadedFromId) {
-				return true; // hand-authored draft on an unsaved canvas
-			}
-			if (r.pendingDelete) {
-				return true; // un-actioned delete intent, never saved
-			}
-		}
-		return false;
+		return _canvasSaveState.hasUnsavedChanges();
 	}
 
+	let _confirmSaveBeforeNavigation = null;
 	let _migrationOAuthHandoffAllowed = false;
 	function _allowMigrationOAuthHandoff() {
 		try {
@@ -3690,15 +3858,46 @@ function csrfFetch(url, options) {
 						(modCount === 1 ? 'has' : 'have') +
 						' been edited locally. Edits to loaded records aren’t saved with the canvas - leaving without uploading will discard them.'
 					: 'This canvas has records that aren’t saved to Salesforce yet. Leaving will discard them - use “Save as new canvas” first to keep your work.';
-			showConfirmDialog({
-				title: 'Leave canvas with unsaved changes?',
-				message,
-				confirmLabel: 'Leave anyway',
-				cancelLabel: 'Stay',
-				danger: true,
+			_confirmSaveBeforeNavigation(null, {
+				title: 'Leave this canvas?',
+				saveMessage:
+					'Your latest canvas changes have not been saved to Salesforce. Save them before opening Workspace settings.',
 			}).then((ok) => {
 				if (ok) {
 					window.location.href = href;
+				}
+			});
+		},
+		true,
+	);
+
+	document.addEventListener(
+		'submit',
+		(ev) => {
+			const form = ev.target;
+			if (
+				!form ||
+				!form.action ||
+				!form.action.endsWith('/auth/logout') ||
+				form.dataset.canvasSaveConfirmed === 'true' ||
+				!_hasUnsavedCanvasWork()
+			) {
+				return;
+			}
+			ev.preventDefault();
+			_confirmSaveBeforeNavigation(null, {
+				title: 'Sign out?',
+				saveMessage:
+					'Your latest canvas changes have not been saved to Salesforce. Save them before signing out.',
+			}).then((ok) => {
+				if (!ok) {
+					return;
+				}
+				form.dataset.canvasSaveConfirmed = 'true';
+				if (typeof form.requestSubmit === 'function') {
+					form.requestSubmit();
+				} else {
+					form.submit();
 				}
 			});
 		},
@@ -4095,6 +4294,16 @@ function csrfFetch(url, options) {
 		}
 		if (rec._inaccessible) {
 			console.warn('markPendingDelete: refusing - record', id, 'is a no-access placeholder');
+			return false;
+		}
+		const describe = rec.objectName && canvasState.describeCache[rec.objectName];
+		if (!describe || describe.deletable !== true) {
+			showBulkToast(
+				'Your Salesforce user does not have permission to delete ' +
+					(rec.label || rec.objectName || 'this object') +
+					' records.',
+				'error',
+			);
 			return false;
 		}
 		if (rec.pendingDelete) {
@@ -4572,6 +4781,10 @@ function csrfFetch(url, options) {
 		_canAuthorSlots: function () {
 			return _canAuthorSlots();
 		},
+		canDeleteRecord: function (record) {
+			const describe = record && record.objectName && canvasState.describeCache[record.objectName];
+			return !!(describe && describe.deletable === true);
+		},
 		_hasCap: function (name) {
 			return _hasCap(name);
 		},
@@ -4857,6 +5070,7 @@ function csrfFetch(url, options) {
 		rec.slot = {
 			slotId: slotIdSeq++,
 			kind: 'fields',
+			createdAt: Date.now(),
 			fields: config.fields,
 			label: config.label,
 			description: config.description,
@@ -4941,6 +5155,7 @@ function csrfFetch(url, options) {
 			slot: {
 				slotId,
 				kind: 'whole-record',
+				createdAt: Date.now(),
 				origin: 'standalone',
 				label: config.label,
 				description: config.description,
@@ -5005,6 +5220,7 @@ function csrfFetch(url, options) {
 		const writable = (describe.fields || []).filter(
 			(field) =>
 				field[permissionName] &&
+				field.name !== 'Id' &&
 				field.name !== 'RecordTypeId' &&
 				field.type !== 'address' &&
 				field.type !== 'location',
@@ -5012,7 +5228,7 @@ function csrfFetch(url, options) {
 		const byName = new Set(writable.map((field) => field.name));
 		const current = rec && rec.slot && Array.isArray(rec.slot.fields) ? rec.slot.fields : [];
 		current.forEach((name) => {
-			if (!byName.has(name)) {
+			if (name !== 'Id' && !byName.has(name)) {
 				writable.push({ name, label: name, type: null, unavailable: true });
 			}
 		});
@@ -5027,8 +5243,8 @@ function csrfFetch(url, options) {
 			showBulkToast('Contributor requests require Pro or higher.', 'error');
 			return;
 		}
-		if (canvasState.currentCanvas && canvasState.currentCanvas.id && !canvasState.currentCanvas.ownedByMe) {
-			showBulkToast('Only the canvas owner can change contributor requests.', 'error');
+		if (!_canEditCanvasStructure()) {
+			showBulkToast('Only the canvas owner or an editor can change contributor requests.', 'error');
 			return;
 		}
 		const kind = rec.slot.kind === 'fields' ? 'fields' : 'whole-record';
@@ -5060,6 +5276,7 @@ function csrfFetch(url, options) {
 		rec.slot = {
 			slotId,
 			kind: config.kind,
+			createdAt: rec.slot.createdAt || Date.now(),
 			...(config.kind === 'whole-record' ? { origin: rec.slot.origin || 'standalone' } : {}),
 			label: config.label,
 			description: config.description,
@@ -5071,6 +5288,7 @@ function csrfFetch(url, options) {
 			rec.slot.fields = config.fields.slice();
 		}
 		renderBulkView();
+		_publishPresenceChanges();
 		showBulkToast(
 			(kind === 'fields' ? 'Field request' : 'Record request') + ' updated for everyone viewing this canvas.',
 		);
@@ -5088,9 +5306,20 @@ function csrfFetch(url, options) {
 		);
 	}
 
-	function openRecordForCurrentUser(rec, options) {
+	async function openRecordForCurrentUser(rec, options) {
 		if (!rec) {
 			return false;
+		}
+		const shareRole = _getCanvasShareRole();
+		if ((shareRole === 'contributor' || shareRole === 'editor') && rec.slot && rec.slot.slotId != null) {
+			const permissionBlock = await _refreshSlotPermission(rec);
+			if (permissionBlock) {
+				renderBulkView();
+				if (_slotInaccessibleObjects.has(rec.objectName)) {
+					showBulkToast(permissionBlock, 'error');
+					return false;
+				}
+			}
 		}
 		const wholeRecordRequest = !!(
 			rec.slot &&
@@ -5098,12 +5327,7 @@ function csrfFetch(url, options) {
 			(rec.slot.kind || 'whole-record') === 'whole-record'
 		);
 		if (wholeRecordRequest) {
-			const shareRole = _getCanvasShareRole();
-			if (!shareRole) {
-				void configureExistingSlot(rec);
-				return true;
-			}
-			if (shareRole !== 'contributor' && shareRole !== 'editor') {
+			if (shareRole && shareRole !== 'contributor' && shareRole !== 'editor') {
 				showBulkToast(
 					'Only the canvas owner can configure this request, and only a contributor can fill it.',
 					'info',
@@ -5134,6 +5358,27 @@ function csrfFetch(url, options) {
 		return 'Couldn’t open “' + label + '”: ' + ((e && e.message) || e);
 	}
 
+	async function _refreshSlotPermission(rec) {
+		if (!rec || !rec.objectName) {
+			return null;
+		}
+		try {
+			const response = await csrfFetch('/api/objects/' + encodeURIComponent(rec.objectName) + '/describe', {
+				credentials: 'same-origin',
+			});
+			_slotDescribeAccessByObject.set(rec.objectName, response.ok ? await response.json() : null);
+			if (!response.ok) {
+				_slotInaccessibleObjects.add(rec.objectName);
+			} else {
+				_slotInaccessibleObjects.delete(rec.objectName);
+			}
+		} catch (_error) {
+			_slotDescribeAccessByObject.set(rec.objectName, null);
+			_slotInaccessibleObjects.add(rec.objectName);
+		}
+		return _slotPermissionBlockReason(rec);
+	}
+
 	async function fillSlotWithLoad(rec, anchorEl) {
 		if (!rec || !_isEmptySlot(rec)) {
 			return;
@@ -5162,9 +5407,10 @@ function csrfFetch(url, options) {
 
 	async function _runSlotPreflight() {
 		_slotInaccessibleObjects.clear();
+		_slotDescribeAccessByObject.clear();
 		const slotObjects = new Set();
 		canvasState.bulkRecords.forEach((r) => {
-			if (_isEmptySlot(r) && r.objectName) {
+			if (r && r.slot && r.slot.slotId != null && r.objectName) {
 				slotObjects.add(r.objectName);
 			}
 		});
@@ -5177,12 +5423,13 @@ function csrfFetch(url, options) {
 					const r = await csrfFetch('/api/objects/' + encodeURIComponent(name) + '/describe', {
 						credentials: 'same-origin',
 					});
-					return { name, ok: r.ok };
+					return { name, ok: r.ok, describe: r.ok ? await r.json() : null };
 				} catch (e) {
-					return { name, ok: false };
+					return { name, ok: false, describe: null };
 				}
 			}),
 		);
+		probes.forEach((probe) => _slotDescribeAccessByObject.set(probe.name, probe.describe));
 		const inaccessible = probes.filter((p) => !p.ok).map((p) => p.name);
 		inaccessible.forEach((n) => _slotInaccessibleObjects.add(n));
 		if (inaccessible.length > 0) {
@@ -5252,16 +5499,20 @@ function csrfFetch(url, options) {
 		showBulkToast('Loaded ' + (rec.label || rec.objectName) + ' into slot.');
 	}
 
-	function fillSlotWithBlank(rec) {
+	async function fillSlotWithBlank(rec) {
 		if (!rec || !_isEmptySlot(rec)) {
 			return;
 		}
-		if (
-			!['contributor', 'editor'].includes(_getCanvasShareRole()) ||
-			!rec._recipientSlot ||
-			_isSlotLockedForCurrentUser(rec)
-		) {
-			showBulkToast('Only the eligible contributor can fill this record request.', 'info');
+		const shareRole = _getCanvasShareRole();
+		const canCompleteRequest =
+			!shareRole ||
+			shareRole === 'editor' ||
+			(shareRole === 'contributor' && rec._recipientSlot && !_isSlotLockedForCurrentUser(rec));
+		if (!canCompleteRequest) {
+			showBulkToast(
+				'Only the canvas owner, an editor, or the eligible contributor can fill this request.',
+				'info',
+			);
 			return;
 		}
 		const blocked = _canvasCapBlockReason(1);
@@ -5269,8 +5520,10 @@ function csrfFetch(url, options) {
 			showBulkToast(blocked);
 			return;
 		}
-		if (_slotInaccessibleObjects.has(rec.objectName)) {
-			showBulkToast(_slotNoAccessMessage(rec, { code: 'object-no-access' }), 'error');
+		const permissionBlock = await _refreshSlotPermission(rec);
+		if (permissionBlock) {
+			showBulkToast(permissionBlock, 'error');
+			renderBulkView();
 			return;
 		}
 		const matchingSel = canvasState.selectedObjects.find((s) => s.name === rec.objectName);
@@ -5387,7 +5640,6 @@ function csrfFetch(url, options) {
 					recipientRole: role,
 				};
 				_canvasShareCanvasId = canvasState.currentCanvas.id;
-				_canvasShareRecipientHasAccount = true;
 				_canvasShareRole = role;
 				canvasState._renderCanvasShareRole = role;
 				renderShareRecipientBanner();
@@ -5691,6 +5943,9 @@ function csrfFetch(url, options) {
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
 		escapeHtml: escapeHtml,
+		getCanvasShareRole: function () {
+			return _getCanvasShareRole();
+		},
 	});
 	const _isEmptySlot = _su._isEmptySlot;
 	const _slotAssignmentState = _su._slotAssignmentState;
@@ -5703,7 +5958,9 @@ function csrfFetch(url, options) {
 	const _resolveUserName = _su._resolveUserName;
 	const _formatRelativeTime = _su._formatRelativeTime;
 	const _slotPreflightWarn = _su._slotPreflightWarn;
+	const _slotPermissionBlockReason = _su._slotPermissionBlockReason;
 	const _slotInaccessibleObjects = _su._slotInaccessibleObjects;
+	const _slotDescribeAccessByObject = _su._slotDescribeAccessByObject;
 
 	const _rdm = window.OrgLoom.recordDiffModal.mount({
 		canvasState: canvasState,
@@ -5889,6 +6146,7 @@ function csrfFetch(url, options) {
 	const makeNode = _sb.makeNode;
 
 	let _publishPresenceLayout = function () {};
+	let _publishPresenceChanges = function () {};
 	const _rcv = window.OrgLoom.recordsCanvas.mount({
 		canvasState: canvasState,
 		escapeHtml: escapeHtml,
@@ -5900,7 +6158,7 @@ function csrfFetch(url, options) {
 		attachCyMarqueeSelect: attachCyMarqueeSelect,
 		attachCyMiddleClickPan: attachCyMiddleClickPan,
 		attachCySpacePan: attachCySpacePan,
-		openInsertModal: function () {
+		openRecord: function () {
 			return openRecordForCurrentUser.apply(null, arguments);
 		},
 		getCanvasShareRole: function () {
@@ -5908,6 +6166,9 @@ function csrfFetch(url, options) {
 		},
 		publishPresenceLayout: function (records) {
 			return _publishPresenceLayout(records);
+		},
+		notifyCanvasContentChanged: function () {
+			return _canvasSaveState.refresh();
 		},
 		showFindObjectPopover: function () {
 			return showFindObjectPopover.apply(null, arguments);
@@ -6044,6 +6305,7 @@ function csrfFetch(url, options) {
 
 		document.querySelectorAll('.modal.is-inline').forEach((modal) => modal.remove());
 		canvasState.currentCanvas = null;
+		_canvasSaveState.reset();
 		canvasState.currentRecordRef = null;
 		canvasState.savedRecords = {};
 		canvasState.diffSuppressions = {};
@@ -6066,7 +6328,6 @@ function csrfFetch(url, options) {
 		exitMigrateMode();
 
 		_canvasShareCanvasId = null;
-		_canvasShareRecipientHasAccount = false;
 		_canvasShareRole = null;
 		canvasState._renderCanvasShareRole = null;
 		_shareRecipientSubmitState = 'idle';
@@ -6104,6 +6365,7 @@ function csrfFetch(url, options) {
 		_watchProposalsForCurrentCanvas: function () {
 			return _watchProposalsForCurrentCanvas.apply(null, arguments);
 		},
+		beginCanvasReplacementLoad: beginCanvasReplacementLoad,
 		applyCanvasPayload: function () {
 			return applyCanvasPayload.apply(null, arguments);
 		},
@@ -6140,14 +6402,22 @@ function csrfFetch(url, options) {
 		notePresenceLocalSave: function () {
 			return _presence.noteLocalSave();
 		},
+		getAcknowledgedContributionIds: function () {
+			return _presence.acknowledgedContributionIds();
+		},
+		markContributionIdsSaved: function (ids) {
+			return _presence.markContributionIdsSaved(ids);
+		},
 		rehydrateSessionDraftValues: function () {
 			return rehydrateSessionDraftValues.apply(null, arguments);
 		},
 		onCanvasLoaded: function (data, id) {
+			_canvasSaveState.captureSaved({
+				savedAt: data && data.updatedAt,
+			});
 			announceMergedContributions(data);
 			if (data && !data.ownedByMe) {
 				_canvasShareCanvasId = id;
-				_canvasShareRecipientHasAccount = !!data.recipientHasAccount;
 				_canvasShareRole = data.recipientRole || 'viewer';
 				canvasState._renderCanvasShareRole = _canvasShareRole;
 				renderShareRecipientBanner();
@@ -6168,6 +6438,7 @@ function csrfFetch(url, options) {
 		_hasCap: function (name) {
 			return _hasCap(name);
 		},
+		canvasSaveState: _canvasSaveState,
 		clearAutosave: _autosaveClear,
 		startNewCanvas: startNewCanvas,
 	});
@@ -6182,6 +6453,7 @@ function csrfFetch(url, options) {
 	const _showContentPermDeniedDialog = _csl._showContentPermDeniedDialog;
 	const showTemplatesMenu = _csl.showTemplatesMenu;
 	const showBrowseSavedMenu = _csl.showBrowseSavedMenu;
+	_confirmSaveBeforeNavigation = _csl.confirmCanvasReplacement;
 
 	const _csh = window.OrgLoom.canvasShare.mount({
 		canvasState: canvasState,
@@ -6193,7 +6465,6 @@ function csrfFetch(url, options) {
 		_invalidateShareCountForCanvas: _invalidateShareCountForCanvas,
 	});
 	const openCanvasEmailLinkModal = _csh.openCanvasEmailLinkModal;
-	const openCanvasShareManagementModal = _csh.openCanvasShareManagementModal;
 	const attachSfUserPicker = _csh.attachSfUserPicker;
 
 	const _um = window.OrgLoom.uploadModal.mount({
@@ -6228,6 +6499,9 @@ function csrfFetch(url, options) {
 		},
 		getMeInfo: function () {
 			return _meInfo;
+		},
+		publishPresenceChanges: function () {
+			return _publishPresenceChanges();
 		},
 		pingAuditEvent: pingAuditEvent,
 		markCanvasGuideUploadComplete: _completeCanvasGuide,
@@ -6486,6 +6760,7 @@ function csrfFetch(url, options) {
 	const validateCanvasPayload = _tpl.validateCanvasPayload;
 	const applyTemplate = _tpl.applyTemplate;
 	const applyCanvasPayload = _tpl.applyCanvasPayload;
+	_canvasSaveState.setPayloadProvider(() => buildCanvasPayload());
 
 	const _sd = window.OrgLoom.sessionDrafts.mount({
 		canvasState: canvasState,
@@ -6575,6 +6850,13 @@ function csrfFetch(url, options) {
 				merge: false,
 				ownedByMe: !!data.ownedByMe,
 				recipientRole: data.recipientRole || null,
+				canvasIdentity: {
+					id: cur.id,
+					title: data.title || cur.title || '',
+					ownedByMe: !!data.ownedByMe,
+					versionId: data.versionId || null,
+					recipientRole: data.recipientRole || null,
+				},
 			});
 			_setStaleRefsFromLoad(data.staleRefs);
 			canvasState.currentCanvas = {
@@ -6584,10 +6866,10 @@ function csrfFetch(url, options) {
 				versionId: data.versionId || null,
 				recipientRole: data.recipientRole || null,
 			};
+			_canvasSaveState.captureSaved({ savedAt: data.updatedAt });
 			announceMergedContributions(data);
 			if (!data.ownedByMe) {
 				_canvasShareCanvasId = cur.id;
-				_canvasShareRecipientHasAccount = !!data.recipientHasAccount;
 				_canvasShareRole = data.recipientRole || 'viewer';
 				renderShareRecipientBanner();
 			}
@@ -6608,6 +6890,7 @@ function csrfFetch(url, options) {
 			return false;
 		}
 	}
+	let _ins = null;
 	const _presence = window.OrgLoom.presence.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -6624,6 +6907,9 @@ function csrfFetch(url, options) {
 		renderBulkView: function () {
 			return renderBulkView();
 		},
+		setSkipNextCyAutoPan: function (value) {
+			_skipNextCyAutoPan = !!value;
+		},
 		addToSelection: function () {
 			return addToSelection.apply(null, arguments);
 		},
@@ -6632,14 +6918,31 @@ function csrfFetch(url, options) {
 		},
 		applyLiveSnapshot: async function (payload) {
 			const current = canvasState.currentCanvas ? Object.assign({}, canvasState.currentCanvas) : null;
+			canvasState._suppressNextViewTransition = true;
 			await applyCanvasPayload(payload || {}, {
 				merge: false,
 				ownedByMe: current ? !!current.ownedByMe : true,
 				recipientRole: current ? current.recipientRole || null : null,
+				canvasIdentity: current,
 			});
 			canvasState.currentCanvas = current;
 			renderBulkView();
 			renderBulkToolbar();
+		},
+		onSlotUpdated: function (record) {
+			if (_ins) {
+				_ins.refreshCurrentRecordAccess(record);
+			}
+		},
+		onFieldLocksChanged: function (reference, fieldName) {
+			if (_ins) {
+				_ins.refreshCurrentFieldLocks(reference, fieldName);
+			}
+		},
+		onFieldValuesChanged: function (record, fields) {
+			if (_ins) {
+				_ins.refreshCurrentRecordValues(record, fields);
+			}
 		},
 		onAccessChanged: function (detail) {
 			const current = canvasState.currentCanvas;
@@ -6674,6 +6977,7 @@ function csrfFetch(url, options) {
 		},
 	});
 	_publishPresenceLayout = _presence.publishLayout;
+	_publishPresenceChanges = _presence.publishChanges;
 	const pushPresenceFocus = _presence.pushFocus;
 
 	const _aip = window.OrgLoom.aiProposals.mount({
@@ -6713,7 +7017,7 @@ function csrfFetch(url, options) {
 	});
 	const openBulkEditModal = _bem.openModal;
 
-	const _ins = window.OrgLoom.insertModal.mount({
+	_ins = window.OrgLoom.insertModal.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
 		escapeHtml: escapeHtml,
@@ -6732,11 +7036,23 @@ function csrfFetch(url, options) {
 		recordOrdinal: recordOrdinal,
 		_slotAssignmentState: _slotAssignmentState,
 		markPendingDelete: markPendingDelete,
+		canDeleteRecord: function (record) {
+			const describe = record && record.objectName && canvasState.describeCache[record.objectName];
+			return !!(describe && describe.deletable === true);
+		},
 		unmarkPendingDelete: unmarkPendingDelete,
 		showConfirmDialog: showConfirmDialog,
 		pushPresenceFocus: pushPresenceFocus,
 		publishPresenceLayout: function (records) {
 			return _publishPresenceLayout(records);
+		},
+		fieldLockFor: _presence.fieldLockFor,
+		acquireFieldLock: _presence.acquireFieldLock,
+		commitRecordFields: _presence.commitRecordFields,
+		releaseFieldLock: _presence.releaseFieldLock,
+		releaseRecordFieldLocks: _presence.releaseRecordFieldLocks,
+		configureRequest: function (record) {
+			return configureExistingSlot(record);
 		},
 
 		getCyInstance: function () {
@@ -6873,6 +7189,9 @@ function csrfFetch(url, options) {
 			? window.Orgloom.canvasOrgSwitch.restore()
 			: false;
 	const _restored = _migrationResumed || _orgSwitchRestored || _autosaveRestore();
+	if (_restored) {
+		_canvasSaveState.markRestored();
+	}
 	const _quickUploadRestored =
 		!_migrationResumed && !_orgSwitchRestored && _restoreInterruptedQuickUpload && _restoreInterruptedQuickUpload();
 	if (
@@ -6890,6 +7209,7 @@ function csrfFetch(url, options) {
 		(_restored || _quickUploadRestored) &&
 		!_migrationResumed &&
 		!_orgSwitchRestored &&
+		!_hasCanvasLaunchRequest &&
 		typeof window.olToast === 'function'
 	) {
 		window.olToast(

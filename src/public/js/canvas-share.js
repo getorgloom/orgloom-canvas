@@ -31,7 +31,15 @@
 			const _hasCap = deps._hasCap;
 			const _invalidateShareCountForCanvas = deps._invalidateShareCountForCanvas;
 
-			function attachSfUserPicker(hostEl, { onPick, placeholder = 'Search by name, email, or username…' } = {}) {
+			function attachSfUserPicker(
+				hostEl,
+				{
+					onPick,
+					placeholder = 'Search by name, email, or username…',
+					changeLabel = 'Change',
+					excludeCurrentUser = false,
+				} = {},
+			) {
 				hostEl.classList.add('sf-user-picker');
 				hostEl.innerHTML =
 					'<input type="search" name="sf-user-search" class="sf-user-picker-input" ' +
@@ -54,7 +62,10 @@
 					results.hidden = false;
 					results.innerHTML = '<div class="sf-user-picker-empty">Searching…</div>';
 					try {
-						const url = '/api/sf/users/search?limit=20' + (q ? '&q=' + encodeURIComponent(q) : '');
+						const url =
+							'/api/sf/users/search?limit=20' +
+							(excludeCurrentUser ? '&excludeCurrent=1' : '') +
+							(q ? '&q=' + encodeURIComponent(q) : '');
 						const r = await csrfFetch(url, { credentials: 'same-origin' });
 						if (mySeq !== _seq) {
 							return;
@@ -67,7 +78,17 @@
 								'</div>';
 							return;
 						}
-						const users = (data && data.users) || [];
+						const currentUserKey = String(window.SF_USER_ID || '')
+							.slice(0, 15)
+							.toUpperCase();
+						const users = ((data && data.users) || []).filter(
+							(user) =>
+								!excludeCurrentUser ||
+								!currentUserKey ||
+								String((user && user.id) || '')
+									.slice(0, 15)
+									.toUpperCase() !== currentUserKey,
+						);
 						if (users.length === 0) {
 							results.innerHTML =
 								'<div class="sf-user-picker-empty">No matching users in this Salesforce org. The recipient must be an active standard-license SF user with an Email on file.</div>';
@@ -125,7 +146,12 @@
 						'<span class="sf-user-picker-selected-email">' +
 						escapeHtml(u.email || '') +
 						'</span>' +
-						'<button type="button" class="sf-user-picker-clear" title="Pick a different user">×</button>';
+						'<button type="button" class="sf-user-picker-clear" title="Pick a different user" ' +
+						'aria-label="' +
+						escapeHtml(changeLabel) +
+						'">' +
+						escapeHtml(changeLabel) +
+						'</button>';
 					selected.querySelector('.sf-user-picker-clear').addEventListener('click', clear);
 					if (typeof onPick === 'function') {
 						onPick(u);
@@ -233,6 +259,10 @@
 					'</div>' +
 					'</section>' +
 					'<div id="cs-share-result" style="display:none;margin-top:0.9em;padding:0.7em 0.85em;border:1px solid var(--border);border-radius:4px;background:var(--bg-elev)"></div>' +
+					'<section class="cs-access-section">' +
+					'<h4>People with access</h4>' +
+					'<div id="cs-manage-list"><div class="tag">Loading...</div></div>' +
+					'</section>' +
 					'</div>' +
 					'<div class="modal-footer">' +
 					'<button class="button secondary" data-cs-close>Close</button>' +
@@ -282,6 +312,7 @@
 				}
 				const picker = attachSfUserPicker(modal.querySelector('#cs-link-picker'), {
 					placeholder: 'Pick a teammate by name, email, or username…',
+					excludeCurrentUser: true,
 					onPick() {
 						shareComplete = false;
 						sendBtnEl.textContent = 'Share with teammate';
@@ -322,6 +353,147 @@
 				}
 
 				const msgEl = modal.querySelector('#cs-link-msg');
+				async function refreshAccessList() {
+					const listEl = modal.querySelector('#cs-manage-list');
+					if (!listEl) {
+						return;
+					}
+					listEl.innerHTML = '<div class="tag">Loading...</div>';
+					try {
+						const response = await csrfFetch(
+							'/api/canvas/' + encodeURIComponent(canvasId) + '/share-links',
+							{ credentials: 'same-origin' },
+						);
+						const data = await response.json().catch(() => null);
+						if (!response.ok) {
+							throw new Error((data && data.error) || 'HTTP ' + response.status);
+						}
+						const directShares = (data && data.directShares) || [];
+						if (directShares.length === 0) {
+							listEl.innerHTML = '<div class="tag cs-manage-empty">Only you can open this canvas.</div>';
+							return;
+						}
+						const roleOptions = (selectedRole) =>
+							['viewer', 'contributor', 'editor', 'none']
+								.map(
+									(role) =>
+										'<option value="' +
+										role +
+										'"' +
+										(role === selectedRole ? ' selected' : '') +
+										'>' +
+										(role === 'none' ? 'No access' : role.charAt(0).toUpperCase() + role.slice(1)) +
+										'</option>',
+								)
+								.join('');
+						listEl.innerHTML = directShares
+							.map((share) => {
+								const role = share.role || (share.accessLevel === 'Collaborator' ? 'editor' : 'viewer');
+								return (
+									'<div class="cs-link-row" data-sf-user-id="' +
+									escapeHtml(share.sfUserId) +
+									'">' +
+									'<div class="cs-link-person">' +
+									'<span class="cs-link-person-name">' +
+									escapeHtml(share.name || 'Salesforce user') +
+									'</span>' +
+									'</div>' +
+									'<div class="cs-access-controls">' +
+									'<select class="cs-access-role" aria-label="Access level for ' +
+									escapeHtml(share.name || 'Salesforce user') +
+									'" data-original-role="' +
+									role +
+									'">' +
+									roleOptions(role) +
+									'</select>' +
+									'<button type="button" class="button cs-access-save" hidden>Save</button>' +
+									'</div>' +
+									'</div>'
+								);
+							})
+							.join('');
+
+						listEl.querySelectorAll('.cs-link-row').forEach((row) => {
+							const roleSelect = row.querySelector('.cs-access-role');
+							const saveButton = row.querySelector('.cs-access-save');
+							const sfUserId = row.dataset.sfUserId;
+							const showRoleActions = () => {
+								const changed = roleSelect.value !== roleSelect.dataset.originalRole;
+								saveButton.hidden = !changed;
+								saveButton.classList.toggle('danger', roleSelect.value === 'none');
+							};
+							roleSelect.addEventListener('change', showRoleActions);
+							saveButton.addEventListener('click', async () => {
+								const nextRole = roleSelect.value;
+								const revokeAccess = nextRole === 'none';
+								if (
+									revokeAccess &&
+									!(await showConfirmDialog({
+										title: 'Remove canvas access?',
+										message:
+											'This person will immediately lose access to the canvas. Their Salesforce record permissions will not change.',
+										confirmLabel: 'Remove access',
+										cancelLabel: 'Keep access',
+										danger: true,
+									}))
+								) {
+									return;
+								}
+								roleSelect.disabled = true;
+								saveButton.disabled = true;
+								try {
+									const updateResponse = await csrfFetch(
+										'/api/canvas/' +
+											encodeURIComponent(canvasId) +
+											'/direct-shares/' +
+											encodeURIComponent(sfUserId),
+										revokeAccess
+											? {
+													method: 'DELETE',
+													credentials: 'same-origin',
+												}
+											: {
+													method: 'PATCH',
+													credentials: 'same-origin',
+													headers: { 'Content-Type': 'application/json' },
+													body: JSON.stringify({ role: nextRole }),
+												},
+									);
+									const updateBody = await updateResponse.json().catch(() => ({}));
+									if (!updateResponse.ok) {
+										throw new Error(
+											(updateBody && (updateBody.message || updateBody.error)) ||
+												'HTTP ' + updateResponse.status,
+										);
+									}
+									_invalidateShareCountForCanvas(canvasId);
+									showBulkToast(
+										revokeAccess
+											? 'Canvas access removed.'
+											: 'Access updated to ' +
+													nextRole.charAt(0).toUpperCase() +
+													nextRole.slice(1) +
+													'.',
+										'success',
+									);
+									await refreshAccessList();
+								} catch (error) {
+									roleSelect.disabled = false;
+									saveButton.disabled = false;
+									roleSelect.value = roleSelect.dataset.originalRole;
+									showRoleActions();
+									showBulkToast('Access change failed: ' + (error.message || error), 'error');
+								}
+							});
+						});
+					} catch (error) {
+						listEl.innerHTML =
+							'<div class="tag">Could not load access: ' +
+							escapeHtml(error.message || String(error)) +
+							'</div>';
+					}
+				}
+
 				async function sendLink() {
 					if (window.ORGLOOM_MOCK) {
 						return;
@@ -370,31 +542,23 @@
 						let nextStep;
 						if (data.emailDeliverFailed) {
 							nextStep =
-								'Canvas access was granted, but the notification email failed to send. ' +
+								"Canvas shared, but we couldn't send the notification email. Copy the link below and send it to " +
 								who +
-								' can find the canvas in their Saved Canvases, or copy the link below.';
+								'.';
 						} else if (data.updated) {
-							nextStep =
-								who +
-								"'s access updated to " +
-								(data.role || 'the new role') +
-								'. Emailed them about the change.';
+							nextStep = who + ' now has ' + (data.role || 'updated') + ' access.';
 						} else if (r2.hasAccount && r2.hasConnection) {
-							nextStep =
-								who +
-								" has Org Loom + this Salesforce org connected, so they'll see the canvas immediately.";
+							nextStep = 'Shared with ' + who + '.';
 						} else if (r2.hasAccount) {
-							nextStep =
-								who +
-								" has Org Loom but hasn't connected this Salesforce org yet. Emailed them with the next step.";
+							nextStep = 'Shared with ' + who + '. We emailed connection instructions.';
 						} else {
-							nextStep =
-								who + " isn't on Org Loom yet. Emailed them with sign-up + connect instructions.";
+							nextStep = 'Shared with ' + who + '. We emailed setup instructions.';
 						}
 						msgEl.textContent = nextStep;
 						msgEl.style.color = 'var(--success)';
 						shareComplete = true;
 						sendBtnEl.textContent = 'Shared';
+						await refreshAccessList();
 						if (shareResultEl) {
 							const canvasUrl = window.location.origin + '/?openCanvas=' + encodeURIComponent(canvasId);
 							shareResultEl.style.display = '';
@@ -477,153 +641,20 @@
 						msgEl.textContent = '';
 					}
 				}
-			}
-
-			function openCanvasShareManagementModal(canvasId, canvasTitle) {
-				// Active grants are managed separately from the create-share flow to reduce accidental edits.
-				document
-					.querySelectorAll('.canvas-share-modal, .canvas-share-management-modal')
-					.forEach((el) => el.remove());
-				const modal = document.createElement('div');
-				modal.className = 'modal canvas-share-management-modal';
-				modal.innerHTML =
-					'<div class="modal-overlay" data-csm-close></div>' +
-					'<div class="modal-body" style="max-width:560px">' +
-					'<div class="modal-header">' +
-					'<h3>Manage canvas access</h3>' +
-					'<button class="modal-close" data-csm-close>&times;</button>' +
-					'</div>' +
-					'<div class="modal-content">' +
-					'<p class="tag">People who can open <strong>' +
-					escapeHtml(canvasTitle || 'this canvas') +
-					'</strong>.</p>' +
-					'<div id="cs-manage-list"><div class="tag">Loading…</div></div>' +
-					'</div>' +
-					'<div class="modal-footer">' +
-					'<button class="button" type="button" data-csm-share>Share with teammate</button>' +
-					'<button class="button secondary" data-csm-close>Close</button>' +
-					'</div>' +
-					'</div>';
-				document.body.appendChild(modal);
-
-				const cleanup = () => {
-					document.removeEventListener('keydown', onKey);
-					if (modal.parentNode) {
-						modal.remove();
-					}
-					_invalidateShareCountForCanvas(canvasId);
-				};
-				const onKey = (event) => {
-					if (event.key === 'Escape') {
-						cleanup();
-					}
-				};
-				document.addEventListener('keydown', onKey);
-				modal.querySelectorAll('[data-csm-close]').forEach((el) => el.addEventListener('click', cleanup));
-				modal.querySelector('[data-csm-share]').addEventListener('click', () => {
-					cleanup();
-					openCanvasEmailLinkModal(canvasId, canvasTitle);
-				});
-
-				async function refreshList() {
+				if (window.ORGLOOM_MOCK) {
 					const listEl = modal.querySelector('#cs-manage-list');
-					listEl.innerHTML = '<div class="tag">Loading…</div>';
-					try {
-						const response = await csrfFetch(
-							'/api/canvas/' + encodeURIComponent(canvasId) + '/share-links',
-							{ credentials: 'same-origin' },
-						);
-						const data = await response.json().catch(() => null);
-						if (!response.ok) {
-							throw new Error((data && data.error) || 'HTTP ' + response.status);
-						}
-						const directShares = (data && data.directShares) || [];
-						if (directShares.length === 0) {
-							listEl.innerHTML =
-								'<div class="tag cs-manage-empty">No active shares. Only you can open this canvas.</div>';
-							return;
-						}
-						listEl.innerHTML = directShares
-							.map((share) => {
-								const role = share.role || (share.accessLevel === 'Collaborator' ? 'editor' : 'viewer');
-								const roleTagClass =
-									role === 'editor' ? 'tpl-scope-tag--editor' : 'tpl-scope-tag--template';
-								return (
-									'<div class="cs-link-row">' +
-									'<div class="cs-link-person">' +
-									'<div class="cs-link-person-line">' +
-									'<span class="cs-link-person-name">' +
-									escapeHtml(share.name || 'Salesforce user') +
-									'</span>' +
-									'<span class="tpl-scope-tag ' +
-									roleTagClass +
-									'">' +
-									escapeHtml(role.toUpperCase()) +
-									'</span>' +
-									'</div>' +
-									'<div class="tag cs-link-note">Can open this canvas. No expiration.</div>' +
-									'</div>' +
-									'<button type="button" class="button secondary cs-direct-revoke" data-sf-user-id="' +
-									escapeHtml(share.sfUserId) +
-									'">Revoke</button>' +
-									'</div>'
-								);
-							})
-							.join('');
-						listEl.querySelectorAll('.cs-direct-revoke').forEach((button) => {
-							button.addEventListener('click', async () => {
-								const sfUserId = button.dataset.sfUserId;
-								if (
-									!(await showConfirmDialog({
-										title: 'Revoke canvas access?',
-										message:
-											'This teammate will immediately lose access to the canvas. Their Salesforce record permissions will not change.',
-										confirmLabel: 'Revoke',
-										cancelLabel: 'Keep access',
-										danger: true,
-									}))
-								) {
-									return;
-								}
-								button.disabled = true;
-								try {
-									const response = await csrfFetch(
-										'/api/canvas/' +
-											encodeURIComponent(canvasId) +
-											'/direct-shares/' +
-											encodeURIComponent(sfUserId),
-										{
-											method: 'DELETE',
-											credentials: 'same-origin',
-										},
-									);
-									const body = await response.json().catch(() => ({}));
-									if (!response.ok) {
-										throw new Error((body && body.error) || 'HTTP ' + response.status);
-									}
-									_invalidateShareCountForCanvas(canvasId);
-									await refreshList();
-								} catch (error) {
-									button.disabled = false;
-									showBulkToast('Revoke failed: ' + (error.message || error), 'error');
-								}
-							});
-						});
-					} catch (error) {
+					if (listEl) {
 						listEl.innerHTML =
-							'<div class="tag">Couldn’t load active shares: ' +
-							escapeHtml(error.message || String(error)) +
-							'</div>';
+							'<div class="tag cs-manage-empty">Shared access is unavailable in the demo.</div>';
 					}
+				} else {
+					refreshAccessList();
 				}
-
-				refreshList();
 			}
 
 			return {
 				attachSfUserPicker: attachSfUserPicker,
 				openCanvasEmailLinkModal: openCanvasEmailLinkModal,
-				openCanvasShareManagementModal: openCanvasShareManagementModal,
 			};
 		},
 	};

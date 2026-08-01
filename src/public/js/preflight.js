@@ -40,6 +40,17 @@
 						return;
 					}
 					if (rec.pendingDelete && rec.loadedFromId) {
+						const describe = canvasState.describeCache[rec.objectName];
+						if (!describe || !Array.isArray(describe.fields)) {
+							missingDescribes.add(rec.objectName);
+						} else if (describe.deletable !== true) {
+							addIssue(
+								rec,
+								{ name: '(delete)', label: 'Delete' },
+								'error',
+								'Your Salesforce user does not have permission to delete this type of record.',
+							);
+						}
 						return;
 					}
 					if (rec.loadedFromId && !isRecordModified(rec)) {

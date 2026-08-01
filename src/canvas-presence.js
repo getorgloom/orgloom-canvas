@@ -1,13 +1,21 @@
 // Ephemeral in-process collaboration state. Presence is never a durable source of canvas truth.
 import crypto from 'node:crypto';
+import { hiddenCanvasRecordId } from './slot-helpers.js';
 
 const _presenceByCanvas = new Map();
 const _revisionByCanvas = new Map();
 const _liveSnapshotsByCanvas = new Map();
+const _orphanedLiveSnapshotsByCanvas = new Map();
 const _scopeByConnection = new Map();
+const _fieldLocksByCanvas = new Map();
+const _fieldVersionsByCanvas = new Map();
+const PRESENCE_INSTANCE_ID = crypto.randomUUID();
 
 const IDLE_THRESHOLD_MS = 90 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 1000;
+const LIVE_SNAPSHOT_HANDOFF_TTL_MS = 10 * 60 * 1000;
+const LIVE_SNAPSHOT_REFRESH_DEBOUNCE_MS = 100;
+export const FIELD_LOCK_LEASE_MS = 45 * 1000;
 export const MAX_PRESENCE_FIELDS = 100;
 export const MAX_PRESENCE_PAYLOAD_BYTES = 64 * 1024;
 export const MAX_LAYOUT_RECORDS = 500;
@@ -97,6 +105,177 @@ function _scopeForConnection(canvasId, connectionId) {
 	return { scopeId, conns, entry };
 }
 
+function _discardCanvasState(scopeId) {
+	_revisionByCanvas.delete(scopeId);
+	_liveSnapshotsByCanvas.delete(scopeId);
+	_orphanedLiveSnapshotsByCanvas.delete(scopeId);
+	_fieldLocksByCanvas.delete(scopeId);
+	_fieldVersionsByCanvas.delete(scopeId);
+}
+
+function _handleEmptyPresenceScope(scopeId, workspaceId, now = Date.now()) {
+	_presenceByCanvas.delete(scopeId);
+	_fieldLocksByCanvas.delete(scopeId);
+	_fieldVersionsByCanvas.delete(scopeId);
+	const live = _liveSnapshotsByCanvas.get(scopeId);
+	const state = _revisionByCanvas.get(scopeId);
+	if (live && state && live.revision > state.durableRevision) {
+		_orphanedLiveSnapshotsByCanvas.set(scopeId, { workspaceId, orphanedAt: now });
+		return;
+	}
+	_discardCanvasState(scopeId);
+}
+
+function _fieldKey(reference, fieldName) {
+	if (
+		!reference ||
+		!['loaded', 'draft', 'slot'].includes(reference.refKind) ||
+		reference.ref == null ||
+		!/^[A-Za-z][A-Za-z0-9_]*$/.test(String(fieldName || ''))
+	) {
+		return null;
+	}
+	if (
+		(reference.sourceRefKind != null || reference.sourceRef != null) &&
+		(!['loaded', 'draft'].includes(reference.sourceRefKind) ||
+			reference.sourceRef == null ||
+			!String(reference.sourceRef) ||
+			String(reference.sourceRef).length > 128)
+	) {
+		return null;
+	}
+	return JSON.stringify([
+		reference.refKind,
+		String(reference.ref),
+		reference.collabRef == null ? null : String(reference.collabRef),
+		String(fieldName),
+	]);
+}
+
+function _cleanRecordReference(reference) {
+	if (!reference || typeof reference !== 'object' || !['loaded', 'draft', 'slot'].includes(reference.refKind)) {
+		return null;
+	}
+	const ref = reference.ref == null ? '' : String(reference.ref);
+	if (!ref || ref.length > 128) {
+		return null;
+	}
+	const clean = { refKind: reference.refKind, ref };
+	if (reference.collabRef != null) {
+		const collabRef = String(reference.collabRef);
+		if (!collabRef || collabRef.length > 128) {
+			return null;
+		}
+		clean.collabRef = collabRef;
+	}
+	if (reference.sourceRefKind != null || reference.sourceRef != null) {
+		if (!['loaded', 'draft'].includes(reference.sourceRefKind)) {
+			return null;
+		}
+		const sourceRef = reference.sourceRef == null ? '' : String(reference.sourceRef);
+		if (!sourceRef || sourceRef.length > 128) {
+			return null;
+		}
+		clean.sourceRefKind = reference.sourceRefKind;
+		clean.sourceRef = sourceRef;
+	}
+	return clean;
+}
+
+function _activeFieldLocks(scopeId) {
+	const now = Date.now();
+	const locks = _fieldLocksByCanvas.get(scopeId);
+	if (!locks) {
+		return new Map();
+	}
+	for (const [key, lock] of locks) {
+		if (!lock || lock.expiresAt <= now) {
+			locks.delete(key);
+		}
+	}
+	if (locks.size === 0) {
+		_fieldLocksByCanvas.delete(scopeId);
+	}
+	return locks;
+}
+
+function _publicFieldLock(lock) {
+	return lock
+		? {
+				leaseId: lock.leaseId,
+				connectionId: lock.connectionId,
+				accountId: lock.accountId,
+				displayName: lock.displayName,
+				color: lock.color,
+				targetRef: lock.targetRef,
+				fieldName: lock.fieldName,
+				expiresAt: lock.expiresAt,
+				baseVersion: lock.baseVersion,
+			}
+		: null;
+}
+
+function _releaseConnectionLocks(scopeId, connectionId) {
+	const locks = _activeFieldLocks(scopeId);
+	let released = 0;
+	for (const [key, lock] of locks) {
+		if (lock.connectionId !== connectionId) {
+			continue;
+		}
+		locks.delete(key);
+		released += 1;
+		_broadcast(
+			scopeId,
+			{ type: 'field-lock', lock: null, targetRef: lock.targetRef, fieldName: lock.fieldName },
+			connectionId,
+		);
+	}
+	return released;
+}
+
+function _fieldVersions(scopeId) {
+	if (!_fieldVersionsByCanvas.has(scopeId)) {
+		_fieldVersionsByCanvas.set(scopeId, new Map());
+	}
+	return _fieldVersionsByCanvas.get(scopeId);
+}
+
+function _slotAllowsContributor(entry, record, fieldName) {
+	if (!entry || entry.role !== 'contributor' || !record || !record.slot) {
+		return false;
+	}
+	const slot = record.slot;
+	if ((slot.kind || 'whole-record') === 'fields') {
+		if (!Array.isArray(slot.fields) || !slot.fields.includes(fieldName)) {
+			return false;
+		}
+	}
+	const assignee = slot.assigneeSfUserId == null ? '' : String(slot.assigneeSfUserId).slice(0, 15);
+	const actor = entry.sfUserId == null ? '' : String(entry.sfUserId).slice(0, 15);
+	return !assignee || (actor && assignee === actor);
+}
+
+function _entryCanEditField(entry, record, fieldName) {
+	if (!entry || !record || !fieldName || entry.accessRevoked) {
+		return false;
+	}
+	if (entry.role === 'owner' || entry.role === 'editor') {
+		return true;
+	}
+	return _slotAllowsContributor(entry, record, fieldName);
+}
+
+function _projectFieldLock(entry, lock) {
+	if (!lock) {
+		return null;
+	}
+	const visibility = _visibilityForRef(entry, lock.targetRef);
+	if (!visibility.visible || (visibility.readableFields && !visibility.readableFields.has(lock.fieldName))) {
+		return null;
+	}
+	return _publicFieldLock(lock);
+}
+
 function _roleRank(role) {
 	return role === 'editor' ? 3 : role === 'contributor' ? 2 : role === 'viewer' ? 1 : 0;
 }
@@ -144,6 +323,90 @@ function _validLiveSnapshot(payload) {
 	}
 }
 
+const SNAPSHOT_CARD_GAP_X = 260;
+const SNAPSHOT_CARD_GAP_Y = 180;
+
+function _snapshotRecords(payload) {
+	return [
+		...(Array.isArray(payload && payload.loadedRecords) ? payload.loadedRecords : []),
+		...(Array.isArray(payload && payload.drafts) ? payload.drafts : []),
+	].filter(Boolean);
+}
+
+function _sameCardPosition(left, right) {
+	return Math.abs(left.x - right.x) < 1 && Math.abs(left.y - right.y) < 1;
+}
+
+function _cardPositionIsOpen(placed, candidate) {
+	return !placed.some(
+		(position) =>
+			Math.abs(position.x - candidate.x) < SNAPSHOT_CARD_GAP_X &&
+			Math.abs(position.y - candidate.y) < SNAPSHOT_CARD_GAP_Y,
+	);
+}
+
+function _nearestOpenCardPosition(placed, origin) {
+	for (let ring = 1; ring <= 100; ring++) {
+		const offsets = [
+			[0, ring],
+			[ring, 0],
+			[-ring, 0],
+			[0, -ring],
+			[ring, ring],
+			[-ring, ring],
+			[ring, -ring],
+			[-ring, -ring],
+		];
+		for (const [column, row] of offsets) {
+			const candidate = {
+				x: origin.x + column * SNAPSHOT_CARD_GAP_X,
+				y: origin.y + row * SNAPSHOT_CARD_GAP_Y,
+			};
+			if (_cardPositionIsOpen(placed, candidate)) {
+				return candidate;
+			}
+		}
+	}
+	return { x: origin.x, y: origin.y + (placed.length + 1) * SNAPSHOT_CARD_GAP_Y };
+}
+
+function _spreadExactCardOverlaps(payload) {
+	const placed = [];
+	for (const record of _snapshotRecords(payload)) {
+		const origin = {
+			x: Number.isFinite(record.x) ? record.x : 200,
+			y: Number.isFinite(record.y) ? record.y : 200,
+		};
+		if (placed.some((position) => _sameCardPosition(position, origin))) {
+			const open = _nearestOpenCardPosition(placed, origin);
+			record.x = open.x;
+			record.y = open.y;
+		} else {
+			record.x = origin.x;
+			record.y = origin.y;
+		}
+		placed.push({ x: record.x, y: record.y });
+	}
+	return payload;
+}
+
+export function normalizeSnapshotLayout(payload) {
+	return _spreadExactCardOverlaps(_cloneSnapshot(payload));
+}
+
+function _availableCreatePosition(payload, x, y) {
+	const origin = {
+		x: Number.isFinite(x) ? x : 200,
+		y: Number.isFinite(y) ? y : 200,
+	};
+	const placed = _snapshotRecords(payload)
+		.filter((record) => Number.isFinite(record.x) && Number.isFinite(record.y))
+		.map((record) => ({ x: record.x, y: record.y }));
+	return placed.some((position) => _sameCardPosition(position, origin))
+		? _nearestOpenCardPosition(placed, origin)
+		: origin;
+}
+
 function _payloadRecordForRef(payload, reference) {
 	if (!payload || !reference || reference.ref == null) {
 		return null;
@@ -154,30 +417,49 @@ function _payloadRecordForRef(payload, reference) {
 		...(Array.isArray(payload.loadedRecords) ? payload.loadedRecords : []),
 		...(Array.isArray(payload.drafts) ? payload.drafts : []),
 	];
-	const primaryMatches = (record) => {
-		if (reference.refKind === 'loaded') {
-			return record.loadedFromId && _sfIdKey(record.loadedFromId) === _sfIdKey(ref);
+	const matchesReference = (record, refKind, target) => {
+		if (refKind === 'loaded') {
+			return record.loadedFromId && _sfIdKey(record.loadedFromId) === _sfIdKey(target);
 		}
-		if (reference.refKind === 'draft') {
-			return record.tempId != null && String(record.tempId) === ref;
+		if (refKind === 'draft') {
+			return record.tempId != null && String(record.tempId) === target;
 		}
-		if (reference.refKind === 'slot') {
-			return record.slot && record.slot.slotId != null && String(record.slot.slotId) === ref;
+		if (refKind === 'slot') {
+			return record.slot && record.slot.slotId != null && String(record.slot.slotId) === target;
 		}
 		return false;
 	};
+	const matchingRecords = records.filter((record) => record && matchesReference(record, reference.refKind, ref));
 	if (collabRef != null) {
-		return (
-			records.find(
-				(record) =>
-					record &&
-					primaryMatches(record) &&
-					record.canvasRecordId != null &&
-					String(record.canvasRecordId) === collabRef,
-			) || null
+		const exact = matchingRecords.find(
+			(record) => record.canvasRecordId != null && String(record.canvasRecordId) === collabRef,
 		);
+		if (exact) {
+			return exact;
+		}
+		const cardMatches = records.filter(
+			(record) => record && record.canvasRecordId != null && String(record.canvasRecordId) === collabRef,
+		);
+		if (cardMatches.length === 1) {
+			return cardMatches[0];
+		}
+		// Legacy payloads have no canvasRecordId. Their natural reference is safe only when unique.
+		if (matchingRecords.length === 1) {
+			return matchingRecords[0];
+		}
 	}
-	return records.find((record) => record && primaryMatches(record)) || null;
+	if (matchingRecords.length === 1) {
+		return matchingRecords[0];
+	}
+	const sourceRefKind = reference.sourceRefKind;
+	const sourceRef = reference.sourceRef == null ? null : String(reference.sourceRef);
+	if (['loaded', 'draft'].includes(sourceRefKind) && sourceRef) {
+		const sourceMatches = records.filter((record) => record && matchesReference(record, sourceRefKind, sourceRef));
+		if (sourceMatches.length === 1) {
+			return sourceMatches[0];
+		}
+	}
+	return collabRef == null ? matchingRecords[0] || null : null;
 }
 
 function _associationEndpoint(reference) {
@@ -234,6 +516,63 @@ function _removeSnapshotRecord(payload, record) {
 	);
 }
 
+function _promoteSnapshotDraft(payload, record, event) {
+	if (!record || record.loadedFromId || event.kind !== 'create') {
+		return false;
+	}
+	const draftRef = record.tempId;
+	const slotRef = record.slot && record.slot.slotId;
+	payload.drafts = (payload.drafts || []).filter((candidate) => candidate !== record);
+	payload.loadedRecords = Array.isArray(payload.loadedRecords) ? payload.loadedRecords : [];
+	if (!payload.loadedRecords.includes(record)) {
+		payload.loadedRecords.push(record);
+	}
+	record.loadedFromId = event.sfId;
+	record.canvasRecordId = event.collabRef || record.canvasRecordId || event.sfId;
+	record.objectName = event.objectName || record.objectName;
+	delete record.tempId;
+	delete record.values;
+	delete record.changes;
+	if (draftRef != null || (event.slot === null && slotRef != null)) {
+		for (const association of payload.associations || []) {
+			for (const endpointName of ['from', 'to']) {
+				const endpoint = association && association[endpointName];
+				const matchesDraft =
+					draftRef != null &&
+					endpoint &&
+					endpoint.kind === 'draft' &&
+					String(endpoint.ref) === String(draftRef);
+				const matchesSlot =
+					event.slot === null &&
+					slotRef != null &&
+					endpoint &&
+					endpoint.kind === 'slot' &&
+					String(endpoint.ref) === String(slotRef);
+				if (matchesDraft || matchesSlot) {
+					association[endpointName] = { kind: 'loaded', ref: event.sfId };
+				}
+			}
+		}
+	}
+	return true;
+}
+
+function _initialLoadedRecordChanges(fields, baseline) {
+	const current = fields && typeof fields === 'object' ? fields : {};
+	const original = baseline && typeof baseline === 'object' ? baseline : {};
+	const changes = {};
+	for (const name of new Set([...Object.keys(original), ...Object.keys(current)])) {
+		const hasCurrent = Object.prototype.hasOwnProperty.call(current, name);
+		const hasOriginal = Object.prototype.hasOwnProperty.call(original, name);
+		if (!hasCurrent && hasOriginal) {
+			changes[name] = null;
+		} else if (!hasOriginal || JSON.stringify(current[name]) !== JSON.stringify(original[name])) {
+			changes[name] = current[name];
+		}
+	}
+	return changes;
+}
+
 function _applySnapshotMutation(canvasId, event, revisionValue) {
 	const live = _liveSnapshotsByCanvas.get(canvasId);
 	if (!live || !live.payload || !event) {
@@ -259,6 +598,13 @@ function _applySnapshotMutation(canvasId, event, revisionValue) {
 				_ensureSnapshotSchemaObject(payload, event.objectName);
 			}
 			if (record) {
+				if (event.slot !== undefined) {
+					if (event.slot === null) {
+						delete record.slot;
+					} else {
+						record.slot = _cloneSnapshot(event.slot);
+					}
+				}
 				record.values = record.values && typeof record.values === 'object' ? record.values : {};
 				for (const [name, value] of Object.entries(event.fields || {})) {
 					if (value === null) {
@@ -274,11 +620,17 @@ function _applySnapshotMutation(canvasId, event, revisionValue) {
 			}
 		}
 	} else if (event.type === 'loaded-record') {
-		let record = _payloadRecordForRef(payload, {
+		const loadedRecord = _payloadRecordForRef(payload, {
 			refKind: 'loaded',
 			ref: event.sfId,
 			collabRef: event.collabRef,
 		});
+		let record = event.promotedFrom ? _payloadRecordForRef(payload, event.promotedFrom) : null;
+		if (record && loadedRecord && record !== loadedRecord) {
+			payload.loadedRecords = (payload.loadedRecords || []).filter((candidate) => candidate !== loadedRecord);
+		}
+		record = record || loadedRecord;
+		_promoteSnapshotDraft(payload, record, event);
 		if (!record && event.kind === 'create') {
 			record = {
 				loadedFromId: event.sfId,
@@ -292,11 +644,28 @@ function _applySnapshotMutation(canvasId, event, revisionValue) {
 			_ensureSnapshotSchemaObject(payload, event.objectName);
 		}
 		if (record) {
-			record.changes = record.changes && typeof record.changes === 'object' ? record.changes : {};
-			for (const [name, value] of Object.entries(event.fields || {})) {
-				record.changes[name] = value;
+			if (event.kind === 'create') {
+				record.loadedFromId = event.sfId;
+				record.canvasRecordId = event.collabRef || record.canvasRecordId || event.sfId;
+				record.objectName = event.objectName || record.objectName;
+				delete record.tempId;
 			}
-			if (Object.keys(record.changes).length === 0) {
+			if (event.slot !== undefined) {
+				if (event.slot === null) {
+					delete record.slot;
+				} else {
+					record.slot = _cloneSnapshot(event.slot);
+				}
+			}
+			if (event.kind === 'create' || (event.kind === 'update' && event.baseline)) {
+				record.changes = _initialLoadedRecordChanges(event.fields, event.baseline);
+			} else if (event.kind === 'update') {
+				record.changes = record.changes && typeof record.changes === 'object' ? record.changes : {};
+				for (const [name, value] of Object.entries(event.fields || {})) {
+					record.changes[name] = value;
+				}
+			}
+			if (record.changes && Object.keys(record.changes).length === 0) {
 				delete record.changes;
 			}
 			if (typeof event.pendingDelete === 'boolean') {
@@ -347,6 +716,39 @@ function _applySnapshotMutation(canvasId, event, revisionValue) {
 			if (record) {
 				record.x = position.x;
 				record.y = position.y;
+			}
+		}
+	} else if (event.type === 'field-update') {
+		const record = _payloadRecordForRef(payload, event.targetRef);
+		if (record) {
+			const target =
+				event.targetRef.refKind === 'loaded'
+					? (record.changes = record.changes && typeof record.changes === 'object' ? record.changes : {})
+					: (record.values = record.values && typeof record.values === 'object' ? record.values : {});
+			for (const [name, value] of Object.entries(event.fields || {})) {
+				if (value === null && event.targetRef.refKind !== 'loaded') {
+					delete target[name];
+				} else {
+					target[name] = value;
+				}
+			}
+			const relationshipFields = new Set(Array.isArray(event.relationshipFields) ? event.relationshipFields : []);
+			if (relationshipFields.size > 0) {
+				const recordEndpoints = [];
+				if (record.loadedFromId) {
+					recordEndpoints.push({ kind: 'loaded', ref: record.loadedFromId });
+				}
+				if (record.tempId != null) {
+					recordEndpoints.push({ kind: 'draft', ref: record.tempId });
+				}
+				if (record.slot && record.slot.slotId != null) {
+					recordEndpoints.push({ kind: 'slot', ref: record.slot.slotId });
+				}
+				payload.associations = (payload.associations || []).filter(
+					(association) =>
+						!relationshipFields.has(association && association.fieldName) ||
+						!recordEndpoints.some((endpoint) => _sameEndpoint(association && association.from, endpoint)),
+				);
 			}
 		}
 	}
@@ -414,6 +816,116 @@ function _pickReadableFields(values, allowed) {
 	return projected;
 }
 
+function _projectRecipientSlot(slot, readableFields) {
+	if (!slot || typeof slot !== 'object' || (slot.kind || 'whole-record') !== 'fields' || !readableFields) {
+		return slot;
+	}
+	const fields = Array.isArray(slot.fields) ? slot.fields : [];
+	const projectedFields = fields.filter((field) => readableFields.has(field));
+	const priorUnavailable = Number.isSafeInteger(Number(slot.unavailableFieldCount))
+		? Math.max(0, Number(slot.unavailableFieldCount))
+		: 0;
+	const unavailableFieldCount = priorUnavailable + fields.length - projectedFields.length;
+	const projected = { ...slot, fields: projectedFields };
+	if (unavailableFieldCount > 0) {
+		projected.unavailableFieldCount = unavailableFieldCount;
+	} else {
+		delete projected.unavailableFieldCount;
+	}
+	return projected;
+}
+
+function _hiddenRecordKey(reference) {
+	if (reference && reference.collabRef != null && String(reference.collabRef)) {
+		return 'card:' + String(reference.collabRef);
+	}
+	return _hiddenRecordReferenceKey(reference);
+}
+
+function _hiddenRecordReferenceKey(reference) {
+	return reference && reference.refKind && reference.ref != null
+		? String(reference.refKind) + ':' + String(reference.ref)
+		: null;
+}
+
+function _hiddenRecordId(entry, reference, create = false) {
+	const key = _hiddenRecordKey(reference);
+	if (!key || !(entry.hiddenRecordIds instanceof Map)) {
+		return null;
+	}
+	const stableId = hiddenCanvasRecordId(reference && reference.collabRef);
+	if (stableId) {
+		entry.hiddenRecordIds.set(key, stableId);
+		const referenceKey = _hiddenRecordReferenceKey(reference);
+		if (referenceKey) {
+			entry.hiddenRecordIds.set(referenceKey, stableId);
+		}
+	} else if (!entry.hiddenRecordIds.has(key) && create) {
+		entry.hiddenRecordIds.set(key, 'hidden-live-' + crypto.randomUUID());
+	}
+	const hiddenId = stableId || entry.hiddenRecordIds.get(key) || null;
+	if (hiddenId && entry.hiddenRecordReferences instanceof Map) {
+		entry.hiddenRecordReferences.set(hiddenId, {
+			refKind: String(reference.refKind),
+			ref: String(reference.ref),
+			...(reference.collabRef != null ? { collabRef: String(reference.collabRef) } : {}),
+			...(reference.sourceRefKind != null ? { sourceRefKind: String(reference.sourceRefKind) } : {}),
+			...(reference.sourceRef != null ? { sourceRef: String(reference.sourceRef) } : {}),
+		});
+	}
+	return hiddenId;
+}
+
+function _forgetHiddenRecordId(entry, hiddenId) {
+	for (const [key, value] of entry.hiddenRecordIds instanceof Map ? entry.hiddenRecordIds : []) {
+		if (value === hiddenId) {
+			entry.hiddenRecordIds.delete(key);
+		}
+	}
+	if (entry.hiddenRecordReferences instanceof Map) {
+		entry.hiddenRecordReferences.delete(hiddenId);
+	}
+}
+
+function _snapshotRecordReference(record) {
+	if (!record || typeof record !== 'object') {
+		return null;
+	}
+	let reference;
+	if (record.slot && record.slot.slotId != null) {
+		reference = { refKind: 'slot', ref: String(record.slot.slotId) };
+		if (record.loadedFromId) {
+			reference.sourceRefKind = 'loaded';
+			reference.sourceRef = String(record.loadedFromId);
+		} else if (record.tempId != null) {
+			reference.sourceRefKind = 'draft';
+			reference.sourceRef = String(record.tempId);
+		}
+	} else if (record.loadedFromId) {
+		reference = { refKind: 'loaded', ref: String(record.loadedFromId) };
+	} else if (record.tempId != null) {
+		reference = { refKind: 'draft', ref: String(record.tempId) };
+	} else {
+		return null;
+	}
+	if (record.canvasRecordId != null && String(record.canvasRecordId)) {
+		reference.collabRef = String(record.canvasRecordId);
+	}
+	return reference;
+}
+
+function _seedHiddenRecordReferences(entry, payload) {
+	if (!entry || entry.role === 'owner' || !entry.visibility) {
+		return;
+	}
+	for (const record of _snapshotRecords(payload)) {
+		const reference = _snapshotRecordReference(record);
+		if (reference && !_visibilityForRef(entry, reference).visible) {
+			_hiddenRecordId(entry, reference, true);
+		}
+	}
+}
+
 function _syncSlotVisibility(entry, targetRef, slot) {
 	if (!entry.visibility || !targetRef || !['loaded', 'draft'].includes(targetRef.refKind)) {
 		return;
@@ -443,8 +955,28 @@ function _syncSlotVisibility(entry, targetRef, slot) {
 			: { visible: true, loadedRecordId: null, draftId: targetRefValue };
 }
 
+function _forgetLoadedVisibility(entry, reference) {
+	_syncSlotVisibility(entry, reference, null);
+	const loadedRecords = entry.visibility && entry.visibility.loadedRecords;
+	if (!loadedRecords) {
+		return;
+	}
+	const targetKey = _sfIdKey(reference && reference.ref);
+	for (const key of Object.keys(loadedRecords)) {
+		if (_sfIdKey(key) === targetKey) {
+			delete loadedRecords[key];
+		}
+	}
+}
+
 function _projectPresencePayload(entry, payload) {
-	if (!entry.visibility || entry.role === 'owner' || !payload || typeof payload !== 'object') {
+	if (!payload || typeof payload !== 'object') {
+		return payload;
+	}
+	if (payload.type === 'field-update' && entry.role !== 'owner') {
+		payload = { ...payload, contributionIds: undefined };
+	}
+	if (!entry.visibility || entry.role === 'owner') {
 		return payload;
 	}
 	if (payload.type === 'loaded-record') {
@@ -456,12 +988,35 @@ function _projectPresencePayload(entry, payload) {
 			...payload,
 			fields: _pickReadableFields(payload.fields, visibility.readableFields),
 			...(payload.baseline ? { baseline: _pickReadableFields(payload.baseline, visibility.readableFields) } : {}),
+			...(payload.slot !== undefined
+				? { slot: _projectRecipientSlot(payload.slot, visibility.readableFields) }
+				: {}),
 		};
 	}
 	if (payload.type === 'loaded-removed') {
-		return _visibilityForRef(entry, { refKind: 'loaded', ref: payload.sfId }).visible ? payload : null;
+		const loadedRef = {
+			refKind: 'loaded',
+			ref: payload.sfId,
+			...(payload.collabRef != null ? { collabRef: String(payload.collabRef) } : {}),
+		};
+		const visible = _visibilityForRef(entry, loadedRef).visible;
+		const hiddenId = visible ? null : _hiddenRecordId(entry, loadedRef);
+		_forgetLoadedVisibility(entry, loadedRef);
+		if (visible) {
+			return payload;
+		}
+		if (!hiddenId) {
+			return null;
+		}
+		_forgetHiddenRecordId(entry, hiddenId);
+		return { type: 'hidden-record', kind: 'remove', hiddenId, revision: payload.revision };
 	}
 	if (payload.type === 'draft-update') {
+		const draftRef = {
+			refKind: 'draft',
+			ref: payload.tempId,
+			...(payload.canvasRecordId != null ? { collabRef: String(payload.canvasRecordId) } : {}),
+		};
 		if (payload.kind === 'create') {
 			const objectVisibility =
 				entry.visibility.objects && entry.visibility.objects[String(payload.objectName || '')];
@@ -475,15 +1030,43 @@ function _projectPresencePayload(entry, payload) {
 						}
 					: { visible: false };
 		}
-		const visibility = _visibilityForRef(entry, { refKind: 'draft', ref: payload.tempId });
+		const visibility = _visibilityForRef(entry, draftRef);
 		if (!visibility.visible) {
+			const hiddenId = _hiddenRecordId(entry, draftRef, payload.kind === 'create');
+			if (!hiddenId) {
+				return null;
+			}
+			if (payload.kind === 'remove') {
+				_forgetHiddenRecordId(entry, hiddenId);
+				if (entry.visibility.drafts) {
+					delete entry.visibility.drafts[String(payload.tempId)];
+				}
+				return { type: 'hidden-record', kind: 'remove', hiddenId, revision: payload.revision };
+			}
+			if (payload.kind === 'create' || payload.position) {
+				return {
+					type: 'hidden-record',
+					kind: payload.kind === 'create' ? 'create' : 'update',
+					hiddenId,
+					x: payload.position && Number.isFinite(payload.position.x) ? payload.position.x : payload.x,
+					y: payload.position && Number.isFinite(payload.position.y) ? payload.position.y : payload.y,
+					revision: payload.revision,
+				};
+			}
 			return null;
+		}
+		if (payload.kind === 'create' && payload.slot !== undefined) {
+			_syncSlotVisibility(entry, draftRef, payload.slot);
 		}
 		const projected = {
 			...payload,
 			fields: _pickReadableFields(payload.fields, visibility.readableFields),
+			...(payload.slot !== undefined
+				? { slot: _projectRecipientSlot(payload.slot, visibility.readableFields) }
+				: {}),
 		};
 		if (payload.kind === 'remove' && entry.visibility.drafts) {
+			_syncSlotVisibility(entry, draftRef, null);
 			delete entry.visibility.drafts[String(payload.tempId)];
 		}
 		return projected;
@@ -505,15 +1088,51 @@ function _projectPresencePayload(entry, payload) {
 			return null;
 		}
 		_syncSlotVisibility(entry, payload.targetRef, payload.slot);
-		if (payload.slot && payload.slot.kind === 'fields' && visibility.readableFields) {
-			const fields = (payload.slot.fields || []).filter((field) => visibility.readableFields.has(field));
-			return { ...payload, slot: { ...payload.slot, fields } };
+		if (payload.slot && payload.slot.kind === 'fields') {
+			return { ...payload, slot: _projectRecipientSlot(payload.slot, visibility.readableFields) };
 		}
 		return payload;
 	}
 	if (payload.type === 'record-layout') {
-		const positions = (payload.positions || []).filter((position) => _visibilityForRef(entry, position).visible);
+		const positions = [];
+		for (const position of payload.positions || []) {
+			if (_visibilityForRef(entry, position).visible) {
+				positions.push(position);
+				continue;
+			}
+			const hiddenId = _hiddenRecordId(entry, position);
+			if (hiddenId) {
+				positions.push({ hiddenId, x: position.x, y: position.y });
+			}
+		}
 		return positions.length > 0 ? { ...payload, positions } : null;
+	}
+	if (payload.type === 'field-update') {
+		const visibility = _visibilityForRef(entry, payload.targetRef);
+		if (!visibility.visible) {
+			return null;
+		}
+		const fields = visibility.readableFields
+			? _pickReadableFields(payload.fields, visibility.readableFields)
+			: payload.fields;
+		const relationshipFields = (Array.isArray(payload.relationshipFields) ? payload.relationshipFields : []).filter(
+			(fieldName) => Object.prototype.hasOwnProperty.call(fields || {}, fieldName),
+		);
+		return {
+			...payload,
+			contributionIds: entry.role === 'owner' ? payload.contributionIds : undefined,
+			fields,
+			relationshipFields: relationshipFields.length > 0 ? relationshipFields : undefined,
+		};
+	}
+	if (payload.type === 'field-lock') {
+		const targetRef = payload.lock ? payload.lock.targetRef : payload.targetRef;
+		const fieldName = payload.lock ? payload.lock.fieldName : payload.fieldName;
+		const visibility = _visibilityForRef(entry, targetRef);
+		if (!visibility.visible || (visibility.readableFields && !visibility.readableFields.has(fieldName))) {
+			return null;
+		}
+		return { ...payload, lock: payload.lock ? _publicFieldLock(payload.lock) : null };
 	}
 	if (payload.type === 'focus' && payload.focus && payload.focus.refKind) {
 		return _visibilityForRef(entry, payload.focus).visible ? payload : null;
@@ -544,6 +1163,7 @@ async function _deliverLiveSnapshot(canvasId, entry, live) {
 		if (projected.visibility) {
 			entry.visibility = projected.visibility;
 		}
+		_seedHiddenRecordReferences(entry, live.payload);
 		const delivered = _writeSseEvent(entry.sseRes, 'presence', {
 			type: 'live-snapshot',
 			payload: projected.payload,
@@ -575,6 +1195,39 @@ async function _deliverLiveSnapshot(canvasId, entry, live) {
 	}
 }
 
+function _scheduleLiveSnapshotRefresh(scopeId, entry) {
+	if (!entry || entry.accessRevoked) {
+		return;
+	}
+	entry.snapshotRefreshPending = true;
+	if (entry.snapshotRefreshTimer) {
+		clearTimeout(entry.snapshotRefreshTimer);
+	}
+	entry.snapshotRefreshTimer = setTimeout(async () => {
+		entry.snapshotRefreshTimer = null;
+		const conns = _presenceByCanvas.get(scopeId);
+		if (!conns || conns.get(entry.connectionId) !== entry || entry.accessRevoked) {
+			entry.snapshotRefreshPending = false;
+			return;
+		}
+		if (entry.snapshotSyncing) {
+			_scheduleLiveSnapshotRefresh(scopeId, entry);
+			return;
+		}
+		entry.snapshotRefreshPending = false;
+		const live = _liveSnapshotsByCanvas.get(scopeId);
+		if (live) {
+			await _deliverLiveSnapshot(scopeId, entry, live);
+		}
+		if (entry.snapshotRefreshPending) {
+			_scheduleLiveSnapshotRefresh(scopeId, entry);
+		}
+	}, LIVE_SNAPSHOT_REFRESH_DEBOUNCE_MS);
+	if (entry.snapshotRefreshTimer.unref) {
+		entry.snapshotRefreshTimer.unref();
+	}
+}
+
 function _broadcast(canvasId, payload, excludeConnId) {
 	const conns = _presenceByCanvas.get(canvasId);
 	if (!conns) {
@@ -582,6 +1235,7 @@ function _broadcast(canvasId, payload, excludeConnId) {
 	}
 	let delivered = 0;
 	for (const [connId, entry] of conns.entries()) {
+		const projected = _projectPresencePayload(entry, payload);
 		if (connId === excludeConnId) {
 			continue;
 		}
@@ -589,7 +1243,6 @@ function _broadcast(canvasId, payload, excludeConnId) {
 			entry.pendingSnapshotEvents.push(payload);
 			continue;
 		}
-		const projected = _projectPresencePayload(entry, payload);
 		if (projected && _writeSseEvent(entry.sseRes, 'presence', projected)) {
 			delivered++;
 		}
@@ -611,15 +1264,24 @@ function _broadcastMutation(canvasId, entry, payload, excludeConnId) {
 	const revisioned = Object.assign({}, payload, { revision: state.revision });
 	_applySnapshotMutation(canvasId, revisioned, state.revision);
 	const live = _liveSnapshotsByCanvas.get(canvasId);
-	const refreshVisibility =
-		live &&
-		((revisioned.type === 'draft-update' && revisioned.kind === 'create') ||
-			(revisioned.type === 'loaded-record' && revisioned.kind === 'create'));
+	const createsDraft = revisioned.type === 'draft-update' && revisioned.kind === 'create';
+	const createsLoadedRecord = revisioned.type === 'loaded-record' && revisioned.kind === 'create';
+	const refreshVisibility = live && (createsDraft || createsLoadedRecord);
 	if (refreshVisibility) {
 		const conns = _presenceByCanvas.get(canvasId);
 		for (const candidate of conns ? conns.values() : []) {
-			if (candidate.connectionId !== excludeConnId && candidate.role !== 'owner') {
-				_deliverLiveSnapshot(canvasId, candidate, live).catch(() => {});
+			const objectVisibilityKnown = !!(
+				createsDraft &&
+				candidate.visibility &&
+				candidate.visibility.objects &&
+				Object.prototype.hasOwnProperty.call(candidate.visibility.objects, revisioned.objectName)
+			);
+			if (
+				candidate.connectionId !== excludeConnId &&
+				candidate.role !== 'owner' &&
+				(!createsDraft || !objectVisibilityKnown)
+			) {
+				_scheduleLiveSnapshotRefresh(canvasId, candidate);
 			}
 		}
 	}
@@ -673,17 +1335,67 @@ export function revision({ canvasId, sfOrgId, connectionId }) {
 	return state ? state.revision : 0;
 }
 
-export function seedLiveSnapshot({ canvasId, sfOrgId, payload }) {
+export function seedLiveSnapshot({ canvasId, sfOrgId, payload, replaceIfDurable = false }) {
 	const scopeId = _presenceScopeId(canvasId, sfOrgId);
-	if (!canvasId || _liveSnapshotsByCanvas.has(scopeId) || !_validLiveSnapshot(payload)) {
+	if (!canvasId || !_validLiveSnapshot(payload)) {
 		return false;
 	}
 	const state = _revisionState(scopeId);
+	const existing = _liveSnapshotsByCanvas.get(scopeId);
+	if (existing) {
+		if (!replaceIfDurable || existing.revision > state.durableRevision) {
+			return false;
+		}
+		_liveSnapshotsByCanvas.set(scopeId, {
+			payload: normalizeSnapshotLayout(payload),
+			revision: state.durableRevision,
+			updatedAt: Date.now(),
+		});
+		return true;
+	}
 	_liveSnapshotsByCanvas.set(scopeId, {
-		payload: _cloneSnapshot(payload),
+		payload: normalizeSnapshotLayout(payload),
 		revision: state.revision,
 		updatedAt: Date.now(),
 	});
+	return true;
+}
+
+// Repair a missing live record from the trusted durable canvas without
+// replacing newer in-memory edits on other records.
+export function mergeLiveSnapshotRecord({ canvasId, sfOrgId, payload, targetRef }) {
+	const scopeId = _presenceScopeId(canvasId, sfOrgId);
+	const live = _liveSnapshotsByCanvas.get(scopeId);
+	if (!canvasId || !live || !_validLiveSnapshot(payload) || !targetRef) {
+		return false;
+	}
+	if (_payloadRecordForRef(live.payload, targetRef)) {
+		return true;
+	}
+	const durableRecord = _payloadRecordForRef(payload, targetRef);
+	if (!durableRecord) {
+		return false;
+	}
+	const clonedRecord = _cloneSnapshot(durableRecord);
+	if (clonedRecord.loadedFromId) {
+		live.payload.loadedRecords = Array.isArray(live.payload.loadedRecords) ? live.payload.loadedRecords : [];
+		live.payload.loadedRecords.push(clonedRecord);
+	} else {
+		live.payload.drafts = Array.isArray(live.payload.drafts) ? live.payload.drafts : [];
+		live.payload.drafts.push(clonedRecord);
+	}
+	const durableSchemaObject = (
+		payload.schema && Array.isArray(payload.schema.objects) ? payload.schema.objects : []
+	).find((object) => object && object.name === clonedRecord.objectName);
+	if (durableSchemaObject) {
+		live.payload.schema =
+			live.payload.schema && typeof live.payload.schema === 'object' ? live.payload.schema : { objects: [] };
+		live.payload.schema.objects = Array.isArray(live.payload.schema.objects) ? live.payload.schema.objects : [];
+		if (!live.payload.schema.objects.some((object) => object && object.name === clonedRecord.objectName)) {
+			live.payload.schema.objects.push(_cloneSnapshot(durableSchemaObject));
+		}
+	}
+	live.updatedAt = Date.now();
 	return true;
 }
 
@@ -705,6 +1417,12 @@ export function subscribe({
 		throw new Error('subscribe: missing required field');
 	}
 	const scopeId = _presenceScopeId(canvasId, sfOrgId);
+	const orphaned = _orphanedLiveSnapshotsByCanvas.get(scopeId);
+	if (orphaned && orphaned.workspaceId !== workspaceId) {
+		_discardCanvasState(scopeId);
+	} else {
+		_orphanedLiveSnapshotsByCanvas.delete(scopeId);
+	}
 	if (!_presenceByCanvas.has(scopeId)) {
 		_presenceByCanvas.set(scopeId, new Map());
 	}
@@ -725,12 +1443,16 @@ export function subscribe({
 		visibility,
 		projectSnapshot,
 		accessRevoked: false,
-		awaitingSnapshot:
-			!!_liveSnapshotsByCanvas.get(scopeId) &&
-			_liveSnapshotsByCanvas.get(scopeId).revision > revisionState.durableRevision,
+		// Every subscriber receives the server's current view. Owners use it to
+		// reconcile tab-restored records that the in-memory snapshot is missing.
+		awaitingSnapshot: !!_liveSnapshotsByCanvas.get(scopeId),
 		snapshotSyncing: false,
+		snapshotRefreshPending: false,
+		snapshotRefreshTimer: null,
 		snapshotRevision: null,
 		pendingSnapshotEvents: [],
+		hiddenRecordIds: new Map(),
+		hiddenRecordReferences: new Map(),
 		color,
 		cursor: null,
 		focus: null,
@@ -739,6 +1461,10 @@ export function subscribe({
 		lastCanvasRevision: revisionState.durableRevision,
 		sseRes,
 	};
+	const live = _liveSnapshotsByCanvas.get(scopeId);
+	if (live) {
+		_seedHiddenRecordReferences(entry, live.payload);
+	}
 	const peers = [];
 	for (const other of conns.values()) {
 		peers.push(_toPeerPayload(other));
@@ -746,8 +1472,12 @@ export function subscribe({
 	conns.set(connectionId, entry);
 	_scopeByConnection.set(connectionId, scopeId);
 	_writeSseEvent(sseRes, 'presence-init', {
+		serverInstanceId: PRESENCE_INSTANCE_ID,
 		you: Object.assign(_toPeerPayload(entry), { role: entry.role, canEdit: entry.canEdit }),
 		peers,
+		fieldLocks: Array.from(_activeFieldLocks(scopeId).values())
+			.map((lock) => _projectFieldLock(entry, lock))
+			.filter(Boolean),
 		revision: revisionState.revision,
 		durableRevision: revisionState.durableRevision,
 		hasLiveSnapshot: _liveSnapshotsByCanvas.has(scopeId),
@@ -767,6 +1497,9 @@ export function subscribe({
 			unsubscribe({ canvasId, connectionId });
 		}
 	}, 25 * 1000);
+	if (keepalive.unref) {
+		keepalive.unref();
+	}
 	entry.keepalive = keepalive;
 	sseRes.on('close', () => {
 		clearInterval(keepalive);
@@ -777,7 +1510,6 @@ export function subscribe({
 		unsubscribe({ canvasId, connectionId });
 	});
 	_broadcast(scopeId, { type: 'join', peer: _toPeerPayload(entry) }, connectionId);
-	const live = _liveSnapshotsByCanvas.get(scopeId);
 	if (live && entry.awaitingSnapshot) {
 		queueMicrotask(() => {
 			_deliverLiveSnapshot(scopeId, entry, live).catch(() => {});
@@ -839,12 +1571,15 @@ export function unsubscribe({ canvasId, connectionId }) {
 	if (entry.keepalive) {
 		clearInterval(entry.keepalive);
 	}
+	if (entry.snapshotRefreshTimer) {
+		clearTimeout(entry.snapshotRefreshTimer);
+		entry.snapshotRefreshTimer = null;
+	}
+	_releaseConnectionLocks(scopeId, connectionId);
 	conns.delete(connectionId);
 	_scopeByConnection.delete(connectionId);
 	if (conns.size === 0) {
-		_presenceByCanvas.delete(scopeId);
-		_revisionByCanvas.delete(scopeId);
-		_liveSnapshotsByCanvas.delete(scopeId);
+		_handleEmptyPresenceScope(scopeId, entry.workspaceId);
 	}
 	_broadcast(scopeId, { type: 'leave', connectionId }, connectionId);
 	return true;
@@ -881,6 +1616,258 @@ export function updateCursor({ canvasId, connectionId, x, y, world, sequence, re
 	return true;
 }
 
+export function acquireFieldLock({
+	canvasId,
+	connectionId,
+	targetRef,
+	fieldName,
+	requestingAccountId,
+	takeover = false,
+}) {
+	const scoped = _scopeForConnection(canvasId, connectionId);
+	const entry = scoped && scoped.entry;
+	const key = _fieldKey(targetRef, fieldName);
+	const live = scoped && _liveSnapshotsByCanvas.get(scoped.scopeId);
+	const record = live && _payloadRecordForRef(live.payload, targetRef);
+	if (!scoped || !entry || !_ownsConnection(entry, requestingAccountId)) {
+		return { ok: false, reason: 'presence-connection-stale' };
+	}
+	if (!key) {
+		return { ok: false, reason: 'invalid-field-lock' };
+	}
+	if (!record) {
+		return { ok: false, reason: 'canvas-record-not-found' };
+	}
+	if (!_entryCanEditField(entry, record, fieldName)) {
+		return { ok: false, reason: 'field-not-editable' };
+	}
+	const locks = _activeFieldLocks(scoped.scopeId);
+	const existing = locks.get(key);
+	if (existing && existing.connectionId !== connectionId && !takeover) {
+		return { ok: false, reason: 'field-locked', lock: _publicFieldLock(existing) };
+	}
+	const versions = _fieldVersions(scoped.scopeId);
+	const lock = {
+		leaseId: existing && existing.connectionId === connectionId ? existing.leaseId : crypto.randomUUID(),
+		connectionId,
+		accountId: entry.accountId,
+		displayName: entry.displayName,
+		color: entry.color,
+		targetRef: _cloneSnapshot(targetRef),
+		fieldName,
+		expiresAt: Date.now() + FIELD_LOCK_LEASE_MS,
+		baseVersion: versions.get(key) || 0,
+	};
+	locks.set(key, lock);
+	_fieldLocksByCanvas.set(scoped.scopeId, locks);
+	entry.lastSeenAt = Date.now();
+	_broadcast(scoped.scopeId, { type: 'field-lock', lock: _publicFieldLock(lock) }, null);
+	return { ok: true, lock: _publicFieldLock(lock) };
+}
+
+export function renewFieldLock({ canvasId, connectionId, leaseId, requestingAccountId }) {
+	const scoped = _scopeForConnection(canvasId, connectionId);
+	if (!scoped || !_ownsConnection(scoped.entry, requestingAccountId) || !leaseId) {
+		return { ok: false, reason: 'field-lock-rejected' };
+	}
+	const locks = _activeFieldLocks(scoped.scopeId);
+	const lock = Array.from(locks.values()).find(
+		(candidate) => candidate.connectionId === connectionId && candidate.leaseId === leaseId,
+	);
+	if (!lock) {
+		return { ok: false, reason: 'field-lock-expired' };
+	}
+	lock.expiresAt = Date.now() + FIELD_LOCK_LEASE_MS;
+	scoped.entry.lastSeenAt = Date.now();
+	return { ok: true, lock: _publicFieldLock(lock) };
+}
+
+export function releaseFieldLock({ canvasId, connectionId, leaseId, requestingAccountId }) {
+	const scoped = _scopeForConnection(canvasId, connectionId);
+	if (!scoped || !_ownsConnection(scoped.entry, requestingAccountId) || !leaseId) {
+		return false;
+	}
+	const locks = _activeFieldLocks(scoped.scopeId);
+	for (const [key, lock] of locks) {
+		if (lock.connectionId !== connectionId || lock.leaseId !== leaseId) {
+			continue;
+		}
+		locks.delete(key);
+		_broadcast(
+			scoped.scopeId,
+			{ type: 'field-lock', lock: null, targetRef: lock.targetRef, fieldName: lock.fieldName },
+			null,
+		);
+		return true;
+	}
+	return false;
+}
+
+function _validateFieldCommit({ scoped, connectionId, targetRef, fields, leases, allowContributor = false }) {
+	const entry = scoped && scoped.entry;
+	const live = scoped && _liveSnapshotsByCanvas.get(scoped.scopeId);
+	const record = live && _payloadRecordForRef(live.payload, targetRef);
+	const names = Object.keys(fields || {});
+	if (
+		!entry ||
+		!record ||
+		names.length === 0 ||
+		names.length > MAX_PRESENCE_FIELDS ||
+		names.some((name) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) ||
+		names.some((name) => {
+			const value = fields[name];
+			return !(
+				value === null ||
+				typeof value === 'string' ||
+				typeof value === 'number' ||
+				typeof value === 'boolean'
+			);
+		}) ||
+		Buffer.byteLength(JSON.stringify(fields || {}), 'utf8') > MAX_PRESENCE_PAYLOAD_BYTES
+	) {
+		return { ok: false, reason: 'invalid-field-update' };
+	}
+	const locks = _activeFieldLocks(scoped.scopeId);
+	const versions = _fieldVersions(scoped.scopeId);
+	const conflicts = [];
+	for (const name of names) {
+		if ((entry.role === 'contributor' && !allowContributor) || !_entryCanEditField(entry, record, name)) {
+			conflicts.push({ fieldName: name, reason: 'field-not-editable' });
+			continue;
+		}
+		const key = _fieldKey(targetRef, name);
+		const lease = leases && leases[name];
+		const lock = key && locks.get(key);
+		if (
+			!lease ||
+			!lock ||
+			lock.connectionId !== connectionId ||
+			lock.leaseId !== lease.leaseId ||
+			lock.expiresAt <= Date.now()
+		) {
+			conflicts.push({
+				fieldName: name,
+				reason: lock && lock.connectionId !== connectionId ? 'field-locked' : 'field-lock-required',
+				lock: lock ? _publicFieldLock(lock) : null,
+			});
+			continue;
+		}
+		const expected = Number.isSafeInteger(lease.baseVersion) ? lease.baseVersion : -1;
+		const current = versions.get(key) || 0;
+		if (expected !== current) {
+			conflicts.push({ fieldName: name, reason: 'stale-field', currentVersion: current });
+		}
+	}
+	return conflicts.length > 0 ? { ok: false, reason: 'field-conflict', conflicts } : { ok: true };
+}
+
+function _hasForeignFieldLock(scopeId, connectionId, targetRef, fieldNames) {
+	const locks = _activeFieldLocks(scopeId);
+	const live = _liveSnapshotsByCanvas.get(scopeId);
+	const targetRecord = live && _payloadRecordForRef(live.payload, targetRef);
+	return (fieldNames || []).some((fieldName) => {
+		for (const lock of locks.values()) {
+			if (lock.fieldName !== fieldName || lock.connectionId === connectionId) {
+				continue;
+			}
+			const lockedRecord = live && _payloadRecordForRef(live.payload, lock.targetRef);
+			if (targetRecord && lockedRecord === targetRecord) {
+				return true;
+			}
+		}
+		return false;
+	});
+}
+
+export function validateFieldCommit({
+	canvasId,
+	connectionId,
+	targetRef,
+	fields,
+	leases,
+	requestingAccountId,
+	allowContributor = false,
+}) {
+	const scoped = _scopeForConnection(canvasId, connectionId);
+	if (!scoped || !_ownsConnection(scoped.entry, requestingAccountId)) {
+		return { ok: false, reason: 'field-update-rejected' };
+	}
+	return _validateFieldCommit({ scoped, connectionId, targetRef, fields, leases, allowContributor });
+}
+
+export function commitFieldValues({
+	canvasId,
+	connectionId,
+	targetRef,
+	fields,
+	leases,
+	requestingAccountId,
+	allowContributor = false,
+	contributionIds = [],
+	relationshipFields = [],
+}) {
+	const scoped = _scopeForConnection(canvasId, connectionId);
+	if (!scoped || !_ownsConnection(scoped.entry, requestingAccountId)) {
+		return { ok: false, reason: 'field-update-rejected' };
+	}
+	const validation = _validateFieldCommit({
+		scoped,
+		connectionId,
+		targetRef,
+		fields,
+		leases,
+		allowContributor,
+	});
+	if (!validation.ok) {
+		return validation;
+	}
+	const cleanRelationshipFields = Array.from(
+		new Set(
+			(Array.isArray(relationshipFields) ? relationshipFields : [])
+				.map(String)
+				.filter(
+					(fieldName) =>
+						/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) &&
+						Object.prototype.hasOwnProperty.call(fields, fieldName),
+				),
+		),
+	).slice(0, MAX_PRESENCE_FIELDS);
+	const revisionValue = _broadcastMutation(
+		scoped.scopeId,
+		scoped.entry,
+		{
+			type: 'field-update',
+			connectionId,
+			targetRef: _cloneSnapshot(targetRef),
+			fields: _cloneSnapshot(fields),
+			...(cleanRelationshipFields.length > 0
+				? { relationshipFields: _cloneSnapshot(cleanRelationshipFields) }
+				: {}),
+			contributionIds: (Array.isArray(contributionIds) ? contributionIds : [])
+				.map(String)
+				.filter((id) => /^[a-zA-Z0-9]{15,18}$/.test(id))
+				.slice(0, 100),
+		},
+		connectionId,
+	);
+	const locks = _activeFieldLocks(scoped.scopeId);
+	const versions = _fieldVersions(scoped.scopeId);
+	for (const name of Object.keys(fields)) {
+		const key = _fieldKey(targetRef, name);
+		versions.set(key, revisionValue);
+		const lock = locks.get(key);
+		if (lock && lock.connectionId === connectionId) {
+			locks.delete(key);
+			_broadcast(
+				scoped.scopeId,
+				{ type: 'field-lock', lock: null, targetRef: lock.targetRef, fieldName: lock.fieldName },
+				null,
+			);
+		}
+	}
+	return { ok: true, revision: revisionValue };
+}
+
 export function updateDraft({
 	canvasId,
 	connectionId,
@@ -892,6 +1879,7 @@ export function updateDraft({
 	x,
 	y,
 	position,
+	slot,
 	sequence,
 	requestingAccountId,
 }) {
@@ -922,6 +1910,9 @@ export function updateDraft({
 	if (Buffer.byteLength(JSON.stringify(fields), 'utf8') > MAX_PRESENCE_PAYLOAD_BYTES) {
 		return false;
 	}
+	if (kind !== 'create' && _hasForeignFieldLock(scopeId, connectionId, { refKind: 'draft', ref: tempId }, keys)) {
+		return false;
+	}
 	entry.lastSeenAt = Date.now();
 	const payload = {
 		type: 'draft-update',
@@ -930,10 +1921,17 @@ export function updateDraft({
 		fields,
 	};
 	if (kind === 'create') {
-		payload.kind = 'create';
-		if (typeof objectName === 'string') {
-			payload.objectName = objectName;
+		if (typeof objectName !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(objectName)) {
+			return false;
 		}
+		const live = _liveSnapshotsByCanvas.get(scopeId);
+		const createPosition = _availableCreatePosition(live && live.payload, x, y);
+		const cleanSlot = _cleanSlot(slot);
+		if (slot !== undefined && cleanSlot === undefined) {
+			return false;
+		}
+		payload.kind = 'create';
+		payload.objectName = objectName;
 		if (canvasRecordId != null) {
 			const cleanCanvasRecordId = String(canvasRecordId);
 			if (!cleanCanvasRecordId || cleanCanvasRecordId.length > 128) {
@@ -941,11 +1939,10 @@ export function updateDraft({
 			}
 			payload.canvasRecordId = cleanCanvasRecordId;
 		}
-		if (typeof x === 'number') {
-			payload.x = x;
-		}
-		if (typeof y === 'number') {
-			payload.y = y;
+		payload.x = createPosition.x;
+		payload.y = createPosition.y;
+		if (cleanSlot !== undefined) {
+			payload.slot = cleanSlot;
 		}
 	} else if (kind === 'remove') {
 		payload.kind = 'remove';
@@ -953,7 +1950,27 @@ export function updateDraft({
 	if (position && typeof position === 'object' && typeof position.x === 'number' && typeof position.y === 'number') {
 		payload.position = { x: position.x, y: position.y };
 	}
-	_broadcastMutation(scopeId, entry, payload, connectionId);
+	const revisionValue = _broadcastMutation(scopeId, entry, payload, connectionId);
+	if (kind === 'create' && (payload.x !== x || payload.y !== y)) {
+		_broadcast(
+			scopeId,
+			{
+				type: 'record-layout',
+				connectionId,
+				revision: revisionValue,
+				positions: [
+					{
+						refKind: 'draft',
+						ref: tempId,
+						...(canvasRecordId != null ? { collabRef: String(canvasRecordId) } : {}),
+						x: payload.x,
+						y: payload.y,
+					},
+				],
+			},
+			null,
+		);
+	}
 	return true;
 }
 
@@ -969,6 +1986,8 @@ export function updateLoadedRecord({
 	x,
 	y,
 	pendingDelete,
+	slot,
+	promotedFrom,
 	sequence,
 	requestingAccountId,
 }) {
@@ -1006,6 +2025,17 @@ export function updateLoadedRecord({
 	if (!validFields(fields) || (baseline && !validFields(baseline))) {
 		return false;
 	}
+	if (
+		kind === 'update' &&
+		_hasForeignFieldLock(
+			scoped.scopeId,
+			connectionId,
+			{ refKind: 'loaded', ref: sfId, ...(collabRef ? { collabRef } : {}) },
+			Object.keys(fields),
+		)
+	) {
+		return false;
+	}
 	if (kind === 'create' && (!objectName || objectName.length > 255 || !/^[A-Za-z][A-Za-z0-9_]*$/.test(objectName))) {
 		return false;
 	}
@@ -1031,19 +2061,53 @@ export function updateLoadedRecord({
 		payload.collabRef = cleanCollabRef;
 	}
 	if (kind === 'create') {
+		const live = _liveSnapshotsByCanvas.get(scoped.scopeId);
+		const createPosition = _availableCreatePosition(live && live.payload, x, y);
+		const cleanSlot = _cleanSlot(slot);
+		const cleanPromotedFrom = promotedFrom == null ? null : _cleanRecordReference(promotedFrom);
+		if (slot !== undefined && cleanSlot === undefined) {
+			return false;
+		}
+		if (promotedFrom != null && !cleanPromotedFrom) {
+			return false;
+		}
 		payload.objectName = objectName;
 		payload.baseline = baseline || {};
-		if (Number.isFinite(x)) {
-			payload.x = x;
+		payload.x = createPosition.x;
+		payload.y = createPosition.y;
+		if (cleanSlot !== undefined) {
+			payload.slot = cleanSlot;
 		}
-		if (Number.isFinite(y)) {
-			payload.y = y;
+		if (cleanPromotedFrom) {
+			payload.promotedFrom = cleanPromotedFrom;
 		}
+	} else if (baseline && typeof baseline === 'object') {
+		payload.baseline = baseline;
 	}
 	if (typeof pendingDelete === 'boolean') {
 		payload.pendingDelete = pendingDelete;
 	}
-	_broadcastMutation(scoped.scopeId, entry, payload, connectionId);
+	const revisionValue = _broadcastMutation(scoped.scopeId, entry, payload, connectionId);
+	if (kind === 'create' && (payload.x !== x || payload.y !== y)) {
+		_broadcast(
+			scoped.scopeId,
+			{
+				type: 'record-layout',
+				connectionId,
+				revision: revisionValue,
+				positions: [
+					{
+						refKind: 'loaded',
+						ref: String(sfId),
+						...(collabRef != null ? { collabRef: String(collabRef) } : {}),
+						x: payload.x,
+						y: payload.y,
+					},
+				],
+			},
+			null,
+		);
+	}
 	return true;
 }
 
@@ -1059,6 +2123,9 @@ function _cleanSlot(slot) {
 	if (!slotId || slotId.length > 128) {
 		return undefined;
 	}
+	if (slot.origin != null && slot.origin !== '' && (kind !== 'whole-record' || slot.origin !== 'standalone')) {
+		return undefined;
+	}
 	const bounded = (value, max) => {
 		if (value == null || value === '') {
 			return null;
@@ -1071,7 +2138,13 @@ function _cleanSlot(slot) {
 	const assigneeSfUserId = bounded(slot.assigneeSfUserId, 18);
 	const assigneeName = bounded(slot.assigneeName, 255);
 	const assigneeEmail = bounded(slot.assigneeEmail, 320);
-	if ([label, description, assigneeSfUserId, assigneeName, assigneeEmail].includes(undefined)) {
+	const createdAt =
+		slot.createdAt == null || slot.createdAt === ''
+			? null
+			: Number.isSafeInteger(Number(slot.createdAt)) && Number(slot.createdAt) > 0
+				? Number(slot.createdAt)
+				: undefined;
+	if ([label, description, assigneeSfUserId, assigneeName, assigneeEmail, createdAt].includes(undefined)) {
 		return undefined;
 	}
 	if (assigneeSfUserId && !/^[A-Za-z0-9]{15,18}$/.test(assigneeSfUserId)) {
@@ -1080,6 +2153,7 @@ function _cleanSlot(slot) {
 	const clean = {
 		slotId,
 		kind,
+		createdAt,
 		label,
 		description,
 		assigneeSfUserId,
@@ -1095,6 +2169,8 @@ function _cleanSlot(slot) {
 			return undefined;
 		}
 		clean.fields = Array.from(new Set(slot.fields.map(String)));
+	} else if (slot.origin === 'standalone') {
+		clean.origin = 'standalone';
 	}
 	return clean;
 }
@@ -1303,23 +2379,33 @@ export function updateLayout({ canvasId, connectionId, positions, sequence, requ
 	}
 	const clean = [];
 	for (const position of positions) {
-		const refKind = position && position.refKind;
-		const ref = position && position.ref != null ? String(position.ref) : '';
 		const x = position && position.x;
 		const y = position && position.y;
-		if (!['loaded', 'draft', 'slot'].includes(refKind) || !ref || ref.length > 128) {
-			return false;
-		}
 		if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 10_000_000 || Math.abs(y) > 10_000_000) {
 			return false;
 		}
-		const next = { refKind, ref, x, y };
-		if (position.collabRef != null) {
-			const collabRef = String(position.collabRef);
-			if (!collabRef || collabRef.length > 128) {
+		let next;
+		if (position && position.hiddenId != null) {
+			const hiddenId = String(position.hiddenId);
+			const reference = entry.hiddenRecordReferences.get(hiddenId);
+			if (!hiddenId || hiddenId.length > 128 || !reference || _visibilityForRef(entry, reference).visible) {
 				return false;
 			}
-			next.collabRef = collabRef;
+			next = { ...reference, x, y };
+		} else {
+			const refKind = position && position.refKind;
+			const ref = position && position.ref != null ? String(position.ref) : '';
+			if (!['loaded', 'draft', 'slot'].includes(refKind) || !ref || ref.length > 128) {
+				return false;
+			}
+			next = { refKind, ref, x, y };
+			if (position.collabRef != null) {
+				const collabRef = String(position.collabRef);
+				if (!collabRef || collabRef.length > 128) {
+					return false;
+				}
+				next.collabRef = collabRef;
+			}
 		}
 		clean.push(next);
 	}
@@ -1392,6 +2478,22 @@ export function liveSnapshot({ canvasId, sfOrgId }) {
 		: null;
 }
 
+export function loadedRecordObjectName({ canvasId, connectionId, sfId, collabRef, requestingAccountId }) {
+	const scoped = _scopeForConnection(canvasId, connectionId);
+	if (!scoped || !_ownsConnection(scoped.entry, requestingAccountId)) {
+		return null;
+	}
+	const live = _liveSnapshotsByCanvas.get(scoped.scopeId);
+	const record =
+		live &&
+		_payloadRecordForRef(live.payload, {
+			refKind: 'loaded',
+			ref: sfId,
+			collabRef,
+		});
+	return record && record.objectName ? String(record.objectName) : null;
+}
+
 export function unsavedLiveSnapshot({ canvasId, sfOrgId }) {
 	const scopeId = _presenceScopeId(canvasId, sfOrgId);
 	const live = _liveSnapshotsByCanvas.get(scopeId);
@@ -1432,6 +2534,11 @@ export function purgeWorkspace({ workspaceId }) {
 			}
 		}
 	}
+	for (const [scopeId, orphaned] of _orphanedLiveSnapshotsByCanvas.entries()) {
+		if (orphaned.workspaceId === workspaceId) {
+			_discardCanvasState(scopeId);
+		}
+	}
 	return removed;
 }
 
@@ -1439,17 +2546,22 @@ function _sweep() {
 	// Idle peers disappear even when a browser vanishes without closing its SSE connection cleanly.
 	const now = Date.now();
 	for (const [scopeId, conns] of _presenceByCanvas.entries()) {
+		const workspaceId = conns.values().next().value?.workspaceId || null;
 		for (const [connectionId, entry] of conns.entries()) {
 			if (now - entry.lastSeenAt > IDLE_THRESHOLD_MS) {
+				_releaseConnectionLocks(scopeId, connectionId);
 				conns.delete(connectionId);
 				_scopeByConnection.delete(connectionId);
 				_broadcast(scopeId, { type: 'leave', connectionId }, connectionId);
 			}
 		}
 		if (conns.size === 0) {
-			_presenceByCanvas.delete(scopeId);
-			_revisionByCanvas.delete(scopeId);
-			_liveSnapshotsByCanvas.delete(scopeId);
+			_handleEmptyPresenceScope(scopeId, workspaceId, now);
+		}
+	}
+	for (const [scopeId, orphaned] of _orphanedLiveSnapshotsByCanvas.entries()) {
+		if (now - orphaned.orphanedAt > LIVE_SNAPSHOT_HANDOFF_TTL_MS) {
+			_discardCanvasState(scopeId);
 		}
 	}
 }

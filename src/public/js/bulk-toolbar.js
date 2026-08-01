@@ -4,7 +4,18 @@
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	function toolbarCanvasAccess(currentCanvas, shareRole) {
+		const currentIsRecipient = !!(currentCanvas && currentCanvas.id && !currentCanvas.ownedByMe);
+		const resolvedRole = shareRole || (currentIsRecipient ? currentCanvas.recipientRole || 'viewer' : null);
+		const isRecipient = !!resolvedRole;
+		return {
+			isRecipient,
+			canPersistCanvas: !isRecipient || resolvedRole === 'editor',
+		};
+	}
+
 	window.OrgLoom.bulkToolbar = {
+		_test: { toolbarCanvasAccess },
 		mount: function mount(deps) {
 			const required = [
 				'canvasState',
@@ -24,8 +35,10 @@
 				'_wireCanvasFloatingAdd',
 				'getCanvasShareCount',
 				'openCanvasEmailLinkModal',
-				'openCanvasShareManagementModal',
 				'openRecordDiffModal',
+				'getCanvasSaveState',
+				'getCanvasShareRole',
+				'saveExistingCanvas',
 			];
 			if (!deps) {
 				throw new Error('bulk-toolbar.mount: missing deps object');
@@ -43,7 +56,6 @@
 			const showSaveMenu = deps.showSaveMenu;
 			const _getCanvasShareCount = deps.getCanvasShareCount;
 			const openCanvasEmailLinkModal = deps.openCanvasEmailLinkModal;
-			const openCanvasShareManagementModal = deps.openCanvasShareManagementModal;
 			const promptCanvasSave = deps.promptCanvasSave;
 			const showAddRecordsMenu = deps.showAddRecordsMenu;
 			const showBulkOperationsMenu = deps.showBulkOperationsMenu;
@@ -54,10 +66,40 @@
 			const getAiGen = deps.getAiGen;
 			const _wireCanvasFloatingAdd = deps._wireCanvasFloatingAdd;
 			const openRecordDiffModal = deps.openRecordDiffModal;
+			const getCanvasSaveState = deps.getCanvasSaveState;
+			const getCanvasShareRole = deps.getCanvasShareRole;
+			const saveExistingCanvas = deps.saveExistingCanvas;
+
+			function saveStateLabel(saveState) {
+				const phase = (saveState && saveState.phase) || 'new';
+				if (phase === 'clean') {
+					return saveState.savedAt
+						? 'Saved at ' +
+								new Date(saveState.savedAt).toLocaleTimeString([], {
+									hour: 'numeric',
+									minute: '2-digit',
+								})
+						: 'Saved';
+				}
+				if (phase === 'dirty') {
+					return 'Unsaved changes';
+				}
+				if (phase === 'saving') {
+					return 'Saving\u2026';
+				}
+				if (phase === 'error') {
+					return 'Save failed \u00B7 Try again';
+				}
+				if (phase === 'shared') {
+					return 'Changes shared live';
+				}
+				return 'Not saved';
+			}
 
 			function renderCanvasName(titleOverride) {
 				const canvasName = getGraph().querySelector('#canvas-name-text');
 				const canvasNameOverlay = getGraph().querySelector('#canvas-name-overlay');
+				const saveStatus = getGraph().querySelector('#canvas-save-status-overlay');
 				if (!canvasName || !canvasNameOverlay) {
 					return;
 				}
@@ -69,6 +111,13 @@
 							? currentCanvas.title.trim()
 							: 'New canvas';
 				canvasName.textContent = canvasTitle;
+				const state = getCanvasSaveState();
+				const phase = (state && state.phase) || 'new';
+				const stateLabel = saveStateLabel(state);
+				if (saveStatus) {
+					saveStatus.textContent = stateLabel;
+					saveStatus.className = 'canvas-save-status-overlay canvas-save-status-overlay--' + phase;
+				}
 				canvasNameOverlay.title = 'Current canvas: ' + canvasTitle;
 				canvasNameOverlay.setAttribute('aria-label', 'Current canvas: ' + canvasTitle);
 			}
@@ -97,7 +146,8 @@
 				).length;
 				const _hasPartialSelection = _selectedRealCount > 0 && _selectedRealCount < _allRealCount;
 				const cc = canvasState.currentCanvas;
-				const isRecipient = !!(cc && cc.id && !cc.ownedByMe);
+				const canvasAccess = toolbarCanvasAccess(cc, getCanvasShareRole());
+				const isRecipient = canvasAccess.isRecipient;
 				const uploadBtn = isRecipient
 					? ''
 					: getReadOnlyMode()
@@ -113,10 +163,33 @@
 									_selectedRealCount +
 									' selected</button>'
 								: '<button type="button" class="upload-btn" data-bulk-upload title="Review and upload all records to Salesforce">Upload to Salesforce</button>';
-				const saveCanvasBtn =
-					isRecipient && cc.recipientRole !== 'editor'
-						? ''
-						: '<button type="button" class="batch-btn" data-bulk-save title="Save this canvas to your Salesforce org (stored as a File). Empty canvases can be saved as a starting point for AI proposals.">Save \u25BE</button>';
+				const saveState = getCanvasSaveState();
+				const canPersistCanvas = canvasAccess.canPersistCanvas;
+				let saveCanvasBtn = '';
+				if (canPersistCanvas) {
+					const phase = (saveState && saveState.phase) || 'new';
+					const primaryDisabled = phase === 'clean' || phase === 'saving';
+					saveCanvasBtn =
+						'<span class="batch-btn-split canvas-save-control canvas-save-control--' +
+						phase +
+						'">' +
+						'<button type="button" class="batch-btn batch-btn-split-main canvas-save-primary" data-bulk-save-primary' +
+						(primaryDisabled ? ' disabled aria-disabled="true"' : '') +
+						' title="' +
+						(primaryDisabled
+							? phase === 'saving'
+								? 'Saving this canvas to Salesforce'
+								: 'This canvas is saved'
+							: 'Save this canvas to Salesforce') +
+						'">' +
+						'Save canvas' +
+						'</button>' +
+						'<button type="button" class="batch-btn batch-btn-split-arrow" data-bulk-save title="More save and export options" aria-label="More save and export options">\u25BE</button>' +
+						'</span>';
+				} else if (isRecipient) {
+					saveCanvasBtn =
+						'<button type="button" class="batch-btn" data-bulk-save title="Save a copy or export this shared canvas">Save / export \u25BC</button>';
+				}
 				const exportBtn = '';
 				const helpBtn = '';
 				const _shareIconSvg =
@@ -156,13 +229,10 @@
 					'">' +
 					_shareIconSvg +
 					'Share' +
+					(isSavedOwned && shareCount && shareCount > 0
+						? ' <span class="canvas-share-btn-count">' + shareCount + '</span>'
+						: '') +
 					'</button>';
-				const manageAccessBtn =
-					isSavedOwned && shareCount && shareCount > 0
-						? '<button type="button" class="batch-btn canvas-access-btn" data-bulk-manage-access title="Manage who can open this canvas">Access <span class="canvas-share-btn-count">' +
-							shareCount +
-							'</span></button>'
-						: '';
 				const _historyIconSvg =
 					'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
 					'<path d="M3 12a9 9 0 1 0 9-9 9.74 9.74 0 0 0-6.74 2.74L3 8"/>' +
@@ -182,7 +252,6 @@
 					bulkOpsBtn +
 					'<span class="bulk-hint-spacer"></span>' +
 					shareBtn +
-					manageAccessBtn +
 					saveCanvasBtn +
 					uploadBtn +
 					historyBtn;
@@ -225,20 +294,24 @@
 						}
 					});
 				}
-				const manageAccessTrigger = getGraph().querySelector('[data-bulk-manage-access]');
-				if (manageAccessTrigger) {
-					manageAccessTrigger.addEventListener('click', (event) => {
-						event.stopPropagation();
-						const current = canvasState.currentCanvas;
-						if (current && current.id && current.ownedByMe) {
-							openCanvasShareManagementModal(current.id, current.title || '');
-						}
-					});
-				}
 				const saveCanvasTrigger = getGraph().querySelector('[data-bulk-save]');
 				if (saveCanvasTrigger) {
 					saveCanvasTrigger.addEventListener('click', () => {
 						showSaveMenu(saveCanvasTrigger);
+					});
+				}
+				const primarySaveTrigger = getGraph().querySelector('[data-bulk-save-primary]');
+				if (primarySaveTrigger) {
+					primarySaveTrigger.addEventListener('click', () => {
+						if (primarySaveTrigger.disabled) {
+							return;
+						}
+						const current = canvasState.currentCanvas;
+						if (current && current.id) {
+							saveExistingCanvas();
+						} else {
+							promptCanvasSave();
+						}
 					});
 				}
 				const aiGenTrigger = getGraph().querySelector('[data-bulk-ai-gen]');

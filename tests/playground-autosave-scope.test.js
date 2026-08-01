@@ -75,6 +75,41 @@ const REAL = { account: 'acc_real', org: '00DREAL', user: '005REAL' };
 const DEMO = { account: 'playground', org: '00DDEMO000000000AAA', user: '005DEMO000000000AAA' };
 
 describe('autosave scope-namespacing (playground vs real)', () => {
+	test('a same-org Salesforce user switch reopens the canvas instead of restoring the prior user snapshot', () => {
+		const { api, win, canvasState } = harness();
+		setScope(win, canvasState, REAL);
+		canvasState.currentCanvas = {
+			id: '069000000000001AAA',
+			title: 'Shared intake',
+			ownedByMe: true,
+		};
+		canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Owner-only value' } }];
+		api.orgSwitchStash();
+
+		setScope(win, canvasState, { account: REAL.account, org: REAL.org, user: '005OTHER' });
+		canvasState.bulkRecords = [];
+		assert.equal(api.consumeUserSwitchCanvasId(), '069000000000001AAA');
+		assert.equal(api.orgSwitchRestore(), false);
+		assert.equal(canvasState.bulkRecords.length, 0);
+	});
+
+	test('reconnecting the same Salesforce user retains the normal handoff snapshot', () => {
+		const { api, win, canvasState } = harness();
+		setScope(win, canvasState, REAL);
+		canvasState.currentCanvas = {
+			id: '069000000000001AAA',
+			title: 'My canvas',
+			ownedByMe: true,
+		};
+		canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Unsaved value' } }];
+		api.orgSwitchStash();
+
+		canvasState.bulkRecords = [];
+		assert.equal(api.consumeUserSwitchCanvasId(), null);
+		assert.equal(api.orgSwitchRestore(), true);
+		assert.equal(canvasState.bulkRecords[0].values.Name, 'Unsaved value');
+	});
+
 	test('refresh restores the active saved canvas, including slot configuration', () => {
 		const { api, win, sessionStorage, canvasState } = harness();
 		setScope(win, canvasState, REAL);

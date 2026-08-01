@@ -21,6 +21,10 @@
 			const _CANVAS_DRAFT_ACTIVE_KEY = 'orgloom:canvas-draft-active:v1';
 			const _ORGSWITCH_STASH_KEY = 'orgloom:org-switch-stash:v1';
 			const _MIGRATION_KEY = 'orgloom:migration:v1';
+			const _salesforceIdKey = (value) =>
+				String(value || '')
+					.slice(0, 15)
+					.toLowerCase();
 			try {
 				window.localStorage.removeItem(_ORGSWITCH_STASH_KEY);
 				window.localStorage.removeItem(_MIGRATION_KEY);
@@ -129,6 +133,7 @@
 						v: 1,
 						ts: Date.now(),
 						sourceSfOrgId: window.SF_ORG_ID || null,
+						sourceSfUserId: window.SF_USER_ID || null,
 						sourceAccountId: window.ORGLOOM_ACCOUNT_ID || null,
 						sourceCanvasId: (canvasState.currentCanvas && canvasState.currentCanvas.id) || null,
 						state: {
@@ -145,6 +150,47 @@
 					};
 					sessionStorage.setItem(_ORGSWITCH_STASH_KEY, JSON.stringify(payload));
 				} catch (_e) {}
+			}
+
+			function _consumeUserSwitchCanvasId() {
+				let raw;
+				try {
+					raw = sessionStorage.getItem(_ORGSWITCH_STASH_KEY);
+				} catch (_e) {
+					return null;
+				}
+				if (!raw) {
+					return null;
+				}
+				let payload;
+				try {
+					payload = JSON.parse(raw);
+				} catch (_e) {
+					return null;
+				}
+				const currentAccountId = window.ORGLOOM_ACCOUNT_ID || null;
+				const currentOrgId = window.SF_ORG_ID || null;
+				const currentUserId = window.SF_USER_ID || null;
+				const sameAccount = payload && payload.sourceAccountId === currentAccountId;
+				const sameOrg =
+					!!payload.sourceSfOrgId &&
+					!!currentOrgId &&
+					_salesforceIdKey(payload.sourceSfOrgId) === _salesforceIdKey(currentOrgId);
+				const changedUser =
+					!!payload.sourceSfUserId &&
+					!!currentUserId &&
+					_salesforceIdKey(payload.sourceSfUserId) !== _salesforceIdKey(currentUserId);
+				if (!sameAccount || !sameOrg || !changedUser) {
+					return null;
+				}
+				try {
+					sessionStorage.removeItem(_ORGSWITCH_STASH_KEY);
+				} catch (_e) {}
+				if (typeof payload.ts === 'number' && Date.now() - payload.ts > 10 * 60 * 1000) {
+					return null;
+				}
+				const canvasId = String(payload.sourceCanvasId || '');
+				return /^[a-zA-Z0-9]{15,18}$/.test(canvasId) ? canvasId : null;
 			}
 
 			function _orgSwitchRestore() {
@@ -553,6 +599,7 @@
 			window.Orgloom.canvasOrgSwitch = {
 				stash: _orgSwitchStash,
 				restore: _orgSwitchRestore,
+				consumeUserSwitchCanvasId: _consumeUserSwitchCanvasId,
 				migrationStash: _migrationStash,
 				migrationResume: _migrationResume,
 				migrationRestore: _migrationRestore,
@@ -564,6 +611,7 @@
 			return {
 				orgSwitchStash: _orgSwitchStash,
 				orgSwitchRestore: _orgSwitchRestore,
+				consumeUserSwitchCanvasId: _consumeUserSwitchCanvasId,
 				autosaveSchedule: _autosaveSchedule,
 				autosaveFlush: _autosaveFlush,
 				autosaveClear: _autosaveClear,

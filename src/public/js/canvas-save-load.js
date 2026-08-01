@@ -42,6 +42,12 @@
 			const canvasState = deps.canvasState;
 			const csrfFetch = deps.csrfFetch;
 			const escapeHtml = deps.escapeHtml;
+			const beginCanvasReplacementLoad =
+				typeof deps.beginCanvasReplacementLoad === 'function'
+					? deps.beginCanvasReplacementLoad
+					: function () {
+							return function () {};
+						};
 			const showBulkToast = deps.showBulkToast;
 			const showConfirmDialog = deps.showConfirmDialog;
 			const showPromptModal = deps.showPromptModal;
@@ -60,6 +66,14 @@
 			const renderBulkView = deps.renderBulkView;
 			const summarizeCanvasContent = deps.summarizeCanvasContent;
 			const notePresenceLocalSave = deps.notePresenceLocalSave;
+			const getAcknowledgedContributionIds =
+				typeof deps.getAcknowledgedContributionIds === 'function'
+					? deps.getAcknowledgedContributionIds
+					: function () {
+							return [];
+						};
+			const markContributionIdsSaved =
+				typeof deps.markContributionIdsSaved === 'function' ? deps.markContributionIdsSaved : function () {};
 			const rehydrateSessionDraftValues = deps.rehydrateSessionDraftValues;
 			const _hasCap = deps._hasCap;
 			const onCanvasLoaded = typeof deps.onCanvasLoaded === 'function' ? deps.onCanvasLoaded : function () {};
@@ -69,6 +83,16 @@
 				typeof deps.previewCanvasName === 'function' ? deps.previewCanvasName : function () {};
 			const chooseNewCanvasAction =
 				typeof deps.chooseNewCanvasAction === 'function' ? deps.chooseNewCanvasAction : showNewCanvasDialog;
+			const canvasSaveState = deps.canvasSaveState || {
+				getState: () => ({ phase: 'new', dirty: false }),
+				hasUnsavedChanges: () => true,
+				canPersistCurrentCanvas: () => true,
+				markSaving: () => true,
+				markDirty: () => {},
+				markFailed: () => {},
+				captureSaved: () => {},
+				refresh: () => {},
+			};
 
 			function showSaveMenu(triggerEl) {
 				const { pop, cleanup } = _openAnchoredPopup(triggerEl, 380);
@@ -78,9 +102,11 @@
 				const exportDisabled = _hasRecords ? '' : ' disabled';
 				const hasCurrent = !!(canvasState.currentCanvas && canvasState.currentCanvas.id);
 				const ownsCurrent = !!(canvasState.currentCanvas && canvasState.currentCanvas.ownedByMe);
+				const editsCurrent =
+					hasCurrent && (ownsCurrent || canvasState.currentCanvas.recipientRole === 'editor');
 				const safeTitle = hasCurrent ? escapeHtml(canvasState.currentCanvas.title || '(untitled)') : '';
 				let primarySaveBtn = '';
-				if (hasCurrent && ownsCurrent) {
+				if (editsCurrent) {
 					primarySaveBtn =
 						'<button type="button" class="tpl-action" data-tpl-action="save-existing"' +
 						actionDisabled +
@@ -89,7 +115,7 @@
 						safeTitle +
 						'\u201d in Salesforce Files</span>' +
 						'</button>';
-				} else if (hasCurrent && !ownsCurrent) {
+				} else if (hasCurrent) {
 					primarySaveBtn =
 						'<button type="button" class="tpl-action" data-tpl-action="fork-canvas"' +
 						actionDisabled +
@@ -148,10 +174,11 @@
 				// The browser sends plaintext over TLS; the server encrypts before writing Salesforce Files.
 				const name = await showPromptModal({
 					title: opts.title || 'Name this canvas',
-					label: 'Name',
+					label: opts.label || 'Name',
 					placeholder: 'e.g. QA seed for Order flow',
 					defaultValue: opts.defaultName || '',
 					submitText: opts.submitText || 'Save',
+					helpText: opts.helpText || '',
 				});
 				if (!name) {
 					return false;
@@ -174,6 +201,7 @@
 					return false;
 				}
 				try {
+					canvasSaveState.markSaving();
 					const r = await csrfFetch('/api/canvas', {
 						method: 'POST',
 						credentials: 'same-origin',
@@ -184,16 +212,19 @@
 					if (!r.ok) {
 						if (r.status === 403 && data && data.error === 'sf-content-version-create-denied') {
 							restoreCanvasName();
+							canvasSaveState.markFailed(data.message || data.error);
 							await _showContentPermDeniedDialog(data.message || '', data.sfError || '');
 							return false;
 						}
 						if (r.status === 402 && data && data.error === 'saved-canvas-cap-reached') {
 							restoreCanvasName();
+							canvasSaveState.markFailed(data.message || data.error);
 							await _showSavedCanvasCapDialog(data);
 							return false;
 						}
 						if (r.status === 403 && data && data.message && data.error) {
 							restoreCanvasName();
+							canvasSaveState.markFailed(data.message || data.error);
 							showBulkToast(data.message, 'error');
 							return false;
 						}
@@ -208,6 +239,7 @@
 							ownedByMe: true,
 							versionId: data.versionId || null,
 						};
+						canvasSaveState.captureSaved({ payload, savedAt: Date.now() });
 						renderBulkView();
 						_watchProposalsForCurrentCanvas();
 						if (window.Orgloom && window.Orgloom.canvasState && window.Orgloom.canvasState.clearDraft) {
@@ -228,6 +260,7 @@
 					return !!(data && data.id);
 				} catch (e) {
 					restoreCanvasName();
+					canvasSaveState.markFailed(e.message || e);
 					showBulkToast('Save failed: ' + (e.message || e), 'error');
 					return false;
 				}
@@ -247,8 +280,8 @@
 					showBulkToast('No canvas open to save changes to. Use \u201cSave as new canvas\u201d.', 'error');
 					return false;
 				}
-				if (!canvasState.currentCanvas.ownedByMe) {
-					showBulkToast('Only the canvas owner can update this canvas.', 'error');
+				if (!canvasState.currentCanvas.ownedByMe && canvasState.currentCanvas.recipientRole !== 'editor') {
+					showBulkToast('Only the canvas owner or an Editor can save this canvas.', 'error');
 					return false;
 				}
 				if (canvasState.selectedObjects.length === 0) {
@@ -264,10 +297,12 @@
 					return false;
 				}
 				try {
+					canvasSaveState.markSaving();
 					// Optimistic version IDs prevent one collaborator from silently overwriting another.
 					try {
 						notePresenceLocalSave();
 					} catch (_) {}
+					const acknowledgedContributionIds = getAcknowledgedContributionIds();
 					const r = await csrfFetch('/api/canvas/' + encodeURIComponent(canvasState.currentCanvas.id), {
 						method: 'PUT',
 						credentials: 'same-origin',
@@ -275,6 +310,7 @@
 						body: JSON.stringify({
 							payload,
 							expectedVersionId: canvasState.currentCanvas.versionId || null,
+							acknowledgedContributionIds,
 						}),
 					});
 					const data = await r.json().catch(() => ({}));
@@ -283,7 +319,8 @@
 						data &&
 						(data.error === 'version-mismatch' || data.code === 'version_mismatch')
 					) {
-						handleCanvasVersionMismatch(data, payload);
+						canvasSaveState.markDirty();
+						handleCanvasVersionMismatch(data, payload, acknowledgedContributionIds);
 						return false;
 					}
 					if (
@@ -292,10 +329,12 @@
 						(data.error === 'sf-content-version-create-denied' ||
 							data.error === 'sf-content-document-edit-denied')
 					) {
+						canvasSaveState.markFailed(data.message || data.error);
 						await _showContentPermDeniedDialog(data.message || '', data.sfError || '');
 						return false;
 					}
 					if (r.status === 403 && data && data.message && data.error) {
+						canvasSaveState.markFailed(data.message || data.error);
 						showBulkToast(data.message, 'error');
 						return false;
 					}
@@ -311,6 +350,8 @@
 					try {
 						notePresenceLocalSave(data);
 					} catch (_) {}
+					markContributionIdsSaved(data && data.mergedContributionIds);
+					canvasSaveState.captureSaved({ payload, savedAt: Date.now() });
 					showBulkToast('Updated \u201c' + titleForToast + '\u201d.');
 					clearAutosave();
 					pingAuditEvent('canvas_save_sf', {
@@ -323,6 +364,7 @@
 					});
 					return true;
 				} catch (e) {
+					canvasSaveState.markFailed(e.message || e);
 					showBulkToast('Save failed: ' + (e.message || e), 'error');
 					return false;
 				}
@@ -335,21 +377,23 @@
 					const modal = document.createElement('div');
 					modal.className = 'modal new-canvas-dialog';
 					const saveButton = opts.canSave
-						? '<button type="button" class="button" data-new-canvas-choice="save">Save and start new</button>'
+						? '<button type="button" class="button" data-new-canvas-choice="save">' +
+							escapeHtml(opts.saveLabel || 'Save and start new') +
+							'</button>'
+						: '';
+					const message = opts.message
+						? '<div class="modal-content"><p>' + escapeHtml(opts.message) + '</p></div>'
 						: '';
 					modal.innerHTML =
 						'<div class="modal-overlay" data-new-canvas-choice="cancel"></div>' +
 						'<div class="modal-body" role="dialog" aria-modal="true" aria-labelledby="new-canvas-title">' +
 						'<div class="modal-header">' +
-						'<h3 id="new-canvas-title">Start a new canvas?</h3>' +
+						'<h3 id="new-canvas-title">' +
+						escapeHtml(opts.title || 'Start a new canvas?') +
+						'</h3>' +
 						'<button type="button" class="modal-close" data-new-canvas-choice="cancel" aria-label="Cancel">&times;</button>' +
 						'</div>' +
-						'<div class="modal-content">' +
-						'<p>' +
-						escapeHtml(opts.message || 'This clears the current working canvas in this browser.') +
-						'</p>' +
-						'<p class="tag">Saved canvases are not deleted. You can load them again from the Canvases menu.</p>' +
-						'</div>' +
+						message +
 						'<div class="modal-footer">' +
 						'<button type="button" class="button secondary" data-new-canvas-choice="cancel">Cancel</button>' +
 						'<button type="button" class="button secondary" data-new-canvas-choice="discard">' +
@@ -397,33 +441,26 @@
 				return !hasLoadedCanvas && !hasRecords;
 			}
 
-			async function beginNewCanvas() {
-				if (isFreshBlankCanvas()) {
-					return false;
+			async function confirmCanvasReplacement(nextTitle, options) {
+				options = options || {};
+				if (nextTitle && typeof nextTitle === 'object') {
+					nextTitle = null;
 				}
-				const currentSummary = summarizeCanvasContent(canvasState);
-				const hasContent = !!(currentSummary && currentSummary.hasContent);
-				const current = canvasState.currentCanvas;
-				if (!hasContent) {
-					await startNewCanvas();
+				if (!canvasSaveState.hasUnsavedChanges()) {
 					return true;
 				}
-
-				const canSave = !current || !current.id || !!current.ownedByMe;
-				let message;
-				if (current && current.id && !current.ownedByMe) {
-					message =
-						'This shared canvas will remain available. Any changes that have not been submitted or saved will be cleared from this browser.';
-				} else if (current && current.id) {
-					message =
-						'Save changes to the current canvas first, or start with a blank canvas without saving them.';
-				} else {
-					message = 'Save the current canvas first, or discard it and start with a blank canvas.';
-				}
+				const current = canvasState.currentCanvas;
 				const choice = await chooseNewCanvasAction({
-					canSave,
-					message,
-					discardLabel: canSave ? 'Start without saving' : 'Start new canvas',
+					title: options.title || 'Load another canvas?',
+					canSave: canvasSaveState.canPersistCurrentCanvas(),
+					message:
+						options.saveMessage ||
+						'Your latest changes to this canvas have not been saved to Salesforce. ' +
+							(nextTitle
+								? 'Save them before loading \u201c' + nextTitle + '\u201d.'
+								: 'Save them before leaving.'),
+					saveLabel: 'Save and continue',
+					discardLabel: 'Continue without saving',
 				});
 				if (choice === 'cancel') {
 					return false;
@@ -434,11 +471,49 @@
 						return false;
 					}
 				}
+				return true;
+			}
+
+			async function beginNewCanvas() {
+				if (isFreshBlankCanvas()) {
+					return false;
+				}
+				const currentSummary = summarizeCanvasContent(canvasState);
+				const hasContent = !!(currentSummary && currentSummary.hasContent);
+				const current = canvasState.currentCanvas;
+				if (!hasContent || !canvasSaveState.hasUnsavedChanges()) {
+					await startNewCanvas();
+					return true;
+				}
+
+				const canSave = canvasSaveState.canPersistCurrentCanvas();
+				const choice = await chooseNewCanvasAction({
+					canSave,
+					saveLabel: 'Save current and start new',
+					discardLabel: canSave ? 'Start without saving' : 'Start new canvas',
+				});
+				if (choice === 'cancel') {
+					return false;
+				}
+				if (choice === 'save') {
+					const saved =
+						current && current.id
+							? await saveExistingCanvas()
+							: await promptCanvasSave({
+									title: 'Save your current canvas',
+									label: 'Current canvas name',
+									helpText: 'Org Loom will save this canvas, then open a new blank canvas.',
+									submitText: 'Save and start new',
+								});
+					if (!saved) {
+						return false;
+					}
+				}
 				await startNewCanvas();
 				return true;
 			}
 
-			function handleCanvasVersionMismatch(serverPayload, originalPayload) {
+			function handleCanvasVersionMismatch(serverPayload, originalPayload, acknowledgedContributionIds) {
 				// Keep both safe paths explicit: reload the latest version or deliberately overwrite it.
 				document.querySelectorAll('.canvas-version-conflict').forEach((el) => el.remove());
 				const overlay = document.createElement('div');
@@ -465,6 +540,7 @@
 				overlay.querySelectorAll('[data-vc-close]').forEach((el) => el.addEventListener('click', cleanup));
 				overlay.querySelector('[data-vc-reload]').addEventListener('click', async () => {
 					cleanup();
+					const finishCanvasLoad = beginCanvasReplacementLoad('Reloading canvas\u2026');
 					try {
 						const r = await csrfFetch('/api/canvas/' + encodeURIComponent(canvasState.currentCanvas.id), {
 							credentials: 'same-origin',
@@ -477,6 +553,13 @@
 							merge: false,
 							ownedByMe: !!data.ownedByMe,
 							recipientRole: data.recipientRole || null,
+							canvasIdentity: {
+								id: canvasState.currentCanvas.id,
+								title: data.title || canvasState.currentCanvas.title || '',
+								ownedByMe: !!data.ownedByMe,
+								versionId: data.versionId || null,
+								recipientRole: data.recipientRole || null,
+							},
 						});
 						_setStaleRefsFromLoad(data.staleRefs);
 						canvasState.currentCanvas = Object.assign({}, canvasState.currentCanvas, {
@@ -484,25 +567,36 @@
 							title: data.title || canvasState.currentCanvas.title,
 							ownedByMe: !!data.ownedByMe,
 						});
+						canvasSaveState.captureSaved({
+							savedAt: data.updatedAt,
+						});
 						try {
 							rehydrateSessionDraftValues(canvasState.currentCanvas.id);
 						} catch (err) {
 							window.ORGLOOM_capture &&
 								window.ORGLOOM_capture(err, { where: 'canvas-save-load.js/reload/rehydrateSession' });
 						}
+						canvasSaveState.refresh();
+						renderBulkView();
 						showBulkToast('Reloaded the latest version from Salesforce.');
 					} catch (err) {
 						showBulkToast('Reload failed: ' + (err.message || err), 'error');
+					} finally {
+						finishCanvasLoad();
 					}
 				});
 				overlay.querySelector('[data-vc-save-anyway]').addEventListener('click', async () => {
 					cleanup();
 					try {
+						canvasSaveState.markSaving();
 						const r = await csrfFetch('/api/canvas/' + encodeURIComponent(canvasState.currentCanvas.id), {
 							method: 'PUT',
 							credentials: 'same-origin',
 							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ payload: originalPayload }),
+							body: JSON.stringify({
+								payload: originalPayload,
+								acknowledgedContributionIds: acknowledgedContributionIds || [],
+							}),
 						});
 						const data = await r.json().catch(() => ({}));
 						if (!r.ok) {
@@ -516,8 +610,11 @@
 						try {
 							notePresenceLocalSave(data);
 						} catch (_) {}
+						markContributionIdsSaved(data && data.mergedContributionIds);
+						canvasSaveState.captureSaved({ payload: originalPayload, savedAt: Date.now() });
 						showBulkToast('Saved over the elsewhere-edits.');
 					} catch (err) {
+						canvasSaveState.markFailed(err.message || err);
 						showBulkToast('Save failed: ' + (err.message || err), 'error');
 					}
 				});
@@ -837,6 +934,13 @@
 						const activeTag = isActive
 							? '<span class="tpl-scope-tag tpl-scope-tag--active" title="This is the canvas you currently have open">ACTIVE</span>'
 							: '';
+						const activeSaveState = isActive ? canvasSaveState.getState() : null;
+						const unsavedTag =
+							isActive &&
+							activeSaveState &&
+							(activeSaveState.phase === 'dirty' || activeSaveState.phase === 'error')
+								? '<span class="tpl-scope-tag tpl-scope-tag--unsaved">UNSAVED</span>'
+								: '';
 						let ownTag;
 						if (t.ownedByMe) {
 							ownTag = '<span class="tpl-scope-tag tpl-scope-tag--personal">MINE</span>';
@@ -882,11 +986,12 @@
 							escapeHtml(t.title) +
 							' ' +
 							activeTag +
+							unsavedTag +
 							ownTag +
 							wsBadge +
 							'</div>' +
 							'<div class="tpl-meta">' +
-							escapeHtml(date) +
+							(date ? 'Last saved ' + escapeHtml(date) : '') +
 							'</div>' +
 							fillTag +
 							'</div>' +
@@ -947,20 +1052,22 @@
 						b.addEventListener('click', async () => {
 							cleanup();
 							const currentSummary = summarizeCanvasContent(canvasState);
-							if (currentSummary.hasContent) {
-								const shouldReplace = await showConfirmDialog({
-									title: 'Load saved canvas?',
-									message:
-										'Replace the current working canvas with “' +
-										(b.dataset.tplTitle || 'this saved canvas') +
-										'”? Unsaved changes on the current canvas will be cleared.',
-									confirmLabel: 'Replace canvas',
-									cancelLabel: 'Cancel',
-								});
+							if (currentSummary.hasContent || canvasSaveState.hasUnsavedChanges()) {
+								const shouldReplace = await confirmCanvasReplacement(
+									b.dataset.tplTitle || 'this saved canvas',
+									{
+										title: 'Load saved canvas?',
+										message:
+											'Replace the current working canvas with “' +
+											(b.dataset.tplTitle || 'this saved canvas') +
+											'”? Unsaved changes on the current canvas will be cleared.',
+									},
+								);
 								if (!shouldReplace) {
 									return;
 								}
 							}
+							const finishCanvasLoad = beginCanvasReplacementLoad('Loading canvas\u2026');
 							try {
 								const id = b.dataset.tplLoad;
 								const tr = await csrfFetch('/api/canvas/' + encodeURIComponent(id), {
@@ -974,6 +1081,13 @@
 									merge: false,
 									ownedByMe: !!td.ownedByMe,
 									recipientRole: td.recipientRole || null,
+									canvasIdentity: {
+										id,
+										title: td.title || '',
+										ownedByMe: !!td.ownedByMe,
+										versionId: td.versionId || null,
+										recipientRole: td.recipientRole || null,
+									},
 								});
 								try {
 									rehydrateSessionDraftValues(id);
@@ -1001,6 +1115,8 @@
 								});
 							} catch (e) {
 								showBulkToast('Load failed: ' + (e.message || e), 'error');
+							} finally {
+								finishCanvasLoad();
 							}
 						});
 					});
@@ -1084,6 +1200,7 @@
 				showTemplatesMenu: showTemplatesMenu,
 				showBrowseSavedMenu: showBrowseSavedMenu,
 				beginNewCanvas: beginNewCanvas,
+				confirmCanvasReplacement: confirmCanvasReplacement,
 			};
 		},
 	};

@@ -105,6 +105,7 @@ export async function listObjects(conn, orgId, userId) {
 			queryable: o.queryable,
 			custom: o.custom,
 			createable: !!o.createable,
+			deletable: !!o.deletable,
 		}))
 		.sort((a, b) => a.label.localeCompare(b.label));
 }
@@ -538,6 +539,7 @@ export async function loadDescribeForObject(conn, objectName) {
 			unique: !!f.unique,
 			nameField: !!f.nameField,
 			filterable: !!f.filterable,
+			compoundFieldName: f.compoundFieldName || null,
 		};
 	});
 	return {
@@ -545,6 +547,7 @@ export async function loadDescribeForObject(conn, objectName) {
 		label: cleanLabel(describe.label, describe.name),
 		createable: !!describe.createable,
 		updateable: !!describe.updateable,
+		deletable: !!describe.deletable,
 		queryable: !!describe.queryable,
 		fields,
 		recordTypes,

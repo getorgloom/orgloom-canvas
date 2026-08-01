@@ -23,6 +23,44 @@ before(async () => {
 				version: '60.0',
 				request: async (url) => {
 					requestedUrls.push(url);
+					if (url.includes('/ui-api/record-ui/') && url.includes('modes=Edit')) {
+						throw new Error('Edit layout unavailable');
+					}
+					if (url.includes('/ui-api/record-ui/') && url.includes('modes=View')) {
+						return {
+							layouts: {
+								Account: {
+									'012000000000001AAA': {
+										Full: {
+											View: {
+												columns: 2,
+												sections: [
+													{
+														heading: 'Account Information',
+														layoutRows: [
+															{
+																layoutItems: [
+																	{
+																		label: 'Account Name',
+																		layoutComponents: [
+																			{ componentType: 'Field', apiName: 'Name' },
+																		],
+																	},
+																],
+															},
+														],
+													},
+												],
+											},
+										},
+									},
+								},
+							},
+						};
+					}
+					if (url.includes('/ui-api/layout/Fallback__c/Full/View')) {
+						throw new Error('View layout unavailable');
+					}
 					return {
 						columns: 2,
 						sections: [
@@ -100,4 +138,29 @@ test('read-only shared drafts request the recipient Salesforce view layout', asy
 		fieldPerms: {},
 		picklistValues: {},
 	});
+});
+
+test('read-only shared drafts fall back to the recipient create layout when View is unavailable', async () => {
+	const response = await fetch(baseUrl + '/api/objects/Fallback__c/layout?mode=View&recordTypeId=012000000000001AAA');
+	assert.equal(response.status, 200);
+	assert.deepEqual(requestedUrls.slice(-2), [
+		'/services/data/v60.0/ui-api/layout/Fallback__c/Full/View?recordTypeId=012000000000001AAA',
+		'/services/data/v60.0/ui-api/record-defaults/create/Fallback__c?recordTypeIds=012000000000001AAA',
+	]);
+	const body = await response.json();
+	assert.equal(body.available, true);
+	assert.equal(body.sections[0].heading, 'Account Information');
+});
+
+test('existing records fall back from Edit to View layout for read-only Salesforce users', async () => {
+	const recordId = '001000000000001AAA';
+	const response = await fetch(baseUrl + '/api/objects/Account/layout?recordId=' + recordId);
+	assert.equal(response.status, 200);
+	assert.deepEqual(requestedUrls.slice(-2), [
+		'/services/data/v60.0/ui-api/record-ui/' + recordId + '?layoutTypes=Full&modes=Edit',
+		'/services/data/v60.0/ui-api/record-ui/' + recordId + '?layoutTypes=Full&modes=View',
+	]);
+	const body = await response.json();
+	assert.equal(body.available, true);
+	assert.equal(body.sections[0].heading, 'Account Information');
 });

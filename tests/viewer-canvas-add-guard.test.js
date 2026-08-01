@@ -158,7 +158,7 @@ test('viewer and contributor card mutation controls are hidden and centrally gua
 test('viewer and contributor edit modals omit delete and unlink controls', () => {
 	assert.match(
 		insertModalSource,
-		/if \(!canEditCanvasStructure\(\) \|\| !rec \|\| !isLoaded \|\| isTypeNode \|\| isInaccessible\)/,
+		/!canEditCanvasStructure\(\)[\s\S]*!rec[\s\S]*!isLoaded[\s\S]*isTypeNode[\s\S]*isInaccessible[\s\S]*!pending && !canDeleteRecord\(rec\)/,
 	);
 	assert.match(insertModalSource, /canEditCanvasStructure\(\)\s*\? '<button[^']+data-unlink-existing/);
 	assert.match(insertModalSource, /canEditCanvasStructure\(\)\s*\? ' <button[^']+data-disconnect-assoc/);
@@ -170,7 +170,8 @@ test('viewer and contributor edit modals omit delete and unlink controls', () =>
 
 test('viewer and non-requested contributor edit modals omit the save action', () => {
 	assert.match(insertModalSource, /submitBtn\.hidden = !canSubmit/);
-	assert.match(insertModalSource, /if \(!currentObject \|\| !canEditCurrentRecord\(\)\)/);
+	assert.match(insertModalSource, /if \(!currentObject\) \{/);
+	assert.match(insertModalSource, /if \(!canEditCurrentRecord\(\)\) \{/);
 	assert.match(insertModalSource, /record\._recipientSlot/);
 	assert.match(insertModalSource, /return hasRecipientRequest && assignmentState !== 'other'/);
 });

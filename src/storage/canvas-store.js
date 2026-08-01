@@ -14,6 +14,9 @@ import {
 import * as canvasKeys from '../database/canvas-keys.js';
 
 const CANVAS_PATH_EXT = '.orgloom-canvas.json';
+const CANVAS_BODY_RETENTION = 3;
+const SALESFORCE_DELETE_BATCH_SIZE = 200;
+const CANVAS_FILE_DESCRIPTION_PREFIX = 'Org Loom workspace canvas.';
 
 const _updateLocks = new Map(); // "org|canvas" -> tail promise
 // Salesforce has no ContentVersion compare-and-swap; serialize local version checks and writes.
@@ -29,6 +32,99 @@ async function _acquireUpdateLock(key) {
 	);
 	await prev.catch(() => {});
 	return release;
+}
+
+async function _queryAll(conn, soql) {
+	let result = await conn.query(soql);
+	const records = [...((result && result.records) || [])];
+	while (result && result.done === false && result.nextRecordsUrl && typeof conn.queryMore === 'function') {
+		result = await conn.queryMore(result.nextRecordsUrl);
+		records.push(...((result && result.records) || []));
+	}
+	return records;
+}
+
+function _assertDestroySucceeded(result) {
+	const results = Array.isArray(result) ? result : [result];
+	const failures = results.filter((item) => item && item.success === false);
+	if (failures.length === 0) {
+		return;
+	}
+	const details = failures
+		.flatMap((item) => item.errors || [])
+		.map((error) => error.message || error)
+		.filter(Boolean)
+		.join('; ');
+	throw new Error('Canvas body cleanup failed' + (details ? ': ' + details : ''));
+}
+
+async function _canvasBodyDocuments(conn, hybridRecordId) {
+	const links = await _queryAll(
+		conn,
+		"SELECT ContentDocumentId FROM ContentDocumentLink WHERE LinkedEntityId = '" +
+			escapeSoqlLiteral(hybridRecordId) +
+			"'",
+	);
+	const documentIds = [...new Set(links.map((link) => link && link.ContentDocumentId).filter(Boolean))];
+	const bodies = [];
+	for (let offset = 0; offset < documentIds.length; offset += SALESFORCE_DELETE_BATCH_SIZE) {
+		const batch = documentIds.slice(offset, offset + SALESFORCE_DELETE_BATCH_SIZE);
+		const inList = batch.map((id) => "'" + escapeSoqlLiteral(id) + "'").join(',');
+		const versions = await _queryAll(
+			conn,
+			'SELECT Id, ContentDocumentId, CreatedDate, Description, PathOnClient ' +
+				'FROM ContentVersion WHERE IsLatest = true AND ContentDocumentId IN (' +
+				inList +
+				')',
+		);
+		for (const version of versions) {
+			if (
+				version &&
+				typeof version.PathOnClient === 'string' &&
+				version.PathOnClient.endsWith(CANVAS_PATH_EXT) &&
+				typeof version.Description === 'string' &&
+				version.Description.startsWith(CANVAS_FILE_DESCRIPTION_PREFIX)
+			) {
+				bodies.push({
+					contentDocumentId: version.ContentDocumentId,
+					versionId: version.Id,
+					createdAt: new Date(version.CreatedDate).getTime() || 0,
+				});
+			}
+		}
+	}
+	bodies.sort((left, right) => right.createdAt - left.createdAt);
+	return bodies;
+}
+
+async function _destroyContentDocuments(conn, documentIds) {
+	let deleted = 0;
+	for (let offset = 0; offset < documentIds.length; offset += SALESFORCE_DELETE_BATCH_SIZE) {
+		const batch = documentIds.slice(offset, offset + SALESFORCE_DELETE_BATCH_SIZE);
+		const result = await conn.sobject('ContentDocument').destroy(batch);
+		_assertDestroySucceeded(result);
+		deleted += batch.length;
+	}
+	return deleted;
+}
+
+async function _pruneOldCanvasBodies(conn, hybridRecordId, latestBodyDocumentId) {
+	const bodies = await _canvasBodyDocuments(conn, hybridRecordId);
+	if (bodies.length <= CANVAS_BODY_RETENTION) {
+		return 0;
+	}
+
+	// A stale post-write query must never cause the current body document to be pruned.
+	const latestBody = bodies.find((body) => body.contentDocumentId === latestBodyDocumentId);
+	if (!latestBody) {
+		throw new Error('Canvas body cleanup skipped because the new document was not returned as latest');
+	}
+
+	const retentionOrder = [latestBody, ...bodies.filter((body) => body !== latestBody)];
+	return _destroyContentDocuments(
+		conn,
+		retentionOrder.slice(CANVAS_BODY_RETENTION).map((body) => body.contentDocumentId),
+	);
 }
 
 function _hybridApi(name) {
@@ -62,24 +158,46 @@ async function _writeHybridCanvasRecord(conn, args) {
 	if (args.sfUserId) {
 		recordPayload[field('Owner_Sf_User_Id__c')] = args.sfUserId;
 	}
+
+	let canvasRecordId = args.canvasRecordId || null;
+	const ensureBodyLink = async () => {
+		const cdlSoql = `SELECT Id FROM ContentDocumentLink WHERE LinkedEntityId = '${escapeSoqlLiteral(canvasRecordId)}' AND ContentDocumentId = '${escapeSoqlLiteral(args.contentDocumentId)}' LIMIT 1`;
+		const cdlExisting = await conn.query(cdlSoql);
+		if (!cdlExisting.records || cdlExisting.records.length === 0) {
+			const linkResult = await conn.sobject('ContentDocumentLink').create({
+				LinkedEntityId: canvasRecordId,
+				ContentDocumentId: args.contentDocumentId,
+				ShareType: 'I',
+				Visibility: 'AllUsers',
+			});
+			if (!linkResult || linkResult.success === false) {
+				const details = ((linkResult && linkResult.errors) || [])
+					.map((error) => error.message || error)
+					.filter(Boolean)
+					.join('; ');
+				throw new Error('Canvas body link failed' + (details ? ': ' + details : ''));
+			}
+		}
+	};
+
+	// During rotation, link the replacement first so a failed link cannot strand the pointer.
+	if (canvasRecordId && args.linkBeforeMetadata) {
+		await ensureBodyLink();
+	}
+
 	await conn.sobject(obj).upsert(recordPayload, field('Canvas_Id__c'));
 
-	const lookupSoql = `SELECT Id FROM ${obj} WHERE ${field('Canvas_Id__c')} = '${escapeSoqlLiteral(args.canvasId)}' LIMIT 1`;
-	const lookup = await conn.query(lookupSoql);
-	if (!lookup.records || lookup.records.length === 0) {
-		throw new Error('Canvas record not found after upsert by Canvas_Id__c');
+	if (!canvasRecordId) {
+		const lookupSoql = `SELECT Id FROM ${obj} WHERE ${field('Canvas_Id__c')} = '${escapeSoqlLiteral(args.canvasId)}' LIMIT 1`;
+		const lookup = await conn.query(lookupSoql);
+		if (!lookup.records || lookup.records.length === 0) {
+			throw new Error('Canvas record not found after upsert by Canvas_Id__c');
+		}
+		canvasRecordId = lookup.records[0].Id;
 	}
-	const canvasRecordId = lookup.records[0].Id;
 
-	const cdlSoql = `SELECT Id FROM ContentDocumentLink WHERE LinkedEntityId = '${escapeSoqlLiteral(canvasRecordId)}' AND ContentDocumentId = '${escapeSoqlLiteral(args.contentDocumentId)}' LIMIT 1`;
-	const cdlExisting = await conn.query(cdlSoql);
-	if (!cdlExisting.records || cdlExisting.records.length === 0) {
-		await conn.sobject('ContentDocumentLink').create({
-			LinkedEntityId: canvasRecordId,
-			ContentDocumentId: args.contentDocumentId,
-			ShareType: 'I',
-			Visibility: 'AllUsers',
-		});
+	if (!args.linkBeforeMetadata) {
+		await ensureBodyLink();
 	}
 	return { canvasRecordId };
 }
@@ -92,14 +210,20 @@ function _sanitizeFileName(name) {
 }
 
 function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
-	// Reuse one DEK across versions so Salesforce's file history remains decryptable.
+	// Reuse one DEK across body rotations so retained checkpoints remain decryptable.
 	const kekProvider = makeSfApexKekProvider(conn);
 	const sessionId = (opts && opts.sessionId) || null;
 
-	const _getHybridCanvasRecordId = async (canvasId) => {
+	const _getHybridCanvasRecord = async (canvasId) => {
 		const obj = _hybridApi('Orgloom_Canvas__c');
 		const result = await conn.query(
-			'SELECT Id FROM ' +
+			'SELECT Id, Name, OwnerId, CreatedDate, LastModifiedDate, ' +
+				_hybridApi('Canvas_Id__c') +
+				', ' +
+				_hybridApi('Body_Document_Id__c') +
+				', ' +
+				_hybridApi('Last_Edited_At__c') +
+				' FROM ' +
 				obj +
 				' ' +
 				'WHERE ' +
@@ -115,8 +239,10 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 			err.code = 'canvas-record-missing';
 			throw err;
 		}
-		return row.Id;
+		return row;
 	};
+
+	const _getHybridCanvasRecordId = async (canvasId) => (await _getHybridCanvasRecord(canvasId)).Id;
 
 	return {
 		backend: 'content-version',
@@ -143,6 +269,7 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 			const result = await conn.query(soql);
 			const items = (result.records || []).map((r) => ({
 				id: r[_hybridApi('Canvas_Id__c')] || r[_hybridApi('Body_Document_Id__c')],
+				bodyDocumentId: r[_hybridApi('Body_Document_Id__c')] || r[_hybridApi('Canvas_Id__c')],
 				versionId: null,
 				title: r.Name,
 				ownerId: r.OwnerId,
@@ -151,7 +278,7 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 				createdAt: new Date(r.CreatedDate).getTime(),
 				updatedAt: new Date(r[_hybridApi('Last_Edited_At__c')] || r.LastModifiedDate).getTime(),
 			}));
-			const docIds = items.map((i) => i.id).filter(Boolean);
+			const docIds = items.map((i) => i.bodyDocumentId).filter(Boolean);
 			if (docIds.length) {
 				const inList = docIds.map((d) => "'" + escapeSoqlLiteral(d) + "'").join(',');
 				const titleResult = await conn.query(
@@ -159,12 +286,13 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 				);
 				const titleById = new Map((titleResult.records || []).map((d) => [d.Id, d.Title]));
 				items.forEach((i) => {
-					const t = titleById.get(i.id);
+					const t = titleById.get(i.bodyDocumentId);
 					if (t) {
 						i.title = t;
 					}
 				});
 			}
+			items.forEach((item) => delete item.bodyDocumentId);
 			return { items };
 		},
 
@@ -189,7 +317,8 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 					Title: String(name).slice(0, 255),
 					PathOnClient: _sanitizeFileName(name),
 					Description:
-						'Org Loom workspace canvas. Encrypted by Org Loom; ' +
+						CANVAS_FILE_DESCRIPTION_PREFIX +
+						' Encrypted by Org Loom; ' +
 						'opens through the Org Loom app. See orgloom.com for details.',
 					VersionData: envelope.toString('base64'),
 				});
@@ -242,12 +371,16 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 			const _lockKey = (sfOrgId || '') + '|' + id;
 			const _release = await _acquireUpdateLock(_lockKey);
 			try {
+				const hybrid = await _getHybridCanvasRecord(id);
+				const currentBodyDocumentId = hybrid[_hybridApi('Body_Document_Id__c')] || id;
 				const docResult = await conn.query(
-					"SELECT Id, Title FROM ContentDocument WHERE Id = '" + escapeSoqlLiteral(id) + "' LIMIT 1",
+					"SELECT Id, Title FROM ContentDocument WHERE Id = '" +
+						escapeSoqlLiteral(currentBodyDocumentId) +
+						"' LIMIT 1",
 				);
 				const doc = (docResult.records || [])[0];
 				if (!doc) {
-					const e = new Error('Canvas not found');
+					const e = new Error('Canvas body not found');
 					e.statusCode = 404;
 					throw e;
 				}
@@ -255,7 +388,7 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 					const latestResult = await conn.query(
 						'SELECT Id FROM ContentVersion ' +
 							"WHERE ContentDocumentId = '" +
-							escapeSoqlLiteral(id) +
+							escapeSoqlLiteral(currentBodyDocumentId) +
 							"' " +
 							'ORDER BY CreatedDate DESC LIMIT 1',
 					);
@@ -278,11 +411,11 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 				let result;
 				try {
 					result = await conn.sobject('ContentVersion').create({
-						ContentDocumentId: id,
 						Title: doc.Title,
 						PathOnClient: _sanitizeFileName(doc.Title || 'canvas'),
 						Description:
-							'Org Loom workspace canvas. Encrypted by Org Loom; ' +
+							CANVAS_FILE_DESCRIPTION_PREFIX +
+							' Encrypted by Org Loom; ' +
 							'opens through the Org Loom app. See orgloom.com for details.',
 						VersionData: envelope.toString('base64'),
 					});
@@ -296,15 +429,46 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 						'update',
 					);
 				}
-				await _writeHybridCanvasRecord(conn, {
-					canvasId: id,
-					contentDocumentId: id,
-					sfUserId: null,
-					recordCount: _countCanvasRecords(safe),
-					bodySha256: crypto.createHash('sha256').update(envelope).digest('hex'),
-					encryptionKeyVersion: 'v1',
-				});
-				return { id, versionId: result.id, title: doc.Title };
+				const createdVersion = await conn.sobject('ContentVersion').retrieve(result.id);
+				const newBodyDocumentId = createdVersion && createdVersion.ContentDocumentId;
+				if (!newBodyDocumentId) {
+					const err = new Error('Salesforce did not return the new canvas body document id');
+					err.statusCode = 502;
+					throw err;
+				}
+				try {
+					await _writeHybridCanvasRecord(conn, {
+						canvasId: id,
+						contentDocumentId: newBodyDocumentId,
+						canvasRecordId: hybrid.Id,
+						linkBeforeMetadata: true,
+						sfUserId: null,
+						recordCount: _countCanvasRecords(safe),
+						bodySha256: crypto.createHash('sha256').update(envelope).digest('hex'),
+						encryptionKeyVersion: 'v1',
+					});
+				} catch (persistErr) {
+					try {
+						await conn.sobject('ContentDocument').destroy(newBodyDocumentId);
+					} catch (cleanupErr) {
+						console.warn(
+							'canvas-store: failed to clean up unindexed canvas body ' + newBodyDocumentId + ':',
+							cleanupErr && cleanupErr.message,
+						);
+					}
+					throw persistErr;
+				}
+				let prunedBodyCount = 0;
+				try {
+					prunedBodyCount = await _pruneOldCanvasBodies(conn, hybrid.Id, newBodyDocumentId);
+				} catch (cleanupErr) {
+					// The indexed new body remains authoritative when retention cleanup is unavailable.
+					console.warn(
+						'canvas-store: failed to prune old canvas bodies for ' + id + ':',
+						cleanupErr && cleanupErr.message,
+					);
+				}
+				return { id, versionId: result.id, title: doc.Title, prunedBodyCount };
 			} finally {
 				_release();
 			}
@@ -313,10 +477,12 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 		async get(id) {
 			const obj = _hybridApi('Orgloom_Canvas__c');
 			const probeSoql =
-				'SELECT Id, ' +
+				'SELECT Id, Name, OwnerId, CreatedDate, LastModifiedDate, ' +
 				_hybridApi('Canvas_Id__c') +
 				', ' +
 				_hybridApi('Body_Document_Id__c') +
+				', ' +
+				_hybridApi('Last_Edited_At__c') +
 				', ' +
 				_hybridApi('Body_Sha256__c') +
 				', ' +
@@ -341,10 +507,11 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 				throw err;
 			}
 
+			const bodyDocumentId = _hybridMeta[_hybridApi('Body_Document_Id__c')] || id;
 			const docResult = await conn.query(
-				'SELECT Id, Title, OwnerId, CreatedDate, LastModifiedDate ' +
+				'SELECT Id, Title, CreatedDate, LastModifiedDate ' +
 					"FROM ContentDocument WHERE Id = '" +
-					escapeSoqlLiteral(id) +
+					escapeSoqlLiteral(bodyDocumentId) +
 					"' LIMIT 1",
 			);
 			const doc = (docResult.records || [])[0];
@@ -354,7 +521,7 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 			const versionResult = await conn.query(
 				'SELECT Id, VersionData, PathOnClient FROM ContentVersion ' +
 					"WHERE ContentDocumentId = '" +
-					escapeSoqlLiteral(id) +
+					escapeSoqlLiteral(bodyDocumentId) +
 					"' " +
 					'ORDER BY CreatedDate DESC LIMIT 1',
 			);
@@ -435,22 +602,33 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 				throw err;
 			}
 			return {
-				id: doc.Id,
+				id,
 				versionId: v.Id,
 				title: doc.Title,
-				ownerId: doc.OwnerId,
-				ownedByMe: !!sfUserId && doc.OwnerId === sfUserId,
-				createdAt: new Date(doc.CreatedDate).getTime(),
-				updatedAt: new Date(doc.LastModifiedDate).getTime(),
+				ownerId: _hybridMeta.OwnerId,
+				ownedByMe: !!sfUserId && _hybridMeta.OwnerId === sfUserId,
+				createdAt: new Date(_hybridMeta.CreatedDate || doc.CreatedDate).getTime(),
+				updatedAt: new Date(
+					_hybridMeta[_hybridApi('Last_Edited_At__c')] ||
+						_hybridMeta.LastModifiedDate ||
+						doc.LastModifiedDate,
+				).getTime(),
 				payload,
 			};
 		},
 
 		async remove(id) {
-			const result = await conn.sobject('ContentDocument').destroy(id);
-			if (!result.success) {
-				const errs = (result.errors || []).map((e) => e.message || e).join('; ');
-				const err = new Error('Delete failed: ' + (errs || 'unknown error'));
+			const hybrid = await _getHybridCanvasRecord(id);
+			const bodies = await _canvasBodyDocuments(conn, hybrid.Id);
+			const bodyDocumentIds = [...new Set(bodies.map((body) => body.contentDocumentId))];
+			const currentBodyDocumentId = hybrid[_hybridApi('Body_Document_Id__c')] || id;
+			if (!bodyDocumentIds.includes(currentBodyDocumentId)) {
+				bodyDocumentIds.push(currentBodyDocumentId);
+			}
+			try {
+				await _destroyContentDocuments(conn, bodyDocumentIds);
+			} catch (e) {
+				const err = new Error('Delete failed: ' + ((e && e.message) || 'unknown error'));
 				err.statusCode = 403;
 				throw err;
 			}
@@ -460,20 +638,7 @@ function makeContentVersionStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 				console.warn('canvas-store: failed to drop canvas_keys row for ' + id + ':', e && e.message);
 			}
 			try {
-				const obj = _hybridApi('Orgloom_Canvas__c');
-				const lookup = await conn.query(
-					'SELECT Id FROM ' +
-						obj +
-						' ' +
-						'WHERE ' +
-						_hybridApi('Canvas_Id__c') +
-						" = '" +
-						escapeSoqlLiteral(id) +
-						"' LIMIT 1",
-				);
-				if (lookup.records && lookup.records.length > 0) {
-					await conn.sobject(obj).destroy(lookup.records[0].Id);
-				}
+				await conn.sobject(_hybridApi('Orgloom_Canvas__c')).destroy(hybrid.Id);
 			} catch (e) {
 				console.warn('[hybrid-canvas] Canvas__c cascade delete failed for', id, ':', (e && e.message) || e);
 			}

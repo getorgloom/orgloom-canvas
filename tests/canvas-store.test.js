@@ -32,19 +32,23 @@ const TEST_KEK = makeSfApexKekProvider(makeKekConn());
 
 function mockConn(initial = {}) {
 	const calls = {
+		events: [],
 		queries: [],
 		sobjectCreates: [],
+		sobjectDestroys: [],
 		sobjectRetrieves: [],
 		sobjectUpserts: [],
 	};
 	const queryQueue = [...(initial.queries || [])];
 	const createQueue = [...(initial.creates || [])];
+	const destroyQueue = [...(initial.destroys || [])];
 	const retrieveQueue = [...(initial.retrieves || [])];
 	return {
 		instanceUrl: 'https://test.my.salesforce.com',
 		accessToken: 'TEST_TOKEN',
 		calls,
 		async query(soql) {
+			calls.events.push({ operation: 'query', soql });
 			calls.queries.push(soql);
 			if (queryQueue.length === 0) {
 				return { records: [], totalSize: 0 };
@@ -54,8 +58,12 @@ function mockConn(initial = {}) {
 		sobject(name) {
 			return {
 				async create(payload) {
+					calls.events.push({ operation: 'create', name, payload });
 					calls.sobjectCreates.push({ name, payload });
 					if (createQueue.length === 0) {
+						if (name === 'ContentDocumentLink') {
+							return { success: true, id: '06ADEFAULT' };
+						}
 						return { success: false, errors: ['no-create-queued'] };
 					}
 					return createQueue.shift();
@@ -67,13 +75,24 @@ function mockConn(initial = {}) {
 					}
 					return retrieveQueue.shift();
 				},
-				async destroy() {
-					return { success: true };
+				async destroy(ids) {
+					calls.sobjectDestroys.push({ name, ids });
+					if (destroyQueue.length > 0) {
+						const next = destroyQueue.shift();
+						if (next instanceof Error) {
+							throw next;
+						}
+						return next;
+					}
+					return Array.isArray(ids)
+						? ids.map((id) => ({ id, success: true, errors: [] }))
+						: { id: ids, success: true, errors: [] };
 				},
 				async update() {
 					return { success: true };
 				},
 				async upsert(payload, extIdField) {
+					calls.events.push({ operation: 'upsert', name, payload, extIdField });
 					calls.sobjectUpserts.push({ name, payload, extIdField });
 					return { success: true };
 				},
@@ -96,13 +115,49 @@ function hybridMetaRow(canvasId, extra = {}) {
 	return Object.assign(
 		{
 			Id: 'a0' + canvasId,
+			Name: 'ORGC-0001',
+			OwnerId: '005MINE',
+			CreatedDate: '2026-05-01T00:00:00Z',
+			LastModifiedDate: '2026-05-02T00:00:00Z',
 			[F('Canvas_Id__c')]: canvasId,
 			[F('Body_Document_Id__c')]: canvasId,
+			[F('Last_Edited_At__c')]: '2026-05-02T00:00:00Z',
 			[F('Schema_Version__c')]: 1,
 			[F('Encryption_Key_Version__c')]: 'v1',
 		},
 		extra,
 	);
+}
+
+function updateHybridRow(canvasId, bodyDocumentId = canvasId) {
+	return hybridMetaRow(canvasId, {
+		Name: 'ORGC-0001',
+		OwnerId: '005MINE',
+		CreatedDate: '2026-05-01T00:00:00Z',
+		LastModifiedDate: '2026-05-02T00:00:00Z',
+		[F('Last_Edited_At__c')]: '2026-05-02T00:00:00Z',
+		[F('Body_Document_Id__c')]: bodyDocumentId,
+	});
+}
+
+function basicUpdateQueries({
+	canvasId = '069A',
+	bodyDocumentId = canvasId,
+	currentVersionId = '068LATEST',
+	includeVersionCheck = true,
+} = {}) {
+	const rows = [
+		{ records: [updateHybridRow(canvasId, bodyDocumentId)] },
+		{ records: [{ Id: bodyDocumentId, Title: 'mine' }] },
+	];
+	if (includeVersionCheck) {
+		rows.push({ records: [{ Id: currentVersionId }] });
+	}
+	rows.push(
+		{ records: [] }, // new body is not linked until the hybrid metadata upsert
+		{ records: [] }, // no retained bodies need pruning in this minimal fixture
+	);
+	return rows;
 }
 
 describe('canvas store: list / ownedByMe', () => {
@@ -410,7 +465,7 @@ describe('canvas store: get (probe + decrypt + legacy plaintext)', () => {
 describe('canvas store: update / optimistic lock', () => {
 	test('stale expectedVersionId throws 409 with currentVersionId', async () => {
 		const conn = mockConn({
-			queries: [{ records: [{ Id: '069A', Title: 'mine' }] }, { records: [{ Id: '068LATEST' }] }],
+			queries: basicUpdateQueries().slice(0, 3),
 		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
 		await assert.rejects(
@@ -427,12 +482,14 @@ describe('canvas store: update / optimistic lock', () => {
 	test('matching expectedVersionId proceeds to write (encrypted)', async () => {
 		const conn = mockConn({
 			queries: [
-				{ records: [{ Id: '069A', Title: 'mine' }] }, // ContentDocument
-				{ records: [{ Id: '068LATEST' }] }, // latest ContentVersion (optimistic-lock check)
-				{ records: [{ Id: 'a0069A' }] }, // Canvas__c Id lookup after the hybrid upsert
+				{ records: [updateHybridRow('069A')] },
+				{ records: [{ Id: '069A', Title: 'mine' }] },
+				{ records: [{ Id: '068LATEST' }] },
+				{ records: [] }, // replacement body is not linked yet
 				{ records: [{ Id: 'cdl069A' }] }, // existing CDL → skip the inferred-share insert
 			],
 			creates: [{ success: true, id: '068NEW' }],
+			retrieves: [{ ContentDocumentId: '069BODYNEW' }],
 		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
 		const res = await store.update('069A', {
@@ -444,6 +501,199 @@ describe('canvas store: update / optimistic lock', () => {
 		const versionData = conn.calls.sobjectCreates[0].payload.VersionData;
 		const saved = await decryptSavedBlob(versionData, '069A');
 		assert.deepEqual(saved, { records: [] });
+
+		const linkCreateIndex = conn.calls.events.findIndex(
+			(event) => event.operation === 'create' && event.name === 'ContentDocumentLink',
+		);
+		const pointerUpdateIndex = conn.calls.events.findIndex(
+			(event) => event.operation === 'upsert' && event.name === F('Orgloom_Canvas__c'),
+		);
+		assert.ok(linkCreateIndex >= 0, 'replacement body should be linked');
+		assert.ok(pointerUpdateIndex > linkCreateIndex, 'body link must succeed before the metadata pointer changes');
+	});
+
+	test('a failed replacement-body link does not switch the metadata pointer', async () => {
+		const conn = mockConn({
+			queries: [
+				{ records: [updateHybridRow('069A')] },
+				{ records: [{ Id: '069A', Title: 'mine' }] },
+				{ records: [{ Id: '068LATEST' }] },
+				{ records: [] },
+			],
+			creates: [
+				{ success: true, id: '068NEW' },
+				{ success: false, errors: [{ message: 'LINK_DENIED' }] },
+			],
+			retrieves: [{ ContentDocumentId: '069BODYNEW' }],
+		});
+		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
+
+		await assert.rejects(
+			() =>
+				store.update('069A', {
+					payload: { records: [] },
+					expectedVersionId: '068LATEST',
+				}),
+			/Canvas body link failed: LINK_DENIED/,
+		);
+		assert.deepEqual(conn.calls.sobjectUpserts, []);
+		assert.deepEqual(conn.calls.sobjectDestroys, [{ name: 'ContentDocument', ids: '069BODYNEW' }]);
+	});
+
+	test('keeps the latest three one-version body documents and deletes older bodies', async () => {
+		const conn = mockConn({
+			queries: [
+				{ records: [updateHybridRow('069A', '069BODY4')] },
+				{ records: [{ Id: '069BODY4', Title: 'mine' }] },
+				{ records: [{ Id: '068V4' }] },
+				{ records: [] },
+				{
+					records: ['069BODY5', '069BODY4', '069BODY3', '069BODY2', '069BODY1'].map((ContentDocumentId) => ({
+						ContentDocumentId,
+					})),
+				},
+				{
+					records: [5, 4, 3, 2, 1].map((number) => ({
+						Id: '068V' + number,
+						ContentDocumentId: '069BODY' + number,
+						CreatedDate: `2026-05-0${number}T00:00:00Z`,
+						Description: 'Org Loom workspace canvas. Encrypted',
+						PathOnClient: 'mine' + CANVAS_EXT,
+					})),
+				},
+			],
+			creates: [{ success: true, id: '068V5' }],
+			retrieves: [{ ContentDocumentId: '069BODY5' }],
+		});
+		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
+		const result = await store.update('069A', {
+			payload: { records: [] },
+			expectedVersionId: '068V4',
+		});
+
+		assert.equal(result.prunedBodyCount, 2);
+		assert.deepEqual(conn.calls.sobjectDestroys, [{ name: 'ContentDocument', ids: ['069BODY2', '069BODY1'] }]);
+	});
+
+	test('does not prune when three or fewer body documents exist', async () => {
+		const conn = mockConn({
+			queries: [
+				{ records: [updateHybridRow('069A', '069BODY2')] },
+				{ records: [{ Id: '069BODY2', Title: 'mine' }] },
+				{ records: [{ Id: '068V2' }] },
+				{ records: [] },
+				{
+					records: ['069BODY3', '069BODY2', '069BODY1'].map((ContentDocumentId) => ({
+						ContentDocumentId,
+					})),
+				},
+				{
+					records: [3, 2, 1].map((number) => ({
+						Id: '068V' + number,
+						ContentDocumentId: '069BODY' + number,
+						CreatedDate: `2026-05-0${number}T00:00:00Z`,
+						Description: 'Org Loom workspace canvas. Encrypted',
+						PathOnClient: 'mine' + CANVAS_EXT,
+					})),
+				},
+			],
+			creates: [{ success: true, id: '068V3' }],
+			retrieves: [{ ContentDocumentId: '069BODY3' }],
+		});
+		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
+		const result = await store.update('069A', {
+			payload: { records: [] },
+			expectedVersionId: '068V2',
+		});
+
+		assert.equal(result.prunedBodyCount, 0);
+		assert.deepEqual(conn.calls.sobjectDestroys, []);
+	});
+
+	test('a cleanup failure does not fail the successful canvas update', async () => {
+		const conn = mockConn({
+			queries: [
+				{ records: [updateHybridRow('069A', '069BODY3')] },
+				{ records: [{ Id: '069BODY3', Title: 'mine' }] },
+				{ records: [{ Id: '068V3' }] },
+				{ records: [] },
+				{
+					records: ['069BODY4', '069BODY3', '069BODY2', '069BODY1'].map((ContentDocumentId) => ({
+						ContentDocumentId,
+					})),
+				},
+				{
+					records: [4, 3, 2, 1].map((number) => ({
+						Id: '068V' + number,
+						ContentDocumentId: '069BODY' + number,
+						CreatedDate: `2026-05-0${number}T00:00:00Z`,
+						Description: 'Org Loom workspace canvas. Encrypted',
+						PathOnClient: 'mine' + CANVAS_EXT,
+					})),
+				},
+			],
+			creates: [{ success: true, id: '068V4' }],
+			retrieves: [{ ContentDocumentId: '069BODY4' }],
+			destroys: [new Error('INSUFFICIENT_ACCESS_OR_READONLY')],
+		});
+		const warnings = [];
+		const originalWarn = console.warn;
+		console.warn = (...args) => warnings.push(args.join(' '));
+		try {
+			const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
+			const result = await store.update('069A', {
+				payload: { records: [] },
+				expectedVersionId: '068V3',
+			});
+			assert.equal(result.versionId, '068V4');
+			assert.equal(result.prunedBodyCount, 0);
+			assert.match(warnings.join('\n'), /failed to prune old canvas bodies.*INSUFFICIENT_ACCESS_OR_READONLY/);
+		} finally {
+			console.warn = originalWarn;
+		}
+	});
+
+	test('skips cleanup when Salesforce does not return the new body as latest', async () => {
+		const conn = mockConn({
+			queries: [
+				{ records: [updateHybridRow('069A', '069BODY4')] },
+				{ records: [{ Id: '069BODY4', Title: 'mine' }] },
+				{ records: [{ Id: '068V4' }] },
+				{ records: [] },
+				{
+					records: ['069BODY4', '069BODY3', '069BODY2', '069BODY1'].map((ContentDocumentId) => ({
+						ContentDocumentId,
+					})),
+				},
+				{
+					records: [4, 3, 2, 1].map((number) => ({
+						Id: '068V' + number,
+						ContentDocumentId: '069BODY' + number,
+						CreatedDate: `2026-05-0${number}T00:00:00Z`,
+						Description: 'Org Loom workspace canvas. Encrypted',
+						PathOnClient: 'mine' + CANVAS_EXT,
+					})),
+				},
+			],
+			creates: [{ success: true, id: '068V5' }],
+			retrieves: [{ ContentDocumentId: '069BODY5' }],
+		});
+		const warnings = [];
+		const originalWarn = console.warn;
+		console.warn = (...args) => warnings.push(args.join(' '));
+		try {
+			const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
+			const result = await store.update('069A', {
+				payload: { records: [] },
+				expectedVersionId: '068V4',
+			});
+			assert.equal(result.versionId, '068V5');
+			assert.equal(result.prunedBodyCount, 0);
+			assert.deepEqual(conn.calls.sobjectDestroys, []);
+			assert.match(warnings.join('\n'), /new document was not returned as latest/);
+		} finally {
+			console.warn = originalWarn;
+		}
 	});
 
 	test('missing canvas throws 404', async () => {
@@ -461,12 +711,14 @@ describe('canvas store: update / optimistic lock', () => {
 	test('update preserves draft values in the encrypted payload', async () => {
 		const conn = mockConn({
 			queries: [
-				{ records: [{ Id: '069A', Title: 'mine' }] }, // ContentDocument
+				{ records: [updateHybridRow('069A')] },
+				{ records: [{ Id: '069A', Title: 'mine' }] },
 				{ records: [{ Id: '068LATEST' }] }, // latest ContentVersion (optimistic-lock check)
 				{ records: [{ Id: 'a0069A' }] }, // Canvas__c Id lookup after the hybrid upsert
 				{ records: [{ Id: 'cdl069A' }] }, // existing CDL → skip the inferred-share insert
 			],
 			creates: [{ success: true, id: '068NEW' }],
+			retrieves: [{ ContentDocumentId: '069BODYNEW' }],
 		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
 		await store.update('069A', {
@@ -484,12 +736,14 @@ describe('canvas store: update / optimistic lock', () => {
 	test('update reuses the existing key across versions', async () => {
 		const conn1 = mockConn({
 			queries: [
+				{ records: [updateHybridRow('069A')] },
 				{ records: [{ Id: '069A', Title: 'mine' }] },
 				{ records: [{ Id: '068V1' }] },
 				{ records: [{ Id: 'a0069A' }] }, // Canvas__c Id lookup after upsert
 				{ records: [{ Id: 'cdl069A' }] }, // existing CDL → skip insert
 			],
 			creates: [{ success: true, id: '068V2' }],
+			retrieves: [{ ContentDocumentId: '069BODY2' }],
 		});
 		const store1 = await canvasStoreFromSfConnection(conn1, '005MINE', ORG_ID);
 		await store1.update('069A', { payload: { n: 1 }, expectedVersionId: '068V1' });
@@ -497,12 +751,14 @@ describe('canvas store: update / optimistic lock', () => {
 
 		const conn2 = mockConn({
 			queries: [
-				{ records: [{ Id: '069A', Title: 'mine' }] },
+				{ records: [updateHybridRow('069A', '069BODY2')] },
+				{ records: [{ Id: '069BODY2', Title: 'mine' }] },
 				{ records: [{ Id: '068V2' }] },
 				{ records: [{ Id: 'a0069A' }] }, // Canvas__c Id lookup after upsert
 				{ records: [{ Id: 'cdl069A' }] }, // existing CDL → skip insert
 			],
 			creates: [{ success: true, id: '068V3' }],
+			retrieves: [{ ContentDocumentId: '069BODY3' }],
 		});
 		const store2 = await canvasStoreFromSfConnection(conn2, '005MINE', ORG_ID);
 		await store2.update('069A', { payload: { n: 2 }, expectedVersionId: '068V2' });
@@ -547,10 +803,39 @@ describe('canvas store: remove', () => {
 		});
 		const before = await canvasKeys.get({ sfOrgId: ORG_ID, canvasId: '069DEL', kekProvider: TEST_KEK });
 		assert.ok(before, 'precondition: key should exist before remove');
-		const conn = mockConn({});
+		const conn = mockConn({
+			queries: [
+				{ records: [updateHybridRow('069DEL', '069BODY2')] },
+				{
+					records: [{ ContentDocumentId: '069BODY2' }, { ContentDocumentId: '069BODY1' }],
+				},
+				{
+					records: [
+						{
+							Id: '068V2',
+							ContentDocumentId: '069BODY2',
+							CreatedDate: '2026-05-02T00:00:00Z',
+							Description: 'Org Loom workspace canvas. Encrypted',
+							PathOnClient: 'mine' + CANVAS_EXT,
+						},
+						{
+							Id: '068V1',
+							ContentDocumentId: '069BODY1',
+							CreatedDate: '2026-05-01T00:00:00Z',
+							Description: 'Org Loom workspace canvas. Encrypted',
+							PathOnClient: 'mine' + CANVAS_EXT,
+						},
+					],
+				},
+			],
+		});
 		const store = await canvasStoreFromSfConnection(conn, '005MINE', ORG_ID);
 		await store.remove('069DEL');
 		const after = await canvasKeys.get({ sfOrgId: ORG_ID, canvasId: '069DEL', kekProvider: TEST_KEK });
 		assert.equal(after, null);
+		assert.deepEqual(conn.calls.sobjectDestroys, [
+			{ name: 'ContentDocument', ids: ['069BODY2', '069BODY1'] },
+			{ name: F('Orgloom_Canvas__c'), ids: 'a0069DEL' },
+		]);
 	});
 });

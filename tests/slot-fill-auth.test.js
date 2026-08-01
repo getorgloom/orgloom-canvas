@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeSlotFills } from '../src/slot-helpers.js';
+import { applyContributionsToPayload, mergeSlotFills } from '../src/slot-helpers.js';
 
 function slotRec({ slotId, kind = 'whole-record', fields, assigneeSfUserId, values, objectName = 'Account' }) {
 	const slot = { slotId, kind };
@@ -387,5 +387,73 @@ describe('mergeSlotFills, fieldCount accounting', () => {
 			recipientSfUserId: '005me',
 		});
 		assert.equal(out.applied[0].fieldCount, 0);
+	});
+});
+
+describe('applyContributionsToPayload, requested relationships', () => {
+	test('replacing a requested lookup removes the old canvas association', () => {
+		const payload = {
+			loadedRecords: [],
+			drafts: [
+				{
+					tempId: 'contact',
+					objectName: 'Contact',
+					values: { LastName: 'Recipient' },
+					slot: { slotId: 7, kind: 'fields', fields: ['AccountId'] },
+				},
+				{ tempId: 'account', objectName: 'Account', values: { Name: 'Old account' } },
+			],
+			associations: [
+				{
+					from: { kind: 'slot', ref: 7 },
+					to: { kind: 'draft', ref: 'account' },
+					fieldName: 'AccountId',
+				},
+			],
+		};
+		const result = applyContributionsToPayload(payload, [
+			{
+				id: 'contribution-1',
+				contributorSfUserId: '005recipient',
+				fill: {
+					slotId: 7,
+					values: { AccountId: '001000000000001AAA' },
+					relationshipFields: ['AccountId'],
+				},
+			},
+		]);
+
+		assert.equal(result.payload.associations.length, 0);
+		assert.equal(result.payload.drafts[0].values.AccountId, '001000000000001AAA');
+		assert.deepEqual(result.appliedContributionIds, ['contribution-1']);
+	});
+
+	test('an unchanged lookup value does not remove its canvas association', () => {
+		const association = {
+			from: { kind: 'slot', ref: 7 },
+			to: { kind: 'loaded', ref: '001000000000001AAA' },
+			fieldName: 'AccountId',
+		};
+		const payload = {
+			loadedRecords: [{ loadedFromId: '001000000000001AAA', objectName: 'Account' }],
+			drafts: [
+				{
+					tempId: 'contact',
+					objectName: 'Contact',
+					values: { LastName: 'Recipient' },
+					slot: { slotId: 7, kind: 'fields', fields: ['AccountId'] },
+				},
+			],
+			associations: [association],
+		};
+		const result = applyContributionsToPayload(payload, [
+			{
+				id: 'contribution-2',
+				contributorSfUserId: '005recipient',
+				fill: { slotId: 7, values: { AccountId: '001000000000001AAA' } },
+			},
+		]);
+
+		assert.deepEqual(result.payload.associations, [association]);
 	});
 });

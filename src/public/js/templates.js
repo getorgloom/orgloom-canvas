@@ -178,6 +178,7 @@
 							calculated: !!field.calculated,
 							autoNumber: !!field.autoNumber,
 							nameField: !!field.nameField,
+							compoundFieldName: field.compoundFieldName || null,
 							length: field.length,
 							precision: field.precision,
 							scale: field.scale,
@@ -346,7 +347,9 @@
 
 			function buildCanvasPayload() {
 				let objects = serializeObjects(true);
-				const real = canvasState.bulkRecords.filter((r) => !r.isTypeNode && !r.isPending);
+				const real = canvasState.bulkRecords.filter(
+					(r) => !r.isTypeNode && !r.isPending && !r._permissionHidden,
+				);
 				const stableDraftRef = (record) =>
 					record._persistedTempId != null ? record._persistedTempId : record._collabId || record.id;
 				const loadedRecords = real
@@ -572,6 +575,7 @@
 			function _restoreSlot(slot) {
 				const restored = {
 					slotId: slot.slotId,
+					createdAt: Number.isFinite(Number(slot.createdAt)) ? Number(slot.createdAt) : null,
 					label: slot.label,
 					description: slot.description || null,
 					kind: slot.kind || 'whole-record',
@@ -582,6 +586,10 @@
 				};
 				if (restored.kind === 'fields' && Array.isArray(slot.fields)) {
 					restored.fields = slot.fields.slice();
+				}
+				const unavailableFieldCount = Number(slot.unavailableFieldCount);
+				if (Number.isSafeInteger(unavailableFieldCount) && unavailableFieldCount > 0) {
+					restored.unavailableFieldCount = unavailableFieldCount;
 				}
 				return restored;
 			}
@@ -850,6 +858,10 @@
 				opts = opts || {};
 				const merge = !!opts.merge;
 				const loadingCanvasShareRole = opts.ownedByMe === false ? opts.recipientRole || 'viewer' : null;
+				const loadingCanvasIdentity =
+					opts.canvasIdentity && typeof opts.canvasIdentity === 'object'
+						? Object.assign({}, opts.canvasIdentity)
+						: null;
 				if (!payload || typeof payload !== 'object') {
 					showBulkToast('Empty payload: nothing to load.', 'error');
 					return;
@@ -885,7 +897,7 @@
 					canvasState.selectedIdSeq = 1;
 					canvasState.activeIndex = 0;
 					canvasState.hiddenObjects.clear();
-					canvasState.currentCanvas = null;
+					canvasState.currentCanvas = loadingCanvasIdentity;
 					if (window.Orgloom && window.Orgloom.canvasState && window.Orgloom.canvasState.clearDraft) {
 						window.Orgloom.canvasState.clearDraft();
 					}
@@ -1011,13 +1023,14 @@
 					}
 					canvasState.bulkRecords.push(recObj);
 				};
-				for (const hidden of hiddenRecords) {
+				for (let hiddenIndex = 0; hiddenIndex < hiddenRecords.length; hiddenIndex++) {
+					const hidden = hiddenRecords[hiddenIndex];
 					if (!hidden || typeof hidden !== 'object') {
 						continue;
 					}
 					droppedFromAccess++;
 					canvasState.bulkRecords.push({
-						id: canvasState.bulkIdSeq++,
+						id: -(hiddenIndex + 1),
 						objectName: null,
 						label: 'Hidden Salesforce content',
 						x: _savedCoordinate(hidden.x, 200),
@@ -1025,6 +1038,7 @@
 						values: {},
 						_inaccessible: true,
 						_permissionHidden: true,
+						_permissionHiddenId: hidden.hiddenId || 'hidden-' + (hiddenIndex + 1),
 					});
 				}
 				const mergeExistingByKey = new Map();
@@ -1236,8 +1250,16 @@
 				if (typeof setGraphView === 'function') {
 					setGraphView('bulk');
 				}
+				const shouldPreflight = !recipientUsesSavedMetadata || loadingCanvasShareRole === 'contributor';
+				if (shouldPreflight && loadingCanvasShareRole) {
+					try {
+						await _runSlotPreflight();
+					} catch (error) {
+						console.warn('slot preflight failed:', error);
+					}
+				}
 				renderAll();
-				if (!recipientUsesSavedMetadata) {
+				if (shouldPreflight && !loadingCanvasShareRole) {
 					_runSlotPreflight().catch((e) => console.warn('slot preflight failed:', e));
 				}
 				let msg =

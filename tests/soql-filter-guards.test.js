@@ -11,6 +11,8 @@ let capturedQueries;
 
 const browseClientSource = readFileSync(new URL('../src/public/js/record-browse.js', import.meta.url), 'utf8');
 const linkedCsvSource = readFileSync(new URL('../src/public/js/linked-csv.js', import.meta.url), 'utf8');
+const canvasCardMenuSource = readFileSync(new URL('../src/public/js/canvas-card-menu.js', import.meta.url), 'utf8');
+const typeNodeSource = readFileSync(new URL('../src/public/js/type-node.js', import.meta.url), 'utf8');
 
 const describes = {
 	Account: {
@@ -53,6 +55,16 @@ const describes = {
 			{ name: 'Name', type: 'string', filterable: false, nameField: true },
 		],
 	},
+	Case: {
+		name: 'Case',
+		fields: [
+			{ name: 'Id', type: 'id', filterable: true },
+			{ name: 'CaseNumber', label: 'Case Number', type: 'string', filterable: true, nameField: true },
+			{ name: 'Subject', label: 'Subject', type: 'string', filterable: true },
+			{ name: 'Description', label: 'Description', type: 'textarea', filterable: false },
+			{ name: 'AccountId', label: 'Account', type: 'reference', filterable: true, referenceTo: ['Account'] },
+		],
+	},
 };
 
 before(async () => {
@@ -73,6 +85,13 @@ before(async () => {
 		}),
 		query: async (soql) => {
 			capturedQueries.push(soql);
+			if (/\bFROM Case\b/.test(soql)) {
+				return {
+					records: [{ Id: '500000000000001AAA', CaseNumber: '00001029', Subject: 'Printer is offline' }],
+					done: true,
+					totalSize: 1,
+				};
+			}
 			return { records: [], done: true, totalSize: 0 };
 		},
 	};
@@ -197,6 +216,36 @@ describe('app-generated SOQL WHERE field guards', () => {
 		assert.equal(response.status, 400);
 		assert.equal(body.error, 'search-field-not-filterable');
 		assert.equal(capturedQueries.length, 0);
+	});
+
+	test('Case search matches case number or subject and returns a useful label', async () => {
+		const { response, body } = await jsonRequest('/api/objects/Case/search?q=printer');
+		assert.equal(response.status, 200);
+		assert.deepEqual(body.searchFields, ['CaseNumber', 'Subject']);
+		assert.match(capturedQueries[0], /WHERE \(CaseNumber LIKE '%printer%' OR Subject LIKE '%printer%'\)/);
+		assert.doesNotMatch(capturedQueries[0], /Description LIKE/);
+		assert.deepEqual(body.records, [{ id: '500000000000001AAA', name: '00001029 — Printer is offline' }]);
+	});
+
+	test('related Case search also matches case number or subject', async () => {
+		const { response, body } = await jsonRequest(
+			'/api/objects/Case/by-ref-search?field=AccountId&id=001000000000001AAA&q=printer',
+		);
+		assert.equal(response.status, 200);
+		assert.deepEqual(body.searchFields, ['CaseNumber', 'Subject']);
+		assert.match(
+			capturedQueries[0],
+			/AccountId = '001000000000001AAA' AND \(CaseNumber LIKE '%printer%' OR Subject LIKE '%printer%'\)/,
+		);
+		assert.doesNotMatch(capturedQueries[0], /Description LIKE/);
+		assert.deepEqual(body.records, [{ id: '500000000000001AAA', name: '00001029 — Printer is offline' }]);
+	});
+
+	test('Case record pickers explain the available search fields', () => {
+		assert.match(canvasCardMenuSource, /Search by case number or subject/);
+		assert.match(typeNodeSource, /Search by case number or subject/);
+		assert.doesNotMatch(canvasCardMenuSource, /by Name or paste/);
+		assert.doesNotMatch(typeNodeSource, /by Name or paste/);
 	});
 
 	test('Bulk upsert rejects non-filterable and non-External-ID keys before querying', async () => {

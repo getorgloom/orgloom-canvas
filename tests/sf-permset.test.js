@@ -43,6 +43,24 @@ describe('Org Loom managed permission-set assignment gate', () => {
 		assert.equal(await hasAssignedOrgloomPermissionSet(conn, USER_ID), false);
 	});
 
+	test('does not misclassify API-disabled 403 responses as a missing permission set', async () => {
+		const apiDisabled = new Error('API access is disabled for this user');
+		apiDisabled.statusCode = 403;
+		apiDisabled.errorCode = 'API_DISABLED_FOR_USER';
+		await assert.rejects(
+			() =>
+				hasAssignedOrgloomPermissionSet(
+					{
+						request: async () => {
+							throw apiDisabled;
+						},
+					},
+					USER_ID,
+				),
+			(error) => error === apiDisabled,
+		);
+	});
+
 	test('falls back to the legacy assignment query only when the package endpoint is unavailable', async () => {
 		let queried = false;
 		const conn = {

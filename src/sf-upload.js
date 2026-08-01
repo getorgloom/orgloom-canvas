@@ -42,6 +42,42 @@ export function rejectSpecializedUploadObjects(req, res) {
 	return true;
 }
 
+export function rejectCanvasUploadArtifacts(req, res) {
+	const records = []
+		.concat(Array.isArray(req.body?.records) ? req.body.records : [])
+		.concat(Array.isArray(req.body?.deletes) ? req.body.deletes : []);
+	const hasUploadableValue = (record) =>
+		Object.entries((record && record.values) || {}).some(
+			([fieldName, value]) =>
+				fieldName !== 'Id' &&
+				fieldName !== 'attributes' &&
+				!fieldName.startsWith('_') &&
+				value != null &&
+				value !== '',
+		);
+	const invalid = records.find(
+		(record) =>
+			record &&
+			(record.isTypeNode ||
+				record.isPending ||
+				record._inaccessible ||
+				record.canvasArtifact === true ||
+				(record.slot &&
+					(record.slot.kind || 'whole-record') === 'whole-record' &&
+					!record.loadedFromId &&
+					!hasUploadableValue(record))),
+	);
+	if (!invalid) {
+		return false;
+	}
+	res.status(400).json({
+		error: 'canvas-item-not-uploadable',
+		message:
+			'An unfinished request or other canvas-only item reached the upload endpoint. Nothing was written. Reopen Upload and try again.',
+	});
+	return true;
+}
+
 export async function withSfRetry(fn, { maxAttempts = 4, baseDelay = 500 } = {}) {
 	// Retry only Salesforce rate limits; validation and permission failures are deterministic.
 	let lastErr;

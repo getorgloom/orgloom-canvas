@@ -4,8 +4,137 @@
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	function hasUploadableRecordValue(record) {
+		return Object.entries((record && record.values) || {}).some(
+			([fieldName, value]) =>
+				fieldName !== 'Id' &&
+				fieldName !== 'attributes' &&
+				!fieldName.startsWith('_') &&
+				value != null &&
+				value !== '',
+		);
+	}
+
+	function uploadIneligibilityReason(record) {
+		if (!record || typeof record !== 'object') {
+			return 'not-a-record';
+		}
+		if (record.isTypeNode) {
+			return 'schema-node';
+		}
+		if (record.isPending) {
+			return 'loading-placeholder';
+		}
+		if (record._inaccessible) {
+			return 'inaccessible-placeholder';
+		}
+		if (!record.objectName) {
+			return 'not-a-record';
+		}
+		if (
+			record.slot &&
+			(record.slot.kind || 'whole-record') === 'whole-record' &&
+			!record.loadedFromId &&
+			!hasUploadableRecordValue(record)
+		) {
+			return 'unfinished-record-request';
+		}
+		return null;
+	}
+
+	function isUploadEligibleRecord(record) {
+		return uploadIneligibilityReason(record) === null;
+	}
+
+	function reconcileSyncedRecords(records, synced, canonicalValues) {
+		const realIdByTempId = new Map((synced || []).map((result) => [result.tempId, result.id]));
+		const canonicalMap = canonicalValues && typeof canonicalValues === 'object' ? canonicalValues : {};
+		for (const record of records || []) {
+			if (!record || !realIdByTempId.has(record.id)) {
+				continue;
+			}
+			const wasDraft = !record.loadedFromId;
+			if (wasDraft) {
+				const draftRef =
+					record._persistedTempId != null ? record._persistedTempId : record._collabId || record.id;
+				const promotedFrom =
+					record.slot && record.slot.slotId != null
+						? {
+								refKind: 'slot',
+								ref: String(record.slot.slotId),
+								...(draftRef != null ? { sourceRefKind: 'draft', sourceRef: String(draftRef) } : {}),
+							}
+						: draftRef != null
+							? { refKind: 'draft', ref: String(draftRef) }
+							: null;
+				if (promotedFrom) {
+					if (record._canvasRecordId != null) {
+						promotedFrom.collabRef = String(record._canvasRecordId);
+					}
+					record._presencePromotedFrom = promotedFrom;
+				}
+			}
+			// A successful upload fulfills any request attached to this record.
+			delete record.slot;
+			delete record._recipientSlot;
+			record.loadedFromId = realIdByTempId.get(record.id);
+			record.values = record.values || {};
+			record.values.Id = record.loadedFromId;
+			const canonical = canonicalMap[record.id];
+			if (canonical && typeof canonical === 'object') {
+				for (const fieldName of Object.keys(canonical)) {
+					if (fieldName && !fieldName.startsWith('_')) {
+						record.values[fieldName] = canonical[fieldName];
+					}
+				}
+			}
+			record.loadedValues = Object.assign({}, record.values);
+		}
+		return realIdByTempId;
+	}
+
+	function scopeUploadExclusions(records, selectedIds, selectedOnly) {
+		return (records || [])
+			.filter((record) => !selectedOnly || (selectedIds && selectedIds.has(record && record.id)))
+			.map((record) => ({ record, reason: uploadIneligibilityReason(record) }))
+			.filter((entry) => entry.reason && entry.reason !== 'schema-node' && entry.reason !== 'not-a-record');
+	}
+
+	function incompleteFieldRequests(records) {
+		return (records || []).filter((record) => {
+			if (
+				!isUploadEligibleRecord(record) ||
+				!record.slot ||
+				record.slot.kind !== 'fields' ||
+				!Array.isArray(record.slot.fields) ||
+				record.slot.fields.length === 0
+			) {
+				return false;
+			}
+			const values = record.values || {};
+			return record.slot.fields.some((fieldName) => values[fieldName] == null || values[fieldName] === '');
+		});
+	}
+
+	function uploadExclusionSummary(exclusions) {
+		const counts = new Map();
+		(exclusions || []).forEach((entry) => {
+			if (entry && entry.reason) {
+				counts.set(entry.reason, (counts.get(entry.reason) || 0) + 1);
+			}
+		});
+		const labels = {
+			'unfinished-record-request': 'unfinished record request',
+			'loading-placeholder': 'record still loading',
+			'inaccessible-placeholder': 'unavailable record placeholder',
+		};
+		return Array.from(counts.entries())
+			.filter(([reason]) => labels[reason])
+			.map(([reason, count]) => count + ' ' + labels[reason] + (count === 1 ? '' : 's'));
+	}
+
 	function scopeUploadRecords(records, selectedIds, selectedOnly) {
-		const real = (records || []).filter((r) => r && !r.isTypeNode);
+		const real = (records || []).filter(isUploadEligibleRecord);
 		if (!selectedOnly || !selectedIds || selectedIds.size === 0) {
 			return real;
 		}
@@ -13,8 +142,8 @@
 		return real.filter((r) => selectedIds.has(r.id));
 	}
 
-	function excludedDraftParentLinks(records, associations, scopedIds, selectedOnly) {
-		if (!selectedOnly || !scopedIds || scopedIds.size === 0) {
+	function excludedDraftParentLinks(records, associations, scopedIds, _selectedOnly) {
+		if (!scopedIds || scopedIds.size === 0) {
 			return [];
 		}
 		const realById = new Map((records || []).filter((r) => r && !r.isTypeNode).map((r) => [r.id, r]));
@@ -70,7 +199,7 @@
 	}
 
 	function formatUploadProgress(records, describeCache) {
-		const uploading = (records || []).filter((record) => record && !record.isTypeNode);
+		const uploading = (records || []).filter(isUploadEligibleRecord);
 		const count = uploading.length;
 		if (count === 0) {
 			return 'Uploading…';
@@ -165,6 +294,12 @@
 	}
 
 	window.OrgLoom.uploadModal = {
+		uploadIneligibilityReason: uploadIneligibilityReason,
+		isUploadEligibleRecord: isUploadEligibleRecord,
+		reconcileSyncedRecords: reconcileSyncedRecords,
+		scopeUploadExclusions: scopeUploadExclusions,
+		incompleteFieldRequests: incompleteFieldRequests,
+		uploadExclusionSummary: uploadExclusionSummary,
 		scopeUploadRecords: scopeUploadRecords,
 		excludedDraftParentLinks: excludedDraftParentLinks,
 		scopeUploadAssociations: scopeUploadAssociations,
@@ -223,6 +358,8 @@
 			const ensureDescribe = deps.ensureDescribe;
 			const _isLinkedCsvQuickUploadMode = deps.isLinkedCsvQuickUploadMode;
 			const getMeInfo = deps.getMeInfo;
+			const publishPresenceChanges =
+				typeof deps.publishPresenceChanges === 'function' ? deps.publishPresenceChanges : function () {};
 			const pingAuditEvent = typeof deps.pingAuditEvent === 'function' ? deps.pingAuditEvent : function () {};
 			const markCanvasGuideUploadComplete =
 				typeof deps.markCanvasGuideUploadComplete === 'function'
@@ -289,15 +426,17 @@
 				}
 				_preflightOverride = false;
 				_bulkSwitchAcknowledged = false;
-				const _allRealCount = canvasState.bulkRecords.filter((r) => !r.isTypeNode).length;
-				const _selectedRealCount = canvasState.bulkRecords.filter(
-					(r) => !r.isTypeNode && canvasState.bulkSelectedIds.has(r.id),
+				const _allCanvasRecordCount = canvasState.bulkRecords.filter(
+					(r) => r && !r.isTypeNode && !r.isPending,
+				).length;
+				const _selectedCanvasRecordCount = canvasState.bulkRecords.filter(
+					(r) => r && !r.isTypeNode && !r.isPending && canvasState.bulkSelectedIds.has(r.id),
 				).length;
 				const _wantSelected =
 					opts &&
 					opts.initialScope === 'selected' &&
-					_selectedRealCount > 0 &&
-					_selectedRealCount < _allRealCount;
+					_selectedCanvasRecordCount > 0 &&
+					_selectedCanvasRecordCount < _allCanvasRecordCount;
 				_uploadScopeSelected = !!_wantSelected;
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
 				confirmBtn.disabled = false;
@@ -316,8 +455,8 @@
 				uploadModal.classList.remove('hidden');
 				const uniqObjs = Array.from(
 					new Set(
-						canvasState.bulkRecords
-							.filter((record) => record && !record.isTypeNode && record.objectName)
+						_scopedRealRecords()
+							.filter((record) => record.objectName)
 							.map((record) => record.objectName),
 					),
 				);
@@ -349,15 +488,24 @@
 				const confirmBtn = uploadModal.querySelector('#upload-confirm');
 				const cancelBtn = uploadModal.querySelector('#upload-cancel');
 
-				const allReal = canvasState.bulkRecords.filter((r) => !r.isTypeNode);
+				const allCanvasRecords = canvasState.bulkRecords.filter((r) => r && !r.isTypeNode && !r.isPending);
+				const allReal = allCanvasRecords.filter(isUploadEligibleRecord);
+				const selectedCanvasRecordCount = allCanvasRecords.filter((r) =>
+					canvasState.bulkSelectedIds.has(r.id),
+				).length;
 				const selectedRealCount = allReal.filter((r) => canvasState.bulkSelectedIds.has(r.id)).length;
-				const canScope = selectedRealCount > 0 && selectedRealCount < allReal.length;
+				const canScope = selectedCanvasRecordCount > 0 && selectedCanvasRecordCount < allCanvasRecords.length;
 				if (!canScope) {
 					_uploadScopeSelected = false;
 				}
 				const scopedRecords = _scopedRealRecords();
+				const scopedExclusions = scopeUploadExclusions(
+					canvasState.bulkRecords,
+					canvasState.bulkSelectedIds,
+					_uploadScopeSelected,
+				);
 				const scopedIds = new Set(scopedRecords.map((r) => r.id));
-				const excludedDraftLinks = _uploadScopeSelected ? _scopedExcludedDraftParentLinks() : [];
+				const excludedDraftLinks = _scopedExcludedDraftParentLinks();
 				const requiredExcludedDraftLinks = requiredExcludedDraftParentLinks(
 					canvasState.bulkRecords,
 					excludedDraftLinks,
@@ -647,6 +795,28 @@
 							(unchangedSet.size === 1 ? 'has' : 'have') +
 							' no local changes and will be skipped: only modified or new records will sync.</p>'
 						: '';
+				const exclusionSummary = uploadExclusionSummary(scopedExclusions);
+				const excludedRecordNote =
+					exclusionSummary.length > 0
+						? '<div class="preflight has-warnings">' +
+							'<span class="pf-icon">i</span>' +
+							'<span class="pf-msg"><strong>Not included:</strong> ' +
+							escapeHtml(exclusionSummary.join(', ')) +
+							'. Finish or remove these canvas items before uploading them.</span>' +
+							'</div>'
+						: '';
+				const incompleteFieldRequestCount = incompleteFieldRequests(scopedRecords).length;
+				const incompleteFieldRequestNote =
+					incompleteFieldRequestCount > 0
+						? '<div class="preflight has-warnings">' +
+							'<span class="pf-icon">i</span>' +
+							'<span class="pf-msg"><strong>Requested fields are still incomplete.</strong> ' +
+							incompleteFieldRequestCount +
+							' record' +
+							(incompleteFieldRequestCount === 1 ? '' : 's') +
+							' will still be included. Review the requested fields before uploading.</span>' +
+							'</div>'
+						: '';
 				const excludedDraftLinkNote =
 					optionalExcludedDraftLinkCount > 0
 						? '<div class="preflight has-warnings">' +
@@ -678,6 +848,8 @@
 				content.innerHTML =
 					scopeToggleHtml +
 					migrateBanner +
+					excludedRecordNote +
+					incompleteFieldRequestNote +
 					excludedDraftLinkNote +
 					preflightHtml +
 					unchangedNote +
@@ -991,7 +1163,7 @@
 					.map((r) => r.id);
 				const recordsForPayload = realRecords.filter((r) => !r.pendingDelete);
 				const deletesForPayload = realRecords.filter((r) => isRecordPendingDelete(r));
-				const excludedDraftLinksForPayload = _uploadScopeSelected ? _scopedExcludedDraftParentLinks() : [];
+				const excludedDraftLinksForPayload = _scopedExcludedDraftParentLinks();
 
 				// Build one immutable request snapshot so later canvas edits cannot change this attempt.
 				const scopedIds = new Set(recordsForPayload.map((r) => r.id));
@@ -1883,18 +2055,19 @@
 			}
 
 			function _applyRecoveredIds(realIdByTempId) {
+				reconcileSyncedRecords(
+					canvasState.bulkRecords,
+					Array.from(realIdByTempId, ([tempId, id]) => ({ tempId, id })),
+				);
 				canvasState.bulkRecords.forEach((rec) => {
-					if (realIdByTempId.has(rec.id) && !rec.loadedFromId) {
-						rec.loadedFromId = realIdByTempId.get(rec.id);
-						rec.values = rec.values || {};
-						rec.values.Id = realIdByTempId.get(rec.id);
-						rec.loadedValues = Object.assign({}, rec.values);
+					if (realIdByTempId.has(rec.id)) {
 						_clearCommittedMigrationMatch(rec);
 					}
 				});
 				if (typeof renderBulkView === 'function') {
 					renderBulkView();
 				}
+				publishPresenceChanges();
 			}
 
 			async function reconcileLostUpload(attemptedRecords) {
@@ -2265,32 +2438,20 @@
 					child.values[a.fieldName] = parentRealId;
 				});
 				// Salesforce canonical values win over submitted values after a successful write.
-				const canonicalMap = canonicalValues && typeof canonicalValues === 'object' ? canonicalValues : {};
+				reconcileSyncedRecords(canvasState.bulkRecords, synced, canonicalValues);
 				canvasState.bulkRecords.forEach((rec) => {
 					if (realIdByTempId.has(rec.id)) {
-						rec.loadedFromId = realIdByTempId.get(rec.id);
-						rec.values = rec.values || {};
-						rec.values.Id = realIdByTempId.get(rec.id);
-						const canonical = canonicalMap[rec.id];
-						if (canonical && typeof canonical === 'object') {
-							for (const fieldName of Object.keys(canonical)) {
-								if (!fieldName || fieldName.startsWith('_')) {
-									continue;
-								}
-								rec.values[fieldName] = canonical[fieldName];
-							}
-						}
-						rec.loadedValues = Object.assign({}, rec.values);
 						_clearCommittedMigrationMatch(rec);
 					}
 				});
 				renderBulkView();
+				publishPresenceChanges();
 
 				try {
 					const _mig = window.Orgloom && window.Orgloom.canvasMigrate;
 					if (_mig && _mig.isActive() && failed.length === 0 && deleteFailed.length === 0) {
 						const _remaining = canvasState.bulkRecords.some(
-							(r) => r && !r.isTypeNode && !r.pendingDelete && !r.loadedFromId,
+							(r) => isUploadEligibleRecord(r) && !r.pendingDelete && !r.loadedFromId,
 						);
 						if (!_remaining) {
 							if (window.Orgloom.canvasOrgSwitch && window.Orgloom.canvasOrgSwitch.migrationClear) {

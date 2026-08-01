@@ -12,6 +12,8 @@
 			const canvasState = deps.canvasState;
 			const csrfFetch = deps.csrfFetch;
 			const escapeHtml = deps.escapeHtml;
+			const getCanvasShareRole =
+				typeof deps.getCanvasShareRole === 'function' ? deps.getCanvasShareRole : function () {};
 
 			function _isEmptySlot(rec) {
 				if (!rec || !rec.slot || rec.slot.slotId == null) {
@@ -49,7 +51,8 @@
 			function _isSlotLockedForCurrentUser(rec) {
 				const currentCanvas = canvasState.currentCanvas;
 				const ownsCanvas = !currentCanvas || !currentCanvas.id || !!currentCanvas.ownedByMe;
-				return !ownsCanvas && _slotAssignmentState(rec) === 'other';
+				const contributorAssignmentApplies = getCanvasShareRole() !== 'editor';
+				return !ownsCanvas && contributorAssignmentApplies && _slotAssignmentState(rec) === 'other';
 			}
 
 			function _slotAssigneeBadgeHtml(rec) {
@@ -197,11 +200,48 @@
 			}
 
 			const _slotInaccessibleObjects = new Set();
-			function _slotPreflightWarn(rec) {
-				if (!_isEmptySlot(rec)) {
-					return false;
+			const _slotDescribeAccessByObject = new Map();
+			const _permissionMessage =
+				'You can\u2019t complete this request with your current Salesforce permissions. Ask the canvas owner to reassign it or ask your Salesforce admin for access.';
+
+			function _slotPermissionBlockReason(rec) {
+				if (!rec || !rec.objectName || !rec.slot || rec.slot.slotId == null) {
+					return null;
 				}
-				return _slotInaccessibleObjects.has(rec.objectName);
+				if (_slotInaccessibleObjects.has(rec.objectName)) {
+					return _permissionMessage;
+				}
+				if (!_slotDescribeAccessByObject.has(rec.objectName)) {
+					return null;
+				}
+				const describe = _slotDescribeAccessByObject.get(rec.objectName);
+				if (!describe || !Array.isArray(describe.fields)) {
+					return _permissionMessage;
+				}
+				const kind = rec.slot.kind || 'whole-record';
+				const existing = !!rec.loadedFromId;
+				const objectWritable = existing ? describe.updateable === true : describe.createable === true;
+				if (!objectWritable) {
+					return _permissionMessage;
+				}
+				if (kind === 'fields') {
+					const requested = new Set(Array.isArray(rec.slot.fields) ? rec.slot.fields : []);
+					if (requested.size === 0) {
+						return null;
+					}
+					const hasWritableRequestedField = describe.fields.some(
+						(field) =>
+							field &&
+							requested.has(field.name) &&
+							(existing ? field.updateable === true : field.createable === true),
+					);
+					return hasWritableRequestedField ? null : _permissionMessage;
+				}
+				return describe.fields.some((field) => field && field.createable === true) ? null : _permissionMessage;
+			}
+
+			function _slotPreflightWarn(rec) {
+				return !!_slotPermissionBlockReason(rec);
 			}
 
 			return {
@@ -216,7 +256,9 @@
 				_resolveUserName: _resolveUserName,
 				_formatRelativeTime: _formatRelativeTime,
 				_slotPreflightWarn: _slotPreflightWarn,
+				_slotPermissionBlockReason: _slotPermissionBlockReason,
 				_slotInaccessibleObjects: _slotInaccessibleObjects,
+				_slotDescribeAccessByObject: _slotDescribeAccessByObject,
 			};
 		},
 	};

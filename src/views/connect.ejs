@@ -12,13 +12,6 @@
 	<main class="app-main connect-main">
 		<section class="connect-card">
 			<h1 class="connect-title">Connect a Salesforce org</h1>
-			<% if (errorCode === 'invalid-domain') { %>
-				<div class="connect-error" role="alert">
-					That doesn&rsquo;t look like a Salesforce URL. Use the
-					form below with a full <code>https://&lt;mydomain&gt;.my.salesforce.com</code>
-					(or <code>.lightning.force.com</code>) address.
-				</div>
-			<% } %>
 			<p class="connect-sub">
 				<% if (accountEmail) { %>
 					Signed in as <code><%= accountEmail %></code>. Pick which Salesforce org to connect first.

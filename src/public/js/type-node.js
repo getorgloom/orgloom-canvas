@@ -124,7 +124,11 @@
 					'<div class="fop-header">' +
 					escapeHtml(rec.label || rec.objectName) +
 					'</div>' +
-					'<div class="fop-sub">Search by Name or paste a 15/18-char record ID.</div>' +
+					'<div class="fop-sub">' +
+					(rec.objectName === 'Case'
+						? 'Search by case number or subject, or paste a 15/18-character record ID.'
+						: 'Search by record name or paste a 15/18-character record ID.') +
+					'</div>' +
 					'<input type="search" class="fop-search ftnp-search" placeholder="Search\u2026" autocomplete="off">' +
 					'<div class="fop-list ftnp-list"></div>';
 				document.body.appendChild(pop);

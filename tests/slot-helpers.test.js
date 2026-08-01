@@ -11,6 +11,7 @@ import {
 	applyContributionsToPayload,
 	projectSharedCanvasPayload,
 	projectSharedRelationshipsByVisibility,
+	hiddenCanvasRecordId,
 } from '../src/slot-helpers.js';
 
 describe('slotKind', () => {
@@ -300,6 +301,46 @@ describe('canvas contributions', () => {
 });
 
 describe('shared canvas projection', () => {
+	test('keeps hidden placeholders linear and stable across repeated restricted projections', () => {
+		const access = new Map([
+			['Account', { visible: false, queryable: false, readableFields: new Set(), fields: new Map() }],
+		]);
+		const payload = {
+			loadedRecords: [],
+			drafts: [],
+			associations: [],
+			schema: { objects: [{ name: 'Account', label: 'Account' }] },
+		};
+
+		for (let count = 1; count <= 3; count++) {
+			payload.drafts.push({
+				tempId: 'draft-' + count,
+				canvasRecordId: 'account-card-' + count,
+				objectName: 'Account',
+				x: count * 10,
+				y: count * 20,
+				values: { Name: 'Restricted ' + count },
+			});
+			const projected = projectSharedCanvasPayload(payload, access);
+			assert.equal(projected.hiddenRecords.length, count);
+			assert.deepEqual(
+				projected.hiddenRecords.map((record) => record.hiddenId),
+				Array.from({ length: count }, (_, index) => hiddenCanvasRecordId('account-card-' + (index + 1))),
+			);
+			assert.equal(JSON.stringify(projected).includes('account-card-'), false);
+		}
+
+		const once = projectSharedCanvasPayload(payload, access);
+		const repeated = projectSharedCanvasPayload(
+			{
+				...once,
+				hiddenRecords: [...once.hiddenRecords, once.hiddenRecords[0]],
+			},
+			access,
+		);
+		assert.equal(repeated.hiddenRecords.length, 3);
+	});
+
 	test('shows a legacy loaded record request without exposing its Salesforce record identity', () => {
 		const sourceRecordId = '001000000000099AAA';
 		const safePayload = stripDraftsForNonOwner({
@@ -364,6 +405,11 @@ describe('shared canvas projection', () => {
 					canvasRecordId: 'account-card',
 					values: { Name: 'Visible', Secret__c: 'hidden' },
 					changes: { Name: 'Changed', Secret__c: 'hidden change' },
+					slot: {
+						slotId: 'account-fields',
+						kind: 'fields',
+						fields: ['Name', 'Secret__c'],
+					},
 				},
 			],
 			drafts: [
@@ -409,6 +455,8 @@ describe('shared canvas projection', () => {
 
 		assert.deepEqual(projected.loadedRecords[0].values, { Name: 'Visible' });
 		assert.deepEqual(projected.loadedRecords[0].changes, { Name: 'Changed' });
+		assert.deepEqual(projected.loadedRecords[0].slot.fields, ['Name']);
+		assert.equal(projected.loadedRecords[0].slot.unavailableFieldCount, 1);
 		assert.equal(projected.loadedRecords[0].canvasRecordId, 'account-card');
 		assert.deepEqual(projected.drafts, []);
 		assert.equal(projected.hiddenRecords.length, 1);
@@ -506,7 +554,7 @@ describe('shared canvas projection', () => {
 						visible: true,
 						queryable: true,
 						label: 'Opportunity',
-						readableFields: new Set(['Name']),
+						readableFields: new Set(['Name', 'Phone']),
 						fields: new Map([
 							[
 								'Name',
@@ -514,6 +562,16 @@ describe('shared canvas projection', () => {
 									name: 'Name',
 									label: 'Opportunity Name',
 									type: 'string',
+									createable: true,
+									updateable: true,
+								},
+							],
+							[
+								'Phone',
+								{
+									name: 'Phone',
+									label: 'Phone',
+									type: 'phone',
 									createable: true,
 									updateable: true,
 								},
@@ -529,7 +587,7 @@ describe('shared canvas projection', () => {
 		assert.equal(projected.schema.objects[0].label, 'Opportunity');
 		assert.deepEqual(
 			projected.schema.objects[0].draftFields.map((field) => field.name),
-			['Name'],
+			['Name', 'Phone'],
 		);
 		assert.equal(JSON.stringify(projected).includes('Secret__c'), false);
 	});

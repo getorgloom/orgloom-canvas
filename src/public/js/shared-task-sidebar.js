@@ -63,8 +63,13 @@
 
 				const kind = record.slot.kind || 'whole-record';
 				const progress = slotProgress(record) || { filled: 0, total: kind === 'fields' ? 0 : 1 };
-				const complete = progress.total > 0 && progress.filled >= progress.total;
-				const inaccessible = !!record._inaccessible || !!slotPreflightWarn(record);
+				const unavailableFieldCount =
+					kind === 'fields' && Number.isSafeInteger(Number(record.slot.unavailableFieldCount))
+						? Math.max(0, Number(record.slot.unavailableFieldCount))
+						: 0;
+				const complete = unavailableFieldCount === 0 && progress.total > 0 && progress.filled >= progress.total;
+				const inaccessible = !!record._inaccessible;
+				const permissionBlocked = !inaccessible && !!slotPreflightWarn(record);
 				const noAvailableFields = kind === 'fields' && progress.total === 0;
 				const viewerBlocked = !isOwner && role === 'viewer';
 				const fields = kind === 'fields' && Array.isArray(record.slot.fields) ? record.slot.fields : [];
@@ -79,28 +84,41 @@
 				let status;
 				if (inaccessible) {
 					status = 'Blocked by Salesforce permissions';
+				} else if (permissionBlocked) {
+					status = 'Cannot complete with current Salesforce permissions';
 				} else if (noAvailableFields) {
-					status = 'No requested fields are available';
+					status =
+						'No requested fields are available' +
+						(unavailableFieldCount > 0 ? ' (' + unavailableFieldCount + ' unavailable)' : '');
 				} else if (viewerBlocked && !complete) {
 					status = 'Contributor access required';
 				} else if (complete) {
 					status = 'Complete';
 				} else if (kind === 'fields') {
-					status = progress.filled + ' of ' + progress.total + ' fields complete';
+					status =
+						progress.filled +
+						' of ' +
+						progress.total +
+						(unavailableFieldCount > 0
+							? ' available fields complete · ' + unavailableFieldCount + ' unavailable'
+							: ' fields complete');
 				} else {
 					status = 'Not started';
 				}
 
 				return {
 					recordId: record.id,
+					slotId: String(record.slot.slotId),
 					kind,
+					createdAt: Number.isFinite(Number(record.slot.createdAt)) ? Number(record.slot.createdAt) : 0,
 					kindLabel,
 					title,
 					status,
 					instructions,
 					complete,
-					blocked: inaccessible || noAvailableFields || viewerBlocked,
+					blocked: inaccessible || permissionBlocked || noAvailableFields || viewerBlocked,
 					inaccessible,
+					permissionBlocked,
 					firstIncompleteField,
 					assignee:
 						isOwner && record.slot.assigneeSfUserId
@@ -122,7 +140,19 @@
 				return canvasState.bulkRecords
 					.map((record) => taskForRecord(record, isOwner, role))
 					.filter(Boolean)
-					.sort((left, right) => Number(left.complete) - Number(right.complete));
+					.sort((left, right) => {
+						const kindOrder = (task) => (task.kind === 'fields' ? 1 : 0);
+						const byKind = kindOrder(left) - kindOrder(right);
+						if (byKind !== 0) {
+							return byKind;
+						}
+						const byCreatedAt = left.createdAt - right.createdAt;
+						if (byCreatedAt !== 0) {
+							return byCreatedAt;
+						}
+						const byTitle = left.title.toLocaleLowerCase().localeCompare(right.title.toLocaleLowerCase());
+						return byTitle !== 0 ? byTitle : left.slotId.localeCompare(right.slotId);
+					});
 			}
 
 			function focusRecord(record) {
@@ -173,7 +203,13 @@
 						? ' shared-task--blocked'
 						: '';
 				const kindClass = task.kind === 'fields' ? ' shared-task--fields' : ' shared-task--record';
-				const icon = task.inaccessible ? '&#128274;' : task.kind === 'fields' ? '&#9998;' : '&#43;';
+				const icon = task.complete
+					? '&#10003;'
+					: task.inaccessible
+						? '&#128274;'
+						: task.kind === 'fields'
+							? '&#9998;'
+							: '&#43;';
 				return (
 					'<li class="shared-task' +
 					stateClass +
@@ -186,9 +222,6 @@
 					icon +
 					'</span>' +
 					'<span class="shared-task-copy">' +
-					'<span class="shared-task-kind">' +
-					escapeHtml(task.kindLabel) +
-					'</span>' +
 					'<strong>' +
 					escapeHtml(task.title) +
 					'</strong>' +
@@ -210,6 +243,8 @@
 				if (!host) {
 					return false;
 				}
+				const currentSections = host.querySelector('.shared-task-sections');
+				const previousScrollTop = currentSections ? currentSections.scrollTop : 0;
 				const tasks = buildTasks();
 				if (tasks.length === 0) {
 					host.hidden = true;
@@ -220,6 +255,33 @@
 				const current = canvasState.currentCanvas;
 				const isOwner = !!(current && current.ownedByMe);
 				const completeCount = tasks.filter((task) => task.complete).length;
+				const sections = [
+					{ kind: 'whole-record', label: 'Add records' },
+					{ kind: 'fields', label: 'Fill in fields' },
+				]
+					.map((section) => {
+						const sectionTasks = tasks.filter((task) =>
+							section.kind === 'whole-record' ? task.kind !== 'fields' : task.kind === 'fields',
+						);
+						if (sectionTasks.length === 0) {
+							return '';
+						}
+						const remaining = sectionTasks.filter((task) => !task.complete).length;
+						return (
+							'<section class="shared-task-section shared-task-section--' +
+							(section.kind === 'fields' ? 'fields' : 'records') +
+							'">' +
+							'<div class="shared-task-section-header"><h4>' +
+							escapeHtml(section.label) +
+							'</h4><span>' +
+							remaining +
+							' remaining</span></div>' +
+							'<ol class="shared-task-list">' +
+							sectionTasks.map(taskHtml).join('') +
+							'</ol></section>'
+						);
+					})
+					.join('');
 				host.hidden = false;
 				host.innerHTML =
 					'<div class="shared-task-header">' +
@@ -230,9 +292,13 @@
 					' of ' +
 					tasks.length +
 					' complete</p></div></div>' +
-					'<ol class="shared-task-list">' +
-					tasks.map(taskHtml).join('') +
-					'</ol>';
+					'<div class="shared-task-sections">' +
+					sections +
+					'</div>';
+				const nextSections = host.querySelector('.shared-task-sections');
+				if (nextSections && previousScrollTop > 0) {
+					nextSections.scrollTop = previousScrollTop;
+				}
 
 				if (!host.dataset.wired) {
 					host.dataset.wired = '1';

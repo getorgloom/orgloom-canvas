@@ -8,6 +8,7 @@ import {
 	isSpecializedSObject,
 	getQueryableSObjects,
 	listObjects,
+	loadDescribeForObject,
 } from '../src/sf-describe.js';
 
 test('AF-040: describe-global preserves create permission for object gating', async () => {
@@ -15,8 +16,22 @@ test('AF-040: describe-global preserves create permission for object gating', as
 		async describeGlobal() {
 			return {
 				sobjects: [
-					{ name: 'Allowed__c', label: 'Allowed', labelPlural: 'Allowed', queryable: true, createable: true },
-					{ name: 'Denied__c', label: 'Denied', labelPlural: 'Denied', queryable: true, createable: false },
+					{
+						name: 'Allowed__c',
+						label: 'Allowed',
+						labelPlural: 'Allowed',
+						queryable: true,
+						createable: true,
+						deletable: true,
+					},
+					{
+						name: 'Denied__c',
+						label: 'Denied',
+						labelPlural: 'Denied',
+						queryable: true,
+						createable: false,
+						deletable: false,
+					},
 				],
 			};
 		},
@@ -24,6 +39,35 @@ test('AF-040: describe-global preserves create permission for object gating', as
 	const objects = await listObjects(conn, 'af-040', 'user-af-040');
 	assert.equal(objects.find((object) => object.name === 'Allowed__c').createable, true);
 	assert.equal(objects.find((object) => object.name === 'Denied__c').createable, false);
+	assert.equal(objects.find((object) => object.name === 'Allowed__c').deletable, true);
+	assert.equal(objects.find((object) => object.name === 'Denied__c').deletable, false);
+});
+
+test('object describe preserves Salesforce delete permission', async () => {
+	const conn = {
+		version: '60.0',
+		sobject() {
+			return {
+				async describe() {
+					return {
+						name: 'Account',
+						label: 'Account',
+						createable: true,
+						updateable: true,
+						deletable: false,
+						queryable: true,
+						fields: [],
+						recordTypeInfos: [],
+					};
+				},
+			};
+		},
+		async request() {
+			throw new Error('UI API unavailable in unit test');
+		},
+	};
+	const describe = await loadDescribeForObject(conn, 'Account');
+	assert.equal(describe.deletable, false);
 });
 
 function fakeConn(objectNames) {

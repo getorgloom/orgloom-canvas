@@ -15,6 +15,7 @@ function createHarness({
 } = {}) {
 	const requests = [];
 	const choiceCalls = [];
+	const promptCalls = [];
 	let starts = 0;
 	const window = { OrgLoom: {}, Orgloom: {} };
 	const document = {
@@ -59,7 +60,10 @@ function createHarness({
 		escapeHtml: String,
 		showBulkToast() {},
 		showConfirmDialog: async () => true,
-		showPromptModal: async () => promptName,
+		showPromptModal: async (options) => {
+			promptCalls.push(options);
+			return promptName;
+		},
 		_openAnchoredPopup() {
 			throw new Error('not used by lifecycle tests');
 		},
@@ -81,6 +85,20 @@ function createHarness({
 		notePresenceLocalSave() {},
 		rehydrateSessionDraftValues() {},
 		_hasCap: () => true,
+		canvasSaveState: {
+			getState: () => ({ phase: hasContent ? 'dirty' : 'clean', dirty: hasContent }),
+			hasUnsavedChanges: () => hasContent,
+			canPersistCurrentCanvas: () =>
+				!canvasState.currentCanvas ||
+				!canvasState.currentCanvas.id ||
+				canvasState.currentCanvas.ownedByMe ||
+				canvasState.currentCanvas.recipientRole === 'editor',
+			markSaving: () => true,
+			markDirty() {},
+			markFailed() {},
+			captureSaved() {},
+			refresh() {},
+		},
 		clearAutosave() {},
 		startNewCanvas: async () => {
 			starts += 1;
@@ -96,6 +114,7 @@ function createHarness({
 		canvasState,
 		requests,
 		choiceCalls,
+		promptCalls,
 		get starts() {
 			return starts;
 		},
@@ -107,10 +126,19 @@ test('Canvases menu exposes a first-class New canvas action', () => {
 	assert.match(source, />\+ New canvas</);
 });
 
+test('saved canvas timestamps identify what the time represents', () => {
+	assert.match(source, /date \? 'Last saved ' \+ escapeHtml\(date\) : ''/);
+});
+
 test('loading a saved canvas replaces instead of merging', () => {
 	assert.doesNotMatch(source, /showReplaceOrMergeDialog/);
 	assert.match(source, /title: 'Load saved canvas\?'/);
-	assert.match(source, /confirmLabel: 'Replace canvas'/);
+	assert.match(source, /saveLabel: 'Save and continue'/);
+	assert.match(source, /discardLabel: 'Continue without saving'/);
+	assert.match(
+		source,
+		/const finishCanvasLoad = beginCanvasReplacementLoad\('Loading canvas\\u2026'\);[\s\S]*finally \{\s*finishCanvasLoad\(\)/,
+	);
 	assert.match(source, /applyCanvasPayload\(td\.payload \|\| \{\}, \{\s*merge: false,/s);
 	assert.doesNotMatch(source, /merge: mode === 'merge'/);
 });
@@ -156,6 +184,12 @@ test('unsaved work can be named and saved before starting a new canvas', async (
 	assert.equal(harness.requests[0].url, '/api/canvas');
 	assert.equal(harness.requests[0].options.method, 'POST');
 	assert.equal(harness.starts, 1);
+	assert.equal(harness.choiceCalls[0].saveLabel, 'Save current and start new');
+	assert.equal(harness.choiceCalls[0].message, undefined);
+	assert.equal(harness.promptCalls[0].title, 'Save your current canvas');
+	assert.equal(harness.promptCalls[0].label, 'Current canvas name');
+	assert.equal(harness.promptCalls[0].helpText, 'Org Loom will save this canvas, then open a new blank canvas.');
+	assert.equal(harness.promptCalls[0].submitText, 'Save and start new');
 });
 
 test('an owned saved canvas is updated before starting new when requested', async () => {

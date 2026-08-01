@@ -4,6 +4,7 @@ import { beforeEach, describe, test } from 'node:test';
 import {
 	_claimUploadAttemptForTests,
 	_countCommittedMutationsForTests,
+	_deleteSalesforceRecordForTests,
 	_requireUploadAttemptIdForTests,
 	_resetUploadAttemptClaimsForTests,
 	_settleKnownNoCommitForTests,
@@ -68,6 +69,50 @@ describe('upload attempt concurrency claim', () => {
 			'12345678-1234-1234-1234-123456789abc',
 		);
 		assert.equal(valid.statusCode, null);
+	});
+});
+
+describe('Salesforce delete permission enforcement', () => {
+	test('rejects before DML when describe says the object is not deletable', async () => {
+		let deleteCalls = 0;
+		const result = await _deleteSalesforceRecordForTests({
+			conn: {
+				sobject() {
+					return {
+						async delete() {
+							deleteCalls++;
+							return { success: true };
+						},
+					};
+				},
+			},
+			getDescribe: async () => ({ deletable: false }),
+			record: { tempId: 1, objectName: 'Account', sfId: '001000000000001AAA' },
+		});
+		assert.equal(result.success, false);
+		assert.equal(result.errorCode, 'INSUFFICIENT_ACCESS_OR_READONLY');
+		assert.equal(deleteCalls, 0);
+	});
+
+	test('performs DML after current describe confirms delete permission', async () => {
+		let deleteCalls = 0;
+		const result = await _deleteSalesforceRecordForTests({
+			conn: {
+				sobject() {
+					return {
+						async delete() {
+							deleteCalls++;
+							return { success: true };
+						},
+					};
+				},
+			},
+			getDescribe: async () => ({ deletable: true }),
+			record: { tempId: 1, objectName: 'Account', sfId: '001000000000001AAA' },
+		});
+		assert.equal(result.success, true);
+		assert.equal(result.mode, 'delete');
+		assert.equal(deleteCalls, 1);
 	});
 });
 

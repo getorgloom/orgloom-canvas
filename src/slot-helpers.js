@@ -1,4 +1,14 @@
 // Contributor-slot projection and server-side field allowlisting.
+import crypto from 'node:crypto';
+
+export function hiddenCanvasRecordId(canvasRecordId) {
+	const value = canvasRecordId == null ? '' : String(canvasRecordId).trim();
+	if (!value || value.length > 128) {
+		return null;
+	}
+	return 'hidden-card-' + crypto.createHash('sha256').update(value).digest('hex').slice(0, 24);
+}
+
 export function slotKind(slot) {
 	if (!slot) {
 		return null;
@@ -23,6 +33,25 @@ export function payloadContainsSlots(payload) {
 		}
 	}
 	return false;
+}
+
+export function selectSlotSubmissionPayload({ durablePayload, liveSnapshot, liveCommit, slotIds }) {
+	const requestedSlots = Array.isArray(slotIds) ? slotIds.map(String) : [];
+	if (
+		liveCommit &&
+		liveCommit.connectionId &&
+		liveCommit.targetRef &&
+		liveCommit.targetRef.refKind === 'slot' &&
+		liveCommit.targetRef.ref != null &&
+		requestedSlots.length === 1 &&
+		requestedSlots[0] === String(liveCommit.targetRef.ref) &&
+		liveSnapshot &&
+		liveSnapshot.payload &&
+		typeof liveSnapshot.payload === 'object'
+	) {
+		return liveSnapshot.payload;
+	}
+	return durablePayload && typeof durablePayload === 'object' ? durablePayload : {};
 }
 
 export function stripDraftsForNonOwner(payload) {
@@ -204,6 +233,26 @@ export function applyContributionsToPayload(payload, contributions) {
 	const appliedContributionIds = [];
 	const skipped = [];
 	const completedWholeRequests = new Map();
+	const relationshipReplacements = [];
+	const endpointForRecord = (record) => {
+		if (!record || typeof record !== 'object') {
+			return null;
+		}
+		if (record.slot && record.slot.slotId != null) {
+			return { kind: 'slot', ref: record.slot.slotId };
+		}
+		if (record.loadedFromId) {
+			return { kind: 'loaded', ref: record.loadedFromId };
+		}
+		return record.tempId != null ? { kind: 'draft', ref: record.tempId } : null;
+	};
+	const sameEndpoint = (left, right) =>
+		!!left &&
+		!!right &&
+		left.kind === right.kind &&
+		left.ref != null &&
+		right.ref != null &&
+		String(left.ref) === String(right.ref);
 
 	for (const contribution of Array.isArray(contributions) ? contributions : []) {
 		if (!contribution || !contribution.fill) {
@@ -219,6 +268,18 @@ export function applyContributionsToPayload(payload, contributions) {
 		);
 		const submittedRecord = submittedRecordIndex >= 0 ? records[submittedRecordIndex] : null;
 		const completesWholeRequest = submittedRecord && slotKind(submittedRecord.slot) === 'whole-record';
+		const allowedRelationshipFields =
+			submittedRecord && slotKind(submittedRecord.slot) === 'fields'
+				? new Set(Array.isArray(submittedRecord.slot.fields) ? submittedRecord.slot.fields : [])
+				: null;
+		const relationshipFields = new Set(
+			(Array.isArray(contribution.fill.relationshipFields) ? contribution.fill.relationshipFields : []).filter(
+				(name) =>
+					typeof name === 'string' &&
+					Object.prototype.hasOwnProperty.call(contribution.fill.values || {}, name) &&
+					(!allowedRelationshipFields || allowedRelationshipFields.has(name)),
+			),
+		);
 		const result = mergeSlotFills({
 			records,
 			fills: [contribution.fill],
@@ -226,6 +287,10 @@ export function applyContributionsToPayload(payload, contributions) {
 		});
 		if (result.appliedCount > 0) {
 			records = result.records;
+			const relationshipSource = endpointForRecord(submittedRecord);
+			if (relationshipSource && relationshipFields.size > 0) {
+				relationshipReplacements.push({ source: relationshipSource, fields: relationshipFields });
+			}
 			if (completesWholeRequest && submittedRecordIndex >= 0) {
 				const completedRecord = Object.assign({}, records[submittedRecordIndex]);
 				delete completedRecord.slot;
@@ -249,21 +314,31 @@ export function applyContributionsToPayload(payload, contributions) {
 	}
 
 	const associations = Array.isArray(source.associations)
-		? source.associations.map((association) => {
-				if (!association || typeof association !== 'object') {
-					return association;
-				}
-				const rewriteEndpoint = (endpoint) => {
-					if (!endpoint || endpoint.kind !== 'slot' || endpoint.ref == null) {
-						return endpoint;
+		? source.associations
+				.filter(
+					(association) =>
+						!relationshipReplacements.some(
+							(replacement) =>
+								association &&
+								sameEndpoint(association.from, replacement.source) &&
+								replacement.fields.has(association.fieldName),
+						),
+				)
+				.map((association) => {
+					if (!association || typeof association !== 'object') {
+						return association;
 					}
-					return completedWholeRequests.get(String(endpoint.ref)) || endpoint;
-				};
-				return Object.assign({}, association, {
-					from: rewriteEndpoint(association.from),
-					to: rewriteEndpoint(association.to),
-				});
-			})
+					const rewriteEndpoint = (endpoint) => {
+						if (!endpoint || endpoint.kind !== 'slot' || endpoint.ref == null) {
+							return endpoint;
+						}
+						return completedWholeRequests.get(String(endpoint.ref)) || endpoint;
+					};
+					return Object.assign({}, association, {
+						from: rewriteEndpoint(association.from),
+						to: rewriteEndpoint(association.to),
+					});
+				})
 		: source.associations;
 
 	return {
@@ -347,20 +422,49 @@ function _projectSlot(slot, readableFields) {
 	}
 	const projected = Object.assign({}, slot);
 	if ((projected.kind || 'whole-record') === 'fields') {
-		projected.fields = (Array.isArray(projected.fields) ? projected.fields : []).filter((name) =>
-			readableFields.has(name),
-		);
+		const fields = Array.isArray(projected.fields) ? projected.fields : [];
+		projected.fields = fields.filter((name) => readableFields.has(name));
+		const unavailableFieldCount = fields.length - projected.fields.length;
+		if (unavailableFieldCount > 0) {
+			projected.unavailableFieldCount = unavailableFieldCount;
+		} else {
+			delete projected.unavailableFieldCount;
+		}
 	}
 	return projected;
 }
 
 function _hiddenCanvasEntry(record, ordinal) {
 	return {
-		hiddenId: 'hidden-' + ordinal,
+		hiddenId: hiddenCanvasRecordId(record && record.canvasRecordId) || 'hidden-' + ordinal,
 		x: typeof record.x === 'number' ? record.x : 0,
 		y: typeof record.y === 'number' ? record.y : 0,
 		reason: 'salesforce-permissions',
 	};
+}
+
+function _projectExistingHiddenEntries(entries) {
+	const projected = [];
+	const seen = new Set();
+	for (const entry of Array.isArray(entries) ? entries : []) {
+		if (!entry || typeof entry !== 'object') {
+			continue;
+		}
+		const candidate = /^hidden-(?:[1-9][0-9]*|card-[a-f0-9]{24})$/.test(String(entry.hiddenId || ''))
+			? String(entry.hiddenId)
+			: 'hidden-' + (projected.length + 1);
+		if (seen.has(candidate)) {
+			continue;
+		}
+		seen.add(candidate);
+		projected.push({
+			hiddenId: candidate,
+			x: typeof entry.x === 'number' ? entry.x : 0,
+			y: typeof entry.y === 'number' ? entry.y : 0,
+			reason: 'salesforce-permissions',
+		});
+	}
+	return projected;
 }
 
 function _projectFieldMetadata(field) {
@@ -379,6 +483,7 @@ function _projectFieldMetadata(field) {
 		calculated: !!field.calculated,
 		autoNumber: !!field.autoNumber,
 		nameField: !!field.nameField,
+		compoundFieldName: field.compoundFieldName || null,
 		length: field.length,
 		precision: field.precision,
 		scale: field.scale,
@@ -400,7 +505,7 @@ function _projectFieldMetadata(field) {
 export function projectSharedCanvasPayload(payload, accessByObject) {
 	const source = payload && typeof payload === 'object' ? payload : {};
 	const access = accessByObject instanceof Map ? accessByObject : new Map();
-	const hiddenRecords = Array.isArray(source.hiddenRecords) ? source.hiddenRecords.slice() : [];
+	const hiddenRecords = _projectExistingHiddenEntries(source.hiddenRecords);
 	const loadedRecords = [];
 	for (const record of Array.isArray(source.loadedRecords) ? source.loadedRecords : []) {
 		if (!record || typeof record !== 'object') {
@@ -455,6 +560,7 @@ export function projectSharedCanvasPayload(payload, accessByObject) {
 	const schema = source.schema && typeof source.schema === 'object' ? source.schema : null;
 	const intendedFieldsByObject = new Map();
 	const wholeRecordRequests = new Set();
+	const fieldRequestObjects = new Set();
 	for (const record of drafts) {
 		if (!record || !record.objectName) {
 			continue;
@@ -465,6 +571,7 @@ export function projectSharedCanvasPayload(payload, accessByObject) {
 		const intended = intendedFieldsByObject.get(record.objectName);
 		Object.keys(record.values || {}).forEach((name) => intended.add(name));
 		if (record.slot && (record.slot.kind || 'whole-record') === 'fields') {
+			fieldRequestObjects.add(record.objectName);
 			(record.slot.fields || []).forEach((name) => intended.add(name));
 		} else if (record.slot) {
 			wholeRecordRequests.add(record.objectName);
@@ -487,6 +594,10 @@ export function projectSharedCanvasPayload(payload, accessByObject) {
 								if (field && field.createable) {
 									intended.add(name);
 								}
+							}
+						} else if (fieldRequestObjects.has(object.name)) {
+							for (const name of objectAccess.readableFields) {
+								intended.add(name);
 							}
 						}
 						const draftFields = Array.from(intended)
@@ -605,7 +716,7 @@ export function projectSharedRelationshipsByVisibility(payload, visibility) {
 		}
 		return false;
 	};
-	const hiddenRecords = Array.isArray(source.hiddenRecords) ? source.hiddenRecords.slice() : [];
+	const hiddenRecords = _projectExistingHiddenEntries(source.hiddenRecords);
 	const projectedLoadedRecords = [];
 	for (const record of Array.isArray(source.loadedRecords) ? source.loadedRecords : []) {
 		if (!record || !loadedRecords[sfIdKey(record.loadedFromId)]) {
@@ -622,6 +733,306 @@ export function projectSharedRelationshipsByVisibility(payload, visibility) {
 		associations: (Array.isArray(source.associations) ? source.associations : []).filter(
 			(association) => association && endpointVisible(association.from) && endpointVisible(association.to),
 		),
+	});
+}
+
+function _editorRecordKey(record, kind) {
+	if (!record || typeof record !== 'object') {
+		return null;
+	}
+	if (record.canvasRecordId != null && String(record.canvasRecordId)) {
+		return 'card:' + String(record.canvasRecordId);
+	}
+	if (record.slot && record.slot.slotId != null) {
+		return 'slot:' + String(record.slot.slotId);
+	}
+	if (kind === 'loaded' && record.loadedFromId != null) {
+		return 'loaded:' + String(record.loadedFromId).slice(0, 15).toLowerCase();
+	}
+	if (kind === 'draft' && record.tempId != null) {
+		return 'draft:' + String(record.tempId);
+	}
+	return null;
+}
+
+function _editorRecordEntries(payload) {
+	const entries = [];
+	for (const [property, kind] of [
+		['loadedRecords', 'loaded'],
+		['drafts', 'draft'],
+	]) {
+		for (const record of Array.isArray(payload && payload[property]) ? payload[property] : []) {
+			const key = _editorRecordKey(record, kind);
+			if (key) {
+				entries.push({ key, kind, record });
+			}
+		}
+	}
+	return entries;
+}
+
+function _editorFieldWritable(access, fieldName, kind) {
+	const field = access && access.fields instanceof Map ? access.fields.get(fieldName) : null;
+	return !!(field && (kind === 'loaded' ? field.updateable : field.createable));
+}
+
+function _mergeEditorFieldBag(source, baseline, submitted, access, kind) {
+	const merged = Object.assign({}, source && typeof source === 'object' ? source : {});
+	const before = baseline && typeof baseline === 'object' ? baseline : {};
+	const after = submitted && typeof submitted === 'object' ? submitted : {};
+	for (const fieldName of new Set([...Object.keys(before), ...Object.keys(after)])) {
+		if (!_editorFieldWritable(access, fieldName, kind)) {
+			continue;
+		}
+		if (Object.prototype.hasOwnProperty.call(after, fieldName)) {
+			merged[fieldName] = after[fieldName];
+		} else {
+			delete merged[fieldName];
+		}
+	}
+	return Object.keys(merged).length > 0 ? merged : null;
+}
+
+function _sanitizeEditorSlot(slot, access, kind) {
+	if (!slot || typeof slot !== 'object') {
+		return null;
+	}
+	const safe = Object.assign({}, slot);
+	if ((slot.kind || 'whole-record') === 'fields') {
+		safe.fields = (Array.isArray(slot.fields) ? slot.fields : []).filter((fieldName) =>
+			_editorFieldWritable(access, fieldName, kind),
+		);
+	}
+	return safe;
+}
+
+function _mergeEditorRecord(source, baseline, submitted, access, kind) {
+	const merged = Object.assign({}, source, submitted, { objectName: source.objectName });
+	for (const identity of ['canvasRecordId', 'loadedFromId', 'tempId']) {
+		if (source[identity] != null) {
+			merged[identity] = source[identity];
+		} else {
+			delete merged[identity];
+		}
+	}
+	if (kind === 'loaded') {
+		const changes = _mergeEditorFieldBag(source.changes, baseline.changes, submitted.changes, access, kind);
+		if (changes) {
+			merged.changes = changes;
+		} else {
+			delete merged.changes;
+		}
+		if (source.values) {
+			merged.values = source.values;
+		} else {
+			delete merged.values;
+		}
+	} else {
+		merged.values = _mergeEditorFieldBag(source.values, baseline.values, submitted.values, access, kind) || {};
+		delete merged.changes;
+	}
+	if (Object.prototype.hasOwnProperty.call(submitted, 'slot')) {
+		const slot = _sanitizeEditorSlot(submitted.slot, access, kind);
+		if (slot) {
+			merged.slot = slot;
+		} else {
+			delete merged.slot;
+		}
+	} else {
+		delete merged.slot;
+	}
+	return merged;
+}
+
+function _sanitizeNewEditorRecord(record, access, kind) {
+	if (
+		!record ||
+		typeof record !== 'object' ||
+		!access ||
+		access.visible === false ||
+		(kind === 'loaded' ? access.queryable === false : access.createable !== true)
+	) {
+		return null;
+	}
+	const safe = Object.assign({}, record);
+	if (kind === 'loaded') {
+		const changes = _mergeEditorFieldBag({}, {}, record.changes, access, kind);
+		if (changes) {
+			safe.changes = changes;
+		} else {
+			delete safe.changes;
+		}
+		delete safe.values;
+	} else {
+		safe.values = _mergeEditorFieldBag({}, {}, record.values, access, kind) || {};
+		delete safe.changes;
+	}
+	if (record.slot) {
+		safe.slot = _sanitizeEditorSlot(record.slot, access, kind);
+	}
+	return safe;
+}
+
+function _editorEndpointKey(endpoint) {
+	return endpoint && endpoint.kind && endpoint.ref != null
+		? String(endpoint.kind) + ':' + String(endpoint.ref)
+		: null;
+}
+
+function _editorAssociationKey(association) {
+	const from = _editorEndpointKey(association && association.from);
+	const to = _editorEndpointKey(association && association.to);
+	return from && to && association.fieldName ? from + '>' + to + ':' + association.fieldName : null;
+}
+
+function _editorEndpointRecords(payload) {
+	const records = new Map();
+	for (const { kind, record } of _editorRecordEntries(payload)) {
+		if (kind === 'loaded' && record.loadedFromId != null) {
+			records.set('loaded:' + String(record.loadedFromId), { kind, record });
+		}
+		if (kind === 'draft' && record.tempId != null) {
+			records.set('draft:' + String(record.tempId), { kind, record });
+		}
+		if (record.slot && record.slot.slotId != null) {
+			records.set('slot:' + String(record.slot.slotId), { kind, record });
+		}
+	}
+	return records;
+}
+
+function _editorMayChangeAssociation(association, payload, accessByObject) {
+	const fromKey = _editorEndpointKey(association && association.from);
+	const from = _editorEndpointRecords(payload).get(fromKey);
+	if (!from || !association.fieldName) {
+		return false;
+	}
+	return _editorFieldWritable(accessByObject.get(from.record.objectName), association.fieldName, from.kind);
+}
+
+function _mergeEditorSchema(source, baseline, submitted) {
+	const sourceSchema = source && source.schema && typeof source.schema === 'object' ? source.schema : {};
+	const baselineObjects = new Map(
+		(Array.isArray(baseline && baseline.schema && baseline.schema.objects) ? baseline.schema.objects : [])
+			.filter((object) => object && object.name)
+			.map((object) => [object.name, object]),
+	);
+	const submittedObjects = new Map(
+		(Array.isArray(submitted && submitted.schema && submitted.schema.objects) ? submitted.schema.objects : [])
+			.filter((object) => object && object.name)
+			.map((object) => [object.name, object]),
+	);
+	const mergedObjects = [];
+	for (const object of Array.isArray(sourceSchema.objects) ? sourceSchema.objects : []) {
+		if (!object || !object.name) {
+			continue;
+		}
+		if (!baselineObjects.has(object.name)) {
+			mergedObjects.push(object);
+			continue;
+		}
+		const update = submittedObjects.get(object.name);
+		if (!update) {
+			continue;
+		}
+		const fields = new Map(
+			(Array.isArray(object.draftFields) ? object.draftFields : [])
+				.filter((field) => field && field.name)
+				.map((field) => [field.name, field]),
+		);
+		for (const field of Array.isArray(update.draftFields) ? update.draftFields : []) {
+			if (field && field.name) {
+				fields.set(field.name, field);
+			}
+		}
+		const next = Object.assign({}, object, update);
+		if (fields.size > 0) {
+			next.draftFields = Array.from(fields.values());
+		}
+		mergedObjects.push(next);
+		submittedObjects.delete(object.name);
+	}
+	for (const object of submittedObjects.values()) {
+		mergedObjects.push(object);
+	}
+	return Object.assign({}, sourceSchema, submitted && submitted.schema, { objects: mergedObjects });
+}
+
+export function mergeEditorCanvasPayload({ source, baseline, submitted, accessByObject }) {
+	const canonical = source && typeof source === 'object' ? source : {};
+	const visible = baseline && typeof baseline === 'object' ? baseline : {};
+	const next = submitted && typeof submitted === 'object' ? submitted : {};
+	const access = accessByObject instanceof Map ? accessByObject : new Map();
+	const baselineByKey = new Map(_editorRecordEntries(visible).map((entry) => [entry.key, entry]));
+	const submittedByKey = new Map(_editorRecordEntries(next).map((entry) => [entry.key, entry]));
+	const loadedRecords = [];
+	const drafts = [];
+	const append = (kind, record) => (kind === 'loaded' ? loadedRecords : drafts).push(record);
+
+	for (const entry of _editorRecordEntries(canonical)) {
+		const before = baselineByKey.get(entry.key);
+		if (!before) {
+			append(entry.kind, entry.record);
+			continue;
+		}
+		const after = submittedByKey.get(entry.key);
+		submittedByKey.delete(entry.key);
+		if (!after) {
+			continue;
+		}
+		append(
+			after.kind,
+			_mergeEditorRecord(
+				entry.record,
+				before.record,
+				after.record,
+				access.get(entry.record.objectName),
+				after.kind,
+			),
+		);
+	}
+	for (const entry of submittedByKey.values()) {
+		const record = _sanitizeNewEditorRecord(entry.record, access.get(entry.record.objectName), entry.kind);
+		if (record) {
+			append(entry.kind, record);
+		}
+	}
+
+	const baselineAssociations = new Map(
+		(Array.isArray(visible.associations) ? visible.associations : [])
+			.map((association) => [_editorAssociationKey(association), association])
+			.filter(([key]) => key),
+	);
+	const submittedAssociations = new Map(
+		(Array.isArray(next.associations) ? next.associations : [])
+			.map((association) => [_editorAssociationKey(association), association])
+			.filter(([key]) => key),
+	);
+	const associations = [];
+	for (const association of Array.isArray(canonical.associations) ? canonical.associations : []) {
+		const key = _editorAssociationKey(association);
+		if (!key || !baselineAssociations.has(key)) {
+			associations.push(association);
+			continue;
+		}
+		if (submittedAssociations.has(key) || !_editorMayChangeAssociation(association, visible, access)) {
+			associations.push(association);
+		}
+		submittedAssociations.delete(key);
+	}
+	const mergedRecords = { loadedRecords, drafts };
+	for (const association of submittedAssociations.values()) {
+		if (_editorMayChangeAssociation(association, mergedRecords, access)) {
+			associations.push(association);
+		}
+	}
+
+	return Object.assign({}, canonical, {
+		_meta: Object.assign({}, canonical._meta || {}, next._meta || {}),
+		schema: _mergeEditorSchema(canonical, visible, next),
+		loadedRecords,
+		drafts,
+		associations,
 	});
 }
 

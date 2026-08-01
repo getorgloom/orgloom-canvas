@@ -12,6 +12,15 @@ function _errorStatus(error) {
 	return Number(error?.statusCode || error?.status || error?.response?.status || 0);
 }
 
+function _isApiDisabledError(error) {
+	const details = [error?.message, error?.errorCode, error?.code, error?.name]
+		.filter(Boolean)
+		.join(' ');
+	return /API_DISABLED_FOR_(?:ORG|USER)|API_CURRENTLY_DISABLED|api access.*disabled|api is not enabled/i.test(
+		details,
+	);
+}
+
 async function _checkPackagedAccessPermission(conn, timeoutMs) {
 	if (typeof conn.request !== 'function') {
 		return null;
@@ -42,6 +51,9 @@ async function _checkPackagedAccessPermission(conn, timeoutMs) {
 		}
 		return response.granted;
 	} catch (error) {
+		if (_isApiDisabledError(error)) {
+			throw error;
+		}
 		const status = _errorStatus(error);
 		if (status === 404 || error?.errorCode === 'NOT_FOUND' || error?.code === 'NOT_FOUND') {
 			return null;

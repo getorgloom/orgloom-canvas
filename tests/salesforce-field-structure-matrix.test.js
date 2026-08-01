@@ -209,6 +209,7 @@ describe('Salesforce field-structure matrix', () => {
 				updateable: true,
 				nillable: true,
 				filterable: false,
+				compoundFieldName: 'Description_Group__c',
 			},
 			{
 				name: 'ExternalParent__c',
@@ -254,5 +255,6 @@ describe('Salesforce field-structure matrix', () => {
 		assert.equal(byName.get('Master__c').required, true);
 		assert.equal(byName.get('Controller__c').filterable, true);
 		assert.equal(byName.get('Description__c').filterable, false);
+		assert.equal(byName.get('Description__c').compoundFieldName, 'Description_Group__c');
 	});
 });

@@ -60,7 +60,18 @@
 	}
 
 	function _modal(
-		{ title, message, confirmLabel, cancelLabel, danger, withInput, inputValue, placeholder, showCancel },
+		{
+			title,
+			message,
+			confirmLabel,
+			cancelLabel,
+			danger,
+			withInput,
+			inputValue,
+			placeholder,
+			showCancel,
+			showConfirm,
+		},
 		done,
 	) {
 		document.querySelectorAll('.ol-dialog-modal').forEach((el) => el.remove());
@@ -78,6 +89,16 @@
 			showCancel === false
 				? ''
 				: '<button class="button secondary" data-ol-cancel>' + esc(cancelLabel || 'Cancel') + '</button>';
+		const confirmBtn =
+			showConfirm === false
+				? ''
+				: '<button class="' +
+					confirmClass +
+					'" data-ol-confirm>' +
+					esc(confirmLabel || 'Confirm') +
+					'</button>';
+		const footerHtml =
+			cancelBtn || confirmBtn ? '<div class="modal-footer">' + cancelBtn + confirmBtn + '</div>' : '';
 		modal.innerHTML =
 			'<div class="modal-overlay" data-ol-cancel></div>' +
 			'<div class="modal-body" style="max-width:460px">' +
@@ -91,17 +112,11 @@
 			(message ? '<p>' + esc(message) + '</p>' : '') +
 			inputHtml +
 			'</div>' +
-			'<div class="modal-footer">' +
-			cancelBtn +
-			'<button class="' +
-			confirmClass +
-			'" data-ol-confirm>' +
-			esc(confirmLabel || 'Confirm') +
-			'</button>' +
-			'</div>' +
+			footerHtml +
 			'</div>';
 		document.body.appendChild(modal);
 		const input = modal.querySelector('.ol-dialog-input');
+		const confirmButton = modal.querySelector('[data-ol-confirm]');
 		let settled = false;
 		const finish = (value) => {
 			if (settled) {
@@ -118,16 +133,18 @@
 			if (e.key === 'Escape') {
 				e.preventDefault();
 				onCancel();
-			} else if (e.key === 'Enter' && (!withInput || document.activeElement === input)) {
+			} else if (confirmButton && e.key === 'Enter' && (!withInput || document.activeElement === input)) {
 				e.preventDefault();
 				onConfirm();
 			}
 		};
 		document.addEventListener('keydown', onKey, true);
 		modal.querySelectorAll('[data-ol-cancel]').forEach((el) => el.addEventListener('click', onCancel));
-		modal.querySelector('[data-ol-confirm]').addEventListener('click', onConfirm);
+		if (confirmButton) {
+			confirmButton.addEventListener('click', onConfirm);
+		}
 		setTimeout(() => {
-			(input || modal.querySelector('[data-ol-confirm]')).focus();
+			(input || confirmButton || modal.querySelector('.modal-close')).focus();
 			if (input) {
 				input.select();
 			}
@@ -148,7 +165,13 @@
 		const o = opts || {};
 		return new Promise((resolve) =>
 			_modal(
-				{ title: o.title || 'Heads up', message, confirmLabel: o.confirmLabel || 'OK', showCancel: false },
+				{
+					title: o.title || 'Heads up',
+					message,
+					confirmLabel: o.confirmLabel || 'OK',
+					showCancel: false,
+					showConfirm: o.showConfirm !== false,
+				},
 				() => resolve(),
 			),
 		);

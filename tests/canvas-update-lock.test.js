@@ -20,7 +20,11 @@ after(() => {
 beforeEach(clearTestDb);
 
 function makeStatefulConn(canvasId, opts = {}) {
-	const state = { latest: opts.initialVersion || '068V0', counter: 0 };
+	const state = {
+		latest: opts.initialVersion || '068V0',
+		bodyDocumentId: canvasId,
+		counter: 0,
+	};
 	const createDelayMs = opts.createDelayMs || 5;
 	return {
 		instanceUrl: 'https://test.my.salesforce.com',
@@ -31,13 +35,23 @@ function makeStatefulConn(canvasId, opts = {}) {
 				return { records: [{ Id: 'cdl_' + canvasId }] }; // existing → no CDL insert
 			}
 			if (/Orgloom_Canvas__c/.test(soql)) {
-				return { records: [{ Id: 'a0' + canvasId }] }; // metadata row exists
+				return {
+					records: [
+						{
+							Id: 'a0' + canvasId,
+							Name: 'ORGC-0001',
+							OwnerId: '005MINE',
+							orgloom__Canvas_Id__c: canvasId,
+							orgloom__Body_Document_Id__c: state.bodyDocumentId,
+						},
+					],
+				};
 			}
 			if (/FROM ContentVersion\b/.test(soql)) {
 				return { records: [{ Id: state.latest }] };
 			}
 			if (/FROM ContentDocument\b/.test(soql)) {
-				return { records: [{ Id: canvasId, Title: 'lock-test' }] };
+				return { records: [{ Id: state.bodyDocumentId, Title: 'lock-test' }] };
 			}
 			return { records: [] };
 		},
@@ -48,18 +62,22 @@ function makeStatefulConn(canvasId, opts = {}) {
 						await new Promise((r) => setTimeout(r, createDelayMs));
 						state.counter += 1;
 						state.latest = '068V' + state.counter;
+						state.bodyDocumentId = '069BODY' + state.counter;
 						return { success: true, id: state.latest };
 					}
 					return { success: true, id: 'x_' + name };
 				},
-				async upsert() {
+				async upsert(payload) {
+					if (payload && payload.orgloom__Body_Document_Id__c) {
+						state.bodyDocumentId = payload.orgloom__Body_Document_Id__c;
+					}
 					return { success: true };
 				},
 				async update() {
 					return { success: true };
 				},
 				async retrieve() {
-					return null;
+					return { ContentDocumentId: state.bodyDocumentId };
 				},
 				async destroy() {
 					return { success: true };

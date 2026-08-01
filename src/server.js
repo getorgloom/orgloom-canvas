@@ -350,6 +350,9 @@ app.get('/', async (req, res, next) => {
 
 app.get('/connect', async (req, res, next) => {
 	try {
+		if (req.query.error === 'invalid-domain') {
+			return res.redirect('/?sfConnectError=invalid-domain');
+		}
 		const account = await ext.getCurrentAccount(req);
 		if (!account) {
 			return res.redirect('/');
@@ -367,7 +370,6 @@ app.get('/connect', async (req, res, next) => {
 				instanceUrl: c.instance_url,
 				orgType: c.org_type,
 			})),
-			errorCode: typeof req.query.error === 'string' ? req.query.error : null,
 			user: { id: account.id, username: account.email, displayName: account.display_name },
 		});
 	} catch (err) {
@@ -428,7 +430,7 @@ function _resolveSfLoginUrl(req) {
 app.get('/auth/login', (req, res) => {
 	const resolved = _resolveSfLoginUrl(req);
 	if (resolved.invalid) {
-		return res.redirect('/connect?error=invalid-domain');
+		return res.redirect('/?sfConnectError=invalid-domain');
 	}
 	const priorSessionUrl = _canonicalizeSfLoginUrl(req.session.sfLoginUrl) || null;
 	const loginUrlOverride = resolved.url || priorSessionUrl || null;
@@ -440,7 +442,11 @@ app.get('/auth/login', (req, res) => {
 	if (config.salesforce.scope) {
 		authParams.scope = config.salesforce.scope;
 	}
-	if (req.query.force === '1' || req.query.force === 'login') {
+	if (
+		req.query.force === '1' ||
+		req.query.force === 'login' ||
+		req.session.forceSfIdentityPrompt === true
+	) {
 		authParams.prompt = 'login';
 	}
 	res.redirect(oauth2.getAuthorizationUrl(authParams));
@@ -468,6 +474,7 @@ app.get('/auth/callback', async (req, res, next) => {
 		let userInfo;
 		try {
 			userInfo = await conn.authorize(code);
+			delete req.session.forceSfIdentityPrompt;
 		} catch (error) {
 			const oauthError = [error?.name, error?.code, error?.message]
 				.filter((value) => typeof value === 'string')

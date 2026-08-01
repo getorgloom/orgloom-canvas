@@ -159,4 +159,7 @@ test('shared payload permission placeholders do not require Salesforce object or
 	assert.match(source, /objectName: null/);
 	assert.match(source, /label: 'Hidden Salesforce content'/);
 	assert.match(source, /_permissionHidden: true/);
+	assert.match(source, /!r\._permissionHidden/);
+	assert.match(source, /id: -\(hiddenIndex \+ 1\)/);
+	assert.match(source, /_permissionHiddenId: hidden\.hiddenId/);
 });

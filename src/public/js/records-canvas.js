@@ -42,9 +42,10 @@
 				'attachCyMarqueeSelect',
 				'attachCyMiddleClickPan',
 				'attachCySpacePan',
-				'openInsertModal',
+				'openRecord',
 				'getCanvasShareRole',
 				'publishPresenceLayout',
+				'notifyCanvasContentChanged',
 				'showFindObjectPopover',
 				'renderBulkView',
 				'renderCanvas',
@@ -102,9 +103,10 @@
 			const attachCyMarqueeSelect = deps.attachCyMarqueeSelect;
 			const attachCyMiddleClickPan = deps.attachCyMiddleClickPan;
 			const attachCySpacePan = deps.attachCySpacePan;
-			const openInsertModal = deps.openInsertModal;
+			const openRecord = deps.openRecord;
 			const getCanvasShareRole = deps.getCanvasShareRole;
 			const publishPresenceLayout = deps.publishPresenceLayout;
+			const notifyCanvasContentChanged = deps.notifyCanvasContentChanged;
 			const showFindObjectPopover = deps.showFindObjectPopover;
 			const renderBulkView = deps.renderBulkView;
 			const renderCanvas = deps.renderCanvas;
@@ -231,12 +233,12 @@
 							'" data-rec-id="' +
 							rec.id +
 							'" ' +
-							'title="This record is referenced by the canvas but Salesforce didn\u2019t return it for your user.">' +
+							'title="Your Salesforce permissions do not allow this canvas content to be shown.">' +
 							'<div class="record-noaccess-tag">\uD83D\uDD12 No access</div>' +
 							'<div class="record-noaccess-type">' +
 							escapeHtml(objLabel) +
 							'</div>' +
-							'<div class="record-noaccess-note">Referenced record not returned by Salesforce</div>' +
+							'<div class="record-noaccess-note">Your Salesforce permissions do not allow this content to be shown.</div>' +
 							'</div></div>'
 						);
 					}
@@ -260,15 +262,13 @@
 						const shareRole = getCanvasShareRole();
 						const contributorTask =
 							(shareRole === 'contributor' || shareRole === 'editor') && rec._recipientSlot;
-						const assigneeBadge = shareRole ? '' : _slotAssigneeBadgeHtml(rec);
+						const assigneeBadge = shareRole === 'viewer' ? '' : _slotAssigneeBadgeHtml(rec);
 						const canEditStructure = !shareRole || shareRole === 'editor';
-						const canCompleteRequest = contributorTask;
+						const canCompleteRequest = !shareRole || shareRole === 'editor' || contributorTask;
 						const accessNotice = blockedByAccess
 							? '<div class="record-request-access-warning" role="note">' +
-								'<strong>Salesforce access required</strong>' +
-								'<span>This connection cannot access ' +
-								escapeHtml(objLabel) +
-								' records, so this request cannot be completed.</span>' +
+								'<strong>Cannot complete</strong>' +
+								'<span>You can\u2019t complete this request with your current Salesforce permissions. Ask the canvas owner to reassign it or ask your Salesforce admin for access.</span>' +
 								'</div>'
 							: '';
 						const ctas = !canCompleteRequest
@@ -278,7 +278,8 @@
 									escapeHtml(rec.slot.assigneeName || rec.slot.assigneeEmail || 'another teammate') +
 									'; they need to complete this record request.</div>'
 								: blockedByAccess
-									? accessNotice
+									? accessNotice +
+										'<div class="record-slot-ctas"><button class="record-slot-cta" disabled>Cannot complete</button></div>'
 									: '<div class="record-slot-ctas">' +
 										'<button class="record-slot-cta record-slot-cta-blank" data-slot-fill-blank title="Complete this ' +
 										escapeHtml(objLabel) +
@@ -314,6 +315,7 @@
 					const isPendingDelete = isExisting && !!rec.pendingDelete;
 					const shareRole = getCanvasShareRole();
 					const slotKind = rec.slot && rec.slot.slotId != null ? rec.slot.kind || 'whole-record' : null;
+					const showRequestContext = shareRole !== 'viewer';
 					let cls = 'record-card';
 					if (isPendingDelete) {
 						cls += ' has-pending-delete';
@@ -340,7 +342,7 @@
 						cls += ' record-card-deleted-in-sf';
 					}
 					cls += _slotAssignmentCardClass(rec);
-					if (rec.slot && rec.slot.slotId != null && !shareRole) {
+					if (rec.slot && rec.slot.slotId != null && showRequestContext) {
 						cls +=
 							rec.slot.kind === 'fields' ? ' record-card--field-request' : ' record-card--record-request';
 					}
@@ -408,28 +410,48 @@
 							(n === 1 ? '' : 's') +
 							' only; the rest are preserved on Salesforce, not editable here. Re-import via SOQL with Load all fields checked to see them.">partial</span>';
 					}
+					const unavailableFieldCount =
+						slotKind === 'fields' && Number.isSafeInteger(Number(rec.slot.unavailableFieldCount))
+							? Math.max(0, Number(rec.slot.unavailableFieldCount))
+							: 0;
 					const requestedFieldCount =
-						slotKind === 'fields' && Array.isArray(rec.slot.fields) ? rec.slot.fields.length : 0;
+						(slotKind === 'fields' && Array.isArray(rec.slot.fields) ? rec.slot.fields.length : 0) +
+						unavailableFieldCount;
+					const unavailableFieldText = unavailableFieldCount
+						? ' · ' + unavailableFieldCount + ' unavailable'
+						: '';
 					const slotBadge =
-						slotKind && !(shareRole && rec._recipientSlot)
+						slotKind && showRequestContext
 							? slotKind === 'fields'
 								? '<span class="record-slot-badge field-request-badge" title="' +
 									'The recipient is being asked to complete ' +
 									requestedFieldCount +
 									' field' +
 									(requestedFieldCount === 1 ? '' : 's') +
-									' on this record.">' +
+									' on this record.' +
+									(unavailableFieldCount
+										? ' ' +
+											unavailableFieldCount +
+											' cannot be viewed through this Salesforce connection.'
+										: '') +
+									'">' +
 									requestedFieldCount +
 									' field' +
 									(requestedFieldCount === 1 ? '' : 's') +
-									' requested</span>'
+									' requested' +
+									unavailableFieldText +
+									'</span>'
 								: '<span class="record-slot-badge record-request-badge" title="' +
 									'The recipient is being asked to create or choose a new ' +
 									escapeHtml(rec.label || rec.objectName) +
 									'.">record request</span>'
 							: '';
-					const assigneeBadge = shareRole ? '' : _slotAssigneeBadgeHtml(rec);
-					badge = badge + slotBadge + assigneeBadge;
+					const assigneeBadge = shareRole === 'viewer' ? '' : _slotAssigneeBadgeHtml(rec);
+					const requestBadges =
+						slotBadge || assigneeBadge
+							? '<div class="record-request-badges">' + slotBadge + assigneeBadge + '</div>'
+							: '';
+					badge += requestBadges;
 					const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
 					const lightningUrl =
 						isExisting && rec.loadedFromId && sfBase
@@ -998,7 +1020,7 @@
 							showBulkToast('Reserved for ' + who + ': only they can fill this slot.', 'info');
 							return;
 						}
-						openInsertModal(rec.objectName, { record: rec });
+						openRecord(rec);
 					});
 					getCyInstance().on('tap', 'edge', (evt) => {
 						const edge = evt.target;
@@ -1126,8 +1148,11 @@
 							});
 							_cyDragGroup = null;
 						}
-						if (movedRecords.length > 0 && canArrangeCanvas()) {
-							publishPresenceLayout(movedRecords);
+						if (movedRecords.length > 0) {
+							notifyCanvasContentChanged();
+							if (canArrangeCanvas()) {
+								publishPresenceLayout(movedRecords);
+							}
 						}
 					});
 
@@ -1273,7 +1298,7 @@
 								showBulkToast('Reserved for ' + who + ': only they can fill this slot.', 'info');
 								return;
 							}
-							openInsertModal(rec.objectName, { record: rec });
+							openRecord(rec);
 						});
 					}
 

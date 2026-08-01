@@ -69,6 +69,130 @@ test('all-record upload retains linked drafts without an exclusion warning', () 
 	assert.equal(excluded.length, 0);
 });
 
+test('upload eligibility excludes unfinished requests and canvas-only placeholders', () => {
+	const records = [
+		{ id: 'draft', objectName: 'Account', values: { Name: 'Ready' } },
+		{
+			id: 'request',
+			objectName: 'Account',
+			values: {},
+			slot: { slotId: 'slot-1', kind: 'whole-record' },
+		},
+		{ id: 'pending', objectName: 'Contact', isPending: true },
+		{ id: 'hidden', objectName: 'Opportunity', _inaccessible: true },
+		{ id: 'type', objectName: 'Account', isTypeNode: true },
+	];
+
+	assert.deepEqual(
+		Array.from(uploadModal.scopeUploadRecords(records, new Set(), false), (record) => record.id),
+		['draft'],
+	);
+	assert.deepEqual(
+		Array.from(uploadModal.scopeUploadExclusions(records, new Set(), false), (entry) => entry.reason),
+		['unfinished-record-request', 'loading-placeholder', 'inaccessible-placeholder'],
+	);
+	assert.deepEqual(
+		Array.from(uploadModal.uploadExclusionSummary(uploadModal.scopeUploadExclusions(records, new Set(), false))),
+		['1 unfinished record request', '1 record still loading', '1 unavailable record placeholder'],
+	);
+});
+
+test('completed record requests upload after becoming normal drafts', () => {
+	const completed = { id: 'completed', objectName: 'Opportunity', values: { Name: 'Renewal' } };
+	const completedWithRequestMetadata = {
+		id: 'completed-slot',
+		objectName: 'Opportunity',
+		values: { Name: 'Expansion' },
+		slot: { slotId: 'slot-complete', kind: 'whole-record' },
+	};
+	assert.equal(uploadModal.isUploadEligibleRecord(completed), true);
+	assert.equal(uploadModal.uploadIneligibilityReason(completed), null);
+	assert.equal(uploadModal.isUploadEligibleRecord(completedWithRequestMetadata), true);
+});
+
+test('successful upload promotes a completed request and retires its request metadata', () => {
+	const record = {
+		id: 'draft-opportunity',
+		objectName: 'Opportunity',
+		_persistedTempId: 'saved-draft-opportunity',
+		_canvasRecordId: 'opportunity-card',
+		values: { Name: 'Expansion' },
+		slot: { slotId: 'opportunity-request', kind: 'whole-record' },
+		_recipientSlot: true,
+	};
+	uploadModal.reconcileSyncedRecords([record], [{ tempId: 'draft-opportunity', id: '006000000000001AAA' }], {
+		'draft-opportunity': { Name: 'Expansion opportunity' },
+	});
+
+	assert.equal(record.loadedFromId, '006000000000001AAA');
+	assert.equal(record.values.Name, 'Expansion opportunity');
+	assert.equal(record.slot, undefined);
+	assert.equal(record._recipientSlot, undefined);
+	assert.equal(record._presencePromotedFrom.refKind, 'slot');
+	assert.equal(record._presencePromotedFrom.ref, 'opportunity-request');
+	assert.equal(record._presencePromotedFrom.sourceRef, 'saved-draft-opportunity');
+});
+
+test('successful upload immediately publishes its reconciled canvas state', () => {
+	assert.match(
+		source,
+		/reconcileSyncedRecords\(canvasState\.bulkRecords, synced, canonicalValues\);[\s\S]*?publishPresenceChanges\(\);/,
+	);
+	assert.match(appSource, /publishPresenceChanges: function \(\) \{[\s\S]*?_publishPresenceChanges\(\)/);
+});
+
+test('field requests remain uploadable and incomplete requests are warnings', () => {
+	const incomplete = {
+		id: 'contact',
+		objectName: 'Contact',
+		values: { FirstName: 'Ada', LastName: '' },
+		slot: { slotId: 'slot-2', kind: 'fields', fields: ['FirstName', 'LastName'] },
+	};
+	const complete = {
+		id: 'account',
+		objectName: 'Account',
+		values: { Name: 'Acme' },
+		slot: { slotId: 'slot-3', kind: 'fields', fields: ['Name'] },
+	};
+
+	assert.deepEqual(
+		Array.from(uploadModal.scopeUploadRecords([incomplete, complete], new Set(), false), (record) => record.id),
+		['contact', 'account'],
+	);
+	assert.deepEqual(
+		Array.from(uploadModal.incompleteFieldRequests([incomplete, complete]), (record) => record.id),
+		['contact'],
+	);
+});
+
+test('relationships to excluded record requests are omitted even for all-record upload', () => {
+	const records = [
+		{ id: 'contact', objectName: 'Contact', values: { LastName: 'User', AccountId: 'draft-request' } },
+		{
+			id: 'draft-request',
+			objectName: 'Account',
+			values: {},
+			slot: { slotId: 'slot-4', kind: 'whole-record' },
+		},
+	];
+	const scoped = uploadModal.scopeUploadRecords(records, new Set(), false);
+	const links = uploadModal.excludedDraftParentLinks(
+		records,
+		[{ fromId: 'contact', toId: 'draft-request', fieldName: 'AccountId' }],
+		new Set(scoped.map((record) => record.id)),
+		false,
+	);
+
+	assert.equal(links.length, 1);
+	assert.deepEqual({ ...uploadModal.scopeUploadValues(records[0], records[0].values, links) }, { LastName: 'User' });
+});
+
+test('upload summary distinguishes excluded canvas items from uploadable records', () => {
+	assert.match(source, /<strong>Not included:<\/strong>/);
+	assert.match(source, /Finish or remove these canvas items before uploading them/);
+	assert.match(source, /Requested fields are still incomplete/);
+});
+
 test('upload preflight summary uses one user-facing total', () => {
 	assert.match(source, /<span>Total records<\/span>/);
 	assert.match(source, /const totalRecords = willUploadCount \+ willDeleteCount/);

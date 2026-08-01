@@ -14,3 +14,12 @@ test('long slot assignee badges stay within record request cards', () => {
 		/\.slot-assignee-badge\s*\{[^}]*max-width:\s*100%[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/s,
 	);
 });
+
+test('field-request progress and assignee badges wrap without overlapping', () => {
+	assert.match(recordsCanvas, /class="record-request-badges"/);
+	assert.match(css, /\.record-card \.record-request-badges\s*\{[^}]*width:\s*100%[^}]*flex-wrap:\s*wrap/s);
+	assert.match(
+		css,
+		/\.record-card \.record-request-badges \.record-slot-badge\s*\{[^}]*position:\s*static[^}]*max-width:\s*100%/s,
+	);
+});
