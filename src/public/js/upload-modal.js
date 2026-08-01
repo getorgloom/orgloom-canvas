@@ -360,6 +360,7 @@
 			const getMeInfo = deps.getMeInfo;
 			const publishPresenceChanges =
 				typeof deps.publishPresenceChanges === 'function' ? deps.publishPresenceChanges : function () {};
+			const flushAutosave = typeof deps.flushAutosave === 'function' ? deps.flushAutosave : function () {};
 			const pingAuditEvent = typeof deps.pingAuditEvent === 'function' ? deps.pingAuditEvent : function () {};
 			const markCanvasGuideUploadComplete =
 				typeof deps.markCanvasGuideUploadComplete === 'function'
@@ -2446,6 +2447,7 @@
 				});
 				renderBulkView();
 				publishPresenceChanges();
+				flushAutosave();
 
 				try {
 					const _mig = window.Orgloom && window.Orgloom.canvasMigrate;

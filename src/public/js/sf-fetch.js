@@ -111,12 +111,22 @@
 				window.__sfReauthPromptOpen = false;
 			} catch (_) {}
 		};
-		overlay.querySelector('[data-rap-action="signin"]').addEventListener('click', () => {
-			cleanup();
-			_clearOfflinePersistence();
+		const prepareReauth = () => {
+			try {
+				const navigation = window.Orgloom && window.Orgloom.canvasNavigation;
+				if (navigation && typeof navigation.prepareSalesforceReauth === 'function') {
+					navigation.prepareSalesforceReauth();
+					return;
+				}
+			} catch (_) {}
 			try {
 				window.__sfRedirectingToReauth = true;
 			} catch (_) {}
+		};
+		overlay.querySelector('[data-rap-action="signin"]').addEventListener('click', () => {
+			cleanup();
+			_clearOfflinePersistence();
+			prepareReauth();
 			window.location.assign(signInUrl);
 		});
 		overlay.querySelector('[data-rap-action="switch"]').addEventListener('click', () => {
@@ -132,9 +142,7 @@
 					return;
 				} catch (_) {}
 			}
-			try {
-				window.__sfRedirectingToReauth = true;
-			} catch (_) {}
+			prepareReauth();
 			window.location.assign(REAUTH_URL);
 		});
 		overlay.querySelector('[data-rap-action="offline"]').addEventListener('click', () => {

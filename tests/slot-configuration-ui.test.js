@@ -142,19 +142,14 @@ test('canvas cards distinguish record requests from field requests', () => {
 	assert.match(recordsSource, /record-card--record-request/);
 	assert.match(recordsSource, /record-card--field-request/);
 	assert.match(recordsSource, /const showRequestContext = shareRole !== 'viewer'/);
-	assert.match(recordsSource, /slotKind && showRequestContext/);
+	assert.match(recordsSource, /slotKind && showRequestContext \? _slotRequestBadgeHtml\(rec\) : ''/);
 	assert.equal(
-		(
-			recordsSource.match(
-				/const assigneeBadge = shareRole === 'viewer' \? '' : _slotAssigneeBadgeHtml\(rec\)/g,
-			) || []
-		).length,
-		2,
+		(recordsSource.match(/const requestBadge = shareRole === 'viewer' \? '' : _slotRequestBadgeHtml\(rec\)/g) || [])
+			.length,
+		1,
 	);
 	assert.match(recordsSource, />RECORD REQUEST/);
-	assert.match(recordsSource, />record request<\/span>/);
-	assert.match(recordsSource, /' field' \+.*' requested' \+\s*unavailableFieldText/s);
-	assert.match(recordsSource, /unavailableFieldCount.*' unavailable'/s);
+	assert.doesNotMatch(recordsSource, /record-slot-badge/);
 	assert.match(recordsSource, />Fill request<\/button>/);
 	assert.doesNotMatch(recordsSource, /\\u2197 Use existing<\/button>/);
 	assert.doesNotMatch(recordsSource, /record-card--action-required/);

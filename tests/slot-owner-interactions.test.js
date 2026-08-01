@@ -59,6 +59,40 @@ test('editor access is not narrowed by a request assigned to another recipient',
 	assert.equal(api._slotAssignmentCardClass(fieldRequest), '');
 });
 
+test('request badges combine request size, assignee, and completion in one label', () => {
+	const api = mountSlotUser({ id: '069CANVAS', ownedByMe: false }, '005ASSIGNEE', 'contributor');
+	const mine = {
+		values: {},
+		slot: {
+			slotId: 'field-request',
+			kind: 'fields',
+			fields: ['Name', 'Phone'],
+			assigneeSfUserId: '005ASSIGNEE',
+		},
+	};
+	assert.match(api._slotRequestBadgeHtml(mine), />2 fields for you<\/span>/);
+
+	const other = {
+		values: {},
+		slot: {
+			slotId: 'record-request',
+			kind: 'whole-record',
+			assigneeSfUserId: '005OTHER',
+			assigneeName: 'Jordan',
+		},
+	};
+	assert.match(api._slotRequestBadgeHtml(other), />Record for Jordan<\/span>/);
+
+	const open = {
+		values: {},
+		slot: { slotId: 'open-request', kind: 'fields', fields: ['Name'] },
+	};
+	assert.match(api._slotRequestBadgeHtml(open), />1 field for any contributor<\/span>/);
+
+	mine.values = { Name: 'Acme', Phone: '555-0100' };
+	assert.match(api._slotRequestBadgeHtml(mine), />2 fields complete<\/span>/);
+});
+
 test('record-request controls and both double-click paths use the owner-aware lock', () => {
 	assert.doesNotMatch(recordsCanvasSource, /_slotAssignmentState\(rec\) === 'other'/);
 	assert.ok((recordsCanvasSource.match(/_isSlotLockedForCurrentUser\(rec\)/g) || []).length >= 3);

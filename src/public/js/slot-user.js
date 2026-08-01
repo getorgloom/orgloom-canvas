@@ -55,20 +55,41 @@
 				return !ownsCanvas && contributorAssignmentApplies && _slotAssignmentState(rec) === 'other';
 			}
 
-			function _slotAssigneeBadgeHtml(rec) {
+			function _slotRequestBadgeHtml(rec) {
 				const state = _slotAssignmentState(rec);
-				if (state !== 'mine' && state !== 'other') {
+				if (!state) {
 					return '';
 				}
+				const kind = rec.slot.kind || 'whole-record';
+				const progress = _slotProgress(rec);
+				const unavailableFieldCount =
+					kind === 'fields' && Number.isSafeInteger(Number(rec.slot.unavailableFieldCount))
+						? Math.max(0, Number(rec.slot.unavailableFieldCount))
+						: 0;
+				const complete =
+					unavailableFieldCount === 0 && progress && progress.total > 0 && progress.filled >= progress.total;
+				const count =
+					kind === 'fields'
+						? (Array.isArray(rec.slot.fields) ? rec.slot.fields.length : 0) + unavailableFieldCount
+						: 1;
+				const subject = kind === 'fields' ? count + ' field' + (count === 1 ? '' : 's') : 'Record';
+				let target;
 				if (state === 'mine') {
-					return '<span class="slot-assignee-badge slot-assignee-badge--mine" title="Assigned to you: your response will be saved when you submit.">Assigned to you</span>';
+					target = 'you';
+				} else if (state === 'other') {
+					target = rec.slot.assigneeName || rec.slot.assigneeEmail || 'assigned teammate';
+				} else {
+					target = 'any contributor';
 				}
-				const name = rec.slot.assigneeName || rec.slot.assigneeEmail || 'someone else';
+				const text = complete ? subject + ' complete' : subject + ' for ' + target;
+				const title = complete ? subject + ' completed.' : subject + ' assigned to ' + target + '.';
 				return (
-					'<span class="slot-assignee-badge slot-assignee-badge--other" title="Assigned to ' +
-					escapeHtml(name) +
-					': only they can complete this request.">Assigned to ' +
-					escapeHtml(name) +
+					'<span class="record-request-summary-badge record-request-summary-badge--' +
+					(complete ? 'complete' : state) +
+					'" title="' +
+					escapeHtml(title) +
+					'">' +
+					escapeHtml(text) +
 					'</span>'
 				);
 			}
@@ -248,7 +269,7 @@
 				_isEmptySlot: _isEmptySlot,
 				_slotAssignmentState: _slotAssignmentState,
 				_isSlotLockedForCurrentUser: _isSlotLockedForCurrentUser,
-				_slotAssigneeBadgeHtml: _slotAssigneeBadgeHtml,
+				_slotRequestBadgeHtml: _slotRequestBadgeHtml,
 				_slotAssignmentCardClass: _slotAssignmentCardClass,
 				_slotProgress: _slotProgress,
 				_aggregateSlotProgress: _aggregateSlotProgress,

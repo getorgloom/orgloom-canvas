@@ -13,9 +13,7 @@ function _errorStatus(error) {
 }
 
 function _isApiDisabledError(error) {
-	const details = [error?.message, error?.errorCode, error?.code, error?.name]
-		.filter(Boolean)
-		.join(' ');
+	const details = [error?.message, error?.errorCode, error?.code, error?.name].filter(Boolean).join(' ');
 	return /API_DISABLED_FOR_(?:ORG|USER)|API_CURRENTLY_DISABLED|api access.*disabled|api is not enabled/i.test(
 		details,
 	);

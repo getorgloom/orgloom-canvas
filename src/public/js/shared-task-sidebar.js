@@ -246,7 +246,7 @@
 				const currentSections = host.querySelector('.shared-task-sections');
 				const previousScrollTop = currentSections ? currentSections.scrollTop : 0;
 				const tasks = buildTasks();
-				if (tasks.length === 0) {
+				if (tasks.length === 0 || tasks.every((task) => task.complete)) {
 					host.hidden = true;
 					host.innerHTML = '';
 					return false;

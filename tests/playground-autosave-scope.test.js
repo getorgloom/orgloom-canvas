@@ -84,7 +84,7 @@ describe('autosave scope-namespacing (playground vs real)', () => {
 			ownedByMe: true,
 		};
 		canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Owner-only value' } }];
-		api.orgSwitchStash();
+		api.orgSwitchStash({ intent: 'switch', hadUnsavedChanges: true });
 
 		setScope(win, canvasState, { account: REAL.account, org: REAL.org, user: '005OTHER' });
 		canvasState.bulkRecords = [];
@@ -101,13 +101,66 @@ describe('autosave scope-namespacing (playground vs real)', () => {
 			title: 'My canvas',
 			ownedByMe: true,
 		};
+		canvasState._presenceCanvasId = '069000000000001AAA';
+		canvasState._presenceRevision = 7;
 		canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Unsaved value' } }];
-		api.orgSwitchStash();
+		api.orgSwitchStash({ intent: 'reauth', hadUnsavedChanges: true });
 
 		canvasState.bulkRecords = [];
+		canvasState.currentCanvas = null;
 		assert.equal(api.consumeUserSwitchCanvasId(), null);
 		assert.equal(api.orgSwitchRestore(), true);
 		assert.equal(canvasState.bulkRecords[0].values.Name, 'Unsaved value');
+		assert.equal(canvasState.currentCanvas.id, '069000000000001AAA');
+		assert.equal(canvasState._presenceCanvasId, '069000000000001AAA');
+		assert.equal(canvasState._presenceRevision, 7);
+		assert.equal(canvasState.currentCanvas.title, 'My canvas');
+	});
+
+	test('reconnect falls back to the last saved canvas when its full snapshot is unavailable', () => {
+		const { api, win, sessionStorage, canvasState } = harness();
+		setScope(win, canvasState, REAL);
+		canvasState.currentCanvas = {
+			id: '069000000000001AAA',
+			title: 'My canvas',
+			ownedByMe: true,
+		};
+		canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Unsaved value' } }];
+		api.orgSwitchStash({ intent: 'reauth', hadUnsavedChanges: true });
+
+		const key = 'orgloom:org-switch-stash:v1';
+		const payload = JSON.parse(sessionStorage.getItem(key));
+		payload.state = null;
+		sessionStorage.setItem(key, JSON.stringify(payload));
+		canvasState.bulkRecords = [];
+		canvasState.currentCanvas = null;
+
+		assert.equal(api.consumeUserSwitchCanvasId(), '069000000000001AAA');
+		assert.equal(api.consumeReauthFallbackCanvasId(), '069000000000001AAA');
+		assert.equal(api.orgSwitchRestore(), false);
+		assert.equal(canvasState.bulkRecords.length, 0);
+	});
+
+	test('continuing an intentional user switch without saving does not restore discarded changes', () => {
+		const { api, win, canvasState } = harness();
+		setScope(win, canvasState, REAL);
+		canvasState.currentCanvas = {
+			id: '069000000000001AAA',
+			title: 'My canvas',
+			ownedByMe: true,
+		};
+		canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Discard me' } }];
+		api.orgSwitchStash({
+			intent: 'switch',
+			preserveState: false,
+			hadUnsavedChanges: true,
+		});
+
+		canvasState.bulkRecords = [];
+		canvasState.currentCanvas = null;
+		assert.equal(api.consumeUserSwitchCanvasId(), '069000000000001AAA');
+		assert.equal(api.orgSwitchRestore(), false);
+		assert.equal(canvasState.bulkRecords.length, 0);
 	});
 
 	test('refresh restores the active saved canvas, including slot configuration', () => {
@@ -174,6 +227,22 @@ describe('autosave scope-namespacing (playground vs real)', () => {
 		assert.equal(api.autosaveRestore(), true);
 		assert.equal(canvasState.currentCanvas.ownedByMe, false);
 		assert.equal(canvasState.currentCanvas.recipientRole, 'viewer');
+	});
+
+	test('refresh preserves the identity of an empty saved canvas', () => {
+		const { api, win, canvasState } = harness();
+		setScope(win, canvasState, REAL);
+		canvasState.currentCanvas = {
+			id: '069000000000008AAA',
+			title: 'Empty planning canvas',
+			ownedByMe: true,
+		};
+		api.autosaveFlush();
+
+		canvasState.currentCanvas = null;
+		assert.equal(api.autosaveRestore(), true);
+		assert.equal(canvasState.currentCanvas.id, '069000000000008AAA');
+		assert.equal(canvasState.currentCanvas.title, 'Empty planning canvas');
 	});
 
 	test('refresh does not guess an unrelated saved canvas when the active pointer is missing', () => {

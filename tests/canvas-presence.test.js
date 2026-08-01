@@ -2330,11 +2330,18 @@ describe('canvas presence security and ordering', () => {
 		assert.equal(snapshot.drafts.length, 0);
 		assert.equal(snapshot.loadedRecords.length, 1);
 		assert.equal(snapshot.loadedRecords[0].loadedFromId, '001000000000021AAA');
+		assert.equal(snapshot.loadedRecords[0].x, 10);
+		assert.equal(snapshot.loadedRecords[0].y, 20);
 		assert.equal(snapshot.loadedRecords[0].slot, undefined);
 		assert.deepEqual(snapshot.associations[0].from, {
 			kind: 'loaded',
 			ref: '001000000000021AAA',
 		});
+		assert.equal(
+			events(owner).filter((event) => event.type === 'record-layout').length,
+			0,
+			'promoting a draft must not move its card to avoid colliding with itself',
+		);
 
 		assert.equal(
 			updateDraft({

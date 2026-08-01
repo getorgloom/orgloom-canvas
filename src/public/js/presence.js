@@ -61,6 +61,8 @@
 			let _hasRevisionGap = false;
 			let _serverInstanceId = null;
 			let _recoverOwnerStateAfterSnapshot = false;
+			let _resumeCanvasRevision = null;
+			let _resumeCanvasWasDirty = false;
 			const _fieldLocks = new Map();
 			const _ownedFieldLeases = new Map();
 			const _acknowledgedContributionIds = new Set();
@@ -81,6 +83,10 @@
 				}
 				_latestAppliedRevision = Math.max(_latestAppliedRevision, value);
 				_serverRevision = Math.max(_serverRevision, value);
+				if (_currentCanvasId) {
+					canvasState._presenceCanvasId = _currentCanvasId;
+					canvasState._presenceRevision = _latestAppliedRevision;
+				}
 			}
 			function _fieldLockKey(reference, fieldName) {
 				if (!reference || reference.ref == null || !fieldName) {
@@ -498,93 +504,33 @@
 				_flushPendingLayouts();
 			}
 
-			function _mergeLocalOnlyRecords(serverPayload) {
-				// Recipient projections are the permission boundary. Never merge a
-				// recipient's stale or redacted local cards back into them.
-				if (!_localCanEdit || _localRole !== 'owner') {
-					return serverPayload || {};
-				}
-				let localPayload;
-				try {
-					localPayload = buildCanvasPayload();
-				} catch (_) {
-					return serverPayload || {};
-				}
-				const merged = JSON.parse(JSON.stringify(serverPayload || {}));
-				merged.drafts = Array.isArray(merged.drafts) ? merged.drafts : [];
-				merged.loadedRecords = Array.isArray(merged.loadedRecords) ? merged.loadedRecords : [];
-				merged.associations = Array.isArray(merged.associations) ? merged.associations : [];
-				const sameRecord = (left, right, loaded) => {
-					if (!left || !right) {
-						return false;
-					}
-					const leftCard = left.canvasRecordId == null ? null : String(left.canvasRecordId);
-					const rightCard = right.canvasRecordId == null ? null : String(right.canvasRecordId);
-					if (leftCard && rightCard && leftCard === rightCard) {
-						return true;
-					}
-					const key = loaded ? 'loadedFromId' : 'tempId';
-					return left[key] != null && right[key] != null && String(left[key]) === String(right[key]);
-				};
-				for (const draft of Array.isArray(localPayload && localPayload.drafts) ? localPayload.drafts : []) {
-					if (!merged.drafts.some((candidate) => sameRecord(candidate, draft, false))) {
-						merged.drafts.push(JSON.parse(JSON.stringify(draft)));
-					}
-				}
-				for (const record of Array.isArray(localPayload && localPayload.loadedRecords)
-					? localPayload.loadedRecords
-					: []) {
-					if (!merged.loadedRecords.some((candidate) => sameRecord(candidate, record, true))) {
-						merged.loadedRecords.push(JSON.parse(JSON.stringify(record)));
-					}
-				}
-				const associationKey = (association) =>
-					JSON.stringify([
-						association && association.from,
-						association && association.to,
-						association && association.fieldName,
-					]);
-				const associationKeys = new Set(merged.associations.map(associationKey));
-				for (const association of Array.isArray(localPayload && localPayload.associations)
-					? localPayload.associations
-					: []) {
-					const key = associationKey(association);
-					if (!associationKeys.has(key)) {
-						merged.associations.push(JSON.parse(JSON.stringify(association)));
-						associationKeys.add(key);
-					}
-				}
-				merged.schema = merged.schema && typeof merged.schema === 'object' ? merged.schema : { objects: [] };
-				merged.schema.objects = Array.isArray(merged.schema.objects) ? merged.schema.objects : [];
-				const schemaNames = new Set(
-					merged.schema.objects.map((object) => object && object.name).filter(Boolean),
-				);
-				const localSchema =
-					localPayload && localPayload.schema && Array.isArray(localPayload.schema.objects)
-						? localPayload.schema.objects
-						: [];
-				for (const object of localSchema) {
-					if (object && object.name && !schemaNames.has(object.name)) {
-						merged.schema.objects.push(JSON.parse(JSON.stringify(object)));
-						schemaNames.add(object.name);
-					}
-				}
-				return merged;
-			}
-
 			async function _applyLiveSnapshotEvent(data) {
 				try {
 					const serverPayload = data.payload || {};
 					const recoverOwnerState = _recoverOwnerStateAfterSnapshot && _localRole === 'owner';
-					let nextPayload;
-					if (recoverOwnerState) {
+					const snapshotRevision = Number.isSafeInteger(data.revision) ? data.revision : _serverRevision;
+					const durableRevision = Number.isSafeInteger(data.durableRevision)
+						? data.durableRevision
+						: _durableRevision;
+					const legacyDirtySnapshotIsCurrent =
+						_localRole === 'owner' &&
+						!Number.isSafeInteger(_resumeCanvasRevision) &&
+						_resumeCanvasWasDirty &&
+						snapshotRevision <= durableRevision;
+					const serverHasUnsavedChanges = snapshotRevision > durableRevision;
+					const resumeLocalState =
+						_localRole === 'owner' &&
+						!serverHasUnsavedChanges &&
+						(recoverOwnerState ||
+							(_resumeCanvasWasDirty &&
+								Number.isSafeInteger(_resumeCanvasRevision) &&
+								_resumeCanvasRevision >= snapshotRevision) ||
+							legacyDirtySnapshotIsCurrent);
+					let nextPayload = serverPayload;
+					if (resumeLocalState) {
 						try {
 							nextPayload = buildCanvasPayload();
-						} catch (_) {
-							nextPayload = _mergeLocalOnlyRecords(serverPayload);
-						}
-					} else {
-						nextPayload = _mergeLocalOnlyRecords(serverPayload);
+						} catch (_) {}
 					}
 					setSkipNextCyAutoPan(true);
 					await applyLiveSnapshot(nextPayload, {
@@ -600,18 +546,16 @@
 						: _latestAppliedRevision;
 					_serverRevision = Math.max(_serverRevision, _latestAppliedRevision);
 					_hasRevisionGap = false;
-					if (recoverOwnerState) {
-						_resetMutationTracking();
-						_lastBroadcastDraftValues.clear();
-						_lastBroadcastLoadedRefs.clear();
-						_lastBroadcastLoadedRecords.clear();
-						_lastBroadcastSlots.clear();
-						_lastBroadcastLinks.clear();
+					_resumeCanvasRevision = null;
+					_resumeCanvasWasDirty = false;
+					canvasState._presenceCanvasId = _currentCanvasId;
+					canvasState._presenceRevision = _latestAppliedRevision;
+					if (resumeLocalState && nextPayload !== serverPayload) {
+						_seedMutationTrackingFromSnapshot(serverPayload);
 						_broadcastDraftDeltas();
 						publishLayout(canvasState.bulkRecords);
 					} else {
 						_seedLoadedRecordBaselines();
-						_reconcileRecordsMissingFromLiveSnapshot(serverPayload);
 					}
 					_flushPendingDraftLinks();
 					_reapplyAllFocus();
@@ -1188,74 +1132,99 @@
 				}
 			}
 
-			function _reconcileRecordsMissingFromLiveSnapshot(payload) {
-				if (!_localCanEdit || !payload || !Array.isArray(canvasState.bulkRecords)) {
-					return;
-				}
-				const serverDrafts = Array.isArray(payload.drafts) ? payload.drafts : [];
-				const serverLoaded = Array.isArray(payload.loadedRecords) ? payload.loadedRecords : [];
-				const missingReferences = [];
-				for (const record of canvasState.bulkRecords) {
-					if (
-						!record ||
-						record.isTypeNode ||
-						record.isPending ||
-						record._permissionHidden ||
-						record._inaccessible
-					) {
-						continue;
+			function _seedMutationTrackingFromSnapshot(payload) {
+				_resetMutationTracking();
+				_lastBroadcastDraftValues.clear();
+				_lastBroadcastLoadedRefs.clear();
+				_lastBroadcastLoadedRecords.clear();
+				_lastBroadcastSlots.clear();
+				_lastBroadcastLinks.clear();
+				const drafts = Array.isArray(payload && payload.drafts) ? payload.drafts : [];
+				const loadedRecords = Array.isArray(payload && payload.loadedRecords) ? payload.loadedRecords : [];
+				const records = loadedRecords.concat(drafts).filter(Boolean);
+				const cardRef = (record) =>
+					record.canvasRecordId != null
+						? String(record.canvasRecordId)
+						: String(record.loadedFromId != null ? record.loadedFromId : record.tempId);
+				const underlyingRef = (record) => {
+					if (!record) {
+						return null;
 					}
-					const cardRef = _ensureCanvasRecordId(record);
-					if (record.loadedFromId) {
-						const sfId = String(record.loadedFromId);
-						const present = serverLoaded.some(
-							(candidate) =>
-								candidate &&
-								String(candidate.loadedFromId || '') === sfId &&
-								(candidate.canvasRecordId == null || String(candidate.canvasRecordId) === cardRef),
-						);
-						if (!present) {
-							_lastBroadcastLoadedRefs.delete(cardRef);
-							_lastBroadcastLoadedRecords.delete(cardRef);
-							missingReferences.push(_underlyingRecordReference(record));
+					const ref = record.loadedFromId != null ? record.loadedFromId : record.tempId;
+					if (ref == null) {
+						return null;
+					}
+					return {
+						refKind: record.loadedFromId != null ? 'loaded' : 'draft',
+						ref: String(ref),
+						collabRef: cardRef(record),
+					};
+				};
+				const associationRef = (endpoint) => {
+					if (!endpoint || !['loaded', 'draft', 'slot'].includes(endpoint.kind) || endpoint.ref == null) {
+						return null;
+					}
+					const ref = String(endpoint.ref);
+					const record = records.find((candidate) => {
+						if (endpoint.kind === 'loaded') {
+							return candidate.loadedFromId != null && String(candidate.loadedFromId) === ref;
 						}
+						if (endpoint.kind === 'draft') {
+							return candidate.tempId != null && String(candidate.tempId) === ref;
+						}
+						return candidate.slot && candidate.slot.slotId != null && String(candidate.slot.slotId) === ref;
+					});
+					const reference = { refKind: endpoint.kind, ref };
+					if (record) {
+						reference.collabRef = cardRef(record);
+						if (endpoint.kind === 'slot') {
+							reference.sourceRefKind = record.loadedFromId != null ? 'loaded' : 'draft';
+							reference.sourceRef = String(
+								record.loadedFromId != null ? record.loadedFromId : record.tempId,
+							);
+						}
+					}
+					return reference;
+				};
+
+				for (const draft of drafts) {
+					if (draft.tempId == null) {
 						continue;
 					}
-					const syncId = _syncIdOf(record);
-					const present = serverDrafts.some(
-						(candidate) =>
-							candidate &&
-							((syncId != null && String(candidate.tempId) === String(syncId)) ||
-								(candidate.canvasRecordId != null && String(candidate.canvasRecordId) === cardRef)),
-					);
-					if (!present && syncId != null) {
-						_lastBroadcastDraftValues.delete(syncId);
-						missingReferences.push(_underlyingRecordReference(record));
+					_lastBroadcastDraftValues.set(String(draft.tempId), {
+						values: _safeValueCopy(draft.values),
+						x: Number.isFinite(draft.x) ? draft.x : null,
+						y: Number.isFinite(draft.y) ? draft.y : null,
+						canvasRecordId: cardRef(draft),
+					});
+				}
+				for (const record of loadedRecords) {
+					if (record.loadedFromId == null) {
+						continue;
+					}
+					const recordCardRef = cardRef(record);
+					_lastBroadcastLoadedRefs.set(recordCardRef, String(record.loadedFromId));
+					_lastBroadcastLoadedRecords.set(recordCardRef, {
+						fields: _safeValueCopy(record.values || record.changes),
+						baseline: _safeValueCopy(record.loadedValues),
+						pendingDelete: !!record.pendingDelete,
+					});
+				}
+				for (const record of records) {
+					const reference = underlyingRef(record);
+					if (reference) {
+						_lastBroadcastSlots.set(JSON.stringify(reference), JSON.stringify(_safeSlotCopy(record.slot)));
 					}
 				}
-				if (missingReferences.length === 0) {
-					return;
-				}
-				const matchesMissing = (reference) =>
-					missingReferences.some(
-						(missing) =>
-							missing &&
-							reference &&
-							missing.refKind === reference.refKind &&
-							String(missing.ref) === String(reference.ref) &&
-							(missing.collabRef == null ||
-								reference.collabRef == null ||
-								String(missing.collabRef) === String(reference.collabRef)),
-					);
-				for (const missing of missingReferences) {
-					_lastBroadcastSlots.delete(JSON.stringify(missing));
-				}
-				for (const [key, link] of _lastBroadcastLinks) {
-					if (matchesMissing(link.fromRef) || matchesMissing(link.toRef)) {
-						_lastBroadcastLinks.delete(key);
+				for (const association of Array.isArray(payload && payload.associations) ? payload.associations : []) {
+					const fromRef = associationRef(association && association.from);
+					const toRef = associationRef(association && association.to);
+					if (!fromRef || !toRef || !association.fieldName) {
+						continue;
 					}
+					const key = _linkKey(fromRef, toRef, association.fieldName);
+					_lastBroadcastLinks.set(key, { fromRef, toRef, fieldName: association.fieldName });
 				}
-				_broadcastDraftDeltas();
 			}
 
 			function _postLoadedRecord(key, payload, onAccepted) {
@@ -1371,6 +1340,12 @@
 				if (data.kind === 'create') {
 					target.loadedValues = _safeValueCopy(data.baseline || data.fields);
 					target.values = _safeValueCopy(data.fields);
+					if (Number.isFinite(data.x)) {
+						target.x = data.x;
+					}
+					if (Number.isFinite(data.y)) {
+						target.y = data.y;
+					}
 				} else if (data.baseline && typeof data.baseline === 'object') {
 					target.loadedValues = _safeValueCopy(data.baseline);
 					target.values = _safeValueCopy(data.fields);
@@ -2544,8 +2519,16 @@
 					_acknowledgedContributionIds.clear();
 				}
 				_acknowledgedContributionCanvasId = canvasId;
+				const resumeCanvasRevision =
+					String(canvasState._presenceCanvasId || '') === String(canvasId) &&
+					Number.isSafeInteger(canvasState._presenceRevision)
+						? canvasState._presenceRevision
+						: null;
+				const resumeCanvasWasDirty = !!isCanvasDirty();
 				// Keep exactly one EventSource bound to the active saved canvas.
 				unsubscribe();
+				_resumeCanvasRevision = resumeCanvasRevision;
+				_resumeCanvasWasDirty = resumeCanvasWasDirty;
 				_currentCanvasId = canvasId;
 				_outboundSequence = 0;
 				_ensureCursorLayer();
@@ -2654,6 +2637,8 @@
 				_serverRevision = 0;
 				_hasRevisionGap = false;
 				_recoverOwnerStateAfterSnapshot = false;
+				_resumeCanvasRevision = null;
+				_resumeCanvasWasDirty = false;
 				_snapshotApplyPromise = null;
 				_queuedSnapshotEvents.length = 0;
 				_fieldLocks.clear();

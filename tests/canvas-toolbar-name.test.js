@@ -77,5 +77,6 @@ test('the canvas surface makes save state and the primary save action explicit',
 	assert.ok(shareBannerRule);
 	assert.match(shareBannerRule[1], /position: relative/);
 	assert.doesNotMatch(shareBannerRule[1], /position: fixed/);
-	assert.match(cssSource, /\.canvas-save-control\s*\{[\s\S]*background: var\(--bg-inset\)/);
+	assert.match(cssSource, /\.canvas-save-control\s*\{[\s\S]*linear-gradient\([\s\S]*rgba\(224, 146, 64/);
+	assert.match(cssSource, /\.canvas-save-control--clean,[\s\S]*background: var\(--bg-elev\)/);
 });

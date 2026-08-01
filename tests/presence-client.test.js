@@ -72,6 +72,7 @@ function mountPresence({
 	fetchHandler = null,
 	deferTimeouts = false,
 	eventSourceOnCreate = null,
+	canvasDirty = false,
 } = {}) {
 	const requests = [];
 	const accessChanges = [];
@@ -175,7 +176,7 @@ function mountPresence({
 		escapeHtml: (value) => String(value),
 		getGraph: () => graph,
 		getCyInstance: () => null,
-		isCanvasDirty: () => false,
+		isCanvasDirty: () => canvasDirty,
 		reloadCanvasFromServer: async () => {
 			reloads += 1;
 			return true;
@@ -1116,13 +1117,14 @@ describe('presence client request gating', () => {
 
 		assert.deepEqual(harness.appliedSnapshots.at(-1).payload, localPayload);
 		const restored = harness.requests.find(
-			(request) => request.url.endsWith('/presence/loaded-record') && request.body.kind === 'create',
+			(request) => request.url.endsWith('/presence/loaded-record') && request.body.kind === 'update',
 		);
 		assert.ok(restored);
 		assert.deepEqual(restored.body.fields, { Name: 'Unsaved owner edit' });
 		assert.deepEqual(restored.body.baseline, { Name: 'Last saved name' });
-		assert.equal(restored.body.x, 640);
-		assert.equal(restored.body.y, 420);
+		const restoredLayout = harness.requests.find((request) => request.url.endsWith('/presence/layout'));
+		assert.equal(restoredLayout.body.positions[0].x, 640);
+		assert.equal(restoredLayout.body.positions[0].y, 420);
 	});
 
 	test('replaces stale Salesforce values when a loaded record enters the live canvas', async () => {
@@ -1273,7 +1275,7 @@ describe('presence client request gating', () => {
 		assert.equal(harness.canvasState.bulkRecords.length, 1);
 	});
 
-	test('republishes a local request record missing from the server live snapshot', async () => {
+	test('republishes a local request record when the durable snapshot is behind tab recovery', async () => {
 		const records = [
 			{
 				id: 1,
@@ -1298,6 +1300,7 @@ describe('presence client request gating', () => {
 		];
 		const harness = mountPresence({
 			records,
+			canvasDirty: true,
 			snapshotPayload: {
 				schema: { objects: [{ name: 'Account', label: 'Account' }] },
 				loadedRecords: [],
@@ -1319,22 +1322,31 @@ describe('presence client request gating', () => {
 				associations: [],
 			},
 		});
-		harness.api.subscribeToCanvas('069000000000098AAA');
+		const canvasId = '069000000000098AAA';
+		harness.canvasState._presenceCanvasId = canvasId;
+		harness.canvasState._presenceRevision = 2;
+		harness.api.subscribeToCanvas(canvasId);
 		const source = harness.sources[0];
 		source.emit('presence-init', {
 			you: { connectionId: 'owner', role: 'owner', canEdit: true },
 			peers: [],
-			revision: 4,
+			revision: 2,
 			durableRevision: 2,
 			hasLiveSnapshot: true,
 		});
 		source.emit('presence', {
 			type: 'live-snapshot',
-			revision: 4,
+			revision: 2,
 			durableRevision: 2,
 			payload: {
 				schema: { objects: [{ name: 'Account', label: 'Account' }] },
-				loadedRecords: [],
+				loadedRecords: [
+					{
+						loadedFromId: '001000000000099AAA',
+						canvasRecordId: 'server-only-loaded-card',
+						objectName: 'Account',
+					},
+				],
 				drafts: [
 					{
 						tempId: 'existing-draft',
@@ -1369,6 +1381,139 @@ describe('presence client request gating', () => {
 			assigneeEmail: null,
 			fields: ['Name'],
 		});
+		assert.ok(
+			harness.requests.some(
+				(request) =>
+					request.url.endsWith('/presence/record-remove') &&
+					request.body.sfId === '001000000000099AAA' &&
+					request.body.collabRef === 'server-only-loaded-card',
+			),
+		);
+	});
+
+	test('does not resurrect local-only records when the live canvas has advanced', async () => {
+		const stalePayload = {
+			schema: { objects: [{ name: 'Account', label: 'Account' }] },
+			loadedRecords: [],
+			drafts: [
+				{
+					tempId: 'stale-account',
+					canvasRecordId: 'stale-account-card',
+					objectName: 'Account',
+					values: { Name: 'Removed elsewhere' },
+				},
+			],
+			associations: [],
+		};
+		const harness = mountPresence({
+			records: [
+				{
+					id: 1,
+					objectName: 'Account',
+					_collabId: 'stale-account',
+					_canvasRecordId: 'stale-account-card',
+					values: { Name: 'Removed elsewhere' },
+				},
+			],
+			snapshotPayload: stalePayload,
+			canvasDirty: true,
+		});
+		const canvasId = '069000000000095AAA';
+		harness.api.subscribeToCanvas(canvasId);
+		const source = harness.sources[0];
+		source.emit('presence-init', {
+			you: { connectionId: 'stale-owner', role: 'owner', canEdit: true },
+			peers: [{ connectionId: 'editor', role: 'editor' }],
+			revision: 5,
+			durableRevision: 3,
+			hasLiveSnapshot: true,
+		});
+		source.emit('presence', {
+			type: 'live-snapshot',
+			revision: 5,
+			durableRevision: 3,
+			payload: { schema: { objects: [] }, loadedRecords: [], drafts: [], associations: [] },
+		});
+
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(harness.appliedSnapshots[0].payload.drafts.length, 0);
+		assert.equal(
+			harness.requests.some((request) => request.url.endsWith('/presence/draft')),
+			false,
+		);
+	});
+
+	test('retains a legacy dirty recovery snapshot when the server has no newer live edits', async () => {
+		const localPayload = {
+			schema: { objects: [{ name: 'Contact', label: 'Contact' }] },
+			loadedRecords: [],
+			drafts: [
+				{
+					tempId: 'unsaved-contact',
+					canvasRecordId: 'unsaved-contact-card',
+					objectName: 'Contact',
+					values: { LastName: 'Recovered' },
+				},
+			],
+			associations: [],
+		};
+		const harness = mountPresence({
+			records: [
+				{
+					id: 1,
+					objectName: 'Contact',
+					_collabId: 'unsaved-contact',
+					_canvasRecordId: 'unsaved-contact-card',
+					values: { LastName: 'Recovered' },
+				},
+			],
+			snapshotPayload: localPayload,
+			canvasDirty: true,
+		});
+		harness.api.subscribeToCanvas('069000000000094AAA');
+		const source = harness.sources[0];
+		source.emit('presence-init', {
+			you: { connectionId: 'recovering-owner', role: 'owner', canEdit: true },
+			peers: [],
+			revision: 2,
+			durableRevision: 2,
+			hasLiveSnapshot: true,
+		});
+		source.emit('presence', {
+			type: 'live-snapshot',
+			revision: 2,
+			durableRevision: 2,
+			payload: {
+				schema: { objects: [{ name: 'Account', label: 'Account' }] },
+				loadedRecords: [],
+				drafts: [
+					{
+						tempId: 'server-only-account',
+						canvasRecordId: 'server-only-account-card',
+						objectName: 'Account',
+						values: { Name: 'Stale server record' },
+					},
+				],
+				associations: [],
+			},
+		});
+
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(harness.appliedSnapshots[0].payload.drafts.length, 1);
+		assert.equal(harness.appliedSnapshots[0].payload.drafts[0].values.LastName, 'Recovered');
+		assert.ok(
+			harness.requests.some(
+				(request) => request.url.endsWith('/presence/draft') && request.body.tempId === 'unsaved-contact',
+			),
+		);
+		assert.ok(
+			harness.requests.some(
+				(request) =>
+					request.url.endsWith('/presence/draft') &&
+					request.body.tempId === 'server-only-account' &&
+					request.body.kind === 'remove',
+			),
+		);
 	});
 
 	test('treats restricted recipient snapshots as authoritative instead of merging hidden local cards', async () => {
@@ -1863,6 +2008,8 @@ describe('presence client request gating', () => {
 			objectName: 'Account',
 			fields: { Id: '001000000000013AAA', Name: 'After upload' },
 			baseline: { Id: '001000000000013AAA', Name: 'After upload' },
+			x: 140,
+			y: 160,
 			revision: 1,
 		});
 		await new Promise((resolve) => setImmediate(resolve));
@@ -1871,6 +2018,8 @@ describe('presence client request gating', () => {
 		assert.equal(receiver.canvasState.bulkRecords[0], draft);
 		assert.equal(draft.loadedFromId, '001000000000013AAA');
 		assert.equal(draft.values.Name, 'After upload');
+		assert.equal(draft.x, 140);
+		assert.equal(draft.y, 160);
 		assert.equal(draft._persistedTempId, undefined);
 		assert.equal(draft.slot, undefined);
 

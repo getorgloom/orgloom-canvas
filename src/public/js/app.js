@@ -127,6 +127,7 @@ function csrfFetch(url, options) {
 		canvasState: canvasState,
 	});
 	const _userSwitchCanvasId = _autosave.consumeUserSwitchCanvasId();
+	const _reauthFallbackCanvasId = _autosave.consumeReauthFallbackCanvasId();
 	if (_userSwitchCanvasId && !_hasCanvasLaunchRequest) {
 		_canvasLaunchParamsAtLoad.set('openCanvas', _userSwitchCanvasId);
 		const query = _canvasLaunchParamsAtLoad.toString();
@@ -143,6 +144,7 @@ function csrfFetch(url, options) {
 	const _orgSwitchStash = _autosave.orgSwitchStash;
 	const _orgSwitchRestore = _autosave.orgSwitchRestore;
 	const _autosaveSchedule = _autosave.autosaveSchedule;
+	const _autosaveFlush = _autosave.autosaveFlush;
 	const _autosaveClear = _autosave.autosaveClear;
 	const _autosaveRestore = _autosave.autosaveRestore;
 	const _migrationResume = _autosave.migrationResume;
@@ -856,6 +858,15 @@ function csrfFetch(url, options) {
 					recipientRole: data.recipientRole || null,
 				};
 				_canvasSaveState.captureSaved({ savedAt: data.updatedAt });
+				if (
+					_reauthFallbackCanvasId &&
+					String(_reauthFallbackCanvasId).slice(0, 15) === String(openId).slice(0, 15)
+				) {
+					showBulkToast(
+						'Reconnected to Salesforce. Org Loom opened the last saved version because the unsaved canvas could not be restored.',
+						'warning',
+					);
+				}
 				announceMergedContributions(data);
 				try {
 					const restored = rehydrateSessionDraftValues(openId);
@@ -3807,13 +3818,56 @@ function csrfFetch(url, options) {
 		}, 5000);
 		return true;
 	}
+	function _prepareSalesforceReauth() {
+		const hadUnsavedChanges = _hasUnsavedCanvasWork();
+		_autosaveFlush();
+		_orgSwitchStash({
+			intent: 'reauth',
+			preserveState: true,
+			hadUnsavedChanges: hadUnsavedChanges,
+		});
+		window.__sfRedirectingToReauth = true;
+		return true;
+	}
+	async function _prepareSalesforceSwitch() {
+		if (_allowMigrationOAuthHandoff()) {
+			_orgSwitchStash({ intent: 'switch', preserveState: true });
+			window.__sfRedirectingToReauth = true;
+			return true;
+		}
+
+		const hadUnsavedChanges = _hasUnsavedCanvasWork();
+		if (hadUnsavedChanges && typeof _confirmSaveBeforeNavigation === 'function') {
+			const shouldContinue = await _confirmSaveBeforeNavigation(null, {
+				title: 'Switch Salesforce user?',
+				saveMessage: 'You have unsaved canvas changes. Save them before signing in as another Salesforce user.',
+			});
+			if (!shouldContinue) {
+				return false;
+			}
+		}
+
+		const preserveState = !hadUnsavedChanges || !_hasUnsavedCanvasWork();
+		if (preserveState) {
+			_autosaveFlush();
+		}
+		_orgSwitchStash({
+			intent: 'switch',
+			preserveState: preserveState,
+			hadUnsavedChanges: hadUnsavedChanges,
+		});
+		window.__sfRedirectingToReauth = true;
+		return true;
+	}
 	window.Orgloom = window.Orgloom || {};
 	window.Orgloom.canvasNavigation = Object.assign({}, window.Orgloom.canvasNavigation || {}, {
 		allowMigrationOAuthHandoff: _allowMigrationOAuthHandoff,
+		prepareSalesforceReauth: _prepareSalesforceReauth,
+		prepareSalesforceSwitch: _prepareSalesforceSwitch,
 	});
 
 	window.addEventListener('beforeunload', (ev) => {
-		if (_migrationOAuthHandoffAllowed) {
+		if (_migrationOAuthHandoffAllowed || window.__sfRedirectingToReauth) {
 			_migrationOAuthHandoffAllowed = false;
 			return;
 		}
@@ -5950,7 +6004,7 @@ function csrfFetch(url, options) {
 	const _isEmptySlot = _su._isEmptySlot;
 	const _slotAssignmentState = _su._slotAssignmentState;
 	const _isSlotLockedForCurrentUser = _su._isSlotLockedForCurrentUser;
-	const _slotAssigneeBadgeHtml = _su._slotAssigneeBadgeHtml;
+	const _slotRequestBadgeHtml = _su._slotRequestBadgeHtml;
 	const _slotAssignmentCardClass = _su._slotAssignmentCardClass;
 	const _slotProgress = _su._slotProgress;
 	const _aggregateSlotProgress = _su._aggregateSlotProgress;
@@ -6186,8 +6240,8 @@ function csrfFetch(url, options) {
 		_slotAssignmentState: function (r) {
 			return _slotAssignmentState(r);
 		},
-		_slotAssigneeBadgeHtml: function (r) {
-			return _slotAssigneeBadgeHtml(r);
+		_slotRequestBadgeHtml: function (r) {
+			return _slotRequestBadgeHtml(r);
 		},
 		_slotAssignmentCardClass: function (r) {
 			return _slotAssignmentCardClass(r);
@@ -6502,6 +6556,9 @@ function csrfFetch(url, options) {
 		},
 		publishPresenceChanges: function () {
 			return _publishPresenceChanges();
+		},
+		flushAutosave: function () {
+			return _autosaveFlush();
 		},
 		pingAuditEvent: pingAuditEvent,
 		markCanvasGuideUploadComplete: _completeCanvasGuide,
