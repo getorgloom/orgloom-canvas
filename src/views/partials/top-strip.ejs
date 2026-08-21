@@ -1,0 +1,145 @@
+<%# Shared navigation normalizes optional locals because public and authenticated pages both include it. %>
+<%
+const _ts_user = (typeof user !== 'undefined') ? user : null;
+const _ts_connection = (typeof connection !== 'undefined') ? connection : null;
+const _ts_sfConnected = !!(_ts_user && _ts_connection);
+const _ts_sfLabel = (_ts_connection && (_ts_connection.display_username || _ts_connection.email || _ts_connection.display_name)) || 'Connected';
+const _ts_userName = _ts_user ? (_ts_user.username || _ts_user.displayName || _ts_user.id) : '';
+const _ts_path = (typeof currentPath !== 'undefined') ? currentPath : null;
+const _ts_saas = (typeof saasEnabled !== 'undefined') ? !!saasEnabled : false;
+const _ts_onCanvas = _ts_path === (_ts_saas ? '/canvas' : '/');
+const _ts_onDocs = _ts_path === '/docs';
+const _ts_playground = (typeof playgroundMode !== 'undefined') ? !!playgroundMode : false;
+const _ts_canvasHref = _ts_saas ? '/canvas' : '/';
+const _ts_sfControlPaths = new Set([_ts_saas ? '/canvas' : '/']);
+const _ts_showSfControl = _ts_sfControlPaths.has(_ts_path);
+%>
+<header class="app-top-strip">
+	<div class="app-top-strip-left">
+		<% if (_ts_playground) { %>
+			<span class="app-brand" title="Org Loom (demo)">Org Loom</span>
+		<% } else if (_ts_onCanvas) { %>
+			<span class="app-brand" title="Org Loom">Org Loom</span>
+		<% } else { %>
+			<a class="app-brand" href="/" title="Org Loom">Org Loom</a>
+		<% } %>
+		<% if (_ts_user && _ts_saas) { %>
+			<% if (_ts_playground) { %>
+				<span class="app-plan-chip app-plan-chip--pro" title="Demo runs on the Pro plan. Sign up to keep it.">Pro</span>
+			<% } else { %>
+				<div class="app-plan-mount" id="app-plan-mount" hidden></div>
+			<% } %>
+		<% } %>
+	</div>
+	<% if (_ts_user && _ts_playground) { %>
+		<div class="app-top-strip-right">
+			<a class="app-playground-signin-link" href="/sign-in">Sign in</a>
+			<a class="app-playground-signup-cta" href="/signup?from=playground">Join the open beta &rarr;</a>
+		</div>
+	<% } %>
+	<% if (_ts_user && !_ts_playground) { %>
+		<div class="app-top-strip-right">
+			<% if (!_ts_onCanvas) { %>
+				<a class="app-nav-link" href="<%= _ts_canvasHref %>">Canvas</a>
+			<% } %>
+			<% if (_ts_onCanvas) { %>
+				<button type="button" class="app-utility-btn" data-app-canvases title="Open a saved canvas from your active workspace">
+					<svg class="app-utility-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+					</svg>
+					<span>Canvases &#9662;</span>
+				</button>
+			<% } %>
+			<% if (_ts_saas) { %>
+				<div class="app-workspace-switcher" id="app-workspace-switcher" hidden></div>
+			<% } %>
+
+			<% if (_ts_saas && _ts_showSfControl) { %>
+				<button type="button" class="app-sf-chip<%= _ts_sfConnected ? '' : ' app-sf-chip--disconnected' %>" id="app-sf-chip" title="<%= _ts_sfConnected ? 'Active Salesforce connection: manage' : 'No active Salesforce connection: click to connect' %>">
+					<span class="app-sf-chip-dot" aria-hidden="true"></span>
+					<span class="app-sf-chip-label"><%= _ts_sfConnected ? _ts_sfLabel : 'Not connected' %></span>
+					<span class="app-sf-chip-caret" aria-hidden="true">&#9662;</span>
+				</button>
+			<% } else if (!_ts_saas && _ts_showSfControl) { %>
+				<a class="app-sf-chip<%= _ts_sfConnected ? '' : ' app-sf-chip--disconnected' %>" id="app-sf-chip" href="<%= _ts_sfConnected ? '/connect' : '/connect' %>" title="<%= _ts_sfConnected ? 'Re-authorize Salesforce' : 'Connect Salesforce to load and save canvas records' %>">
+					<span class="app-sf-chip-dot" aria-hidden="true"></span>
+					<span class="app-sf-chip-label"><%= _ts_sfConnected ? _ts_sfLabel : 'Not connected' %></span>
+				</a>
+			<% } %>
+			<button type="button" class="app-help-chip" id="app-help-chip" title="Help, shortcuts, docs, support" aria-label="Help">
+				<span class="app-help-chip-mark" aria-hidden="true">?</span>
+				<span class="app-help-chip-label" aria-hidden="true">Help</span>
+			</button>
+			<% if (!_ts_saas) { %>
+				<div class="app-user-chip">
+					<span class="app-user-chip-btn" title="Signed in as <%= _ts_userName %>">
+						<span class="app-user-name"><%= _ts_userName %></span>
+					</span>
+				</div>
+			<% } %>
+		</div>
+	<% } %>
+</header>
+<div class="trial-banner" id="trial-banner-mount" hidden></div>
+<% if (typeof posthogKey !== 'undefined' && posthogKey) { %>
+	<%
+	const _ph_signedIn = !!(typeof user !== 'undefined' && user);
+	const _ph_replayDisabled = _ph_signedIn || _ts_onCanvas || _ts_playground;
+	%>
+	<script nonce="<%= cspNonce %>">
+	!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+	posthog.init('<%= posthogKey %>', {
+		api_host: '<%= posthogHost %>',
+		autocapture: <%= _ph_replayDisabled ? 'false' : 'true' %>,
+		capture_pageview: true,
+		disable_session_recording: <%= _ph_replayDisabled ? 'true' : 'false' %>,
+		mask_all_text: <%= _ph_replayDisabled ? 'true' : 'false' %>,
+		mask_all_element_attributes: false,
+		respect_dnt: true,
+		sanitize_properties: function (properties) {
+			if (!properties) return properties;
+			delete properties.$current_url;
+			delete properties.$referrer;
+			delete properties.$referring_domain;
+			properties.page_path = window.location.pathname;
+			return properties;
+		},
+	});
+	<% if (typeof user !== 'undefined' && user && typeof accountIdHash !== 'undefined' && accountIdHash) { %>
+	posthog.identify(<%- jsonForScript('acct:' + accountIdHash) %>, {
+		signed_in: true,
+	});
+	<% } %>
+	<% if (typeof justAuthed !== 'undefined' && justAuthed) { %>
+	posthog.capture('oauth_success', <%- jsonForScript({
+		env: justAuthed.env || null,
+		orgType: justAuthed.orgType || null,
+	}) %>);
+	<% } %>
+	</script>
+<% } %>
+<script src="/js/ui-dialogs.js" defer></script>
+<% if (typeof authNotice !== 'undefined' && authNotice && authNotice.message) { %>
+	<script nonce="<%= cspNonce %>">
+		document.addEventListener('DOMContentLoaded', function () {
+			if (typeof window.olToast === 'function') {
+				window.olToast(
+					<%- jsonForScript(authNotice.message) %>,
+					<%- jsonForScript(authNotice.variant || 'info') %>
+				);
+			}
+		}, { once: true });
+	</script>
+<% } %>
+<% if (_ts_user && _ts_saas && !_ts_playground) { %>
+	<script src="/js/workspace-context.js" data-account-id="<%= _ts_user.id || '' %>"></script>
+	<script src="/js/workspace-switcher.js" defer></script>
+	<script src="/js/support.js" defer></script>
+	<% if (_ts_showSfControl) { %>
+	<script src="/js/sf-connections-modal.js" defer></script>
+	<% } %>
+	<script src="/js/trial-banner.js" defer></script>
+<% } %>
+<% if (_ts_user && !_ts_playground) { %>
+	<script src="/js/help-chip.js" defer></script>
+<% } %>
