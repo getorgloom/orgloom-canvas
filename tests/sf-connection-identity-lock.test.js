@@ -20,7 +20,10 @@ async function makeConnection(accountId, overrides = {}) {
 		instanceUrl: 'https://acme.my.salesforce.com',
 		displayUsername: 'alice@acme.com',
 	};
-	const { connection } = await connections.upsertFromOauth({ ...base, ...overrides });
+	const { connection } = await connections.upsertSalesforceConnectionMetadata({
+		...base,
+		...overrides,
+	});
 	return connection;
 }
 

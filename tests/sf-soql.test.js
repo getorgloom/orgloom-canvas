@@ -172,6 +172,10 @@ describe('normalizeSoqlFieldValue: numeric match identity', () => {
 		assert.equal(normalizeSoqlFieldValue('-0.00', 'currency'), '0');
 	});
 
+	test('removes a long trailing-zero suffix without a regular expression', () => {
+		assert.equal(normalizeSoqlFieldValue('12.34' + '0'.repeat(10_000), 'double'), '12.34');
+	});
+
 	test('string values retain their original spelling', () => {
 		assert.equal(normalizeSoqlFieldValue('00100.00', 'string'), '00100.00');
 	});

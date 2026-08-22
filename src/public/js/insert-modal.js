@@ -107,30 +107,140 @@
 		return formatCarryoverValue(value);
 	}
 
+	// Salesforce returns rich text as HTML. Parse only the pieces needed for a plain-text
+	// textarea; never feed the Salesforce value back through a browser HTML sink.
+	const richTextBlockEndTags = new Set(['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'tr']);
+	const richTextNamedEntities = Object.freeze({
+		amp: '&',
+		apos: "'",
+		bull: '\u2022',
+		copy: '\u00a9',
+		gt: '>',
+		hellip: '\u2026',
+		ldquo: '\u201c',
+		lsquo: '\u2018',
+		lt: '<',
+		mdash: '\u2014',
+		middot: '\u00b7',
+		nbsp: '\u00a0',
+		ndash: '\u2013',
+		quot: '"',
+		rdquo: '\u201d',
+		reg: '\u00ae',
+		rsquo: '\u2019',
+		trade: '\u2122',
+	});
+
+	function isAsciiLetter(character) {
+		return !!character && /[A-Za-z]/.test(character);
+	}
+
+	function richTextTagAt(markup, start) {
+		if (markup.startsWith('<!--', start)) {
+			const commentEnd = markup.indexOf('-->', start + 4);
+			return commentEnd < 0 ? null : { end: commentEnd + 2, lineBreak: false };
+		}
+		let nameStart = start + 1;
+		let closing = false;
+		if (markup[nameStart] === '/') {
+			closing = true;
+			nameStart += 1;
+		}
+		const declaration = markup[nameStart] === '!' || markup[nameStart] === '?';
+		if (!declaration && !isAsciiLetter(markup[nameStart])) {
+			return null;
+		}
+		let quote = null;
+		let end = nameStart;
+		for (; end < markup.length; end += 1) {
+			const character = markup[end];
+			if (quote) {
+				if (character === quote) {
+					quote = null;
+				}
+				continue;
+			}
+			if (character === '"' || character === "'") {
+				quote = character;
+				continue;
+			}
+			if (character === '>') {
+				break;
+			}
+		}
+		if (end >= markup.length) {
+			return null;
+		}
+		let nameEnd = nameStart;
+		while (nameEnd < end && /[A-Za-z0-9]/.test(markup[nameEnd])) {
+			nameEnd += 1;
+		}
+		const name = declaration ? '' : markup.slice(nameStart, nameEnd).toLowerCase();
+		return {
+			end,
+			lineBreak: (!closing && name === 'br') || (closing && richTextBlockEndTags.has(name)),
+		};
+	}
+
+	function richTextEntityAt(markup, start) {
+		const end = markup.indexOf(';', start + 1);
+		if (end < 0 || end - start > 32) {
+			return null;
+		}
+		const encoded = markup.slice(start + 1, end);
+		const named = richTextNamedEntities[encoded.toLowerCase()];
+		if (named !== undefined) {
+			return { end, text: named };
+		}
+		let digits = '';
+		let radix = 10;
+		if (encoded.startsWith('#x') || encoded.startsWith('#X')) {
+			digits = encoded.slice(2);
+			radix = 16;
+		} else if (encoded.startsWith('#')) {
+			digits = encoded.slice(1);
+		}
+		if (!digits || !(radix === 16 ? /^[0-9a-f]+$/i : /^\d+$/).test(digits)) {
+			return null;
+		}
+		const codePoint = Number.parseInt(digits, radix);
+		if (!Number.isSafeInteger(codePoint) || codePoint <= 0 || codePoint > 0x10ffff) {
+			return { end, text: '\ufffd' };
+		}
+		if (codePoint >= 0xd800 && codePoint <= 0xdfff) {
+			return { end, text: '\ufffd' };
+		}
+		return { end, text: String.fromCodePoint(codePoint) };
+	}
+
 	function richTextForEditor(value) {
 		if (value === null || value === undefined || value === '') {
 			return '';
 		}
-		let text = String(value)
-			.replace(/<br\s*\/?\s*>/gi, '\n')
-			.replace(/<\/(?:p|div|li|h[1-6]|tr)>/gi, '\n')
-			.replace(/<[^>]*>/g, '');
-		if (typeof document !== 'undefined' && document.createElement) {
-			const decoder = document.createElement('textarea');
-			decoder.innerHTML = text;
-			text = decoder.value;
-		} else {
-			text = text
-				.replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
-				.replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(parseInt(code, 16)))
-				.replace(/&nbsp;/gi, '\u00a0')
-				.replace(/&quot;/gi, '"')
-				.replace(/&#39;|&apos;/gi, "'")
-				.replace(/&lt;/gi, '<')
-				.replace(/&gt;/gi, '>')
-				.replace(/&amp;/gi, '&');
+		const markup = String(value);
+		let text = '';
+		for (let index = 0; index < markup.length; index += 1) {
+			if (markup[index] === '<') {
+				const tag = richTextTagAt(markup, index);
+				if (tag) {
+					if (tag.lineBreak) {
+						text += '\n';
+					}
+					index = tag.end;
+					continue;
+				}
+			}
+			if (markup[index] === '&') {
+				const entity = richTextEntityAt(markup, index);
+				if (entity) {
+					text += entity.text;
+					index = entity.end;
+					continue;
+				}
+			}
+			text += markup[index];
 		}
-		return text.replace(/\n$/, '');
+		return text.endsWith('\n') ? text.slice(0, -1) : text;
 	}
 
 	function recordRichTextForEditor(record, fieldName, value) {

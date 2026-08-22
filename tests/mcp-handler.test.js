@@ -97,6 +97,13 @@ async function callMcp({ body, token }) {
 	return res;
 }
 
+async function callMcpWithAuthorization(body, authorization) {
+	const { mcpHandler } = await import('../src/mcp/server.js');
+	const res = fakeRes();
+	await mcpHandler({ body, headers: { authorization } }, res);
+	return res;
+}
+
 async function makeAccount(email = 'mcp@x.com') {
 	const { accounts } = await import('../src/database/index.js');
 	return (await accounts.upsertByEmail({ email })).account;
@@ -177,10 +184,22 @@ describe('auth resolution', () => {
 	});
 
 	test('non-Bearer scheme → ERR_AUTH', async () => {
-		const { mcpHandler } = await import('../src/mcp/server.js');
-		const res = fakeRes();
-		await mcpHandler({ body: rpc('ping'), headers: { authorization: 'Basic abc' } }, res);
+		const res = await callMcpWithAuthorization(rpc('ping'), 'Basic abc');
 		assert.equal(res.body.error.code, ERR_AUTH);
+	});
+
+	test('Bearer scheme accepts multiple ASCII spaces without a regular expression', async () => {
+		const { token } = await makeMcpFixture();
+		const res = await callMcpWithAuthorization(rpc('ping'), 'bEaReR' + ' '.repeat(10_000) + token + '   ');
+		assert.deepEqual(res.body.result, {});
+	});
+
+	test('Bearer scheme rejects an empty token and non-space separators', async () => {
+		for (const authorization of ['Bearer', 'Bearer ', 'Bearer\tvalue', 'Bearer\r\n value']) {
+			const res = await callMcpWithAuthorization(rpc('ping'), authorization);
+			assert.equal(res.statusCode, 401);
+			assert.equal(res.body.error.code, ERR_AUTH);
+		}
 	});
 
 	test('well-formed but unknown token → ERR_AUTH', async () => {

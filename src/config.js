@@ -41,9 +41,7 @@ if (_isProd) {
 	}
 	if (_envSessionSecret.length < 32) {
 		console.error(
-			'[config] SESSION_SECRET is too short (' +
-				_envSessionSecret.length +
-				' chars). Use at least 32 chars (suggested: `openssl rand -hex 32`). Refusing to start.',
+			'[config] SESSION_SECRET is too short. Use at least 32 chars (suggested: `openssl rand -hex 32`). Refusing to start.',
 		);
 		process.exit(1);
 	}

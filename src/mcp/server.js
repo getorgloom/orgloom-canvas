@@ -1808,11 +1808,10 @@ async function _resolveContext(req) {
 	if (!authHeader || typeof authHeader !== 'string') {
 		throw _appError(ERR_AUTH, 'Missing Authorization header');
 	}
-	const m = authHeader.match(/^Bearer\s+(.+)$/i);
-	if (!m) {
+	const plaintext = _parseBearerToken(authHeader);
+	if (!plaintext) {
 		throw _appError(ERR_AUTH, 'Authorization must be Bearer scheme');
 	}
-	const plaintext = m[1].trim();
 
 	const tokenRow = await mcpTokensDb.authenticate(plaintext);
 	if (!tokenRow) {
@@ -1853,6 +1852,21 @@ async function _resolveContext(req) {
 	}
 
 	return { account, workspaceId, mcpToken: tokenRow };
+}
+
+function _parseBearerToken(authHeader) {
+	if (typeof authHeader !== 'string' || authHeader.length <= 7) {
+		return null;
+	}
+	if (authHeader.slice(0, 6).toLowerCase() !== 'bearer' || authHeader.charCodeAt(6) !== 0x20) {
+		return null;
+	}
+	let tokenStart = 7;
+	while (tokenStart < authHeader.length && authHeader.charCodeAt(tokenStart) === 0x20) {
+		tokenStart += 1;
+	}
+	const token = authHeader.slice(tokenStart).trim();
+	return token || null;
 }
 
 function _textResult(text) {

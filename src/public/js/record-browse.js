@@ -108,6 +108,21 @@
 		return true;
 	}
 
+	const SALESFORCE_ID_RE = /^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/;
+	function _salesforceIdInList(ids) {
+		return Array.from(ids || [])
+			.map((id) => String(id))
+			.map((id) => {
+				if (!SALESFORCE_ID_RE.test(id)) {
+					throw new Error(
+						'Browse selection contains an invalid Salesforce ID. Refresh the results and try again.',
+					);
+				}
+				return "'" + id + "'";
+			})
+			.join(', ');
+	}
+
 	window.OrgLoom.recordBrowse = {
 		mount: function mount(deps) {
 			const required = [
@@ -968,20 +983,37 @@
 					loadBtn.addEventListener('click', async () => {
 						const entries = _basketEntries();
 						const basketTotal = _basketTotal();
+						const originalLabel = loadBtn.textContent;
+						const statusEl = content.querySelector('.rb-count');
+						const showErr = (msg) => {
+							loadBtn.disabled = false;
+							loadBtn.textContent = originalLabel;
+							if (statusEl) {
+								statusEl.classList.add('rb-count-error');
+								statusEl.textContent = msg;
+							}
+						};
 						let jobs;
 						if (basketTotal > 0) {
-							jobs = entries.map((e) => ({
-								objectName: e.objectName,
-								count: e.count,
-								soql:
-									'SELECT Id FROM ' +
-									e.objectName +
-									' WHERE Id IN (' +
-									Array.from(e.ids)
-										.map((id) => "'" + String(id).replace(/'/g, "\\'") + "'")
-										.join(', ') +
-									')',
-							}));
+							try {
+								jobs = entries.map((e) => ({
+									objectName: e.objectName,
+									count: e.count,
+									soql:
+										'SELECT Id FROM ' +
+										e.objectName +
+										' WHERE Id IN (' +
+										_salesforceIdInList(e.ids) +
+										')',
+								}));
+							} catch (error) {
+								showErr(
+									error && error.message
+										? error.message
+										: 'Browse selection contains an invalid record ID.',
+								);
+								return;
+							}
 						} else {
 							if (!_state.lastResult || !_state.lastResult.loadSoql) {
 								return;
@@ -997,16 +1029,6 @@
 								},
 							];
 						}
-						const originalLabel = loadBtn.textContent;
-						const statusEl = content.querySelector('.rb-count');
-						const showErr = (msg) => {
-							loadBtn.disabled = false;
-							loadBtn.textContent = originalLabel;
-							if (statusEl) {
-								statusEl.classList.add('rb-count-error');
-								statusEl.textContent = msg;
-							}
-						};
 						const attempt = jobs.reduce((sum, j) => sum + j.count, 0);
 						const cap = canvasCapCheck(attempt);
 						if (cap.blocked) {

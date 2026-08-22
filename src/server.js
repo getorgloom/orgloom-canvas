@@ -14,6 +14,12 @@ import { createOAuth2 } from './auth.js';
 import { connections as connectionsDb } from './database/index.js';
 import { ensureSalesforceUserTimeZone, getActiveSfConnection } from './sf-connection.js';
 import { putRefreshToken, dropSessionRefreshTokens } from './sf-refresh-store.js';
+import {
+	sfOAuthCallbackIpRateLimit,
+	sfOAuthCallbackSessionRateLimit,
+	sfOAuthStartIpRateLimit,
+	validateSfOAuthCallback,
+} from './sf-oauth-rate-limit.js';
 import { canvasStoreFromSfConnection } from './storage/canvas-store.js';
 import { ext } from './extensions.js';
 import { mountCanvasRoutes, mountSetupWizard } from './canvas-routes.js';
@@ -432,7 +438,7 @@ function _resolveSfLoginUrl(req) {
 	return { url: null, invalid: false };
 }
 
-app.get('/auth/login', (req, res) => {
+app.get('/auth/login', sfOAuthStartIpRateLimit, (req, res) => {
 	const resolved = _resolveSfLoginUrl(req);
 	if (resolved.invalid) {
 		return res.redirect('/?sfConnectError=invalid-domain');
@@ -453,91 +459,87 @@ app.get('/auth/login', (req, res) => {
 	res.redirect(oauth2.getAuthorizationUrl(authParams));
 });
 
-app.get('/auth/callback', async (req, res, next) => {
-	try {
-		const code = req.query.code;
-		if (!code) {
-			return res.status(400).send('Missing OAuth code.');
-		}
-		const state = typeof req.query.state === 'string' ? req.query.state : null;
-		if (!state || !req.session?.id || state !== req.session.id) {
-			console.warn('[sf-oauth] state missing/mismatch on /auth/callback (possible CSRF)');
-			return res
-				.status(400)
-				.send('Salesforce sign-in failed a security check (state mismatch). Try again from the start.');
-		}
-		const callbackLoginUrl = _canonicalizeSfLoginUrl(req.session.sfLoginUrl) || null;
-		if (callbackLoginUrl) {
-			req.session.sfLoginUrl = callbackLoginUrl;
-		}
-		const oauth2 = createOAuth2(callbackLoginUrl);
-		const conn = new Connection({ oauth2, version: config.salesforce.apiVersion });
-		let userInfo;
+app.get(
+	'/auth/callback',
+	validateSfOAuthCallback,
+	sfOAuthCallbackIpRateLimit,
+	sfOAuthCallbackSessionRateLimit,
+	async (req, res, next) => {
 		try {
-			userInfo = await conn.authorize(code);
-			delete req.session.forceSfIdentityPrompt;
-		} catch (error) {
-			const oauthError = [error?.name, error?.code, error?.message]
-				.filter((value) => typeof value === 'string')
-				.join(' ')
-				.toLowerCase();
-			if (oauthError.includes('unsupported_grant_type') || oauthError.includes('grant type not supported')) {
-				delete req.session.sfLoginUrl;
-				return res
-					.status(400)
-					.send(
-						'The Salesforce URL was not an OAuth login endpoint. Return to Connect and try the org again; copied Lightning URLs are converted automatically.',
-					);
+			const code = res.locals.sfOAuthCode;
+			const callbackLoginUrl = _canonicalizeSfLoginUrl(req.session.sfLoginUrl) || null;
+			if (callbackLoginUrl) {
+				req.session.sfLoginUrl = callbackLoginUrl;
 			}
-			throw error;
+			const oauth2 = createOAuth2(callbackLoginUrl);
+			const conn = new Connection({ oauth2, version: config.salesforce.apiVersion });
+			let userInfo;
+			try {
+				userInfo = await conn.authorize(code);
+				delete req.session.forceSfIdentityPrompt;
+			} catch (error) {
+				const oauthError = [error?.name, error?.code, error?.message]
+					.filter((value) => typeof value === 'string')
+					.join(' ')
+					.toLowerCase();
+				if (oauthError.includes('unsupported_grant_type') || oauthError.includes('grant type not supported')) {
+					delete req.session.sfLoginUrl;
+					return res
+						.status(400)
+						.send(
+							'The Salesforce URL was not an OAuth login endpoint. Return to Connect and try the org again; copied Lightning URLs are converted automatically.',
+						);
+				}
+				throw error;
+			}
+			const identity = await conn.identity();
+
+			const account = await ensureLocalAccount();
+			const { connection } = await connectionsDb.upsertSalesforceConnectionMetadata({
+				accountId: account.id,
+				sfUserId: userInfo.id,
+				sfOrgId: userInfo.organizationId || identity.organization_id,
+				instanceUrl: conn.instanceUrl,
+				displayUsername: identity.username || identity.email,
+				displayName: identity.display_name,
+				email: identity.email,
+			});
+
+			req.session.accountId = account.id;
+			req.session.currentConnectionId = connection.id;
+			const _sfAuth = {
+				accessToken: conn.accessToken,
+				instanceUrl: conn.instanceUrl,
+				sfUserId: userInfo.id,
+				sfOrgId: userInfo.organizationId || identity.organization_id || null,
+				organizationId: userInfo.organizationId || identity.organization_id || null,
+			};
+			req.session.sfAuth = _sfAuth;
+			req.session.sfAuthByConnection = req.session.sfAuthByConnection || {};
+			req.session.sfAuthByConnection[connection.id] = _sfAuth;
+
+			await _regenerateSession(req);
+
+			if (conn.refreshToken) {
+				putRefreshToken(req.session.id, connection.id, conn.refreshToken);
+			}
+
+			ext.auditWrite({
+				req,
+				workspaceId: null,
+				actorAccountId: account.id,
+				actorConnectionId: connection.id,
+				action: 'sf_org_connected',
+				targetSfOrgId: userInfo.organizationId || identity.organization_id || null,
+				payload: { sfUserId: userInfo.id },
+			}).catch(() => {});
+
+			res.redirect('/');
+		} catch (err) {
+			next(err);
 		}
-		const identity = await conn.identity();
-
-		const account = await ensureLocalAccount();
-		const connection = await connectionsDb.upsertFromOauth({
-			accountId: account.id,
-			sfUserId: userInfo.id,
-			sfOrgId: userInfo.organizationId || identity.organization_id,
-			instanceUrl: conn.instanceUrl,
-			displayUsername: identity.username || identity.email,
-			displayName: identity.display_name,
-			email: identity.email,
-		});
-
-		req.session.accountId = account.id;
-		req.session.currentConnectionId = connection.id;
-		const _sfAuth = {
-			accessToken: conn.accessToken,
-			instanceUrl: conn.instanceUrl,
-			sfUserId: userInfo.id,
-			sfOrgId: userInfo.organizationId || identity.organization_id || null,
-			organizationId: userInfo.organizationId || identity.organization_id || null,
-		};
-		req.session.sfAuth = _sfAuth;
-		req.session.sfAuthByConnection = req.session.sfAuthByConnection || {};
-		req.session.sfAuthByConnection[connection.id] = _sfAuth;
-
-		await _regenerateSession(req);
-
-		if (conn.refreshToken) {
-			putRefreshToken(req.session.id, connection.id, conn.refreshToken);
-		}
-
-		ext.auditWrite({
-			req,
-			workspaceId: null,
-			actorAccountId: account.id,
-			actorConnectionId: connection.id,
-			action: 'sf_org_connected',
-			targetSfOrgId: userInfo.organizationId || identity.organization_id || null,
-			payload: { sfUserId: userInfo.id },
-		}).catch(() => {});
-
-		res.redirect('/');
-	} catch (err) {
-		next(err);
-	}
-});
+	},
+);
 
 app.post('/auth/sf-signout', (req, res) => {
 	if (req.session) {

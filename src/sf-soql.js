@@ -86,7 +86,11 @@ function canonicalDecimal(value, integerOnly) {
 	if (integerOnly && fraction && /[^0]/.test(fraction)) {
 		throw new TypeError('invalid integer SOQL value');
 	}
-	fraction = fraction.replace(/0+$/, '');
+	let fractionEnd = fraction.length;
+	while (fractionEnd > 0 && fraction.charCodeAt(fractionEnd - 1) === 0x30) {
+		fractionEnd -= 1;
+	}
+	fraction = fraction.slice(0, fractionEnd);
 	if (!whole) {
 		whole = '0';
 	}

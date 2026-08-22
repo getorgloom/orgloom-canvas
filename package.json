@@ -39,6 +39,7 @@
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.6.2",
     "express-session": "^1.18.1",
     "helmet": "^8.2.0",
     "jsforce": "^3.6.0",

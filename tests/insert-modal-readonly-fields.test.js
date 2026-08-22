@@ -93,8 +93,18 @@ test('external-key references use a bounded text input without lookup resolution
 test('Salesforce rich HTML reopens as plain text in the record editor', () => {
 	assert.equal(richTextForEditor('<p>First &amp; second</p><p>&amp;nbsp;</p>'), 'First & second\n&nbsp;');
 	assert.equal(richTextForEditor('First<br>Second<br/>Third'), 'First\nSecond\nThird');
+	assert.equal(richTextForEditor('<p>&copy; &#169; &#x1f600;</p>'), '© © 😀');
 	assert.match(source, /data-html-formatted="true"/);
 	assert.match(source, /recordRichTextForEditor\(canvasState\.currentRecordRef, field, val\)/);
+});
+
+test('Salesforce rich HTML conversion never reparses untrusted text through the DOM', () => {
+	assert.equal(richTextForEditor('<script>alert(1)</script><p>Safe</p>'), 'alert(1)Safe');
+	assert.equal(richTextForEditor('<img src=x onerror="alert(1)">Safe'), 'Safe');
+	assert.equal(richTextForEditor('<scr<script>ipt>alert(1)</scr</script>ipt>'), 'ipt>alert(1)ipt>');
+	assert.equal(richTextForEditor('&lt;script&gt;alert(1)&lt;/script&gt;'), '<script>alert(1)</script>');
+	assert.doesNotMatch(source, /decoder\.innerHTML\s*=/);
+	assert.doesNotMatch(source, /\.replace\(\/<\[\^>\]\*>\/g/);
 });
 
 test('canvas-authored rich text remains literal when the editor reopens', () => {

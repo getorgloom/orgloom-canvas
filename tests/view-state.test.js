@@ -71,7 +71,7 @@ describe('viewStateDb', () => {
 		const { viewState, connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
 		const workspaceId = await makeWorkspaceReference(a.id);
-		const { connection } = await connections.upsertFromOauth({
+		const { connection } = await connections.upsertSalesforceConnectionMetadata({
 			accountId: a.id,
 			sfUserId: 's1',
 			sfOrgId: '00D1',

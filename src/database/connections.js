@@ -10,7 +10,7 @@ export async function findById(id) {
 	return db.selectFrom('connections').selectAll().where('id', '=', id).executeTakeFirst();
 }
 
-export async function upsertFromOauth({
+export async function upsertSalesforceConnectionMetadata({
 	// Identity is unique per account and Salesforce user; reconnecting refreshes metadata in place.
 	accountId,
 	sfUserId,

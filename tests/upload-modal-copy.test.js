@@ -542,6 +542,17 @@ test('post-upload results identify records by name without positional hash numbe
 	assert.doesNotMatch(source, /'<div>#' \+/);
 });
 
+test('an all-success upload does not repeat its count in an Uploaded section heading', () => {
+	assert.match(source, /const showUploadedSectionHeading =/);
+	assert.match(
+		source,
+		/showUploadedSectionHeading\s*\? '<div class="upload-section-head upload-section-head--ok">Uploaded \('/,
+	);
+	assert.match(source, /failed\.length > 0 \|\|[\s\S]*?deleteFailed\.length > 0/);
+	assert.doesNotMatch(source, /unchanged records? needed/);
+	assert.doesNotMatch(source, /had no local edits, so we didn/);
+});
+
 test('Salesforce sample failures use the post-upload result style and record identity', () => {
 	const start = source.indexOf('function renderPreflightFailure(pf)');
 	const end = source.indexOf('function _clearCommittedMigrationMatch', start);
@@ -570,10 +581,14 @@ test('unnamed upload results use the real canvas card number only as a fallback'
 	assert.deepEqual({ ...identity }, { name: 'Unnamed Account', objectLabel: 'Account', cardNumber: '7' });
 });
 
-test('upload preflight separates eligible operations from disclosed exclusions', () => {
-	assert.match(source, /<span>Eligible operations<\/span>/);
+test('upload preflight clearly separates included records from disclosed exclusions', () => {
+	assert.match(source, /<span>Records included<\/span>/);
+	assert.match(source, /<span>Unchanged \(skipped\)<\/span>/);
 	assert.match(source, /<span>Won\\u2019t upload<\/span>/);
 	assert.match(source, /const totalRecords = willUploadCount \+ willDeleteCount/);
+	assert.match(source, /Continue with ' \+ totalRecords \+ ' record/);
+	assert.doesNotMatch(source, /Eligible operations|eligible operation/);
+	assert.doesNotMatch(source, /loaded records? ha(?:s|ve) no local changes and will be skipped/);
 	assert.doesNotMatch(source, /Records will upload in the order below/);
 	assert.doesNotMatch(source, /<span>Will sync<\/span>/);
 	assert.doesNotMatch(source, /Associations \(FK links\)/);

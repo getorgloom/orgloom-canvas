@@ -10,11 +10,11 @@ async function makeAccount(email = 'a@x.com') {
 	return (await accounts.upsertByEmail({ email })).account;
 }
 
-describe('connectionsDb.upsertFromOauth', () => {
+describe('connectionsDb.upsertSalesforceConnectionMetadata', () => {
 	test('creates a new connection on first OAuth', async () => {
 		const { connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
-		const { connection, created } = await connections.upsertFromOauth({
+		const { connection, created } = await connections.upsertSalesforceConnectionMetadata({
 			accountId: a.id,
 			sfUserId: '005xx',
 			sfOrgId: '00Dxx',
@@ -32,13 +32,13 @@ describe('connectionsDb.upsertFromOauth', () => {
 	test('updates existing connection on re-OAuth (matched by account+sfUserId)', async () => {
 		const { connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
-		const first = await connections.upsertFromOauth({
+		const first = await connections.upsertSalesforceConnectionMetadata({
 			accountId: a.id,
 			sfUserId: '005xx',
 			sfOrgId: '00Dxx',
 			instanceUrl: 'https://acme.my.salesforce.com',
 		});
-		const second = await connections.upsertFromOauth({
+		const second = await connections.upsertSalesforceConnectionMetadata({
 			accountId: a.id,
 			sfUserId: '005xx',
 			sfOrgId: '00Dxx',
@@ -53,13 +53,13 @@ describe('connectionsDb.upsertFromOauth', () => {
 	test('different sfUserId on same account creates a new row', async () => {
 		const { connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
-		await connections.upsertFromOauth({
+		await connections.upsertSalesforceConnectionMetadata({
 			accountId: a.id,
 			sfUserId: '005a',
 			sfOrgId: '00Da',
 			instanceUrl: 'https://x.salesforce.com',
 		});
-		await connections.upsertFromOauth({
+		await connections.upsertSalesforceConnectionMetadata({
 			accountId: a.id,
 			sfUserId: '005b',
 			sfOrgId: '00Db',
@@ -75,13 +75,13 @@ describe('connectionsDb.listForAccount', () => {
 		const { connections } = await import('../src/database/index.js');
 		const a1 = await makeAccount('a1@x.com');
 		const a2 = await makeAccount('a2@x.com');
-		await connections.upsertFromOauth({
+		await connections.upsertSalesforceConnectionMetadata({
 			accountId: a1.id,
 			sfUserId: 's1',
 			sfOrgId: '00D1',
 			instanceUrl: 'https://x.salesforce.com',
 		});
-		await connections.upsertFromOauth({
+		await connections.upsertSalesforceConnectionMetadata({
 			accountId: a2.id,
 			sfUserId: 's2',
 			sfOrgId: '00D2',
@@ -97,7 +97,7 @@ describe('connectionsDb.listForAccount', () => {
 	test('excludes disabled connections by default', async () => {
 		const { connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
-		const { connection } = await connections.upsertFromOauth({
+		const { connection } = await connections.upsertSalesforceConnectionMetadata({
 			accountId: a.id,
 			sfUserId: 's1',
 			sfOrgId: '00D1',
@@ -115,7 +115,7 @@ describe('connectionsDb.disable', () => {
 	test('stamps disabled_at and hides the connection from listForAccount', async () => {
 		const { connections } = await import('../src/database/index.js');
 		const a = await makeAccount();
-		const { connection } = await connections.upsertFromOauth({
+		const { connection } = await connections.upsertSalesforceConnectionMetadata({
 			accountId: a.id,
 			sfUserId: 's1',
 			sfOrgId: '00D1',

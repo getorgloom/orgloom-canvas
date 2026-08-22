@@ -1143,7 +1143,7 @@
 					preflightHtml =
 						'<div class="preflight ok">' +
 						'<span class="pf-icon">\u2713</span>' +
-						'<span class="pf-msg"><strong>Pre-flight passed.</strong> Eligible records look ready to upload.</span>' +
+						'<span class="pf-msg"><strong>Pre-flight passed.</strong> The included records are ready to upload.</span>' +
 						'</div>';
 				} else if (issues.length > 0) {
 					const recordSections = Array.from(byRecordId.entries())
@@ -1257,16 +1257,6 @@
 						'</div>';
 				}
 
-				const unchangedNote =
-					unchangedOnlySet.size > 0
-						? '<p class="tag" style="margin-top:0.4em">' +
-							unchangedOnlySet.size +
-							' loaded record' +
-							(unchangedOnlySet.size === 1 ? '' : 's') +
-							' ' +
-							(unchangedOnlySet.size === 1 ? 'has' : 'have') +
-							' no local changes and will be skipped: only modified or new records will sync.</p>'
-						: '';
 				const exclusionSummary = uploadExclusionSummary(scopedExclusions);
 				const excludedRecordNote =
 					exclusionSummary.length > 0
@@ -1367,7 +1357,6 @@
 					incompleteFieldRequestNote +
 					excludedDraftLinkNote +
 					preflightHtml +
-					unchangedNote +
 					accessExclusionBlock +
 					'<div class="upload-section-head">Upload order</div>' +
 					'<div class="upload-summary upload-summary--ordered">' +
@@ -1375,9 +1364,14 @@
 					'</div>' +
 					deletesBlock +
 					'<div class="upload-totals">' +
-					'<div class="ut-row"><span>Eligible operations</span><strong>' +
+					'<div class="ut-row"><span>Records included</span><strong>' +
 					totalRecords +
 					'</strong></div>' +
+					(unchangedOnlySet.size > 0
+						? '<div class="ut-row"><span>Unchanged (skipped)</span><strong>' +
+							unchangedOnlySet.size +
+							'</strong></div>'
+						: '') +
 					(accessExclusions.length > 0
 						? '<div class="ut-row"><span>Won\u2019t upload</span><strong>' +
 							accessExclusions.length +
@@ -1472,7 +1466,7 @@
 						confirmBtn.classList.add('confirm-danger');
 					} else {
 						confirmBtn.textContent = accessExclusions.length
-							? 'Continue with ' + totalRecords + ' eligible operation' + (totalRecords === 1 ? '' : 's')
+							? 'Continue with ' + totalRecords + ' record' + (totalRecords === 1 ? '' : 's')
 							: scopeLabel
 								? 'Upload selected'
 								: 'Upload';
@@ -2799,6 +2793,12 @@
 				const deletesArr = Array.isArray(deletesResults) ? deletesResults : [];
 				const deleted = deletesArr.filter((d) => d && d.success);
 				const deleteFailed = deletesArr.filter((d) => d && !d.success);
+				const showUploadedSectionHeading =
+					failed.length > 0 ||
+					accessExcluded.length > 0 ||
+					unchanged.length > 0 ||
+					deleted.length > 0 ||
+					deleteFailed.length > 0;
 				if (synced.length > 0) {
 					markCanvasGuideUploadComplete();
 				}
@@ -2840,15 +2840,9 @@
 						' uploaded to Salesforce.</strong></div>';
 				} else if (accessExcluded.length > 0) {
 					html +=
-						'<div class="banner"><strong>No eligible changes were uploaded.</strong> Read-only changes remain on the canvas.</div>';
+						'<div class="banner"><strong>No records were uploaded.</strong> Read-only changes remain on the canvas.</div>';
 				} else {
 					html += '<div class="banner">No records needed updating in Salesforce.</div>';
-				}
-				if (unchanged.length > 0) {
-					html +=
-						'<p class="tag upload-result-note">' +
-						recordCountText(unchanged.length, 'unchanged record needed', 'unchanged records needed') +
-						' no update.</p>';
 				}
 				if (accessExcluded.length > 0) {
 					html +=
@@ -2872,9 +2866,11 @@
 				}
 				if (synced.length > 0) {
 					html +=
-						'<div class="upload-section-head upload-section-head--ok">Uploaded (' +
-						synced.length +
-						')</div>' +
+						(showUploadedSectionHeading
+							? '<div class="upload-section-head upload-section-head--ok">Uploaded (' +
+								synced.length +
+								')</div>'
+							: '') +
 						'<div class="upload-results-list">' +
 						synced
 							.map((r) => {
@@ -2902,7 +2898,6 @@
 						'<div class="upload-section-head">Unchanged (' +
 						unchanged.length +
 						')</div>' +
-						'<p class="tag" style="margin-top:-0.4em">These records were already in Salesforce and had no local edits, so we didn\u2019t touch them.</p>' +
 						'<div class="upload-results-list">' +
 						unchanged
 							.map((r) => {
