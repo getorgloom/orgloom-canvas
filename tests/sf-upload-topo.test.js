@@ -252,6 +252,7 @@ describe('buildGraphSubRequest', () => {
 			tempId: 1,
 			objectName: 'Account',
 			values: {
+				Id: '001000000000001AAA',
 				Name: 'Acme',
 				BillingAddress: { city: 'Phoenix' },
 				_internalCollaborationState: { assigned: true },
@@ -269,6 +270,7 @@ describe('buildGraphSubRequest', () => {
 					'Account',
 					{
 						fields: [
+							{ name: 'Id', createable: false, updateable: false },
 							{ name: 'Name', createable: true, updateable: true },
 							{ name: 'BillingAddress', createable: false, updateable: false },
 						],

@@ -2833,16 +2833,27 @@ function csrfFetch(url, options) {
 	}
 
 	const rulesCache = {};
+	function rulesCacheKey(name) {
+		return String(window.SF_ORG_ID || 'unknown') + '|' + name;
+	}
 	function ensureRules(name) {
-		if (rulesCache[name]) {
-			return Promise.resolve(rulesCache[name]);
+		const key = rulesCacheKey(name);
+		if (rulesCache[key]) {
+			return rulesCache[key];
 		}
-		return csrfFetch('/api/objects/' + encodeURIComponent(name) + '/validation-rules')
-			.then((r) => (r.ok ? r.json() : []))
+		const request = csrfFetch('/api/objects/' + encodeURIComponent(name) + '/validation-rules')
+			.then((r) => {
+				if (!r.ok) {
+					return {
+						unavailable: true,
+						reason: 'Salesforce validation rules could not be loaded.',
+					};
+				}
+				return r.json();
+			})
 			.then((data) => {
 				if (data && data.unavailable) {
-					rulesCache[name] = [];
-					return [];
+					return { rules: [], unavailable: data.reason || 'Could not load validation rules.' };
 				}
 				const parsed = (Array.isArray(data) ? data : []).map((r) => {
 					const p = tryParseRule(r);
@@ -2851,13 +2862,22 @@ function csrfFetch(url, options) {
 						_parseError: p.error,
 					});
 				});
-				rulesCache[name] = parsed;
-				return parsed;
+				return { rules: parsed, unavailable: null };
 			})
-			.catch(() => {
-				rulesCache[name] = [];
-				return [];
+			.catch((error) => {
+				return {
+					rules: [],
+					unavailable: (error && error.message) || 'Could not load validation rules.',
+				};
+			})
+			.then((result) => {
+				if (result.unavailable) {
+					delete rulesCache[key];
+				}
+				return result;
 			});
+		rulesCache[key] = request;
+		return request;
 	}
 
 	const _assoc = window.OrgLoom.canvasAssociations.mount({
@@ -4644,6 +4664,7 @@ function csrfFetch(url, options) {
 		showPromptModal: function (opts) {
 			return showPromptModal(opts);
 		},
+		ensureDescribe: ensureDescribe,
 	});
 	const startMarquee = _marquee.startMarquee;
 	const updateMarqueeElement = _marquee.updateMarqueeElement;
@@ -5089,6 +5110,7 @@ function csrfFetch(url, options) {
 			}
 		}
 		renderBulkView();
+		renderCanvas();
 	}
 
 	function applyBulkZoom() {
@@ -6599,6 +6621,7 @@ function csrfFetch(url, options) {
 		renderBulkView: renderBulkView,
 		fetchGraphData: fetchGraphData,
 		ensureDescribe: ensureDescribe,
+		ensureRules: ensureRules,
 		RECORDS_WORLD_SCALE: RECORDS_WORLD_SCALE,
 		_canvasCapBlockReason: _canvasCapBlockReason,
 		pushUndo: pushUndo,
@@ -7519,6 +7542,7 @@ function csrfFetch(url, options) {
 		csrfFetch: csrfFetch,
 		escapeHtml: escapeHtml,
 		ensureDescribe: ensureDescribe,
+		ensureRules: ensureRules,
 		showBulkToast: showBulkToast,
 		changedFieldNames: changedFieldNames,
 		isRecordModified: isRecordModified,

@@ -131,7 +131,9 @@ export function stripUnwritableFields(values, describe, isUpdate) {
 	});
 	const out = {};
 	Object.keys(values).forEach((k) => {
-		if (k === 'Id' || writable.has(k)) {
+		// Callers add Id explicitly where an update transport requires it. Never let a
+		// copied or imported Salesforce Id leak into an insert/upsert field payload.
+		if (writable.has(k)) {
 			out[k] = values[k];
 		}
 	});

@@ -344,7 +344,10 @@ test('shared drafts carry a minimal describe snapshot and can open without a liv
 	assert.match(templatesSource, /canvasState\.draftDescribeCache/);
 	assert.match(insertModalSource, /canvasState\.draftDescribeCache\[objectName\]/);
 	assert.match(insertModalSource, /resolveSharedDraftDescribe\(ensureDescribe, objectName, sharedSnapshot\)/);
-	assert.match(insertModalSource, /const rulesPromise = sharedDraft\s*\?\s*Promise\.resolve\(\[\]\)/);
+	assert.match(
+		insertModalSource,
+		/const rulesPromise = sharedDraft\s*\?\s*Promise\.resolve\(\{ rules: \[\], unavailable: null \}\)/,
+	);
 	assert.match(templatesSource, /const recipientUsesSavedMetadata =/);
 	assert.match(
 		templatesSource,

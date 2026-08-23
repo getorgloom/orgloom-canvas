@@ -109,7 +109,7 @@ import {
 	normalizeSoqlFieldValue,
 	validateSoqlFilterField,
 } from './sf-soql.js';
-import { transformToolingRecords } from './validation-rules.js';
+import { fetchToolingValidationRuleRecords, transformToolingRecords } from './validation-rules.js';
 import { makeLimiter } from './rate-limit.js';
 
 import { withSfRetry } from './sf-upload.js';
@@ -6810,9 +6810,8 @@ export function mountCanvasRoutes(app, options = {}) {
 			return res.status(400).json({ error: 'invalid-object-name' });
 		}
 		try {
-			const soql = `SELECT Id, FullName, Metadata FROM ValidationRule WHERE EntityDefinition.QualifiedApiName = '${name}'`;
-			const result = await req.sf.conn.tooling.query(soql);
-			res.json(transformToolingRecords(result.records));
+			const records = await fetchToolingValidationRuleRecords(req.sf.conn.tooling, name);
+			res.json(transformToolingRecords(records));
 		} catch (err) {
 			res.json({ unavailable: true, reason: err.message || 'Could not load validation rules.' });
 		}

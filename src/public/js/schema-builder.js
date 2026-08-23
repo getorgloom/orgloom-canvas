@@ -15,6 +15,7 @@
 				!deps.renderBulkView ||
 				!deps.fetchGraphData ||
 				!deps.ensureDescribe ||
+				!deps.ensureRules ||
 				!deps._canvasCapBlockReason ||
 				!deps.attachCyEdgeMarkers ||
 				!deps.attachCyMiddleClickPan ||
@@ -34,6 +35,7 @@
 			const renderBulkView = deps.renderBulkView;
 			const fetchGraphData = deps.fetchGraphData;
 			const ensureDescribe = deps.ensureDescribe;
+			const ensureRules = deps.ensureRules;
 			const RECORDS_WORLD_SCALE = typeof deps.RECORDS_WORLD_SCALE === 'number' ? deps.RECORDS_WORLD_SCALE : 1.4;
 			const _canvasCapBlockReason = deps._canvasCapBlockReason;
 			const pushUndo = deps.pushUndo;
@@ -50,6 +52,10 @@
 			const SCHEMA_NODE_H = 68;
 			const SCHEMA_NODE_W_EXPANDED = 280;
 			const SCHEMA_NODE_H_EXPANDED = 360;
+			const SCHEMA_PANEL_MIN_W = 240;
+			const SCHEMA_PANEL_MIN_H = 220;
+			const SCHEMA_PANEL_VIEWPORT_GUTTER = 16;
+			const SCHEMA_PANEL_NODE_INSET = 0;
 			const SCHEMA_SPAWN_BTN_SIZE = 22;
 			const SCHEMA_SATELLITE_INSET = 4;
 			const SCHEMA_SPAWN_OFFSET_X = -(SCHEMA_NODE_W / 2 - SCHEMA_SPAWN_BTN_SIZE / 2 - SCHEMA_SATELLITE_INSET);
@@ -66,7 +72,180 @@
 			let _expandedRenderHandler = null;
 			let _expandedCyNode = null;
 			let _expandedNeighborPositions = null;
+			const _schemaPanelSizes = new Map();
+			let _schemaPanelResizeMoveHandler = null;
+			let _schemaPanelResizeEndHandler = null;
+			function _stopSchemaPanelResize() {
+				if (_schemaPanelResizeMoveHandler) {
+					window.removeEventListener('pointermove', _schemaPanelResizeMoveHandler);
+				}
+				if (_schemaPanelResizeEndHandler) {
+					window.removeEventListener('pointerup', _schemaPanelResizeEndHandler);
+					window.removeEventListener('pointercancel', _schemaPanelResizeEndHandler);
+				}
+				_schemaPanelResizeMoveHandler = null;
+				_schemaPanelResizeEndHandler = null;
+			}
+			function _boundedSchemaPanelSize(width, height) {
+				const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+				const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+				const maxWidth = Math.max(1, viewportWidth - SCHEMA_PANEL_VIEWPORT_GUTTER);
+				const maxHeight = Math.max(1, viewportHeight - SCHEMA_PANEL_VIEWPORT_GUTTER);
+				const minWidth = Math.min(SCHEMA_PANEL_MIN_W, maxWidth);
+				const minHeight = Math.min(SCHEMA_PANEL_MIN_H, maxHeight);
+				return {
+					width: Math.max(minWidth, Math.min(Number(width) || minWidth, maxWidth)),
+					height: Math.max(minHeight, Math.min(Number(height) || minHeight, maxHeight)),
+				};
+			}
+			function _setSchemaPanelSize(width, height) {
+				if (!_expandedPanelEl || !_expandedObjectName || !_expandedCyNode) {
+					return;
+				}
+				const size = _boundedSchemaPanelSize(width, height);
+				_schemaPanelSizes.set(_expandedObjectName, size);
+				const cy = getCySchemaInstance();
+				if (!cy) {
+					return;
+				}
+				const zoom = Math.max(0.001, Number(cy.zoom()) || 1);
+				const nodeBox = _expandedCyNode.renderedBoundingBox();
+				const nodeRenderedWidth = Math.max(0, nodeBox.x2 - nodeBox.x1);
+				const nodeRenderedHeight = Math.max(0, nodeBox.y2 - nodeBox.y1);
+				const currentModelWidth = Number(_expandedCyNode.data('expandedWidth')) || SCHEMA_NODE_W_EXPANDED;
+				const currentModelHeight = Number(_expandedCyNode.data('expandedHeight')) || SCHEMA_NODE_H_EXPANDED;
+				const horizontalChrome = Math.max(0, nodeRenderedWidth - currentModelWidth * zoom);
+				const verticalChrome = Math.max(0, nodeRenderedHeight - currentModelHeight * zoom);
+				cy.batch(() => {
+					_expandedCyNode.data(
+						'expandedWidth',
+						Math.max(1, (size.width + SCHEMA_PANEL_NODE_INSET * 2 - horizontalChrome) / zoom),
+					);
+					_expandedCyNode.data(
+						'expandedHeight',
+						Math.max(1, (size.height + SCHEMA_PANEL_NODE_INSET * 2 - verticalChrome) / zoom),
+					);
+				});
+				try {
+					cy.style().update();
+				} catch (_) {}
+				_repositionExpandedSchemaNeighbors();
+				_pinSchemaFieldsPanel();
+				redrawCyEdgeMarkers(cy, cy.container());
+			}
+			function _wireSchemaPanelResize(panel) {
+				const handle = panel && panel.querySelector('.schema-expand-resize-handle');
+				if (!handle) {
+					return;
+				}
+				handle.addEventListener('pointerdown', (event) => {
+					if (event.button !== 0) {
+						return;
+					}
+					event.preventDefault();
+					event.stopPropagation();
+					_stopSchemaPanelResize();
+					const startRect = panel.getBoundingClientRect();
+					const startX = event.clientX;
+					const startY = event.clientY;
+					panel.classList.add('is-resizing');
+					_schemaPanelResizeMoveHandler = (moveEvent) => {
+						moveEvent.preventDefault();
+						_setSchemaPanelSize(
+							startRect.width + 2 * (moveEvent.clientX - startX),
+							startRect.height + 2 * (moveEvent.clientY - startY),
+						);
+					};
+					_schemaPanelResizeEndHandler = () => {
+						panel.classList.remove('is-resizing');
+						_stopSchemaPanelResize();
+					};
+					window.addEventListener('pointermove', _schemaPanelResizeMoveHandler);
+					window.addEventListener('pointerup', _schemaPanelResizeEndHandler);
+					window.addEventListener('pointercancel', _schemaPanelResizeEndHandler);
+				});
+				handle.addEventListener('dblclick', (event) => event.stopPropagation());
+				handle.addEventListener('keydown', (event) => {
+					if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+						return;
+					}
+					event.preventDefault();
+					event.stopPropagation();
+					const rect = panel.getBoundingClientRect();
+					const step = event.shiftKey ? 40 : 10;
+					const widthDelta = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+					const heightDelta = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+					_setSchemaPanelSize(rect.width + 2 * widthDelta, rect.height + 2 * heightDelta);
+				});
+			}
+			function _repositionExpandedSchemaNeighbors() {
+				const cy = getCySchemaInstance();
+				if (!cy || !_expandedCyNode || !_expandedNeighborPositions) {
+					return;
+				}
+				const center = _expandedCyNode.position();
+				const halfWC = SCHEMA_NODE_W / 2;
+				const halfHC = SCHEMA_NODE_H / 2;
+				const halfWE = (Number(_expandedCyNode.data('expandedWidth')) || SCHEMA_NODE_W_EXPANDED) / 2;
+				const halfHE = (Number(_expandedCyNode.data('expandedHeight')) || SCHEMA_NODE_H_EXPANDED) / 2;
+				_expandedNeighborPositions.forEach((originalPosition, id) => {
+					const node = cy.getElementById(id);
+					if (!node || !node.length) {
+						return;
+					}
+					const dx = originalPosition.x - center.x;
+					const dy = originalPosition.y - center.y;
+					const distance = Math.hypot(dx, dy);
+					if (distance < 0.5) {
+						node.position(originalPosition);
+						return;
+					}
+					const ux = dx / distance;
+					const uy = dy / distance;
+					const collapsedExtent = Math.min(
+						halfWC / Math.max(0.001, Math.abs(ux)),
+						halfHC / Math.max(0.001, Math.abs(uy)),
+					);
+					const expandedExtent = Math.min(
+						halfWE / Math.max(0.001, Math.abs(ux)),
+						halfHE / Math.max(0.001, Math.abs(uy)),
+					);
+					const shift = Math.max(0, expandedExtent - collapsedExtent);
+					node.position({
+						x: originalPosition.x + ux * shift,
+						y: originalPosition.y + uy * shift,
+					});
+				});
+			}
+			function _syncExpandedSchemaNeighbors() {
+				const cy = getCySchemaInstance();
+				if (!cy || !_expandedCyNode || !_expandedNeighborPositions) {
+					return;
+				}
+				const liveNeighborIds = new Set();
+				cy.nodes().forEach((node) => {
+					if (node.id() === _expandedCyNode.id()) {
+						return;
+					}
+					const kind = node.data('kind');
+					if (kind === 'spawn-btn' || kind === 'expand-btn') {
+						return;
+					}
+					liveNeighborIds.add(node.id());
+					if (!_expandedNeighborPositions.has(node.id())) {
+						const position = node.position();
+						_expandedNeighborPositions.set(node.id(), { x: position.x, y: position.y });
+					}
+				});
+				Array.from(_expandedNeighborPositions.keys()).forEach((id) => {
+					if (!liveNeighborIds.has(id)) {
+						_expandedNeighborPositions.delete(id);
+					}
+				});
+				_repositionExpandedSchemaNeighbors();
+			}
 			function _hideSchemaFieldsPanel() {
+				_stopSchemaPanelResize();
 				if (_expandedPanelEl && _expandedPanelEl.parentNode) {
 					_expandedPanelEl.parentNode.removeChild(_expandedPanelEl);
 				}
@@ -118,13 +297,10 @@
 				}
 				const cRect = container.getBoundingClientRect();
 				const bb = _expandedCyNode.renderedBoundingBox();
-				const BORDER = 2;
-				const AA_BUFFER = 2;
-				const INSET = BORDER + AA_BUFFER;
-				const left = Math.ceil(cRect.left + bb.x1 + INSET);
-				const top = Math.ceil(cRect.top + bb.y1 + INSET);
-				const right = Math.floor(cRect.left + bb.x2 - INSET);
-				const bottom = Math.floor(cRect.top + bb.y2 - INSET);
+				const left = Math.ceil(cRect.left + bb.x1 + SCHEMA_PANEL_NODE_INSET);
+				const top = Math.ceil(cRect.top + bb.y1 + SCHEMA_PANEL_NODE_INSET);
+				const right = Math.floor(cRect.left + bb.x2 - SCHEMA_PANEL_NODE_INSET);
+				const bottom = Math.floor(cRect.top + bb.y2 - SCHEMA_PANEL_NODE_INSET);
 				_expandedPanelEl.style.left = left + 'px';
 				_expandedPanelEl.style.top = top + 'px';
 				_expandedPanelEl.style.width = right - left + 'px';
@@ -229,6 +405,102 @@
 					'</ul>'
 				);
 			}
+			function _renderSchemaValidationRules(result) {
+				if (result && result.unavailable) {
+					return (
+						'<div class="schema-rules-empty">Couldn\'t load validation rules: ' +
+						escapeHtml(result.unavailable) +
+						'</div>'
+					);
+				}
+				const rules = result && Array.isArray(result.rules) ? result.rules : [];
+				if (rules.length === 0) {
+					return '<div class="schema-rules-empty">No active validation rules for this object.</div>';
+				}
+				return rules
+					.map((rule) => {
+						const displayField = rule.errorDisplayField
+							? '<span class="schema-rule-field"><span class="schema-rule-label">Field:</span> ' +
+								escapeHtml(rule.errorDisplayField) +
+								'</span>'
+							: '';
+						const errorMessage = rule.errorMessage
+							? '<div class="schema-rule-error"><span class="schema-rule-label">Error message:</span> ' +
+								escapeHtml(rule.errorMessage) +
+								'</div>'
+							: '';
+						const description = rule.description
+							? '<div class="schema-rule-description"><span class="schema-rule-label">Description:</span> ' +
+								escapeHtml(rule.description) +
+								'</div>'
+							: '';
+						const formula = rule.formula
+							? '<details class="schema-rule-formula"><summary>Show formula</summary><pre>' +
+								escapeHtml(rule.formula) +
+								'</pre></details>'
+							: '';
+						return (
+							'<article class="schema-rule">' +
+							'<div class="schema-rule-header"><span class="schema-rule-name"><span class="schema-rule-label">Name:</span> ' +
+							escapeHtml(rule.name || '(unnamed)') +
+							'</span>' +
+							displayField +
+							'</div>' +
+							errorMessage +
+							description +
+							formula +
+							'</article>'
+						);
+					})
+					.join('');
+			}
+			function _wireSchemaValidationRules(panel, objectName) {
+				const section = panel && panel.querySelector('.schema-validation-rules');
+				const content = section && section.querySelector('[data-schema-rules-content]');
+				const count = section && section.querySelector('[data-schema-rules-count]');
+				if (!section || !content || !count) {
+					return;
+				}
+				let loaded = false;
+				section.addEventListener('schema-section-open', () => {
+					if (loaded) {
+						return;
+					}
+					loaded = true;
+					content.innerHTML = '<div class="schema-rules-empty">Loading validation rules…</div>';
+					ensureRules(objectName).then((result) => {
+						if (_expandedObjectName !== objectName || !_expandedPanelEl || !section.isConnected) {
+							return;
+						}
+						const rules = result && Array.isArray(result.rules) ? result.rules : [];
+						count.textContent = result && result.unavailable ? 'Unavailable' : String(rules.length);
+						content.innerHTML = _renderSchemaValidationRules(result);
+						_pinSchemaFieldsPanel();
+					});
+				});
+			}
+			function _wireSchemaSections(panel) {
+				if (!panel) {
+					return;
+				}
+				panel.querySelectorAll('[data-schema-section-toggle]').forEach((button) => {
+					button.addEventListener('click', (event) => {
+						event.stopPropagation();
+						const section = button.closest('.schema-fields-section, .schema-validation-rules');
+						const content = section && section.querySelector('[data-schema-section-content]');
+						if (!section || !content) {
+							return;
+						}
+						const opening = !section.classList.contains('is-open');
+						section.classList.toggle('is-open', opening);
+						button.setAttribute('aria-expanded', opening ? 'true' : 'false');
+						content.hidden = !opening;
+						if (opening) {
+							section.dispatchEvent(new Event('schema-section-open'));
+						}
+					});
+				});
+			}
 			function _wireSchemaFieldsFilter(panel) {
 				if (!panel) {
 					return;
@@ -287,12 +559,48 @@
 					}
 				});
 			}
+			function _updateSchemaFieldsCount(panel, objectName, unavailable) {
+				const count = panel && panel.querySelector('[data-schema-fields-count]');
+				if (!count) {
+					return;
+				}
+				const data = canvasState.describeCache && canvasState.describeCache[objectName];
+				count.textContent = unavailable
+					? 'Unavailable'
+					: data && Array.isArray(data.fields)
+						? String(data.fields.length)
+						: 'Loading';
+			}
 			function _showSchemaFieldsPanel(objectName, cyNode) {
 				_hideSchemaFieldsPanel();
 				_expandedObjectName = objectName;
 				_expandedCyNode = cyNode;
-				cyNode.data('expanded', '1');
 				const cy = getCySchemaInstance();
+				const savedSize = _schemaPanelSizes.get(objectName);
+				const zoom = cy ? Math.max(0.001, Number(cy.zoom()) || 1) : 1;
+				const collapsedBox = cyNode.renderedBoundingBox();
+				const collapsedRenderedWidth = Math.max(0, collapsedBox.x2 - collapsedBox.x1);
+				const collapsedRenderedHeight = Math.max(0, collapsedBox.y2 - collapsedBox.y1);
+				const horizontalChrome = Math.max(0, collapsedRenderedWidth - SCHEMA_NODE_W * zoom);
+				const verticalChrome = Math.max(0, collapsedRenderedHeight - SCHEMA_NODE_H * zoom);
+				cyNode.data(
+					'expandedWidth',
+					savedSize
+						? Math.max(1, (savedSize.width + SCHEMA_PANEL_NODE_INSET * 2 - horizontalChrome) / zoom)
+						: SCHEMA_NODE_W_EXPANDED,
+				);
+				cyNode.data(
+					'expandedHeight',
+					savedSize
+						? Math.max(1, (savedSize.height + SCHEMA_PANEL_NODE_INSET * 2 - verticalChrome) / zoom)
+						: SCHEMA_NODE_H_EXPANDED,
+				);
+				cyNode.data('expanded', '1');
+				if (cy) {
+					try {
+						cy.style().update();
+					} catch (_) {}
+				}
 				const spawn = cy ? cy.getElementById('spawn_' + objectName) : null;
 				if (spawn && spawn.length) {
 					spawn.data('expandedHidden', '1');
@@ -303,11 +611,6 @@
 				}
 				_expandedNeighborPositions = new Map();
 				if (cy) {
-					const center = cyNode.position();
-					const halfWC = SCHEMA_NODE_W / 2;
-					const halfHC = SCHEMA_NODE_H / 2;
-					const halfWE = SCHEMA_NODE_W_EXPANDED / 2;
-					const halfHE = SCHEMA_NODE_H_EXPANDED / 2;
 					cy.nodes().forEach((n) => {
 						if (n.id() === cyNode.id()) {
 							return;
@@ -316,30 +619,10 @@
 						if (kind === 'spawn-btn' || kind === 'expand-btn') {
 							return;
 						}
-						const p = n.position();
-						_expandedNeighborPositions.set(n.id(), { x: p.x, y: p.y });
-						const dx = p.x - center.x;
-						const dy = p.y - center.y;
-						const dist = Math.hypot(dx, dy);
-						if (dist < 0.5) {
-							return;
-						} // overlapping the active, leave it
-						const ux = dx / dist;
-						const uy = dy / dist;
-						const collapsedExt = Math.min(
-							halfWC / Math.max(0.001, Math.abs(ux)),
-							halfHC / Math.max(0.001, Math.abs(uy)),
-						);
-						const expandedExt = Math.min(
-							halfWE / Math.max(0.001, Math.abs(ux)),
-							halfHE / Math.max(0.001, Math.abs(uy)),
-						);
-						const shift = Math.max(0, expandedExt - collapsedExt);
-						if (shift <= 0) {
-							return;
-						}
-						n.position({ x: p.x + ux * shift, y: p.y + uy * shift });
+						const position = n.position();
+						_expandedNeighborPositions.set(n.id(), { x: position.x, y: position.y });
 					});
+					_repositionExpandedSchemaNeighbors();
 				}
 				const objLabel =
 					(canvasState.describeCache &&
@@ -359,10 +642,19 @@
 					'<button type="button" class="schema-expand-add" aria-label="Add record" title="Add a record of this type to the canvas">+ Add</button>' +
 					'<button type="button" class="schema-expand-close" aria-label="Collapse" title="Collapse">⤡</button>' +
 					'</div>' +
-					'<div class="schema-expand-body">' +
+					'<section class="schema-fields-section">' +
+					'<button type="button" class="schema-section-summary" data-schema-section-toggle aria-expanded="false"><span>Fields</span><span class="schema-fields-count" data-schema-fields-count>Loading</span></button>' +
+					'<div class="schema-expand-body" data-schema-section-content hidden>' +
 					_renderSchemaFieldsPanelBody(objectName) +
-					'</div>';
+					'</div>' +
+					'</section>' +
+					'<section class="schema-validation-rules">' +
+					'<button type="button" class="schema-section-summary" data-schema-section-toggle aria-expanded="false"><span>Validation rules</span><span class="schema-rules-count" data-schema-rules-count>Open to load</span></button>' +
+					'<div class="schema-rules-content" data-schema-rules-content data-schema-section-content hidden></div>' +
+					'</section>' +
+					'<div class="schema-expand-resize-handle" role="separator" tabindex="0" aria-label="Resize schema card" title="Drag to resize. Use arrow keys when focused."></div>';
 				panel.addEventListener('mousedown', (e) => e.stopPropagation());
+				panel.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
 				panel.addEventListener('dblclick', (e) => {
 					e.stopPropagation();
 					_hideSchemaFieldsPanel();
@@ -373,7 +665,11 @@
 				});
 				document.body.appendChild(panel);
 				_expandedPanelEl = panel;
+				_updateSchemaFieldsCount(panel, objectName, false);
+				_wireSchemaValidationRules(panel, objectName);
+				_wireSchemaSections(panel);
 				_wireSchemaFieldsFilter(panel);
+				_wireSchemaPanelResize(panel);
 				_pinSchemaFieldsPanel();
 				_expandedRenderHandler = _pinSchemaFieldsPanel;
 				cy.on('render position', _expandedRenderHandler);
@@ -390,6 +686,7 @@
 							if (body) {
 								body.innerHTML = _renderSchemaFieldsPanelBody(objectName);
 							}
+							_updateSchemaFieldsCount(_expandedPanelEl, objectName, false);
 							_wireSchemaFieldsFilter(_expandedPanelEl);
 							_pinSchemaFieldsPanel();
 						})
@@ -404,6 +701,7 @@
 									escapeHtml(err.message || 'unknown error') +
 									'</div>';
 							}
+							_updateSchemaFieldsCount(_expandedPanelEl, objectName, true);
 						});
 				}
 			}
@@ -445,8 +743,8 @@
 				{
 					selector: 'node[expanded = "1"]',
 					style: {
-						width: SCHEMA_NODE_W_EXPANDED,
-						height: SCHEMA_NODE_H_EXPANDED,
+						width: 'data(expandedWidth)',
+						height: 'data(expandedHeight)',
 						label: '',
 						'background-color': '#262a31',
 						'border-color': '#d68b3c',
@@ -1520,10 +1818,26 @@
 							el.data('kind', kind);
 						}
 					});
+					view.elements.forEach((element) => {
+						if (element.group !== 'nodes' || element.data.kind !== 'ring' || !element.position) {
+							return;
+						}
+						const ringNode = getCySchemaInstance().getElementById(element.data.id);
+						if (!ringNode || !ringNode.length) {
+							return;
+						}
+						const basePosition = { x: element.position.x, y: element.position.y };
+						if (_expandedCyNode && _expandedNeighborPositions) {
+							_expandedNeighborPositions.set(ringNode.id(), basePosition);
+						} else {
+							ringNode.position(basePosition);
+						}
+					});
 					getCySchemaInstance()
 						.nodes('[kind = "spawn-btn"], [kind = "expand-btn"]')
 						.ungrabify()
 						.unselectify();
+					_syncExpandedSchemaNeighbors();
 					if (typeof redrawCyEdgeMarkers === 'function') {
 						redrawCyEdgeMarkers(getCySchemaInstance(), container);
 					}

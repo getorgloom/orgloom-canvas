@@ -123,6 +123,24 @@ describe('Salesforce field-structure matrix', () => {
 		assert.equal(isWritableForOperation(updateOnly, 'upsert'), true);
 	});
 
+	test('Salesforce Id is never retained as an ordinary writable field', () => {
+		const describe = {
+			fields: [
+				{ name: 'Id', type: 'id', createable: false, updateable: false },
+				{ name: 'Name', type: 'string', createable: true, updateable: true },
+			],
+		};
+		assert.deepEqual(stripUnwritableFields({ Id: '001000000000001AAA', Name: 'Clone' }, describe, false), {
+			Name: 'Clone',
+		});
+		assert.deepEqual(stripUnwritableFields({ Id: '001000000000001AAA', Name: 'Updated' }, describe, true), {
+			Name: 'Updated',
+		});
+		assert.deepEqual(stripUnwritableFields({ Id: '001000000000001AAA', Name: 'Upserted' }, describe, 'upsert'), {
+			Name: 'Upserted',
+		});
+	});
+
 	test('external-key references are recognized and uploaded as writable scalar keys', () => {
 		const externalLookup = {
 			name: 'ExternalParent__c',

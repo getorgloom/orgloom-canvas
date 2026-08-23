@@ -940,6 +940,7 @@
 				!deps.csrfFetch ||
 				!deps.escapeHtml ||
 				!deps.ensureDescribe ||
+				!deps.ensureRules ||
 				!deps.showBulkToast ||
 				!deps.changedFieldNames ||
 				!deps.isRecordModified ||
@@ -967,6 +968,7 @@
 			const csrfFetch = deps.csrfFetch;
 			const escapeHtml = deps.escapeHtml;
 			const ensureDescribe = deps.ensureDescribe;
+			const ensureRules = deps.ensureRules;
 			const showBulkToast = deps.showBulkToast;
 			const changedFieldNames = deps.changedFieldNames;
 			const isRecordModified = deps.isRecordModified;
@@ -1786,7 +1788,6 @@
 			let currentObject = null;
 			let currentFields = [];
 			let currentRules = [];
-			let rulesUnavailable = null;
 			let currentRecordTypes = []; // [{ id, name, label, isDefault }] for the open object
 			let currentRecordTypeId = null; // selected record type id; filters picklist values
 			let currentLayout = null; // { sections: [...], available: bool } from /api/objects/:name/layout
@@ -1851,7 +1852,7 @@
 			let currentEncryptedDraftValues = new Map();
 			let currentEncryptedDismissedFields = new Set();
 			const editorTouchedFields = new Set();
-			const sectionCollapsed = { optional: true, rules: true };
+			const sectionCollapsed = { optional: true };
 			let modalEditMode = 'new';
 			const guidedTouchedFields = new Set();
 			const guidedCompletedFields = new Set();
@@ -2284,14 +2285,12 @@
 				canvasState.currentRecordRef = opts.record || null;
 				currentFields = [];
 				currentRules = [];
-				rulesUnavailable = null;
 				currentFormValues = {};
 				currentEncryptedFormValues = new Map();
 				currentEncryptedDraftValues = new Map();
 				currentEncryptedDismissedFields = new Set();
 				editorTouchedFields.clear();
 				sectionCollapsed.optional = true;
-				sectionCollapsed.rules = true;
 				modalEditMode =
 					canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId ? 'existing' : 'new';
 				currentLayoutMode = sharedDraftLayoutMode(
@@ -2317,8 +2316,7 @@
 				modal.querySelector('#modal-content').innerHTML = '<p class="center">Loading fields…</p>';
 				_updateMarkDeleteButton();
 
-				const encoded = encodeURIComponent(objectName);
-				// Fields and validation rules load together so the first render is internally consistent.
+				// Keep rules available for rule-aware sample autofill, but present object metadata in the schema builder.
 				const sharedDraft = !!(
 					getCanvasShareRole() &&
 					canvasState.currentRecordRef &&
@@ -2330,12 +2328,10 @@
 					? resolveSharedDraftDescribe(ensureDescribe, objectName, sharedSnapshot)
 					: ensureDescribe(objectName);
 				const rulesPromise = sharedDraft
-					? Promise.resolve([])
-					: csrfFetch('/api/objects/' + encoded + '/validation-rules')
-							.then((r) => (r.ok ? r.json() : []))
-							.catch(() => []);
+					? Promise.resolve({ rules: [], unavailable: null })
+					: ensureRules(objectName);
 				Promise.all([describePromise, rulesPromise])
-					.then(([describe, rules]) => {
+					.then(([describe, rulesResult]) => {
 						// Describe metadata, not hard-coded object rules, determines what this user may edit.
 						currentFields = (describe.fields || []).map((field) =>
 							Object.assign({}, field, {
@@ -2365,16 +2361,7 @@
 							describe.defaultRecordTypeId ||
 							(currentRecordTypes[0] && currentRecordTypes[0].id) ||
 							null;
-						if (rules && rules.unavailable) {
-							currentRules = [];
-							rulesUnavailable = rules.reason;
-						} else {
-							currentRules = (Array.isArray(rules) ? rules : []).map((r) => {
-								const parsed = tryParseRule(r);
-								return Object.assign({}, r, { _tree: parsed.tree, _parseError: parsed.error });
-							});
-							rulesUnavailable = null;
-						}
+						currentRules = Array.isArray(rulesResult && rulesResult.rules) ? rulesResult.rules : [];
 						const _resolveTitle = () => {
 							if (!canvasState.currentRecordRef || !canvasState.currentRecordRef.values) {
 								return null;
@@ -2505,7 +2492,7 @@
 									if (hasDependents) {
 										rerenderFormPreservingValues();
 									}
-									evaluateAllRules();
+									refreshEditorValidation();
 								}
 								focusTaskField(opts.focusField);
 							});
@@ -3163,8 +3150,6 @@
 
 				html += '</form>';
 
-				html += renderRulesSectionHtml();
-
 				modal.querySelector('#modal-content').innerHTML = html;
 
 				modal.querySelectorAll('[data-toggle]').forEach((h) => {
@@ -3252,18 +3237,6 @@
 							);
 					});
 				}
-				modal.querySelectorAll('[data-formula-toggle]').forEach((b) => {
-					b.addEventListener('click', () => {
-						const target = document.getElementById(b.dataset.target);
-						if (!target) {
-							return;
-						}
-						const hidden = target.style.display === 'none' || !target.style.display;
-						target.style.display = hidden ? 'block' : 'none';
-						b.textContent = hidden ? 'Hide formula' : 'Show formula';
-					});
-				});
-
 				const orphanRefresh = modal.querySelector('[data-orphan-refresh]');
 				if (orphanRefresh) {
 					orphanRefresh.addEventListener('click', async () => {
@@ -3394,103 +3367,6 @@
 						_afterMigrateRemap();
 					});
 				});
-			}
-
-			function renderRulesSectionHtml() {
-				const count = currentRules.length;
-				const collapsedClass = sectionCollapsed.rules && count > 0 ? ' collapsed' : '';
-				let inner;
-				if (rulesUnavailable) {
-					inner =
-						'<div class="field-section-empty">Couldn\'t load validation rules: ' +
-						escapeHtml(rulesUnavailable) +
-						'</div>';
-				} else if (count === 0) {
-					inner = '<div class="field-section-empty">No active validation rules for this object.</div>';
-				} else {
-					const disclaimer =
-						'<div class="field-section-note">' +
-						'Predictions are client-side based on the values in this form. ' +
-						'Salesforce checks every rule on upload: that\u2019s the source of truth.' +
-						'</div>';
-					inner = disclaimer + currentRules.map(renderRuleHtml).join('');
-				}
-				return (
-					'<div class="field-section collapsible' +
-					collapsedClass +
-					'" data-section="rules">' +
-					'<div class="field-section-header" data-toggle>Validation Rules <span class="count">(' +
-					count +
-					')</span>' +
-					'<span class="rules-summary" id="rules-summary-badge" style="display:none"></span>' +
-					'<span class="chevron">\u25BC</span>' +
-					'</div>' +
-					'<div class="fields">' +
-					inner +
-					'</div>' +
-					'</div>'
-				);
-			}
-
-			function renderRuleHtml(r, i) {
-				const formulaId = 'formula-' + i;
-				const description = r.description
-					? '<div class="rule-description">' + escapeHtml(r.description) + '</div>'
-					: '';
-				const errorOn = r.errorDisplayField
-					? ' <span class="meta">(shown on ' + escapeHtml(r.errorDisplayField) + ')</span>'
-					: '';
-				const errorMessage = r.errorMessage
-					? '<div class="rule-error-message"><span class="rule-error-label">Error:</span>' +
-						escapeHtml(r.errorMessage) +
-						errorOn +
-						'</div>'
-					: '';
-				const formula = r.formula
-					? '<div class="rule-formula">' +
-						'<button type="button" class="rule-formula-toggle" data-formula-toggle data-target="' +
-						formulaId +
-						'">Show formula</button>' +
-						'<pre id="' +
-						formulaId +
-						'" style="display:none">' +
-						escapeHtml(r.formula) +
-						'</pre>' +
-						'</div>'
-					: '';
-				const status = r._parseError
-					? {
-							cls: 'status-unknown',
-							label: "Can't predict",
-							title:
-								'Engine couldn\u2019t parse this formula (' +
-								r._parseError +
-								'). Salesforce will still enforce the rule on upload.',
-						}
-					: {
-							cls: 'status-unknown',
-							label: 'Pending',
-							title: 'Fill in fields to see a prediction.',
-						};
-				return (
-					'<div class="rule ' +
-					status.cls +
-					'" data-rule-index="' +
-					i +
-					'">' +
-					'<div class="rule-name">' +
-					escapeHtml(r.name || '(unnamed)') +
-					'<span class="rule-status" title="' +
-					escapeHtml(status.title) +
-					'">' +
-					status.label +
-					'</span>' +
-					'</div>' +
-					errorMessage +
-					description +
-					formula +
-					'</div>'
-				);
 			}
 
 			function markEditorFieldTouched(target) {
@@ -3806,7 +3682,7 @@
 					if (guidedField) {
 						_updateGuidedFieldCompletion(guidedField);
 					}
-					evaluateAllRules();
+					refreshEditorValidation();
 				});
 				form.addEventListener('focusin', (e) => {
 					const tooltipTrigger = e.target.closest && e.target.closest('[data-encrypted-tooltip-trigger]');
@@ -3859,7 +3735,7 @@
 					if (guidedComplete) {
 						_scheduleGuidedAdvance(guidedField.dataset.field, e.target, true);
 					}
-					evaluateAllRules();
+					refreshEditorValidation();
 					if (e.target.tagName !== 'SELECT') {
 						return;
 					}
@@ -3901,7 +3777,7 @@
 						}
 					}, 0);
 				});
-				evaluateAllRules();
+				refreshEditorValidation();
 			}
 
 			function rerenderFormPreservingValues(discardFields, overrideValues) {
@@ -3931,7 +3807,7 @@
 				renderForm();
 				wireLiveValidation();
 				populateForm(currentFormValues);
-				evaluateAllRules();
+				refreshEditorValidation();
 				if (!activeFieldName || discarded.has(activeFieldName)) {
 					return;
 				}
@@ -4016,7 +3892,7 @@
 				renderForm();
 				wireLiveValidation();
 				populateForm(currentFormValues);
-				evaluateAllRules();
+				refreshEditorValidation();
 			}
 
 			function updateRequiredFieldStyles() {
@@ -4040,124 +3916,8 @@
 				});
 			}
 
-			function evaluateAllRules() {
+			function refreshEditorValidation() {
 				updateRequiredFieldStyles();
-				if (!currentRules.length) {
-					const sb = modal.querySelector('#rules-summary-badge');
-					if (sb) {
-						sb.style.display = 'none';
-					}
-					return;
-				}
-				const values = collectFormValues();
-				const opts = {
-					currentFields: currentFields,
-					savedRecords: canvasState.savedRecords,
-					describeCache: canvasState.describeCache,
-					currentRecord: canvasState.currentRecordRef,
-					bulkRecords: canvasState.bulkRecords,
-					bulkAssociations: canvasState.bulkAssociations,
-				};
-				let passing = 0,
-					failing = 0,
-					unknown = 0;
-				currentRules.forEach((r, i) => {
-					const card = modal.querySelector('[data-rule-index="' + i + '"]');
-					let status;
-					if (r._parseError || !r._tree) {
-						status = {
-							cls: 'status-unknown',
-							label: "Can't predict",
-							title:
-								'Engine couldn’t parse this formula (' +
-								(r._parseError || 'unsupported syntax') +
-								'). Salesforce will still enforce it on upload.',
-						};
-					} else {
-						try {
-							const out = evalNode(r._tree, values, opts);
-							if (out === true) {
-								status = {
-									cls: 'status-violated',
-									label: 'Likely fail',
-									title: 'On these values the formula evaluates to TRUE, so Salesforce will likely reject the upload. Edit the flagged fields or expect to see the error message above.',
-								};
-							} else if (out === false) {
-								status = {
-									cls: 'status-ok',
-									label: 'Looks OK',
-									title: 'On these values the formula evaluates to FALSE. Salesforce confirms on upload.',
-								};
-							} else {
-								status = {
-									cls: 'status-unknown',
-									label: "Can't predict",
-									title: 'Formula didn’t return a boolean; engine can’t map the result onto pass/fail. Salesforce will enforce it on upload.',
-								};
-							}
-						} catch (e) {
-							status = {
-								cls: 'status-unknown',
-								label: "Can't predict",
-								title:
-									'Engine couldn’t evaluate this formula (' +
-									e.message +
-									'). Common causes: $User / $Profile refs, NOW / TODAY, REGEX, VLOOKUP. Salesforce will enforce it on upload.',
-							};
-						}
-					}
-					if (status.cls === 'status-ok') {
-						passing++;
-					} else if (status.cls === 'status-violated') {
-						failing++;
-					} else {
-						unknown++;
-					}
-					if (card) {
-						card.classList.remove('status-violated', 'status-ok', 'status-unknown');
-						card.classList.add(status.cls);
-						const badge = card.querySelector('.rule-status');
-						if (badge) {
-							badge.textContent = status.label;
-							badge.title = status.title;
-						}
-					}
-				});
-				const summaryBadge = modal.querySelector('#rules-summary-badge');
-				if (summaryBadge) {
-					let cls, text, title;
-					const total = passing + failing + unknown;
-					if (failing > 0) {
-						cls = 'status-violated';
-						text = failing + (failing === 1 ? ' likely fail' : ' likely to fail');
-						title = failing + ' rule' + (failing === 1 ? '' : 's') + ' would block upload on these values';
-					} else if (unknown > 0) {
-						cls = 'status-unknown';
-						text = unknown + ' to verify';
-						title =
-							unknown +
-							' rule' +
-							(unknown === 1 ? '' : 's') +
-							" the engine can't evaluate client-side; Salesforce will check on upload";
-					} else if (passing > 0) {
-						cls = 'status-ok';
-						text = 'looks clear';
-						title =
-							'All ' +
-							passing +
-							' rule' +
-							(passing === 1 ? '' : 's') +
-							' evaluate cleanly on these values. Salesforce confirms on upload.';
-					} else {
-						cls = 'status-unknown';
-						text = '';
-						title = '';
-					}
-					summaryBadge.className = 'rules-summary ' + cls;
-					summaryBadge.textContent = text;
-					summaryBadge.title = title;
-					summaryBadge.style.display = text ? '' : 'none';
-				}
 			}
 
 			function renderFieldCollection(fields, optionsForField) {
@@ -5452,7 +5212,7 @@
 				tryFixValidationRules(values, currentFields, currentRules);
 				Object.keys(values).forEach((fieldName) => editorTouchedFields.add(fieldName));
 				populateForm(values);
-				evaluateAllRules();
+				refreshEditorValidation();
 			}
 
 			modal.querySelector('#modal-submit').addEventListener('click', async () => {
@@ -5734,7 +5494,7 @@
 						renderForm();
 						showModalToast(msg, toastVariant);
 						populateForm(payload);
-						evaluateAllRules();
+						refreshEditorValidation();
 						if (typeof renderChips === 'function') {
 							renderChips();
 						}

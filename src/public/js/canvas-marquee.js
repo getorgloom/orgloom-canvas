@@ -14,6 +14,7 @@
 				'_canvasCapBlockReason',
 				'showBulkToast',
 				'showPromptModal',
+				'ensureDescribe',
 			];
 			if (!deps) {
 				throw new Error('canvas-marquee.mount: missing deps object');
@@ -31,6 +32,7 @@
 			const showBulkToast = deps.showBulkToast;
 			const pushUndo = deps.pushUndo;
 			const showPromptModal = deps.showPromptModal;
+			const ensureDescribe = deps.ensureDescribe;
 
 			function startMarquee(e) {
 				const pt = clientToCanvasCoords(e.clientX, e.clientY);
@@ -97,6 +99,40 @@
 				renderBulkView();
 			}
 
+			function cloneCreateableValues(record) {
+				const source = Object.assign({}, (record && record.values) || {});
+				const describe =
+					record &&
+					record.objectName &&
+					canvasState.describeCache &&
+					canvasState.describeCache[record.objectName];
+				if (!describe || !Array.isArray(describe.fields)) {
+					return {};
+				}
+				const createable = new Set(
+					describe.fields
+						.filter(
+							(field) =>
+								field &&
+								field.name &&
+								field.name !== 'Id' &&
+								field.createable === true &&
+								!field.calculated &&
+								!field.autoNumber &&
+								field.type !== 'address' &&
+								field.type !== 'location',
+						)
+						.map((field) => field.name),
+				);
+				const values = {};
+				Object.keys(source).forEach((fieldName) => {
+					if (createable.has(fieldName)) {
+						values[fieldName] = source[fieldName];
+					}
+				});
+				return values;
+			}
+
 			function copySelectionToClipboard() {
 				if (canvasState.bulkSelectedIds.size === 0) {
 					return false;
@@ -125,9 +161,28 @@
 				return true;
 			}
 
-			function pasteFromClipboard(count) {
+			async function pasteFromClipboard(count) {
 				if (!canvasState.bulkClipboard || !canvasState.bulkClipboard.records.length) {
 					showBulkToast('Clipboard is empty. Select records then press Ctrl+C.');
+					return;
+				}
+				const objectNames = Array.from(
+					new Set(canvasState.bulkClipboard.records.map((record) => record.objectName).filter(Boolean)),
+				);
+				try {
+					for (const objectName of objectNames) {
+						const describe = await ensureDescribe(objectName);
+						if (!describe || !Array.isArray(describe.fields)) {
+							throw new Error('Salesforce field metadata is unavailable for ' + objectName + '.');
+						}
+						canvasState.describeCache = canvasState.describeCache || {};
+						canvasState.describeCache[objectName] = describe;
+					}
+				} catch (error) {
+					showBulkToast(
+						'Could not verify which fields can be copied: ' + (error.message || String(error)),
+						'error',
+					);
 					return;
 				}
 				const n = Math.max(1, Math.floor(Number(count) || 1));
@@ -170,7 +225,7 @@
 							label: r.label,
 							x: r.x + offX,
 							y: r.y + offY,
-							values: Object.assign({}, r.values || {}),
+							values: cloneCreateableValues(r),
 						});
 						newIds.push(newId);
 					});

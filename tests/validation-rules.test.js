@@ -1,6 +1,107 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { transformToolingRecords } from '../src/validation-rules.js';
+import { fetchToolingValidationRuleRecords, transformToolingRecords } from '../src/validation-rules.js';
+
+const RULE_ID_1 = '03d000000000001AAA';
+const RULE_ID_2 = '03d000000000002AAA';
+
+describe('fetchToolingValidationRuleRecords', () => {
+	test('discovers IDs, then retrieves metadata one rule at a time', async () => {
+		const detailById = new Map([
+			[RULE_ID_1, row({ id: RULE_ID_1, name: 'First_Rule' })],
+			[RULE_ID_2, row({ id: RULE_ID_2, name: 'Second_Rule' })],
+		]);
+		const queries = [];
+		const tooling = {
+			async query(soql) {
+				queries.push(soql);
+				if (queries.length === 1) {
+					return { records: [{ Id: RULE_ID_1 }, { Id: RULE_ID_2 }] };
+				}
+				const id = [...detailById.keys()].find((candidate) => soql.includes(candidate));
+				return { records: id ? [detailById.get(id)] : [] };
+			},
+		};
+
+		const records = await fetchToolingValidationRuleRecords(tooling, 'Account');
+
+		assert.equal(queries.length, 3);
+		assert.equal(queries[0], "SELECT Id FROM ValidationRule WHERE EntityDefinition.QualifiedApiName = 'Account'");
+		assert.equal(queries[0].includes('Metadata'), false);
+		assert.equal(queries[0].includes('FullName'), false);
+		for (const id of [RULE_ID_1, RULE_ID_2]) {
+			assert.equal(
+				queries.includes(`SELECT Id, FullName, Metadata FROM ValidationRule WHERE Id = '${id}' LIMIT 1`),
+				true,
+			);
+		}
+		assert.deepEqual(records, [detailById.get(RULE_ID_1), detailById.get(RULE_ID_2)]);
+	});
+
+	test('returns an empty list without metadata queries when the object has no rules', async () => {
+		let queryCount = 0;
+		const records = await fetchToolingValidationRuleRecords(
+			{
+				async query() {
+					queryCount += 1;
+					return { records: [] };
+				},
+			},
+			'Contact',
+		);
+
+		assert.deepEqual(records, []);
+		assert.equal(queryCount, 1);
+	});
+
+	test('ignores malformed IDs and retrieves duplicate IDs only once', async () => {
+		const queries = [];
+		const tooling = {
+			async query(soql) {
+				queries.push(soql);
+				if (queries.length === 1) {
+					return {
+						records: [{ Id: RULE_ID_1 }, { Id: RULE_ID_1 }, { Id: "bad'id" }, { Id: null }],
+					};
+				}
+				return { records: [row({ id: RULE_ID_1, name: 'Only_Rule' })] };
+			},
+		};
+
+		const records = await fetchToolingValidationRuleRecords(tooling, 'Account');
+
+		assert.equal(queries.length, 2);
+		assert.equal(records.length, 1);
+	});
+
+	test('limits concurrent metadata queries', async () => {
+		const ids = Array.from({ length: 5 }, (_, index) => `03d00000000000${index + 1}AAA`);
+		let firstQuery = true;
+		let active = 0;
+		let maxActive = 0;
+		const tooling = {
+			async query(soql) {
+				if (firstQuery) {
+					firstQuery = false;
+					return { records: ids.map((Id) => ({ Id })) };
+				}
+				active += 1;
+				maxActive = Math.max(maxActive, active);
+				await new Promise((resolve) => setTimeout(resolve, 5));
+				active -= 1;
+				const id = ids.find((candidate) => soql.includes(candidate));
+				return { records: [row({ id, name: id })] };
+			},
+		};
+
+		const records = await fetchToolingValidationRuleRecords(tooling, 'Account', {
+			concurrency: 2,
+		});
+
+		assert.equal(records.length, 5);
+		assert.equal(maxActive, 2);
+	});
+});
 
 function row({
 	id = '03dxxx',
