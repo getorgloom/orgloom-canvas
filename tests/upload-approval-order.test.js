@@ -24,6 +24,49 @@ test('upload routes evaluate local org approval before Salesforce permission-set
 	}
 });
 
+test('all Salesforce middleware checks org approval before obtaining a Salesforce client', () => {
+	const middlewareStart = source.indexOf('async function requireSfConnection');
+	const middlewareEnd = source.indexOf('async function _currentSfOrgApproval', middlewareStart);
+	const middleware = source.slice(middlewareStart, middlewareEnd);
+	assert.ok(middleware.indexOf('_currentSfOrgApproval(req)') < middleware.indexOf('getActiveSfConnection(req)'));
+	assert.match(middleware, /_clearUnapprovedSfConnection/);
+});
+
+test('saved-canvas collaboration and slot submission require an approved org', () => {
+	assert.match(source, /app\.post\('\/api\/canvas\/:id\/slot-fill',\s*requireAccount,\s*requireSfOrgApproval/);
+	for (const route of [
+		'subscribe',
+		'cursor',
+		'focus',
+		'field-lock',
+		'field-lock/renew',
+		'field-lock/release',
+		'fields',
+		'layout',
+		'slot',
+		'draft-link',
+		'record-remove',
+		'loaded-record',
+		'draft',
+	]) {
+		const routeStart = source.indexOf("'/api/canvas/:id/presence/" + route + "'");
+		assert.notEqual(routeStart, -1, route);
+		assert.match(source.slice(routeStart, routeStart + 160), /requireSfOrgApproval/);
+	}
+});
+
+test('draft proposal record loads require approval before obtaining a Salesforce client', () => {
+	const routeStart = source.indexOf("'/api/canvas/:id/proposals/:proposalId/apply'");
+	const loadGuardStart = source.indexOf('const willLoadSalesforceRecord', routeStart);
+	const proposalLoopStart = source.indexOf('for (let idx = 0; idx < allChanges.length; idx++)', loadGuardStart);
+	const loadGuard = source.slice(loadGuardStart, proposalLoopStart);
+	assert.notEqual(routeStart, -1);
+	assert.notEqual(loadGuardStart, -1);
+	assert.match(loadGuard, /_currentSfOrgApproval\(req\)/);
+	assert.ok(loadGuard.indexOf('_currentSfOrgApproval(req)') < loadGuard.indexOf('getActiveSfConnection(req)'));
+	assert.match(loadGuard, /Connect an approved Salesforce org to load records onto this canvas/);
+});
+
 test('Graph upload loads object write metadata concurrently', () => {
 	assert.match(source, /await Promise\.all\(\s*Array\.from\(objNamesToDescribe, async \(name\)/);
 });

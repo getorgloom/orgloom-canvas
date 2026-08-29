@@ -14,6 +14,7 @@ import {
 	updateCanvasAccess,
 	summary,
 	purgeAccountFromWorkspace,
+	purgeAccountOrgFromWorkspace,
 	purgeWorkspace,
 	broadcastCanvasSaved,
 	canvasSnapshotHash,
@@ -2269,6 +2270,46 @@ describe('canvas presence security and ordering', () => {
 		assert.equal(purgeWorkspace({ workspaceId: 'w1' }), 1);
 		assert.equal(summary({ canvasId }).count, 1);
 		assert.equal(purgeWorkspace({ workspaceId: 'w2' }), 1);
+	});
+
+	test('org approval revocation removes only the matching account and Salesforce org', () => {
+		const first = response();
+		const second = response();
+		const otherAccount = response();
+		const canvasId = 'draft-56565656-5656-4656-8656-565656565656';
+		const firstId = subscribe({
+			canvasId,
+			workspaceId: 'w-org',
+			accountId: 'member-a',
+			sfOrgId: '00D000000000001AAA',
+			sseRes: first,
+		});
+		const secondId = subscribe({
+			canvasId,
+			workspaceId: 'w-org',
+			accountId: 'member-a',
+			sfOrgId: '00D000000000002AAA',
+			sseRes: second,
+		});
+		const otherId = subscribe({
+			canvasId,
+			workspaceId: 'w-org',
+			accountId: 'member-b',
+			sfOrgId: '00D000000000001AAA',
+			sseRes: otherAccount,
+		});
+
+		assert.equal(
+			purgeAccountOrgFromWorkspace({
+				workspaceId: 'w-org',
+				accountId: 'member-a',
+				sfOrgId: '00D000000000001',
+			}),
+			1,
+		);
+		assert.equal(unsubscribe({ canvasId, connectionId: firstId }), false);
+		assert.equal(unsubscribe({ canvasId, connectionId: secondId }), true);
+		assert.equal(unsubscribe({ canvasId, connectionId: otherId }), true);
 	});
 
 	test('relays bounded relationship references for every canvas record kind', () => {

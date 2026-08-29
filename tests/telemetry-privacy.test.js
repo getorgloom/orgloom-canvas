@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = path.resolve(here, '../src');
@@ -20,6 +21,28 @@ test('PostHog never records canvas surfaces and hashes signed-in identity', () =
 	assert.match(template, /delete properties\.\$current_url/);
 	assert.match(template, /delete properties\.\$referrer/);
 	assert.match(template, /properties\.page_path = window\.location\.pathname/);
+});
+
+test('import failure telemetry contains only a normalized flow and reason', () => {
+	const source = fs.readFileSync(path.join(src, 'public/js/import-shared.js'), 'utf8');
+	const captured = [];
+	const window = {
+		posthog: {
+			capture(name, properties) {
+				captured.push({ name, properties });
+			},
+		},
+	};
+	vm.runInNewContext(source, { window, Set });
+
+	window.OrgLoom.importShared.captureImportFailure('soql', 'query', 'sensitive Salesforce error');
+
+	assert.deepEqual(JSON.parse(JSON.stringify(captured)), [
+		{
+			name: 'canvas_import_failed',
+			properties: { flow: 'soql', reason: 'query' },
+		},
+	]);
 });
 
 test('browser error telemetry drops free-form messages, context, and click crumbs', () => {

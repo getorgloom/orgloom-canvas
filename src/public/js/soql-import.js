@@ -359,11 +359,7 @@
 							previewPane.innerHTML = '<p class="tag center">Running query\u2026</p>';
 							const { ok, status, body, fullFields } = await runQuery(soql);
 							if (!ok) {
-								_shared.captureImportFailure(
-									'soql',
-									'query',
-									(body && (body.error || body.message)) || 'HTTP ' + status,
-								);
+								_shared.captureImportFailure('soql', 'query');
 								previewPane.innerHTML =
 									'<div class="banner error">' + formatQueryError(body, status) + '</div>';
 								return;
@@ -418,7 +414,7 @@
 						if (_undo) {
 							_undo();
 						}
-						_shared.captureImportFailure('soql', 'commit', err.message || String(err));
+						_shared.captureImportFailure('soql', 'commit');
 						previewPane.innerHTML =
 							'<div class="banner error">Could not add to canvas: ' +
 							escapeHtml(err.message || String(err)) +

@@ -675,6 +675,11 @@ function _recordErrorResponse(error, objectName, recordId) {
 
 async function requireSfConnection(req, res, next) {
 	try {
+		const approval = await _currentSfOrgApproval(req);
+		if (approval && !approval.orgGate.allowed) {
+			await _clearUnapprovedSfConnection(req, approval.connection.id);
+			return res.status(403).json(buildOrgApprovalDeniedPayload(approval.orgGate, approval.orgType));
+		}
 		if (req.sf && req.sf.conn) {
 			return next();
 		}
@@ -725,34 +730,78 @@ async function requireSfConnection(req, res, next) {
 	}
 }
 
+async function _currentSfOrgApproval(req, { createPendingOnDeny = false, auditAction = null } = {}) {
+	if (!ext.saasMounted) {
+		return null;
+	}
+	const accountId = req.account && req.account.id;
+	const sfAuth = req.session && req.session.sfAuth;
+	const connectionId = req.session && req.session.currentConnectionId;
+	if (!accountId || !sfAuth || !connectionId) {
+		return null;
+	}
+	const connection = await connectionsDb.findById(connectionId);
+	const sfOrgId = sfAuth.sfOrgId || (connection && connection.sf_org_id);
+	if (
+		!connection ||
+		!sfOrgId ||
+		connection.account_id !== accountId ||
+		(connection.sf_org_id && connection.sf_org_id !== sfOrgId)
+	) {
+		return null;
+	}
+	const orgType = connection.org_type || 'unknown';
+	const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+		workspaceId: req.workspaceId || undefined,
+		sfOrgId,
+		orgType,
+		createPendingOnDeny,
+		sfOrgLabel: connection.display_name || connection.email || null,
+		instanceUrl: connection.instance_url || null,
+		req,
+		...(auditAction ? { auditAction } : {}),
+	});
+	return { connection, orgGate, orgType, sfOrgId };
+}
+
+async function _clearUnapprovedSfConnection(req, connectionId) {
+	await removeSavedConnectionFromSession({
+		session: req.session,
+		accountId: req.account && req.account.id,
+		connectionId,
+	});
+}
+
+async function requireSfOrgApproval(req, res, next) {
+	try {
+		const approval = await _currentSfOrgApproval(req);
+		if (!ext.saasMounted || (approval && approval.orgGate.allowed)) {
+			return next();
+		}
+		if (!approval) {
+			return res.status(409).json({
+				error: 'no-active-connection',
+				message: 'Connect an approved Salesforce org to continue.',
+			});
+		}
+		await _clearUnapprovedSfConnection(req, approval.connection.id);
+		return res.status(403).json(buildOrgApprovalDeniedPayload(approval.orgGate, approval.orgType));
+	} catch (error) {
+		return next(error);
+	}
+}
+
 async function requireUploadOrgApproval(req, res, next) {
 	try {
-		const accountId = req.account && req.account.id;
-		const sfAuth = req.session && req.session.sfAuth;
-		const connectionId = req.session && req.session.currentConnectionId;
-		if (!accountId || !sfAuth || !sfAuth.sfOrgId || !connectionId) {
-			return next();
-		}
-		const connection = await connectionsDb.findById(connectionId);
-		if (
-			!connection ||
-			connection.account_id !== accountId ||
-			(connection.sf_org_id && connection.sf_org_id !== sfAuth.sfOrgId)
-		) {
-			return next();
-		}
-		const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
-			workspaceId: req.workspaceId || undefined,
-			sfOrgId: sfAuth.sfOrgId,
-			orgType: connection.org_type || 'unknown',
+		const approval = await _currentSfOrgApproval(req, {
 			createPendingOnDeny: true,
-			req,
 			auditAction: 'upload',
 		});
-		if (!orgGate.allowed) {
-			return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, connection.org_type || 'unknown'));
+		if (!approval || approval.orgGate.allowed) {
+			return next();
 		}
-		return next();
+		await _clearUnapprovedSfConnection(req, approval.connection.id);
+		return res.status(403).json(buildOrgApprovalDeniedPayload(approval.orgGate, approval.orgType));
 	} catch (error) {
 		return next(error);
 	}
@@ -2862,7 +2911,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		},
 	);
 
-	app.post('/api/canvas/:id/slot-fill', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/slot-fill', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const id = req.params.id;
 			if (!/^[a-zA-Z0-9]{15,18}$/.test(id)) {
@@ -8082,23 +8131,36 @@ export function mountCanvasRoutes(app, options = {}) {
 			const sfAuth = req.session && req.session.sfAuth;
 			const activeSfUserId = (sfAuth && sfAuth.sfUserId) || null;
 			const activeSfOrgId = (sfAuth && sfAuth.sfOrgId) || null;
+			const workspaceId = await _requestWorkspaceId(req);
 			res.json({
-				connections: list.map((c) => ({
-					id: c.id,
-					sfUserId: c.sf_user_id,
-					sfOrgId: c.sf_org_id,
-					instanceUrl: c.instance_url,
-					displayUsername: c.display_username,
-					displayName: c.display_name,
-					email: c.email,
-					lastUsedAt: c.last_used_at,
-					isActive: c.id === activeId,
-					canResume:
-						activeSfUserId !== null &&
-						activeSfOrgId !== null &&
-						c.sf_user_id === activeSfUserId &&
-						c.sf_org_id === activeSfOrgId,
-				})),
+				connections: await Promise.all(
+					list.map(async (c) => {
+						const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+							workspaceId: workspaceId || undefined,
+							sfOrgId: c.sf_org_id,
+							orgType: c.org_type || 'unknown',
+						});
+						return {
+							id: c.id,
+							sfUserId: c.sf_user_id,
+							sfOrgId: c.sf_org_id,
+							instanceUrl: c.instance_url,
+							displayUsername: c.display_username,
+							displayName: c.display_name,
+							email: c.email,
+							lastUsedAt: c.last_used_at,
+							isActive: c.id === activeId && orgGate.allowed,
+							canResume:
+								orgGate.allowed &&
+								activeSfUserId !== null &&
+								activeSfOrgId !== null &&
+								c.sf_user_id === activeSfUserId &&
+								c.sf_org_id === activeSfOrgId,
+							approvalRequired: !orgGate.allowed && orgGate.reason === 'approval-required',
+							approvalStatus: orgGate.allowed ? 'approved' : orgGate.approvalStatus || 'missing',
+						};
+					}),
+				),
 			});
 		} catch (err) {
 			next(err);
@@ -8116,6 +8178,19 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			if (c.disabled_at) {
 				return res.status(409).json({ error: 'connection-disabled' });
+			}
+			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
+				workspaceId: (await _requestWorkspaceId(req)) || undefined,
+				sfOrgId: c.sf_org_id,
+				orgType: c.org_type || 'unknown',
+				createPendingOnDeny: true,
+				sfOrgLabel: c.display_name || c.display_username || c.email || null,
+				instanceUrl: c.instance_url || null,
+				req,
+			});
+			if (!orgGate.allowed) {
+				await _clearUnapprovedSfConnection(req, c.id);
+				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, c.org_type || 'unknown'));
 			}
 			const sfAuth = req.session && req.session.sfAuth;
 			const identityMatches = sfAuth && sfAuth.sfUserId === c.sf_user_id && sfAuth.sfOrgId === c.sf_org_id;
@@ -8363,6 +8438,30 @@ export function mountCanvasRoutes(app, options = {}) {
 				const autofillOps = [];
 				const loadRecordOps = [];
 				const allChanges = Array.isArray(proposal.changes) ? proposal.changes : [];
+				const willLoadSalesforceRecord = allChanges.some(
+					(change, index) => change && change.kind === 'load-record' && !skipChangeIndexes.has(index),
+				);
+				if (willLoadSalesforceRecord && (!req.sf || !req.sf.conn)) {
+					const approval = await _currentSfOrgApproval(req);
+					if (approval && !approval.orgGate.allowed) {
+						await _clearUnapprovedSfConnection(req, approval.connection.id);
+						return res.status(403).json(buildOrgApprovalDeniedPayload(approval.orgGate, approval.orgType));
+					}
+					try {
+						const bundle = await getActiveSfConnection(req);
+						if (bundle) {
+							req.sf = bundle;
+						}
+					} catch (_) {
+						/* The response below explains that an approved active connection is required. */
+					}
+					if (!req.sf || !req.sf.conn) {
+						return res.status(409).json({
+							error: 'no-active-connection',
+							message: 'Connect an approved Salesforce org to load records onto this canvas.',
+						});
+					}
+				}
 				for (let idx = 0; idx < allChanges.length; idx++) {
 					const c = allChanges[idx];
 					if (skipChangeIndexes.has(idx)) {
@@ -8704,16 +8803,6 @@ export function mountCanvasRoutes(app, options = {}) {
 						error: saveError || undefined,
 					});
 				}
-				if (loadRecordOps.length > 0 && (!req.sf || !req.sf.conn)) {
-					try {
-						const bundle = await getActiveSfConnection(req);
-						if (bundle) {
-							req.sf = bundle;
-						}
-					} catch (_) {
-						/* leave req.sf unset; per-op error below */
-					}
-				}
 				for (const op of loadRecordOps) {
 					if (saveError) {
 						results.push({
@@ -8966,7 +9055,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.get('/api/canvas/:id/presence/subscribe', requireAccount, async (req, res, next) => {
+	app.get('/api/canvas/:id/presence/subscribe', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const isDraft = /^draft-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canvasId);
@@ -9101,7 +9190,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/cursor', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/cursor', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const connectionId = req.body && req.body.connectionId;
@@ -9130,7 +9219,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/focus', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/focus', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const connectionId = req.body && req.body.connectionId;
@@ -9155,7 +9244,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/field-lock', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/field-lock', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const body = req.body || {};
 			if (!body.connectionId || !body.targetRef || !body.fieldName) {
@@ -9227,40 +9316,50 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/field-lock/renew', requireAccount, async (req, res, next) => {
-		try {
-			const body = req.body || {};
-			const result = canvasPresence.renewFieldLock({
-				canvasId: req.params.id,
-				connectionId: body.connectionId,
-				leaseId: body.leaseId,
-				requestingAccountId: req.account.id,
-			});
-			if (!result.ok) {
-				return res.status(409).json({ error: result.reason });
+	app.post(
+		'/api/canvas/:id/presence/field-lock/renew',
+		requireAccount,
+		requireSfOrgApproval,
+		async (req, res, next) => {
+			try {
+				const body = req.body || {};
+				const result = canvasPresence.renewFieldLock({
+					canvasId: req.params.id,
+					connectionId: body.connectionId,
+					leaseId: body.leaseId,
+					requestingAccountId: req.account.id,
+				});
+				if (!result.ok) {
+					return res.status(409).json({ error: result.reason });
+				}
+				res.json(result);
+			} catch (err) {
+				next(err);
 			}
-			res.json(result);
-		} catch (err) {
-			next(err);
-		}
-	});
+		},
+	);
 
-	app.post('/api/canvas/:id/presence/field-lock/release', requireAccount, async (req, res, next) => {
-		try {
-			const body = req.body || {};
-			const released = canvasPresence.releaseFieldLock({
-				canvasId: req.params.id,
-				connectionId: body.connectionId,
-				leaseId: body.leaseId,
-				requestingAccountId: req.account.id,
-			});
-			res.json({ ok: true, released });
-		} catch (err) {
-			next(err);
-		}
-	});
+	app.post(
+		'/api/canvas/:id/presence/field-lock/release',
+		requireAccount,
+		requireSfOrgApproval,
+		async (req, res, next) => {
+			try {
+				const body = req.body || {};
+				const released = canvasPresence.releaseFieldLock({
+					canvasId: req.params.id,
+					connectionId: body.connectionId,
+					leaseId: body.leaseId,
+					requestingAccountId: req.account.id,
+				});
+				res.json({ ok: true, released });
+			} catch (err) {
+				next(err);
+			}
+		},
+	);
 
-	app.post('/api/canvas/:id/presence/fields', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/fields', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const body = req.body || {};
 			const result = canvasPresence.commitFieldValues({
@@ -9285,7 +9384,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/layout', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/layout', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const body = req.body || {};
@@ -9311,7 +9410,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/slot', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/slot', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const body = req.body || {};
@@ -9338,7 +9437,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/draft-link', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/draft-link', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const body = req.body || {};
@@ -9379,7 +9478,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/record-remove', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/record-remove', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const body = req.body || {};
@@ -9408,7 +9507,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/loaded-record', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/loaded-record', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const body = req.body || {};
@@ -9471,7 +9570,7 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
-	app.post('/api/canvas/:id/presence/draft', requireAccount, async (req, res, next) => {
+	app.post('/api/canvas/:id/presence/draft', requireAccount, requireSfOrgApproval, async (req, res, next) => {
 		try {
 			const canvasId = req.params.id;
 			const body = req.body || {};

@@ -1053,7 +1053,6 @@
 							_shared.captureImportFailure(
 								'csv',
 								f.reason === 'wrongtype' ? 'type' : f.reason === 'toolarge' ? 'size' : f.reason,
-								null,
 							),
 						);
 					}

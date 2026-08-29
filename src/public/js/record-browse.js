@@ -597,7 +597,7 @@
 					if (_seq !== _fetchSeq) {
 						return;
 					}
-					_shared.captureImportFailure('browse', 'count', e.message || String(e));
+					_shared.captureImportFailure('browse', 'count');
 					statusEl.textContent = 'Error: ' + (e.message || String(e));
 					statusEl.classList.add('rb-count-error');
 					content.querySelector('.rb-preview').innerHTML = '';
@@ -1081,7 +1081,7 @@
 										(added === 1 ? '' : 's') +
 										' already added; nothing changed).'
 									: '');
-							_shared.captureImportFailure('browse', 'load', err.message || String(err));
+							_shared.captureImportFailure('browse', 'load');
 							showErr(_msg);
 							showBulkToast(_msg, 'error');
 							return;

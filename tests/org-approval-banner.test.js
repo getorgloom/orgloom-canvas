@@ -18,19 +18,18 @@ test('every required org approval state renders as blocked', () => {
 	assert.match(source, /const blocked = approval\.required;/);
 });
 
-test('org approval banner is hidden for every shared-canvas recipient role', () => {
-	assert.match(source, /current && current\.id && current\.ownedByMe === false/);
+test('shared-canvas recipients still see a blocking org approval', () => {
+	assert.match(source, /!blocked && \(\(current && current\.id && current\.ownedByMe === false\)/);
 	assert.match(source, /openingSharedCanvas = \(!current \|\| !current\.id\) && params\.has\('share'\)/);
 	assert.match(source, /function renderShareRecipientBanner\(\) \{[\s\S]*?renderOrgBanner\(\);/);
-	assert.doesNotMatch(source, /recipientRole === 'contributor'[\s\S]*pending admin approval/);
 });
 
-test('missing approval offers an explicit, idempotent access request', () => {
+test('blocked approval states direct the member to Salesforce connections', () => {
 	assert.match(source, /else if \(approval\.status === 'pending'\)/);
-	assert.match(source, /data-request-org-access/);
-	assert.match(source, /csrfFetch\('\/api\/upload\/access-check'/);
-	assert.match(source, /body\.error === 'approval-required' && body\.approvalStatus === 'pending'/);
-	assert.match(source, /status: 'pending'/);
+	assert.match(source, /Reconnect Salesforce after approval/);
+	assert.match(source, /href="\/connect">Open Salesforce connections/);
+	assert.doesNotMatch(source, /Reads work; uploads are blocked/);
+	assert.doesNotMatch(source, /data-request-org-access/);
 });
 
 test('the live access stream reconciles on reconnect and tab focus without polling', () => {

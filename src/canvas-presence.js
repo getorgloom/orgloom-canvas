@@ -2647,6 +2647,36 @@ export function purgeAccountFromWorkspace({ workspaceId, accountId }) {
 	return removed;
 }
 
+export function purgeAccountOrgFromWorkspace({ workspaceId, accountId, sfOrgId }) {
+	const normalizedOrgId = String(sfOrgId || '').slice(0, 15);
+	if (!workspaceId || !accountId || !normalizedOrgId) {
+		return 0;
+	}
+	let removed = 0;
+	for (const conns of _presenceByCanvas.values()) {
+		for (const entry of [...conns.values()]) {
+			if (
+				entry.workspaceId !== workspaceId ||
+				entry.accountId !== accountId ||
+				String(entry.sfOrgId || '').slice(0, 15) !== normalizedOrgId
+			) {
+				continue;
+			}
+			_writeSseEvent(entry.sseRes, 'presence', {
+				type: 'org-access-revoked',
+				at: Date.now(),
+			});
+			if (unsubscribe({ canvasId: entry.canvasId, connectionId: entry.connectionId })) {
+				removed++;
+			}
+			try {
+				entry.sseRes.end();
+			} catch (_) {}
+		}
+	}
+	return removed;
+}
+
 export function purgeWorkspace({ workspaceId }) {
 	let removed = 0;
 	for (const conns of _presenceByCanvas.values()) {

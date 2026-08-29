@@ -11,6 +11,17 @@
 	<%- include('partials/top-strip') %>
 	<main class="app-main connect-main">
 		<section class="connect-card">
+			<% if (typeof pendingApproval !== 'undefined' && pendingApproval) { %>
+				<div class="connect-workspace-context connect-approval-pending" role="status">
+					<strong>Workspace approval required.</strong>
+					Org Loom identified
+					<% if (pendingApproval.username) { %><code><%= pendingApproval.username %></code> in <% } %>
+					Salesforce org <code><%= pendingApproval.sfOrgId %></code>, created an approval request,
+					and discarded the Salesforce credentials without activating the connection.
+					After a workspace administrator approves the request, authorize the Salesforce connection again.
+				</div>
+				<a class="button" href="/canvas">Back to canvas</a>
+			<% } else { %>
 			<h1 class="connect-title">Connect a Salesforce org</h1>
 			<p class="connect-sub">
 				<% if (accountEmail) { %>
@@ -39,11 +50,11 @@
 					%>
 					<% if (_prodGated || _nonprodGated) { %>
 						<p class="connect-workspace-policy">
-							<strong>Note:</strong> this workspace requires admin
-							approval before members can connect to <%= _gatedOrgPhrase %>.
-							You can complete OAuth, but actions against
-							<%= _gatedOrgsPhrase %> will be blocked until an
-							admin approves.
+							<strong>Note:</strong> this workspace requires administrator
+							approval before members can use <%= _gatedOrgPhrase %> in Org Loom.
+							OAuth first identifies the Salesforce user and org. If approval is
+							required, Org Loom creates a request, discards the Salesforce
+							credentials, and requires authorization again after approval.
 						</p>
 					<% } %>
 				</div>
@@ -67,6 +78,9 @@
 									<span class="connect-reconnect-name"><%= c.username || c.email || c.sfUserId %></span>
 									<% if (c.orgType) { %>
 										<span class="connect-reconnect-type connect-reconnect-type--<%= c.orgType %>"><%= c.orgType %></span>
+									<% } %>
+									<% if (c.approval && c.approval.required) { %>
+										<span class="tag"><%= c.approval.status === 'pending' ? 'approval pending' : 'approval required' %></span>
 									<% } %>
 								</span>
 								<% if (c.sfOrgId) { %>
@@ -155,6 +169,7 @@
 					<button type="submit" class="button secondary connect-signout-btn">Sign out instead</button>
 				</form>
 			</div>
+			<% } %>
 		</section>
 	</main>
 </body>

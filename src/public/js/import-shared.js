@@ -35,13 +35,12 @@
 		return null;
 	}
 
-	function captureImportFailure(flow, reason, message) {
+	function captureImportFailure(flow, reason) {
 		try {
 			if (window.posthog && window.posthog.capture) {
 				window.posthog.capture('canvas_import_failed', {
 					flow: flow,
 					reason: reason,
-					message: message || null,
 				});
 			}
 		} catch (_e) {}

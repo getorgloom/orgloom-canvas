@@ -19,7 +19,7 @@ export function buildOrgApprovalDeniedPayload(orgGate, orgType) {
 		payload.message =
 			'Org Loom automatically created an access request for this ' +
 			orgLabel +
-			'. Any workspace admin can approve it in Workspace settings. After approval, retry this action.';
+			'. Any workspace admin can approve it in Workspace settings. Org Loom discarded the Salesforce credentials and did not activate the connection. After approval, authorize Salesforce again.';
 		return payload;
 	}
 
@@ -28,6 +28,6 @@ export function buildOrgApprovalDeniedPayload(orgGate, orgType) {
 		'Access to this ' +
 		orgLabel +
 		status +
-		'. Any workspace admin can review and approve it in Workspace settings. After approval, retry this action.';
+		'. Any workspace admin can review and approve it in Workspace settings. After approval, authorize Salesforce again.';
 	return payload;
 }

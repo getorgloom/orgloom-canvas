@@ -1231,6 +1231,14 @@ function csrfFetch(url, options) {
 					_handleWorkspaceMembershipRemoved();
 					return;
 				}
+				if (
+					change.capability === 'connect-sf-org' &&
+					change.target === '*' &&
+					change.status === 'policy-changed'
+				) {
+					_refreshOrgApprovalState();
+					return;
+				}
 				const connection = _meInfo && _meInfo.connection;
 				if (
 					!connection ||
@@ -1306,14 +1314,15 @@ function csrfFetch(url, options) {
 		try {
 			const response = await csrfFetch('/api/me', { credentials: 'same-origin' });
 			const latest = response.ok ? await response.json() : null;
-			if (!latest || !latest.connection || !_meInfo || !_meInfo.connection) {
+			if (!latest || !_meInfo) {
 				return;
 			}
-			if (latest.connection.id !== _meInfo.connection.id) {
+			if (latest.connection && _meInfo.connection && latest.connection.id !== _meInfo.connection.id) {
 				return;
 			}
 			_meInfo.connection = latest.connection;
-			_meInfo.orgType = latest.orgType || latest.connection.orgType || _meInfo.orgType;
+			_meInfo.orgApproval = latest.orgApproval || null;
+			_meInfo.orgType = latest.orgType || (latest.connection && latest.connection.orgType) || _meInfo.orgType;
 			renderOrgBanner();
 		} catch (_) {}
 	}
@@ -1323,20 +1332,20 @@ function csrfFetch(url, options) {
 		if (!banner || !_meInfo) {
 			return;
 		}
-		const current = canvasState.currentCanvas;
-		const params = new URLSearchParams(window.location.search || '');
-		const openingSharedCanvas = (!current || !current.id) && params.has('share');
-		if ((current && current.id && current.ownedByMe === false) || openingSharedCanvas) {
-			banner.classList.add('hidden');
-			banner.innerHTML = '';
-			return;
-		}
 		const approval = (_meInfo.connection && _meInfo.connection.approval) ||
 			_meInfo.orgApproval || {
 				required: false,
 				status: 'na',
 			};
 		const blocked = approval.required;
+		const current = canvasState.currentCanvas;
+		const params = new URLSearchParams(window.location.search || '');
+		const openingSharedCanvas = (!current || !current.id) && params.has('share');
+		if (!blocked && ((current && current.id && current.ownedByMe === false) || openingSharedCanvas)) {
+			banner.classList.add('hidden');
+			banner.innerHTML = '';
+			return;
+		}
 		if (_meInfo.orgType !== 'production' && !_readOnlyMode && !blocked) {
 			banner.classList.add('hidden');
 			banner.innerHTML = '';
@@ -1359,32 +1368,32 @@ function csrfFetch(url, options) {
 			const orgLabel = approval.sfOrgLabel ? ' <code>' + escapeHtml(approval.sfOrgLabel) + '</code>' : '';
 			if (denied) {
 				headline =
-					'Writes to this ' +
+					'Access to this ' +
 					approvalOrgLabel +
 					orgLabel +
-					' are <strong>not currently approved</strong> by your workspace admin.' +
+					' is <strong>not currently approved</strong> by your workspace admin. ' +
+					'Org Loom cannot load or change its Salesforce data.' +
 					(approval.note ? ' Reason: ' + escapeHtml(approval.note) : '');
 			} else if (approval.status === 'pending') {
 				headline =
-					'Writes to this ' +
+					'Access to this ' +
 					approvalOrgLabel +
 					orgLabel +
-					' are <strong>pending admin approval</strong>. ' +
-					'Reads work; uploads are blocked until your team admin approves.';
+					' is <strong>pending admin approval</strong>. ' +
+					'Org Loom cannot load or change Salesforce data until it is approved. ' +
+					'Reconnect Salesforce after approval.';
 			} else {
 				headline =
-					'Writes to this ' +
+					'Using this ' +
 					approvalOrgLabel +
 					orgLabel +
-					' <strong>require workspace admin approval</strong>. ' +
-					'Request access now, or Org Loom will create the same request when you try to upload.';
+					' <strong>requires workspace admin approval</strong>. ' +
+					'Request access, then reconnect Salesforce after approval.';
 			}
 			controls =
 				approval.status === 'pending'
 					? ''
-					: '<button type="button" class="button secondary ob-request" data-request-org-access>' +
-						(denied ? 'Request access again' : 'Request access') +
-						'</button>';
+					: '<a class="button secondary ob-request" href="/connect">Open Salesforce connections</a>';
 		} else {
 			icon = _meInfo.orgType === 'production' ? '\u26A0' : '\uD83D\uDD12';
 			headline =
@@ -1409,53 +1418,6 @@ function csrfFetch(url, options) {
 				renderOrgBanner();
 				if (typeof renderBulkView === 'function' && canvasState.graphView === 'bulk') {
 					renderBulkView();
-				}
-			});
-		}
-		const requestButton = banner.querySelector('[data-request-org-access]');
-		if (requestButton) {
-			requestButton.addEventListener('click', async () => {
-				requestButton.disabled = true;
-				requestButton.textContent = 'Requesting\u2026';
-				try {
-					const response = await csrfFetch('/api/upload/access-check', {
-						method: 'POST',
-						headers: { 'content-type': 'application/json' },
-						body: '{}',
-					});
-					const body = await response.json().catch(() => ({}));
-					if (response.ok) {
-						if (_meInfo.connection) {
-							_meInfo.connection.approval = { required: false, status: 'approved' };
-						} else {
-							_meInfo.orgApproval = { required: false, status: 'approved' };
-						}
-						renderOrgBanner();
-						return;
-					}
-					if (body.error === 'approval-required' && body.approvalStatus === 'pending') {
-						const pendingApproval = Object.assign({}, approval, {
-							required: true,
-							status: 'pending',
-						});
-						if (_meInfo.connection) {
-							_meInfo.connection.approval = pendingApproval;
-						} else {
-							_meInfo.orgApproval = pendingApproval;
-						}
-						renderOrgBanner();
-						return;
-					}
-					throw new Error(body.message || 'Access request could not be created.');
-				} catch (error) {
-					requestButton.disabled = false;
-					requestButton.textContent = denied ? 'Request access again' : 'Request access';
-					const message = banner.querySelector('.ob-msg');
-					if (message) {
-						message.innerHTML =
-							'<strong>Access request failed.</strong> ' +
-							escapeHtml(error && error.message ? error.message : 'Try again.');
-					}
 				}
 			});
 		}
@@ -3889,8 +3851,8 @@ function csrfFetch(url, options) {
 		maxBytes: 10 * 1024 * 1024,
 		flowLabel: 'Import saved canvas',
 	};
-	function _captureImportFailure(reason, message) {
-		_importShared.captureImportFailure('json', reason, message);
+	function _captureImportFailure(reason) {
+		_importShared.captureImportFailure('json', reason);
 	}
 	function _gateCanvasImportFile(file) {
 		return _importShared.gateImportFile(file, _JSON_IMPORT_GATE);
@@ -3959,7 +3921,7 @@ function csrfFetch(url, options) {
 				if (typeof lifecycle.onError === 'function') {
 					lifecycle.onError();
 				}
-				_captureImportFailure('invalid', e && e.message ? e.message : String(e));
+				_captureImportFailure('invalid');
 				showBulkToast('Could not load file: ' + (e && e.message ? e.message : String(e)), 'error');
 			}
 		};

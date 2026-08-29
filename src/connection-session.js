@@ -56,7 +56,9 @@ export async function removeSavedConnectionFromSession({ session, accountId, con
 		delete session.sfAuthByConnection[connectionId];
 	}
 	if (session.currentConnectionId === connectionId) {
+		delete session.sfAuth;
 		session.currentConnectionId = null;
+		clearKekCacheForSession(session.id);
 	}
 	await saveSession(session);
 }
