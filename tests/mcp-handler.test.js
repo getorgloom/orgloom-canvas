@@ -734,7 +734,6 @@ describe('tools/call', () => {
 		assert.ok(call, 'mcp_tool_call audit row written');
 		assert.equal(call.actorKind, 'mcp');
 		assert.equal(call.mcpTokenId, tokenId);
-		assert.equal(call.payload.tool, 'list_canvases');
 	});
 
 	test('capability denial → ERR_FORBIDDEN with the resolver reason; no mcp_tool_call row', async () => {
@@ -765,6 +764,5 @@ describe('tools/call', () => {
 		const events = await audit.list({ workspaceId: ws.id });
 		const failed = events.find((e) => e.action === 'mcp_tool_call_failed');
 		assert.ok(failed, 'mcp_tool_call_failed audit row written');
-		assert.equal(failed.payload.tool, 'read_canvas');
 	});
 });

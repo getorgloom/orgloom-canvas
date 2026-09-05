@@ -7,6 +7,7 @@ import vm from 'node:vm';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UI_FEEDBACK_PATH = join(__dirname, '..', 'src', 'public', 'js', 'ui-feedback.js');
+const APP_CSS_PATH = join(__dirname, '..', 'src', 'public', 'css', 'app.css');
 
 function makeNode(className = '') {
 	const controls = new Map();
@@ -87,4 +88,45 @@ test('action toast is hosted above canvas modals and remains available for 30 se
 	assert.equal(canvas.children.length, 0);
 	assert.match(body.children[0].className, /\bbulk-toast\b/);
 	assert.deepEqual(delays, [30_000]);
+});
+
+test('canvas toast remains available while the canvas is being rerendered', () => {
+	const body = makeNode('body');
+	const delays = [];
+	const sandbox = {
+		window: { OrgLoom: {} },
+		document: {
+			body,
+			createElement: () => makeNode(),
+			querySelectorAll: () => [],
+		},
+		setTimeout(_callback, delay) {
+			delays.push(delay);
+		},
+		console,
+	};
+	vm.createContext(sandbox);
+	vm.runInContext(readFileSync(UI_FEEDBACK_PATH, 'utf8'), sandbox);
+
+	const feedback = sandbox.window.OrgLoom.uiFeedback.mount({
+		escapeHtml: (value) => String(value),
+		getGraph: () => {
+			throw new Error('canvas is rerendering');
+		},
+	});
+	feedback.showBulkToast('No related records found.', 'info');
+
+	assert.equal(body.children.length, 1);
+	assert.equal(body.children[0]._innerHTML.includes('No related records found.'), true);
+	assert.deepEqual(delays, [4000]);
+});
+
+test('ordinary canvas toasts render above the canvas overlay', () => {
+	const css = readFileSync(APP_CSS_PATH, 'utf8');
+	const canvasLayer = css.match(/\.graph-overlay\s*\{[^}]*z-index:\s*(\d+)/);
+	const toastLayer = css.match(/\.bulk-toast\s*\{[^}]*z-index:\s*(\d+)/);
+
+	assert.ok(canvasLayer, 'canvas overlay z-index should be declared');
+	assert.ok(toastLayer, 'toast z-index should be declared');
+	assert.ok(Number(toastLayer[1]) > Number(canvasLayer[1]), 'toast should render above the canvas');
 });

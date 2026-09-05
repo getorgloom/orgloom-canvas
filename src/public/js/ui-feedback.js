@@ -10,12 +10,8 @@
 				throw new Error('ui-feedback.mount: missing required deps');
 			}
 			const escapeHtml = deps.escapeHtml;
-			const getGraph = deps.getGraph;
-
 			function _toastHost() {
-				const g = getGraph();
-				const canvas = g.querySelector('#graph-bulk') || g.querySelector('#bulk-canvas');
-				return canvas ? document.body : null;
+				return document.body || null;
 			}
 
 			function showBulkToast(message, variant) {

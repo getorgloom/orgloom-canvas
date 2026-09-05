@@ -8,13 +8,13 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.resolve(here, '../src/public/js/related-records.js'), 'utf8');
 
-function mountRelatedRecords(canvasState) {
+function mountRelatedRecords(canvasState, overrides = {}) {
 	const window = {};
 	vm.runInNewContext(source, { window, Map, Set });
 	return window.OrgLoom.relatedRecords.mount({
 		canvasState,
 		escapeHtml: (value) => String(value),
-		showBulkToast: () => {},
+		showBulkToast: overrides.showBulkToast || (() => {}),
 		renderBulkView: () => {},
 		openTypeNode: async () => {},
 		fetchRelatedCountsBatch: async () => new Map(),
@@ -23,6 +23,28 @@ function mountRelatedRecords(canvasState) {
 	});
 }
 
+test('Find related shows a toast when the schema has no related record types', () => {
+	const toasts = [];
+	const related = mountRelatedRecords(
+		{
+			selectedObjects: [{ id: 12, name: 'Account', data: { parents: [], children: [] } }],
+			bulkRecords: [],
+			bulkAssociations: [],
+		},
+		{
+			showBulkToast: (message, type) => toasts.push({ message, type }),
+		},
+	);
+
+	related.showRelatedPopover(null, {
+		id: 1,
+		objectName: 'Account',
+		loadedFromId: '001000000000001AAA',
+		values: {},
+	});
+
+	assert.deepEqual(toasts, [{ message: 'No related records found.', type: 'info' }]);
+});
 test('Find related falls back to an object schema when an imported card has no selection ID', () => {
 	const accountSelection = {
 		id: 12,

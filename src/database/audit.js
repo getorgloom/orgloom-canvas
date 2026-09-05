@@ -1,6 +1,5 @@
-// Minimized operational history. Payloads may contain identifiers and counts, never record values or secrets.
+// Minimized operational history. Rows contain fixed, non-content metadata only.
 import crypto from 'node:crypto';
-import { sql } from 'kysely';
 import { ext } from '../extensions.js';
 
 const DAY_MS = 1000 * 60 * 60 * 24;
@@ -32,7 +31,7 @@ async function _getAnchor(db, workspaceId) {
 }
 
 export async function record(opts = {}) {
-	const { req, action, targetObject, targetId, targetSfOrgId, payload } = opts;
+	const { req, action, targetSfOrgId } = opts;
 	if (!action) {
 		throw new Error('action is required');
 	}
@@ -81,7 +80,6 @@ export async function record(opts = {}) {
 
 	// Chaining is opt-in; ordinary activity history does not claim compliance-grade durability.
 	const chained = opts.chained === true;
-	const payloadJson = payload ? JSON.stringify(payload) : null;
 
 	const release = chained ? await _acquireChainLock(workspaceId || '') : null;
 	try {
@@ -113,10 +111,7 @@ export async function record(opts = {}) {
 				actor_kind: actorKind,
 				mcp_token_id: mcpTokenId,
 				action,
-				target_object: targetObject || null,
-				target_id: targetId || null,
 				target_sf_org_id: targetSfOrgId || null,
-				payload_json: payloadJson,
 				status,
 				error_code: errorCode,
 				request_id: requestId,
@@ -136,10 +131,7 @@ export async function record(opts = {}) {
 				actor_kind: actorKind,
 				mcp_token_id: mcpTokenId,
 				action,
-				target_object: targetObject || null,
-				target_id: targetId || null,
 				target_sf_org_id: targetSfOrgId || null,
-				payload_json: payloadJson,
 				status,
 				error_code: errorCode,
 				request_id: requestId,
@@ -177,10 +169,7 @@ export async function recordFailure(req, action, err, extras = {}) {
 	} catch (_eAudit) {}
 }
 
-export async function recordFirstTime(
-	req,
-	{ actorAccountId, action, payload, workspaceId, targetObject, targetId } = {},
-) {
+export async function recordFirstTime(req, { actorAccountId, action, workspaceId } = {}) {
 	if (!actorAccountId || !action) {
 		return false;
 	}
@@ -202,9 +191,6 @@ export async function recordFirstTime(
 			workspaceId: workspaceId || null,
 			actorAccountId,
 			action,
-			targetObject: targetObject || null,
-			targetId: targetId || null,
-			payload: payload || {},
 		});
 		return true;
 	} catch (e) {
@@ -232,10 +218,7 @@ export async function list({ workspaceId, action, limit = 100, offset = 0, since
 			'audit_log.actor_kind',
 			'audit_log.mcp_token_id',
 			'audit_log.action',
-			'audit_log.target_object',
-			'audit_log.target_id',
 			'audit_log.target_sf_org_id',
-			'audit_log.payload_json',
 			'audit_log.status',
 			'audit_log.error_code',
 			'audit_log.request_id',
@@ -270,54 +253,13 @@ export async function list({ workspaceId, action, limit = 100, offset = 0, since
 		actorEmail: r.actor_email,
 		actorDisplayName: r.actor_display_name,
 		action: r.action,
-		targetObject: r.target_object,
-		targetId: r.target_id,
 		targetSfOrgId: r.target_sf_org_id,
-		payload: r.payload_json ? JSON.parse(r.payload_json) : null,
 		status: r.status || 'ok',
 		errorCode: r.error_code,
 		requestId: r.request_id,
 		createdAt: r.created_at,
 		redactedAt: r.redacted_at || null,
 	}));
-}
-
-export async function findLatestByTarget({ workspaceId, action, targetId }) {
-	if (!workspaceId || !action || !targetId) {
-		return null;
-	}
-	const db = ext.getDb();
-	const row = await db
-		.selectFrom('audit_log')
-		.select(['payload_json', 'status', 'error_code', 'created_at'])
-		.where('workspace_id', '=', workspaceId)
-		.where('action', '=', action)
-		.where('target_id', '=', targetId)
-		.orderBy('created_at', 'desc')
-		.limit(1)
-		.executeTakeFirst();
-	if (!row) {
-		return null;
-	}
-	return {
-		payload: row.payload_json
-			? (() => {
-					try {
-						return JSON.parse(row.payload_json);
-					} catch (err) {
-						try {
-							ext.captureException(err, {
-								where: 'audit.findLatestByTarget/parsePayload',
-							});
-						} catch (_) {}
-						return null;
-					}
-				})()
-			: null,
-		status: row.status || 'ok',
-		errorCode: row.error_code,
-		createdAt: row.created_at,
-	};
 }
 
 function _canonicalForHash(row) {
@@ -330,10 +272,7 @@ function _canonicalForHash(row) {
 		row.actor_kind || 'web',
 		row.mcp_token_id || null,
 		row.action,
-		row.target_object || null,
-		row.target_id || null,
 		row.target_sf_org_id || null,
-		row.payload_json || null,
 		row.status || 'ok',
 		row.error_code || null,
 		row.request_id || null,
@@ -407,74 +346,6 @@ export async function verifyChain({ workspaceId } = {}) {
 		prev = r.chain_hash;
 	}
 	return { ok: true, totalRows: rows.length, purgedBefore, redactedCount, lastHash: prev };
-}
-
-export async function redactPayloadByEmail(email, { now = Date.now() } = {}) {
-	// Redact matching string leaves without changing row identity or chain fields.
-	if (!email || typeof email !== 'string') {
-		return 0;
-	}
-	const needle = email.trim().toLowerCase();
-	if (!needle) {
-		return 0;
-	}
-	const db = ext.getDb();
-	const rows = await db
-		.selectFrom('audit_log')
-		.select(['id', 'payload_json'])
-		.where('payload_json', 'is not', null)
-		.where(sql`lower(audit_log.payload_json) like ${'%' + needle + '%'}`)
-		.execute();
-	let count = 0;
-	for (const r of rows) {
-		let parsed;
-		try {
-			parsed = JSON.parse(r.payload_json);
-		} catch (_) {
-			continue; // non-JSON payload: nothing structured to redact
-		}
-		const { changed, value } = _deepRedactEmail(parsed, needle);
-		if (!changed) {
-			continue; // LIKE matched but no actual email leaf (over-match)
-		}
-		await db
-			.updateTable('audit_log')
-			.set({ payload_json: JSON.stringify(value), redacted_at: now })
-			.where('id', '=', r.id)
-			.execute();
-		count++;
-	}
-	return count;
-}
-
-function _deepRedactEmail(node, needle) {
-	if (typeof node === 'string') {
-		if (!node.toLowerCase().includes(needle)) {
-			return { changed: false, value: node };
-		}
-		const re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-		return { changed: true, value: node.replace(re, '[redacted]') };
-	}
-	if (Array.isArray(node)) {
-		let changed = false;
-		const out = node.map((v) => {
-			const r = _deepRedactEmail(v, needle);
-			changed = changed || r.changed;
-			return r.value;
-		});
-		return { changed, value: out };
-	}
-	if (node && typeof node === 'object') {
-		let changed = false;
-		const out = {};
-		for (const k of Object.keys(node)) {
-			const r = _deepRedactEmail(node[k], needle);
-			changed = changed || r.changed;
-			out[k] = r.value;
-		}
-		return { changed, value: out };
-	}
-	return { changed: false, value: node };
 }
 
 export async function purgeExpired(now = Date.now()) {

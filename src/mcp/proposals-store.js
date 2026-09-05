@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 
 const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+const TERMINAL_TTL_MS = 60 * 60 * 1000;
 
 const _proposals = new Map();
 
@@ -20,6 +21,8 @@ function _shape({ id, canvasId, workspaceId, proposingAccountId, proposingTokenI
 		createdAt,
 		decidedAt: null,
 		decidedByAccountId: null,
+		outcome: null,
+		applyMode: null,
 	};
 }
 
@@ -78,7 +81,7 @@ export async function listForCanvas(canvasId, { limit = 100 } = {}) {
 	return all.slice(0, Math.min(500, Math.max(1, limit)));
 }
 
-export async function markApplied({ id }) {
+export async function markApplied({ id, decidedByAccountId, outcome, applyMode }) {
 	if (!id) {
 		throw new Error('id required');
 	}
@@ -86,11 +89,17 @@ export async function markApplied({ id }) {
 	if (!r || r.status !== 'pending') {
 		return false;
 	}
-	_proposals.delete(id);
+	r.status = 'applied';
+	r.decidedAt = Date.now();
+	r.decidedByAccountId = decidedByAccountId || null;
+	r.outcome = Array.isArray(outcome) ? outcome.map(_cloneChange) : null;
+	r.applyMode = applyMode || null;
+	r.changes = [];
+	r.summary = null;
 	return true;
 }
 
-export async function markRejected({ id }) {
+export async function markRejected({ id, decidedByAccountId }) {
 	if (!id) {
 		throw new Error('id required');
 	}
@@ -98,11 +107,15 @@ export async function markRejected({ id }) {
 	if (!r || r.status !== 'pending') {
 		return false;
 	}
-	_proposals.delete(id);
+	r.status = 'rejected';
+	r.decidedAt = Date.now();
+	r.decidedByAccountId = decidedByAccountId || null;
+	r.changes = [];
+	r.summary = null;
 	return true;
 }
 
-export async function markWithdrawn({ id }) {
+export async function markWithdrawn({ id, decidedByAccountId }) {
 	if (!id) {
 		throw new Error('id required');
 	}
@@ -110,8 +123,16 @@ export async function markWithdrawn({ id }) {
 	if (!r || r.status !== 'pending') {
 		return false;
 	}
-	_proposals.delete(id);
+	r.status = 'withdrawn';
+	r.decidedAt = Date.now();
+	r.decidedByAccountId = decidedByAccountId || null;
+	r.changes = [];
+	r.summary = null;
 	return true;
+}
+
+function _cloneChange(value) {
+	return value && typeof value === 'object' ? Object.assign({}, value) : value;
 }
 
 function _clone(r) {
@@ -122,16 +143,20 @@ function _clone(r) {
 		proposingAccountId: r.proposingAccountId,
 		proposingTokenId: r.proposingTokenId,
 		status: r.status,
-		changes: r.changes.map((c) => (c && typeof c === 'object' ? Object.assign({}, c) : c)),
+		changes: r.changes.map(_cloneChange),
 		summary: r.summary,
 		createdAt: r.createdAt,
 		decidedAt: r.decidedAt,
 		decidedByAccountId: r.decidedByAccountId,
+		outcome: Array.isArray(r.outcome) ? r.outcome.map(_cloneChange) : null,
+		applyMode: r.applyMode || null,
 	};
 }
 function _purgeOrphans(now = Date.now()) {
 	for (const [id, r] of _proposals.entries()) {
-		if (r.status === 'pending' && now - r.createdAt > PENDING_TTL_MS) {
+		const age = now - (r.status === 'pending' ? r.createdAt : r.decidedAt || r.createdAt);
+		const ttl = r.status === 'pending' ? PENDING_TTL_MS : TERMINAL_TTL_MS;
+		if (age > ttl) {
 			_proposals.delete(id);
 		}
 	}

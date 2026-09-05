@@ -324,6 +324,7 @@
 					.filter((c) => c && c.field && c.object)
 					.filter((c) => !_isSystemChildRelationship(c.object));
 				if (parents.length === 0 && children.length === 0) {
+					showBulkToast('No related records found.', 'info');
 					return;
 				}
 				if (_activeRelatedPopoverCleanup) {

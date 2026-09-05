@@ -2430,13 +2430,6 @@
 					return;
 				}
 				const fieldPlan = _planMappedFieldWrites(validFiles, state, _idResolution, cellKey);
-				const strippedFieldsSummary = Array.from(
-					new Set(
-						fieldPlan.issues.flatMap((issue) =>
-							issue.fields.map((field) => issue.objectName + '.' + field.fieldName),
-						),
-					),
-				);
 				const continueWithWritableFields =
 					fieldPlan.issues.length === 0 || (await showFieldWriteReview(fieldPlan));
 				if (csvImportCanceled(state, linkedCsvState) || !continueWithWritableFields) {
@@ -2719,7 +2712,6 @@
 						linksSkippedFk,
 						merged: mergeQueue.length,
 						unchanged: unchangedCount,
-						strippedFields: strippedFieldsSummary,
 					},
 				});
 				if (mergeQueue.length && openRecordDiffModal) {

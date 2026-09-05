@@ -39,9 +39,8 @@ export async function initializeStandaloneDatabase() {
 					.filter((file) => file.endsWith('.js'))
 					.sort();
 				for (const file of files) {
-					migrations[file.replace(/\.js$/, '')] = await import(
-						pathToFileURL(path.join(canvasMigrationsDir, file)).href
-					);
+					const name = file.replace(/\.js$/, '');
+					migrations[name] = await import(pathToFileURL(path.join(canvasMigrationsDir, file)).href);
 				}
 				return migrations;
 			},

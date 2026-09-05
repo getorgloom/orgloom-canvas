@@ -1,7 +1,7 @@
 // Submit-only MCP server: AI clients inspect canvas state and propose changes; browsers approve them.
 import * as mcpTokensDb from 'orgloom-canvas/database/mcp-tokens';
 import * as accountsDb from 'orgloom-canvas/database/accounts';
-import { aiProposals as proposalsDb, audit as auditDb } from '../database/index.js';
+import { aiProposals as proposalsDb } from '../database/index.js';
 import * as relay from './relay.js';
 import { ext } from '../extensions.js';
 
@@ -1266,7 +1266,10 @@ async function _toolWithdrawProposal(ctx, args) {
 				'). Already-applied / already-rejected / already-withdrawn proposals cannot be retracted.',
 		);
 	}
-	const ok = await proposalsDb.markWithdrawn({ id: proposalId });
+	const ok = await proposalsDb.markWithdrawn({
+		id: proposalId,
+		decidedByAccountId: ctx.account.id,
+	});
 	if (!ok) {
 		throw _appError(
 			ERR_INVALID_PARAMS,
@@ -1309,48 +1312,6 @@ async function _toolReadProposalOutcome(ctx, args) {
 	if (!proposalId) {
 		throw _appError(ERR_INVALID_PARAMS, 'proposalId is required');
 	}
-	const appliedRow = await auditDb
-		.findLatestByTarget({
-			workspaceId: ctx.workspaceId,
-			action: 'ai_proposal_applied',
-			targetId: proposalId,
-		})
-		.catch(() => null);
-	const rejectedRow = await auditDb
-		.findLatestByTarget({
-			workspaceId: ctx.workspaceId,
-			action: 'ai_proposal_rejected',
-			targetId: proposalId,
-		})
-		.catch(() => null);
-	let terminalRow = null;
-	let terminalStatus = null;
-	if (appliedRow && (!rejectedRow || (appliedRow.createdAt || 0) >= (rejectedRow.createdAt || 0))) {
-		terminalRow = appliedRow;
-		terminalStatus = 'applied';
-	} else if (rejectedRow) {
-		terminalRow = rejectedRow;
-		terminalStatus = 'rejected';
-	}
-	if (terminalRow) {
-		const payloadTokenId = terminalRow.payload && terminalRow.payload.proposingTokenId;
-		if (payloadTokenId && ctx.mcpToken && ctx.mcpToken.id !== payloadTokenId) {
-			throw _appError(ERR_NOT_FOUND, 'Proposal ' + proposalId + ' not found.');
-		}
-		const response = {
-			proposalId,
-			canvasId: (terminalRow.payload && terminalRow.payload.canvasId) || null,
-			status: terminalStatus,
-			decidedAt: terminalRow.createdAt,
-		};
-		if (terminalStatus === 'applied' && terminalRow.payload && Array.isArray(terminalRow.payload.results)) {
-			response.applyResults = terminalRow.payload.results;
-		}
-		if (terminalRow.payload && terminalRow.payload.mode) {
-			response.applyMode = terminalRow.payload.mode;
-		}
-		return _textResult(JSON.stringify(response));
-	}
 	const proposal = await proposalsDb.findById(proposalId);
 	if (!proposal) {
 		throw _appError(ERR_NOT_FOUND, 'Proposal ' + proposalId + ' not found.');
@@ -1361,17 +1322,24 @@ async function _toolReadProposalOutcome(ctx, args) {
 	if (proposal.proposingTokenId && ctx.mcpToken && ctx.mcpToken.id !== proposal.proposingTokenId) {
 		throw _appError(ERR_NOT_FOUND, 'Proposal ' + proposalId + ' not found.');
 	}
-	return _textResult(
-		JSON.stringify({
-			proposalId,
-			canvasId: proposal.canvasId,
-			status: proposal.status,
-			summary: proposal.summary,
-			changeCount: proposal.changes.length,
-			createdAt: proposal.createdAt,
-			decidedAt: proposal.decidedAt,
-		}),
-	);
+	const response = {
+		proposalId,
+		canvasId: proposal.canvasId,
+		status: proposal.status,
+		createdAt: proposal.createdAt,
+		decidedAt: proposal.decidedAt,
+	};
+	if (proposal.status === 'pending') {
+		response.summary = proposal.summary;
+		response.changeCount = proposal.changes.length;
+	}
+	if (proposal.status === 'applied' && Array.isArray(proposal.outcome)) {
+		response.applyResults = proposal.outcome;
+	}
+	if (proposal.applyMode) {
+		response.applyMode = proposal.applyMode;
+	}
+	return _textResult(JSON.stringify(response));
 }
 
 async function _toolGetCanvasSummary(ctx, args) {

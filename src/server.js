@@ -372,7 +372,6 @@ app.get('/connect', async (req, res, next) => {
 		res.render('connect', {
 			accountEmail: account.email,
 			activeWorkspace: null,
-			workspaceSettings: null,
 			existingConnections: conns.map((c) => ({
 				username: c.display_username,
 				email: c.email,

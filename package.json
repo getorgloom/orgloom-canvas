@@ -28,6 +28,9 @@
   "engines": {
     "node": ">=24"
   },
+  "overrides": {
+    "qs": "6.16.0"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
     "better-sqlite3": "^12.9.0",

@@ -7,11 +7,12 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.resolve(here, '../src/canvas-routes.js'), 'utf8');
 
-test('upload routes evaluate local org approval before Salesforce permission-set verification', () => {
+test('upload routes use the shared Salesforce connection boundary', () => {
 	assert.match(
 		source,
-		/const uploadRouteGuards = \[\s*requireAccount,\s*requireUploadOrgApproval,\s*requireSfConnection,\s*requireCanvasPublishOwner,\s*\]/,
+		/const uploadRouteGuards = \[\s*requireAccount,\s*requireSfConnection,\s*requireCanvasPublishOwner,?\s*\]/,
 	);
+	assert.doesNotMatch(source, /requireUploadOrgApproval/);
 	assert.match(source, /app\.post\('\/api\/upload\/access-check', \.\.\.uploadRouteGuards/);
 	assert.match(
 		source,

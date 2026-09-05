@@ -115,18 +115,7 @@ export const CAPABILITIES = Object.freeze({
 	'connect-sf-org': {
 		workspaceToggle: null,
 		scope: 'connection',
-		requiresApproval: ({ orgType, settings, plan }) => {
-			if (!plan || plan.id !== 'team') {
-				return false;
-			}
-			if (orgType === 'production') {
-				return !!settings.prod_org_allowlist_enabled;
-			}
-			if (orgType !== 'sandbox' && orgType !== 'developer') {
-				return !!settings.prod_org_allowlist_enabled || !!settings.nonprod_org_allowlist_enabled;
-			}
-			return !!settings.nonprod_org_allowlist_enabled;
-		},
+		orgAllowlist: true,
 	},
 });
 

@@ -87,6 +87,42 @@
 				}
 				Promise.resolve(refreshCapabilities()).catch(() => {});
 			};
+			const relatedPlacementBounds = (record) => {
+				const halfWidth = record.isTypeNode ? 65 : 120;
+				const halfHeight = record.isTypeNode ? 65 : 90;
+				return {
+					left: record.x - halfWidth,
+					right: record.x + halfWidth,
+					top: record.y - halfHeight,
+					bottom: record.y + halfHeight,
+				};
+			};
+			const relatedPlacementsOverlap = (a, b) =>
+				!(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+			const findOpenRelatedPosition = (preferredX, preferredY, originX, originY, ignoredRecordId) => {
+				const angle = Math.atan2(preferredY - originY, preferredX - originX);
+				let radius = Math.hypot(preferredX - originX, preferredY - originY);
+				const probe = { x: preferredX, y: preferredY, isTypeNode: false };
+				const pushStep = 30;
+				const maxPushes = 30;
+
+				for (let step = 0; step <= maxPushes; step++) {
+					probe.x = originX + radius * Math.cos(angle);
+					probe.y = originY + radius * Math.sin(angle);
+					const bounds = relatedPlacementBounds(probe);
+					const collision = canvasState.bulkRecords.some(
+						(other) =>
+							other.id !== ignoredRecordId &&
+							relatedPlacementsOverlap(bounds, relatedPlacementBounds(other)),
+					);
+					if (!collision) {
+						return { x: probe.x, y: probe.y };
+					}
+					radius += pushStep;
+				}
+
+				return { x: probe.x, y: probe.y };
+			};
 
 			function spawnFreeTypeNode(objectName) {
 				const meta = (Array.isArray(canvasState.allObjects) ? canvasState.allObjects : []).find(
@@ -489,6 +525,18 @@
 						records = single ? [single] : [];
 						_byRefCache.set(cacheKey, records);
 					}
+					if (records.length === 0) {
+						rec._loading = false;
+						if (!opts.preserveTypeNode) {
+							const i = canvasState.bulkRecords.findIndex((b) => b.id === rec.id);
+							if (i !== -1) {
+								canvasState.bulkRecords.splice(i, 1);
+							}
+						}
+						showBulkToast('No related records found.', 'info');
+						renderBulkView();
+						return;
+					}
 					const recToValues = (r) => {
 						const v = {};
 						Object.keys(r).forEach((k) => {
@@ -570,12 +618,13 @@
 								_x = rec.x + radius * Math.cos(angle);
 								_y = rec.y + radius * Math.sin(angle);
 							}
+							const openPosition = findOpenRelatedPosition(_x, _y, rec.x, rec.y, rec.id);
 							target = {
 								id: canvasState.bulkIdSeq++,
 								objectName: targetType,
 								label: targetSel ? targetSel.label : targetType,
-								x: _x,
-								y: _y,
+								x: openPosition.x,
+								y: openPosition.y,
 								values: v,
 								loadedFromId: r.Id,
 								loadedValues: Object.assign({}, v),
@@ -646,7 +695,7 @@
 					}
 					const noun = targetSel ? targetSel.label : targetType;
 					if (added === 0 && reused === 0) {
-						showBulkToast('No related ' + noun + ' records found.');
+						showBulkToast('No related records found.', 'info');
 					} else if (wasTruncated) {
 						const remaining = cachedCountForRemoval - records.length;
 						const ctx = { rec, base };

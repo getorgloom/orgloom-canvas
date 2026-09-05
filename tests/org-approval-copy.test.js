@@ -2,27 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildOrgApprovalDeniedPayload as approvalPayload } from '../src/org-approval-copy.js';
 
-test('pending production approval names the automatic request and approval path', () => {
-	const payload = approvalPayload({ reason: 'approval-required', approvalStatus: 'pending' }, 'production');
+test('a blocked production org directs the user to the workspace allowlist', () => {
+	const payload = approvalPayload({ reason: 'org-not-allowed' }, 'production');
 
-	assert.equal(payload.error, 'approval-required');
-	assert.equal(payload.approvalStatus, 'pending');
-	assert.match(payload.message, /automatically created an access request/i);
-	assert.match(payload.message, /production Salesforce org/i);
-	assert.match(payload.message, /Any workspace admin can approve it in Workspace settings/i);
+	assert.equal(payload.error, 'org-not-allowed');
+	assert.equal(payload.orgType, 'production');
+	assert.match(payload.message, /workspace allowlist/i);
+	assert.match(payload.message, /Current My Domain URL/i);
+	assert.doesNotMatch(payload.message, /request|pending|approve/i);
 });
 
-test('developer approval is described as non-production', () => {
-	const payload = approvalPayload({ reason: 'approval-required', approvalStatus: 'pending' }, 'developer');
+test('the payload preserves the detected org type', () => {
+	const payload = approvalPayload({ reason: 'org-not-allowed' }, 'developer');
 
-	assert.match(payload.message, /non-production Salesforce org/i);
-	assert.doesNotMatch(payload.message, /this production Salesforce org/i);
-});
-
-test('a prior denial asks an admin to review instead of claiming a new request', () => {
-	const payload = approvalPayload({ reason: 'approval-required', approvalStatus: 'denied' }, 'sandbox');
-
-	assert.match(payload.message, /currently denied/i);
-	assert.match(payload.message, /Any workspace admin can review and approve/i);
-	assert.doesNotMatch(payload.message, /automatically created/i);
+	assert.equal(payload.orgType, 'developer');
+	assert.doesNotMatch(payload.message, /approval request/i);
 });

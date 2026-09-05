@@ -659,10 +659,10 @@ test('upload modal backdrop cannot accidentally dismiss upload review', () => {
 	assert.doesNotMatch(source, /'<div class="modal-overlay" data-upload-close><\/div>'/);
 });
 
-test('org approval copy prefers the server explanation', () => {
-	const serverMessage = 'Org Loom automatically created an access request for this non-production Salesforce org.';
+test('org allowlist copy prefers the server explanation', () => {
+	const serverMessage = 'This Salesforce org is not on the workspace allowlist.';
 	assert.equal(uploadModal.approvalRequiredMessage({ message: serverMessage }), serverMessage);
-	assert.match(source, /<strong>Salesforce connection not yet approved\.<\/strong>/);
+	assert.match(source, /<strong>Salesforce org is not allowed\.<\/strong>/);
 });
 
 test('an org switch stops the upload with recovery guidance', () => {

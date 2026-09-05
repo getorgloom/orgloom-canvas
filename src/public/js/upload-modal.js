@@ -703,11 +703,18 @@
 				_uploadAttemptId = null;
 				clearUploadPermissionLock(confirmBtn);
 				contentEl.innerHTML =
-					'<div class="banner error"><strong>Salesforce connection not yet approved.</strong> ' +
-					escapeHtml(approvalRequiredMessage(body)) +
+					'<div class="banner error"><strong>Salesforce org is not allowed.</strong> ' +
+					escapeHtml(
+						(body && body.message) ||
+							'Ask a workspace administrator to add this org in Workspace settings.',
+					) +
 					'</div><p class="tag center">No Salesforce records were written.</p>';
 				confirmBtn.disabled = false;
 				confirmBtn.textContent = 'Retry';
+			}
+
+			function isOrgAccessBlocked(body) {
+				return !!(body && (body.error === 'org-not-allowed' || body.error === 'approval-required'));
 			}
 
 			function isUploadPermissionDenied(body) {
@@ -1621,7 +1628,7 @@
 							renderUploadPermissionRequired(content, confirmBtn, accessBody);
 							return;
 						}
-						if (accessBody && accessBody.error === 'approval-required') {
+						if (isOrgAccessBlocked(accessBody)) {
 							renderApprovalRequired(content, confirmBtn, accessBody);
 							return;
 						}
@@ -1928,7 +1935,7 @@
 							renderActiveOrgChanged(content, confirmBtn, body);
 							return;
 						}
-						if (!r.ok && body && body.error === 'approval-required') {
+						if (!r.ok && isOrgAccessBlocked(body)) {
 							renderApprovalRequired(content, confirmBtn, body);
 							return;
 						}
@@ -2067,7 +2074,7 @@
 							confirmBtn.disabled = true;
 							return;
 						}
-						if (!r.ok && pf && pf.error === 'approval-required') {
+						if (!r.ok && isOrgAccessBlocked(pf)) {
 							renderApprovalRequired(content, confirmBtn, pf);
 							return;
 						}
@@ -2200,7 +2207,7 @@
 						return;
 					}
 					if (!r.ok) {
-						if (body && body.error === 'approval-required') {
+						if (isOrgAccessBlocked(body)) {
 							renderApprovalRequired(content, confirmBtn, body);
 							return;
 						}
@@ -2380,7 +2387,7 @@
 				}
 				if (resp.status === 403) {
 					const body = await resp.json().catch(() => ({}));
-					if (body && body.error === 'approval-required') {
+					if (isOrgAccessBlocked(body)) {
 						renderApprovalRequired(contentEl, uploadModal.querySelector('#upload-confirm'), body);
 						return;
 					}

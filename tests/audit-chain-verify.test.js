@@ -71,7 +71,7 @@ describe('verifyChain: clean chain', () => {
 });
 
 describe('verifyChain: tamper detection', () => {
-	test("mutating a row's payload_json after insert is detected at that row", async () => {
+	test("mutating a row's request id after insert is detected at that row", async () => {
 		const { ext } = await import('../src/extensions.js');
 		const a = await makeAccount();
 		const ws = await makeWorkspace(a.id);
@@ -79,7 +79,7 @@ describe('verifyChain: tamper detection', () => {
 		await ext
 			.getDb()
 			.updateTable('audit_log')
-			.set({ payload_json: JSON.stringify({ i: 99, tampered: true }) })
+			.set({ request_id: 'tampered-request' })
 			.where('id', '=', ids[2])
 			.execute();
 		const { audit } = await import('../src/database/index.js');
@@ -145,7 +145,7 @@ describe('verifyChain: tamper detection', () => {
 		await ext
 			.getDb()
 			.updateTable('audit_log')
-			.set({ payload_json: JSON.stringify({ rewritten: true }) })
+			.set({ request_id: 'rewritten-request' })
 			.where('id', '=', ids[1])
 			.execute();
 		const { audit } = await import('../src/database/index.js');

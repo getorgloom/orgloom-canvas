@@ -730,7 +730,7 @@ async function requireSfConnection(req, res, next) {
 	}
 }
 
-async function _currentSfOrgApproval(req, { createPendingOnDeny = false, auditAction = null } = {}) {
+async function _currentSfOrgApproval(req) {
 	if (!ext.saasMounted) {
 		return null;
 	}
@@ -755,11 +755,9 @@ async function _currentSfOrgApproval(req, { createPendingOnDeny = false, auditAc
 		workspaceId: req.workspaceId || undefined,
 		sfOrgId,
 		orgType,
-		createPendingOnDeny,
-		sfOrgLabel: connection.display_name || connection.email || null,
 		instanceUrl: connection.instance_url || null,
+		sfOrgLabel: connection.display_name || connection.email || null,
 		req,
-		...(auditAction ? { auditAction } : {}),
 	});
 	return { connection, orgGate, orgType, sfOrgId };
 }
@@ -783,22 +781,6 @@ async function requireSfOrgApproval(req, res, next) {
 				error: 'no-active-connection',
 				message: 'Connect an approved Salesforce org to continue.',
 			});
-		}
-		await _clearUnapprovedSfConnection(req, approval.connection.id);
-		return res.status(403).json(buildOrgApprovalDeniedPayload(approval.orgGate, approval.orgType));
-	} catch (error) {
-		return next(error);
-	}
-}
-
-async function requireUploadOrgApproval(req, res, next) {
-	try {
-		const approval = await _currentSfOrgApproval(req, {
-			createPendingOnDeny: true,
-			auditAction: 'upload',
-		});
-		if (!approval || approval.orgGate.allowed) {
-			return next();
 		}
 		await _clearUnapprovedSfConnection(req, approval.connection.id);
 		return res.status(403).json(buildOrgApprovalDeniedPayload(approval.orgGate, approval.orgType));
@@ -3592,12 +3574,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			return next(error);
 		}
 	};
-	const uploadRouteGuards = [
-		requireAccount,
-		requireUploadOrgApproval,
-		requireSfConnection,
-		requireCanvasPublishOwner,
-	];
+	const uploadRouteGuards = [requireAccount, requireSfConnection, requireCanvasPublishOwner];
 	app.post('/api/upload/access-check', ...uploadRouteGuards, async (req, res, next) => {
 		try {
 			if (!(await _gateUploadRecords(req, res, 'check upload access'))) {
@@ -3624,18 +3601,6 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			if (!(await _gateUploadRecords(req, res, 'upload'))) {
 				return;
-			}
-
-			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
-				workspaceId: req.workspaceId || undefined,
-				sfOrgId: req.sf.sfOrgId,
-				orgType: req.sf.orgType || 'unknown',
-				createPendingOnDeny: true,
-				req,
-				auditAction: 'upload',
-			});
-			if (!orgGate.allowed) {
-				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 
 			const records = Array.isArray(req.body?.records) ? req.body.records : [];
@@ -3925,7 +3890,6 @@ export function mountCanvasRoutes(app, options = {}) {
 						workspaceId,
 						action: 'record_upserted',
 						targetObject: r.objectName || null,
-						targetId: r.success ? r.id || null : null,
 						targetSfOrgId: req.sf.sfOrgId,
 						requestId: uploadRequestId,
 						status: r.success ? 'ok' : 'failed',
@@ -3945,7 +3909,6 @@ export function mountCanvasRoutes(app, options = {}) {
 						workspaceId,
 						action: 'record_deleted',
 						targetObject: d.objectName || null,
-						targetId: d.sfId || null,
 						targetSfOrgId: req.sf.sfOrgId,
 						requestId: uploadRequestId,
 						status: d.success ? 'ok' : 'failed',
@@ -4235,18 +4198,6 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (batch.recalledAt) {
 				return res.status(409).json({ error: 'already-recalled' });
 			}
-			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
-				workspaceId: req.workspaceId || undefined,
-				sfOrgId: req.sf.sfOrgId,
-				orgType: req.sf.orgType || 'unknown',
-				createPendingOnDeny: true,
-				req,
-				auditAction: 'upload_recalled',
-				auditPayload: { batchId: req.params.id },
-			});
-			if (!orgGate.allowed) {
-				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
-			}
 			const skipSfIds = Array.isArray(req.body && req.body.skipSfIds) ? req.body.skipSfIds.slice() : [];
 			const forceDeleteSfIds = new Set(
 				(Array.isArray(req.body && req.body.forceDeleteSfIds) ? req.body.forceDeleteSfIds : []).map(String),
@@ -4404,19 +4355,6 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			if (!(await _gateUploadRecords(req, res, 'upload_graph'))) {
 				return;
-			}
-
-			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
-				workspaceId: req.workspaceId || undefined,
-				sfOrgId: req.sf.sfOrgId,
-				orgType: req.sf.orgType || 'unknown',
-				createPendingOnDeny: true,
-				req,
-				auditAction: 'upload',
-				auditPayload: { mode: 'graph' },
-			});
-			if (!orgGate.allowed) {
-				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 
 			const records = Array.isArray(req.body?.records) ? req.body.records : [];
@@ -4822,7 +4760,6 @@ export function mountCanvasRoutes(app, options = {}) {
 						workspaceId,
 						action: 'record_upserted',
 						targetObject: r.objectName || null,
-						targetId: r.success ? r.id || null : null,
 						targetSfOrgId: req.sf.sfOrgId,
 						requestId: uploadRequestId,
 						status: r.success ? 'ok' : 'failed',
@@ -4842,7 +4779,6 @@ export function mountCanvasRoutes(app, options = {}) {
 						workspaceId,
 						action: 'record_deleted',
 						targetObject: d.objectName || null,
-						targetId: d.sfId || null,
 						targetSfOrgId: req.sf.sfOrgId,
 						requestId: uploadRequestId,
 						status: d.success ? 'ok' : 'failed',
@@ -5073,17 +5009,6 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			if (!(await _gateUploadRecords(req, res, 'upload_preflight'))) {
 				return;
-			}
-			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
-				workspaceId: req.workspaceId || undefined,
-				sfOrgId: req.sf.sfOrgId,
-				orgType: req.sf.orgType || 'unknown',
-				createPendingOnDeny: true,
-				req,
-				auditAction: 'preflight',
-			});
-			if (!orgGate.allowed) {
-				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 			const records = Array.isArray(req.body?.records) ? req.body.records : [];
 			applySlotFieldFilter(records);
@@ -5354,17 +5279,6 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			if (!(await _gateUploadRecords(req, res, 'upload_bulk'))) {
 				return;
-			}
-			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
-				workspaceId: req.workspaceId || undefined,
-				sfOrgId: req.sf.sfOrgId,
-				orgType: req.sf.orgType || 'unknown',
-				createPendingOnDeny: true,
-				req,
-				auditAction: 'upload_bulk',
-			});
-			if (!orgGate.allowed) {
-				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
 			}
 			const records = Array.isArray(req.body?.records) ? req.body.records : [];
 			applySlotFieldFilter(records);
@@ -5915,7 +5829,6 @@ export function mountCanvasRoutes(app, options = {}) {
 							workspaceId,
 							action: 'record_upserted',
 							targetObject: r.objectName || null,
-							targetId: r.success ? r.id || null : null,
 							targetSfOrgId: req.sf.sfOrgId,
 							requestId: uploadRequestId,
 							status: r.success ? 'ok' : 'failed',
@@ -5935,7 +5848,6 @@ export function mountCanvasRoutes(app, options = {}) {
 							workspaceId,
 							action: 'record_deleted',
 							targetObject: d.objectName || null,
-							targetId: d.sfId || null,
 							targetSfOrgId: req.sf.sfOrgId,
 							requestId: uploadRequestId,
 							status: d.success ? 'ok' : 'failed',
@@ -6272,9 +6184,7 @@ export function mountCanvasRoutes(app, options = {}) {
 					req,
 					action: 'load_existing',
 					targetObject: name,
-					targetId: id,
 					targetSfOrgId: req.sf.sfOrgId,
-					payload: { sfRecordId: id },
 				});
 			} catch (e) {
 				/* logging is best-effort */
@@ -8049,17 +7959,6 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!(await _gateUploadRecords(req, res, 'record_insert'))) {
 				return;
 			}
-			const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
-				workspaceId: req.workspaceId || undefined,
-				sfOrgId: req.sf.sfOrgId,
-				orgType: req.sf.orgType || 'unknown',
-				createPendingOnDeny: true,
-				req,
-				auditAction: 'record_insert',
-			});
-			if (!orgGate.allowed) {
-				return res.status(403).json(buildOrgApprovalDeniedPayload(orgGate, req.sf.orgType || 'unknown'));
-			}
 			const result = await req.sf.conn.sobject(req.params.name).create(req.body);
 			try {
 				await ext.auditWrite({
@@ -8067,7 +7966,7 @@ export function mountCanvasRoutes(app, options = {}) {
 					action: 'record_insert',
 					targetObject: req.params.name,
 					targetSfOrgId: req.sf.sfOrgId,
-					payload: { sfRecordId: (result && result.id) || null, success: !!(result && result.success) },
+					payload: { success: !!(result && result.success) },
 				});
 			} catch (e) {
 				/* best effort */
@@ -8132,13 +8031,23 @@ export function mountCanvasRoutes(app, options = {}) {
 			const activeSfUserId = (sfAuth && sfAuth.sfUserId) || null;
 			const activeSfOrgId = (sfAuth && sfAuth.sfOrgId) || null;
 			const workspaceId = await _requestWorkspaceId(req);
+			let orgAccess = { mode: 'none', allowedOrgs: [] };
+			if (_saasAvailable && workspacesDb && workspaceId) {
+				const settings = await workspacesDb.getSettings(workspaceId);
+				orgAccess = {
+					mode: settings.salesforce_org_filter_mode || 'none',
+					allowedOrgs: await workspacesDb.listAllowedSalesforceOrgs(workspaceId),
+				};
+			}
 			res.json({
+				orgAccess,
 				connections: await Promise.all(
 					list.map(async (c) => {
 						const orgGate = await ext.getCapability(req.account, 'connect-sf-org', {
 							workspaceId: workspaceId || undefined,
 							sfOrgId: c.sf_org_id,
 							orgType: c.org_type || 'unknown',
+							instanceUrl: c.instance_url || null,
 						});
 						return {
 							id: c.id,
@@ -8156,8 +8065,9 @@ export function mountCanvasRoutes(app, options = {}) {
 								activeSfOrgId !== null &&
 								c.sf_user_id === activeSfUserId &&
 								c.sf_org_id === activeSfOrgId,
-							approvalRequired: !orgGate.allowed && orgGate.reason === 'approval-required',
-							approvalStatus: orgGate.allowed ? 'approved' : orgGate.approvalStatus || 'missing',
+							accessAllowed: !!orgGate.allowed,
+							accessReason: orgGate.allowed ? null : orgGate.reason,
+							allowedOrgId: orgGate.allowedOrg && orgGate.allowedOrg.id ? orgGate.allowedOrg.id : null,
 						};
 					}),
 				),
@@ -8183,7 +8093,6 @@ export function mountCanvasRoutes(app, options = {}) {
 				workspaceId: (await _requestWorkspaceId(req)) || undefined,
 				sfOrgId: c.sf_org_id,
 				orgType: c.org_type || 'unknown',
-				createPendingOnDeny: true,
 				sfOrgLabel: c.display_name || c.display_username || c.email || null,
 				instanceUrl: c.instance_url || null,
 				req,
@@ -8211,7 +8120,9 @@ export function mountCanvasRoutes(app, options = {}) {
 					return res.json({ ok: true, connectionId: c.id, switched: 'in-session' });
 				}
 				let loginUrl = '/auth/login?force=1';
-				if (
+				if (orgGate.allowedOrg && orgGate.allowedOrg.id) {
+					loginUrl += '&allowedOrg=' + encodeURIComponent(orgGate.allowedOrg.id);
+				} else if (
 					typeof c.instance_url === 'string' &&
 					/^https:\/\/[a-z0-9.-]+(?:\.salesforce\.com|\.lightning\.force\.com)(\/.*)?$/i.test(c.instance_url)
 				) {
@@ -8895,7 +8806,17 @@ export function mountCanvasRoutes(app, options = {}) {
 						proposingTokenId: proposal.proposingTokenId,
 					},
 				});
-				await proposalsDb.markApplied({ id: proposalId, decidedByAccountId: req.account.id });
+				await proposalsDb.markApplied({
+					id: proposalId,
+					decidedByAccountId: req.account.id,
+					outcome: results.map((r) => {
+						const out = Object.assign({}, r);
+						delete out.fields;
+						delete out.values;
+						return out;
+					}),
+					applyMode: isDraft ? 'draft-canvas-only' : 'canvas-only',
+				});
 				mcpRelay.broadcastCanvasEvent({
 					workspaceId: proposal.workspaceId,
 					canvasId,

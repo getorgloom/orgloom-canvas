@@ -7,38 +7,26 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.resolve(here, '../src/public/js/app.js'), 'utf8');
 
-test('approval banner labels sandbox and developer connections as non-production', () => {
-	assert.match(source, /_meInfo\.connection && _meInfo\.connection\.approval/);
-	assert.match(source, /_meInfo\.orgType === 'sandbox' \|\| _meInfo\.orgType === 'developer'/);
-	assert.match(source, /\? 'non-production org'/);
-	assert.doesNotMatch(source, /'Writes to this production org'/);
+test('the canvas blocks a connection whose Salesforce org is not allowed', () => {
+	assert.match(source, /const orgAccess = _meInfo\.orgApproval/);
+	assert.match(source, /const blocked = orgAccess\.blocked === true/);
+	assert.match(source, /not on the workspace allowlist/);
+	assert.match(source, /Current My Domain URL/);
+	assert.match(source, /href="\/connect">Open Salesforce connections/);
 });
 
-test('every required org approval state renders as blocked', () => {
-	assert.match(source, /const blocked = approval\.required;/);
-});
-
-test('shared-canvas recipients still see a blocking org approval', () => {
+test('shared-canvas recipients still see the blocking org message', () => {
 	assert.match(source, /!blocked && \(\(current && current\.id && current\.ownedByMe === false\)/);
 	assert.match(source, /openingSharedCanvas = \(!current \|\| !current\.id\) && params\.has\('share'\)/);
 	assert.match(source, /function renderShareRecipientBanner\(\) \{[\s\S]*?renderOrgBanner\(\);/);
 });
 
-test('blocked approval states direct the member to Salesforce connections', () => {
-	assert.match(source, /else if \(approval\.status === 'pending'\)/);
-	assert.match(source, /Reconnect Salesforce after approval/);
-	assert.match(source, /href="\/connect">Open Salesforce connections/);
-	assert.doesNotMatch(source, /Reads work; uploads are blocked/);
-	assert.doesNotMatch(source, /data-request-org-access/);
-});
-
-test('the live access stream reconciles on reconnect and tab focus without polling', () => {
-	assert.match(source, /addEventListener\('open'/);
-	assert.match(source, /function _refreshOrgApprovalState\(\)/);
-	assert.match(source, /csrfFetch\('\/api\/me'/);
-	assert.match(source, /addEventListener\('visibilitychange'/);
-	assert.doesNotMatch(source, /_orgApprovalPollTimer/);
-	assert.doesNotMatch(source, /_watchPendingOrgApproval/);
+test('the live access stream refreshes access after an allowlist change', () => {
+	assert.match(source, /function _subscribeWorkspaceAccessEvents\(\)/);
+	assert.match(source, /\/access-events'/);
+	assert.match(source, /addEventListener\('access-change'/);
+	assert.match(source, /_refreshOrgApprovalState\(\)/);
+	assert.match(source, /renderOrgBanner\(\)/);
 });
 
 test('the playground does not open an authenticated workspace access stream', () => {
@@ -46,12 +34,4 @@ test('the playground does not open an authenticated workspace access stream', ()
 		source,
 		/function _subscribeWorkspaceAccessEvents\(\) \{[\s\S]*?if \([\s\S]*?window\.ORGLOOM_MOCK \|\|/,
 	);
-});
-
-test('later grants and revocations are pushed to an already-open canvas', () => {
-	assert.match(source, /function _subscribeWorkspaceAccessEvents\(\)/);
-	assert.match(source, /\/access-events'/);
-	assert.match(source, /addEventListener\('access-change'/);
-	assert.match(source, /required: status !== 'approved'/);
-	assert.match(source, /renderOrgBanner\(\)/);
 });

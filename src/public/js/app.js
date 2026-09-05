@@ -1122,8 +1122,7 @@ function csrfFetch(url, options) {
 	let _meInfo = null;
 	let _workspaceAccessEventSource = null;
 	const DEFAULT_TEAM_SETTINGS = Object.freeze({
-		prod_org_allowlist_enabled: 0,
-		nonprod_org_allowlist_enabled: 0,
+		salesforce_org_filter_mode: 'none',
 		invite_approval_required: 0,
 	});
 	const isTeamAdmin = () => !!(_currentTeam && _currentTeam.role === 'admin');
@@ -1247,12 +1246,7 @@ function csrfFetch(url, options) {
 				) {
 					return;
 				}
-				const status = change.status || 'missing';
-				connection.approval = {
-					required: status !== 'approved',
-					status,
-				};
-				renderOrgBanner();
+				_refreshOrgApprovalState();
 			} catch (error) {
 				window.ORGLOOM_capture && window.ORGLOOM_capture(error, { where: 'app.js/workspace-access-event' });
 			}
@@ -1332,12 +1326,8 @@ function csrfFetch(url, options) {
 		if (!banner || !_meInfo) {
 			return;
 		}
-		const approval = (_meInfo.connection && _meInfo.connection.approval) ||
-			_meInfo.orgApproval || {
-				required: false,
-				status: 'na',
-			};
-		const blocked = approval.required;
+		const orgAccess = _meInfo.orgApproval || { blocked: false };
+		const blocked = orgAccess.blocked === true;
 		const current = canvasState.currentCanvas;
 		const params = new URLSearchParams(window.location.search || '');
 		const openingSharedCanvas = (!current || !current.id) && params.has('share');
@@ -1357,43 +1347,20 @@ function csrfFetch(url, options) {
 		banner.classList.toggle('org-banner--blocked', blocked);
 		let icon, headline, controls;
 		if (blocked) {
-			const denied = ['denied', 'rejected', 'revoked', 'expired'].includes(approval.status);
-			const approvalOrgLabel =
+			const orgTypeLabel =
 				_meInfo.orgType === 'production'
 					? 'production org'
 					: _meInfo.orgType === 'sandbox' || _meInfo.orgType === 'developer'
 						? 'non-production org'
 						: 'Salesforce org';
-			icon = denied ? '\u2717' : '\u23F3';
-			const orgLabel = approval.sfOrgLabel ? ' <code>' + escapeHtml(approval.sfOrgLabel) + '</code>' : '';
-			if (denied) {
-				headline =
-					'Access to this ' +
-					approvalOrgLabel +
-					orgLabel +
-					' is <strong>not currently approved</strong> by your workspace admin. ' +
-					'Org Loom cannot load or change its Salesforce data.' +
-					(approval.note ? ' Reason: ' + escapeHtml(approval.note) : '');
-			} else if (approval.status === 'pending') {
-				headline =
-					'Access to this ' +
-					approvalOrgLabel +
-					orgLabel +
-					' is <strong>pending admin approval</strong>. ' +
-					'Org Loom cannot load or change Salesforce data until it is approved. ' +
-					'Reconnect Salesforce after approval.';
-			} else {
-				headline =
-					'Using this ' +
-					approvalOrgLabel +
-					orgLabel +
-					' <strong>requires workspace admin approval</strong>. ' +
-					'Request access, then reconnect Salesforce after approval.';
-			}
-			controls =
-				approval.status === 'pending'
-					? ''
-					: '<a class="button secondary ob-request" href="/connect">Open Salesforce connections</a>';
+			icon = '\u2717';
+			const orgLabel = orgAccess.sfOrgLabel ? ' <code>' + escapeHtml(orgAccess.sfOrgLabel) + '</code>' : '';
+			headline =
+				'This ' +
+				orgTypeLabel +
+				orgLabel +
+				' is <strong>not on the workspace allowlist</strong>. Org Loom cannot use this connection. Ask a workspace administrator to add its Current My Domain URL in Workspace settings.';
+			controls = '<a class="button secondary ob-request" href="/connect">Open Salesforce connections</a>';
 		} else {
 			icon = _meInfo.orgType === 'production' ? '\u26A0' : '\uD83D\uDD12';
 			headline =
