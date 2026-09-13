@@ -643,6 +643,8 @@ function csrfFetch(url, options) {
 	let _renderSharedTaskSidebar = function () {
 		return false;
 	};
+	let _renderUploadFixes = () => false;
+	let _clearUploadFixes = () => {};
 
 	function _getCanvasShareRole() {
 		if (canvasState._renderCanvasShareRole) {
@@ -1581,6 +1583,7 @@ function csrfFetch(url, options) {
 		'<div class="bulk-count-chip" id="bulk-count-chip"></div>' +
 		'</div>' +
 		'<aside class="shared-task-sidebar" id="shared-task-sidebar" hidden aria-live="polite"></aside>' +
+		'<aside class="shared-task-sidebar upload-fixes-sidebar" id="upload-fixes-sidebar" hidden aria-live="polite"></aside>' +
 		'<aside class="canvas-onboarding-progress" id="canvas-onboarding-progress" hidden aria-label="Getting started">' +
 		'<button type="button" class="cog-dismiss" data-cog-dismiss title="Hide this guide" aria-label="Dismiss getting started guide">&times;</button>' +
 		'<h3 class="cog-title">Getting started</h3>' +
@@ -1988,6 +1991,15 @@ function csrfFetch(url, options) {
 		if (graph.classList.contains('hidden')) {
 			return;
 		}
+		// Modal interactions belong to the dialog/browser, not the canvas behind it.
+		if (
+			e.defaultPrevented ||
+			Array.from(document.querySelectorAll('.modal:not(.hidden)')).some(
+				(modal) => modal.getClientRects().length > 0,
+			)
+		) {
+			return;
+		}
 		if (e.key === 'Escape') {
 			return;
 		}
@@ -2052,7 +2064,7 @@ function csrfFetch(url, options) {
 			}
 		}
 		if (canvasState.graphView === 'bulk') {
-			if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
+			if (e.target && (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable)) {
 				return;
 			}
 			if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -2070,6 +2082,10 @@ function csrfFetch(url, options) {
 			}
 			const cmd = e.ctrlKey || e.metaKey;
 			if (cmd && (e.key === 'c' || e.key === 'C')) {
+				const selection = window.getSelection();
+				if (selection && !selection.isCollapsed && selection.toString()) {
+					return;
+				}
 				if (copySelectionToClipboard()) {
 					e.preventDefault();
 				}
@@ -2471,6 +2487,7 @@ function csrfFetch(url, options) {
 	function renderBaseChip() {}
 
 	function resetToBasePicker() {
+		_clearUploadFixes();
 		canvasState.selectedObjects = [];
 		canvasState.selectedIdSeq = 1;
 		canvasState.activeIndex = 0;
@@ -3077,7 +3094,14 @@ function csrfFetch(url, options) {
 		const progressGuide = graph.querySelector('#canvas-onboarding-progress');
 		const canvasHint = graph.querySelector('#bulk-canvas-hint');
 		const shortcutHint = graph.querySelector('#canvas-shortcut-hint');
-		const showingSharedTasks = _renderSharedTaskSidebar();
+		const showingUploadFixes = _renderUploadFixes();
+		const showingSharedTasks = showingUploadFixes || _renderSharedTaskSidebar();
+		if (showingUploadFixes) {
+			const sharedTasks = document.getElementById('shared-task-sidebar');
+			if (sharedTasks) {
+				sharedTasks.hidden = true;
+			}
+		}
 		if (emptyPh) {
 			const realCount = canvasState.bulkRecords.filter((r) => r && (!r.isTypeNode || r.isPending)).length;
 			const _dismissed = _canvasGuideHas(_canvasGuideDismissKey, _canvasGuideDismissedThisPage);
@@ -3646,7 +3670,7 @@ function csrfFetch(url, options) {
 		}
 		await refreshMigrationAnnotations();
 		const matched = (canvasState.bulkRecords || []).filter(
-			(record) => record && !record.isTypeNode && record._migrateMatchedId,
+			(record) => record && !record.isTypeNode && !record._migrateExcluded && record._migrateMatchedId,
 		);
 		const baselines = {};
 		const CHUNK = 200;
@@ -3683,6 +3707,7 @@ function csrfFetch(url, options) {
 			canvasState.bulkAssociations,
 			canvasState.migrateMode.annotationsById,
 			baselines,
+			canvasState.describeCache,
 		);
 		_migrationClear();
 		exitMigrateMode();
@@ -3694,7 +3719,9 @@ function csrfFetch(url, options) {
 				result.updates +
 				' existing and ' +
 				result.creates +
-				' new. Review the records, then upload when ready.',
+				' new' +
+				(result.excluded ? ', ' + result.excluded + ' excluded' : '') +
+				'. Review the records, then upload when ready.',
 			'success',
 		);
 		return result;
@@ -3825,6 +3852,7 @@ function csrfFetch(url, options) {
 		return _importShared.gateImportFile(file, _JSON_IMPORT_GATE);
 	}
 	const _captureCanvasUndoSnapshot = _importShared.makeUndoCapture({
+		onCanvasReplace: () => _clearUploadFixes(),
 		canvasState: canvasState,
 		renderAll: function () {
 			renderAll();
@@ -6720,6 +6748,7 @@ function csrfFetch(url, options) {
 	const renderBulkCanvasCy = _rcv.renderBulkCanvasCy;
 
 	async function startNewCanvas() {
+		_clearUploadFixes();
 		const previousCanvasId =
 			canvasState.currentCanvas && canvasState.currentCanvas.id ? canvasState.currentCanvas.id : null;
 
@@ -6913,6 +6942,17 @@ function csrfFetch(url, options) {
 	const attachSfUserPicker = _csh.attachSfUserPicker;
 
 	const _um = window.OrgLoom.uploadModal.mount({
+		openRecordForCurrentUser: function (record, options) {
+			try {
+				const node = _cyInstance && record && _cyInstance.getElementById('r' + record.id);
+				if (node && node.length) {
+					_cyInstance.animate({ center: { eles: node }, duration: 380, easing: 'ease-out' });
+				}
+			} catch (_) {
+				// A viewport animation failure must not prevent opening the record editor.
+			}
+			return openRecordForCurrentUser(record, options);
+		},
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
 		escapeHtml: escapeHtml,
@@ -6954,6 +6994,8 @@ function csrfFetch(url, options) {
 	const openUploadModal = _um.openUploadModal;
 	const closeUploadModal = _um.closeUploadModal;
 	const confirmUpload = _um.confirmUpload;
+	_renderUploadFixes = _um.renderUploadFixes;
+	_clearUploadFixes = _um.clearUploadFixes;
 
 	const _rr = window.OrgLoom.relatedRecords.mount({
 		canvasState: canvasState,
@@ -7096,6 +7138,7 @@ function csrfFetch(url, options) {
 	const relayoutNewRecords = _treeLayout.relayoutNewRecords;
 
 	const _lcsv = window.OrgLoom.linkedCsv.mount({
+		onCanvasReplace: () => _clearUploadFixes(),
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
 		escapeHtml: escapeHtml,
@@ -7171,6 +7214,7 @@ function csrfFetch(url, options) {
 	const openBrowseModal = _rb.openBrowseModal;
 
 	const _tpl = window.OrgLoom.templates.mount({
+		onCanvasReplace: () => _clearUploadFixes(),
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
 		canvasCapCheck: canvasCapCheck,
@@ -7402,6 +7446,7 @@ function csrfFetch(url, options) {
 			_canvasShareRole = role;
 			canvasState._renderCanvasShareRole = role;
 			if (detail && (detail.revoked || detail.change === 'decreased')) {
+				_clearUploadFixes();
 				document.querySelectorAll('.modal.is-inline').forEach((modal) => modal.remove());
 				canvasState.bulkSelectedIds.clear();
 				canvasState.bulkSelectedEdgeId = null;

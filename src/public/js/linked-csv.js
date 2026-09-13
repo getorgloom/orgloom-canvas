@@ -4,6 +4,27 @@
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	function unmappedCsvColumns(file, row, relationshipColumns) {
+		const encryptedNames = new Set(
+			(file.describe?.fields || [])
+				.filter((field) => field.type === 'encryptedstring')
+				.flatMap((field) => [field.name, field.label].map((name) => String(name || '').toLowerCase())),
+		);
+		return (file.headers || []).flatMap((name, index) => {
+			if (
+				file.mapping?.[index] ||
+				relationshipColumns.has(index) ||
+				row[index] == null ||
+				row[index] === '' ||
+				encryptedNames.has(String(name).toLowerCase())
+			) {
+				return [];
+			}
+			return [{ name: String(name), value: String(row[index]) }];
+		});
+	}
+	window.OrgLoom.unmappedCsvColumns = unmappedCsvColumns;
+
 	function csvFieldDisposition(field, operation) {
 		if (!field) {
 			return 'write';
@@ -1329,7 +1350,7 @@
 													' relationship key' +
 													(relationshipCount === 1 ? '' : 's')
 												: '') +
-											(unmappedCount > 0 ? ' · ' + unmappedCount + ' skipped' : '') +
+											(unmappedCount > 0 ? ' · ' + unmappedCount + ' not uploaded' : '') +
 											'</span>'
 										: '<span class="tag warn">Pick an object</span>';
 									let permWarn = '';
@@ -1400,7 +1421,7 @@
 												const usedByRelationship = relationshipColumnIdxs.has(ci);
 												const current = file.mapping[ci] || '';
 												const opts =
-													'<option value=""> - Skip - </option>' +
+													'<option value=""> - Keep separately; do not upload - </option>' +
 													'<option value="__relationship_key__"' +
 													(usedByRelationship ? ' selected' : '') +
 													'>Match to a related record in another CSV - not uploaded</option>' +
@@ -1440,7 +1461,7 @@
 													? '<span class="lcsv-col-status mapped" title="Used by relationship">↗</span>'
 													: current
 														? '<span class="lcsv-col-status mapped" title="Mapped">\u2713</span>'
-														: '<span class="lcsv-col-status unmapped" title="Skipped on import">\u25CB</span>';
+														: '<span class="lcsv-col-status unmapped" title="Kept separately; not uploaded as a Salesforce field">\u25CB</span>';
 												return (
 													'<div class="lcsv-col-row">' +
 													status +
@@ -1568,6 +1589,9 @@
 										'</div>' +
 										permWarn +
 										mappingErrorsHtml +
+										(unmappedCount > 0
+											? '<p class="lcsv-perm-warn">Unmapped columns are kept separately in this browser and in JSON exports. They are not uploaded, saved to Salesforce, or shared. Map a column to an available field to use its values. Recognized encrypted-field values are not retained.</p>'
+											: '') +
 										opPicker +
 										columnsHtml +
 										'</div>'
@@ -2412,6 +2436,13 @@
 				const validFiles = state.files.filter(
 					(f) => f.objectName && Object.values(f.mapping).filter(Boolean).length > 0,
 				);
+				if (validFiles.length !== state.files.length) {
+					showBulkToast(
+						'Choose an available Salesforce object and map at least one field for every CSV file, or remove the files you do not want to import. No files have been imported.',
+						'warning',
+					);
+					return;
+				}
 				if (validFiles.length === 0) {
 					return;
 				}
@@ -2513,6 +2544,7 @@
 					return;
 				}
 				if (shouldReplace) {
+					deps.onCanvasReplace?.();
 					canvasState.bulkRecords = [];
 					canvasState.bulkAssociations = [];
 					canvasState.currentCanvas = null;
@@ -2527,6 +2559,11 @@
 				const newRecIds = new Set();
 				validFiles.forEach((file, vfi) => {
 					const fromFileIdx = state.files.indexOf(file);
+					const relationshipColumns = new Set(
+						(state.links || [])
+							.filter((link) => link.fromFileIdx === fromFileIdx)
+							.map((link) => link.fromColumnIdx),
+					);
 					const sel = selByName.get(file.objectName);
 					if (!sel) {
 						return;
@@ -2536,6 +2573,7 @@
 					const idColIdx = idColIdxStr != null ? Number(idColIdxStr) : null;
 					file.rows.forEach((row, rowIdx) => {
 						const values = {};
+						const unmapped = unmappedCsvColumns(file, row, relationshipColumns);
 						const omittedFields = fieldPlan.omittedByRow.get(cellKey(fromFileIdx, rowIdx));
 						mappedIdxs.forEach((iStr) => {
 							const i = Number(iStr);
@@ -2562,6 +2600,9 @@
 						if (sfId) {
 							const _hit = existingCanvasById.get(sel.name + '::' + sfId.slice(0, 15));
 							if (_hit) {
+								if (unmapped.length) {
+									_hit.unmappedCsvColumns = (_hit.unmappedCsvColumns || []).concat(unmapped);
+								}
 								const _vc = window.OrgLoom && window.OrgLoom.valueCompare;
 								const _d =
 									_vc && typeof _vc.computeRecordDiff === 'function'
@@ -2592,6 +2633,7 @@
 							x: startX + col * stepX,
 							y: startY + r * stepY,
 							values,
+							unmappedCsvColumns: unmapped,
 							fromSelectionId: sel.id,
 						};
 						if (sfId) {
@@ -2694,7 +2736,10 @@
 					_mergeNote +
 					_unchangedNote +
 					_fkNote +
-					'.';
+					'.' +
+					(validFiles.some((file) => file.headers.some((_name, index) => !file.mapping[index]))
+						? ' Unmapped columns are kept separately with the records and in JSON exports, not uploaded as Salesforce fields. Recognized encrypted-field values are not retained.'
+						: '');
 				if (_undoImport && showBulkToastWithAction) {
 					if (typeof _undoImport.arm === 'function') {
 						_undoImport.arm();

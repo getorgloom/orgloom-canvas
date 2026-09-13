@@ -878,8 +878,52 @@
 		return fieldElement.querySelector('input, textarea, select');
 	}
 
+	function linkedRecordControlHtml(field, lock, description, canUnlink, escapeHtml) {
+		const target = lock.target;
+		const values = target.values || {};
+		const recordName =
+			values.Name ||
+			values.Subject ||
+			values.Title ||
+			[values.FirstName, values.LastName].filter(Boolean).join(' ') ||
+			description;
+		const tooltip = field.name + ' · ' + description;
+		return (
+			'<div class="assoc-control">' +
+			'<input type="hidden" name="' +
+			escapeHtml(field.name) +
+			'" value="' +
+			escapeHtml(description) +
+			'" data-locked-assoc="' +
+			escapeHtml(String(lock.association.id)) +
+			'">' +
+			'<button type="button" class="assoc-record-link" id="f_' +
+			escapeHtml(field.name) +
+			'" data-open-assoc-field="' +
+			escapeHtml(field.name) +
+			'" title="' +
+			escapeHtml(tooltip) +
+			'" aria-label="' +
+			escapeHtml('Open linked record: ' + recordName) +
+			'"' +
+			(target._inaccessible ? ' disabled' : '') +
+			'>' +
+			'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>' +
+			'<span>' +
+			escapeHtml(String(recordName)) +
+			'</span></button>' +
+			(canUnlink
+				? '<button type="button" class="link-button assoc-unlink" data-disconnect-assoc="' +
+					escapeHtml(String(lock.association.id)) +
+					'" title="Remove this canvas link to enter a value manually.">Unlink</button>'
+				: '') +
+			'</div>'
+		);
+	}
+
 	window.OrgLoom.insertModal = {
 		_test: {
+			linkedRecordControlHtml,
 			unlinkRelationshipImpact,
 			applyLoadedRecordUnlink,
 			formatCarryoverValue,
@@ -1857,6 +1901,7 @@
 			const guidedTouchedFields = new Set();
 			const guidedCompletedFields = new Set();
 			let guidedAdvanceTimer = null;
+			let uploadFixFields = [];
 			let activeEncryptedTooltip = null;
 			let encryptedTooltipHideTimer = null;
 
@@ -2068,6 +2113,9 @@
 			}
 
 			function _guidedRequestedFieldNames() {
+				if (uploadFixFields.length) {
+					return uploadFixFields;
+				}
 				const record = canvasState.currentRecordRef;
 				const shareRole = getCanvasShareRole();
 				if (
@@ -2133,8 +2181,61 @@
 				};
 			}
 
+			function _uploadFixFieldReady(field) {
+				const record = canvasState.currentRecordRef;
+				const name = field.dataset.field;
+				const control = _guidedFieldControl(field);
+				if (!currentFields.some((candidate) => candidate.name === name)) {
+					return false;
+				}
+				if (
+					!record ||
+					record._inaccessible ||
+					field.dataset.readonly === 'true' ||
+					!control ||
+					control.readOnly ||
+					(typeof control.checkValidity === 'function' && !control.checkValidity())
+				) {
+					return false;
+				}
+				const encrypted = field.dataset.type === 'encryptedstring';
+				if (encrypted ? !currentEncryptedFormValues.has(name) : !_fieldHasUnsavedChange(name)) {
+					return false;
+				}
+				// Validate a temporary copy, never save the form or mark Salesforce errors
+				// verified just to advance focus. Empty optional fields can be valid fixes.
+				const values = { ...record.values, ...collectFormValues() };
+				for (const [fieldName, value] of currentEncryptedFormValues) {
+					values[fieldName] = value;
+				}
+				try {
+					const check = window.OrgLoom.preflight
+						.mount({
+							canvasState: {
+								bulkRecords: [{ ...record, values }],
+								bulkAssociations: canvasState.bulkAssociations,
+								describeCache: {
+									[record.objectName]: {
+										...canvasState.describeCache[record.objectName],
+										fields: currentFields,
+									},
+								},
+							},
+							isRecordModified: () => true,
+							recordOrdinal: () => 1,
+						})
+						.validateBulkRecords();
+					return (
+						!check.missingDescribes.size &&
+						!check.issues.some((issue) => issue.field === name && issue.severity === 'error')
+					);
+				} catch (_) {
+					return false;
+				}
+			}
+
 			function _updateGuidedFieldCompletion(field) {
-				if (!field || !field.classList.contains('is-slot-field')) {
+				if (!field) {
 					return false;
 				}
 				const fieldName = field.dataset.field;
@@ -2142,7 +2243,9 @@
 					return false;
 				}
 				guidedTouchedFields.add(fieldName);
-				const complete = isGuidedFieldComplete(field.dataset.type, _guidedFieldState(field));
+				const complete = uploadFixFields.length
+					? _uploadFixFieldReady(field)
+					: isGuidedFieldComplete(field.dataset.type, _guidedFieldState(field));
 				if (complete) {
 					guidedCompletedFields.add(fieldName);
 				} else {
@@ -2227,9 +2330,10 @@
 
 			function _nextIncompleteGuidedField(fieldName) {
 				const requested = new Set(_guidedRequestedFieldNames());
-				const ordered = Array.from(modal.querySelectorAll('.field.is-slot-field')).filter((field) => {
+				const ordered = Array.from(modal.querySelectorAll('.field[data-field]')).filter((field) => {
 					const name = field.dataset.field;
-					return requested.has(name) && !!_guidedFieldControl(field);
+					const control = _guidedFieldControl(field);
+					return requested.has(name) && !!control && field.dataset.readonly !== 'true' && !control.readOnly;
 				});
 				const currentIndex = ordered.findIndex((field) => field.dataset.field === fieldName);
 				if (currentIndex < 0) {
@@ -2253,7 +2357,9 @@
 						return;
 					}
 					const activeRequestedField =
-						active && active.closest ? active.closest('.field.is-slot-field') : null;
+						active && active.closest
+							? active.closest(uploadFixFields.length ? '.field[data-field]' : '.field.is-slot-field')
+							: null;
 					if (activeRequestedField && activeRequestedField.dataset.field !== fieldName) {
 						return;
 					}
@@ -2266,6 +2372,15 @@
 
 			function openInsertModal(objectName, opts) {
 				opts = opts || {};
+				uploadFixFields = Array.isArray(opts.uploadFixFields)
+					? Array.from(
+							new Set(
+								opts.uploadFixFields.filter(
+									(name) => typeof name === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+								),
+							),
+						)
+					: [];
 				objectName = objectName || (opts.record && opts.record.objectName);
 				objectName = typeof objectName === 'string' ? objectName.trim() : '';
 				if (!objectName) {
@@ -2504,6 +2619,7 @@
 			}
 
 			function closeModal() {
+				uploadFixFields = [];
 				closeEncryptedTooltip();
 				if (guidedAdvanceTimer) {
 					clearTimeout(guidedAdvanceTimer);
@@ -3162,6 +3278,21 @@
 						}
 					});
 				});
+				modal.querySelectorAll('[data-open-assoc-field]').forEach((btn) => {
+					btn.addEventListener('click', () => {
+						const lock = associationLockForField(btn.dataset.openAssocField);
+						if (!lock || !lock.target || lock.target._inaccessible) {
+							return;
+						}
+						if (editorTouchedFields.size > 0 || currentEncryptedDraftValues.size > 0) {
+							showBulkToast('Save or cancel your edits before opening the linked record.', 'info');
+							return;
+						}
+						const target = lock.target;
+						closeModal();
+						openInsertModal(target.objectName, { record: target });
+					});
+				});
 				modal.querySelectorAll('[data-disconnect-assoc]').forEach((btn) => {
 					btn.addEventListener('click', (e) => {
 						e.preventDefault();
@@ -3678,7 +3809,7 @@
 					if (div) {
 						div.classList.remove('field-invalid-ref');
 					}
-					const guidedField = e.target.closest && e.target.closest('.field.is-slot-field');
+					const guidedField = e.target.closest && e.target.closest('.field[data-field]');
 					if (guidedField) {
 						_updateGuidedFieldCompletion(guidedField);
 					}
@@ -3730,7 +3861,7 @@
 					if (!captureEncryptedFormValue(e.target)) {
 						markEditorFieldTouched(e.target);
 					}
-					const guidedField = e.target.closest && e.target.closest('.field.is-slot-field');
+					const guidedField = e.target.closest && e.target.closest('.field[data-field]');
 					const guidedComplete = guidedField && _updateGuidedFieldCompletion(guidedField);
 					if (guidedComplete) {
 						_scheduleGuidedAdvance(guidedField.dataset.field, e.target, true);
@@ -3964,6 +4095,15 @@
 				const roBadge = configuredReadOnly
 					? ' <span class="meta meta-readonly" title="Read-only in Salesforce for your profile or because the field is system-managed">read-only</span>'
 					: '';
+				const editableAssociation =
+					!readOnly && f.type === 'reference' && !externalKeyReference
+						? editableContributorAssociation(f.name)
+						: null;
+				const lock =
+					!readOnly && f.type === 'reference' && !externalKeyReference && !editableAssociation
+						? associationLockForField(f.name)
+						: null;
+				const linked = !!(lock && lock.target);
 				const meta =
 					'<span class="meta">' +
 					(externalKeyReference
@@ -3973,10 +4113,17 @@
 								? ' &rarr; ' + escapeHtml(f.referenceTo.join(', '))
 								: '')) +
 					'</span>';
-				const labelInner = escapeHtml(f.label) + req + ' ' + meta + slotBadge + roBadge;
+				const labelInner =
+					escapeHtml(linked ? f.label.replace(/\s+ID$/i, '') : f.label) +
+					req +
+					(linked ? '' : ' ' + meta) +
+					slotBadge +
+					roBadge;
 				const labelBlock =
 					'<div class="field-head">' +
 					'<label for="f_' +
+					escapeHtml(f.name) +
+					'" title="' +
 					escapeHtml(f.name) +
 					'">' +
 					labelInner +
@@ -3986,32 +4133,12 @@
 					(externalKeyReference
 						? '<div class="help">Enter the external record’s External ID. Org Loom cannot verify that the external record exists.</div>'
 						: '') + (f.helpText ? '<div class="help">' + escapeHtml(f.helpText) + '</div>' : '');
-				const editableAssociation =
-					!readOnly && f.type === 'reference' && !externalKeyReference
-						? editableContributorAssociation(f.name)
-						: null;
 				const encrypted = String(f.type || '').toLowerCase() === 'encryptedstring';
 				const input = encrypted
 					? encryptedInputForField(f, readOnly)
 					: readOnly
 						? readOnlyInputForField(f)
 						: inputForField(f, { editableAssociation: editableAssociation });
-				const lock =
-					!readOnly && f.type === 'reference' && !externalKeyReference && !editableAssociation
-						? associationLockForField(f.name)
-						: null;
-				const assocHelp =
-					lock && lock.target
-						? '<div class="assoc-help">Linked via association to <strong>' +
-							escapeHtml(describeLinkedTarget(lock.target)) +
-							'</strong>.' +
-							(canEditCanvasStructure()
-								? ' <button type="button" class="link-button" data-disconnect-assoc="' +
-									lock.association.id +
-									'">Disconnect</button> to edit manually.'
-								: '') +
-							'</div>'
-						: '';
 				const takeoverAction = takeoverAllowed
 					? ' <button type="button" class="link-button" data-field-takeover="' +
 						escapeHtml(f.name) +
@@ -4065,7 +4192,6 @@
 					labelBlock +
 					input +
 					help +
-					assocHelp +
 					lockHelp +
 					'</div>'
 				);
@@ -4906,17 +5032,12 @@
 						const lock = associationLockForField(f.name);
 						const editableAssociation = opts.editableAssociation;
 						if (lock && lock.target && !editableAssociation) {
-							const display = describeLinkedTarget(lock.target);
-							return (
-								'<input type="text" id="' +
-								id +
-								'" name="' +
-								name +
-								'" value="' +
-								escapeHtml(display) +
-								'" readonly data-locked-assoc="' +
-								lock.association.id +
-								'">'
+							return linkedRecordControlHtml(
+								f,
+								lock,
+								describeLinkedTarget(lock.target),
+								canEditCanvasStructure(),
+								escapeHtml,
 							);
 						}
 						const referenceTargets = Array.isArray(f.referenceTo) ? f.referenceTo.filter(Boolean) : [];

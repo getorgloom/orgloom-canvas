@@ -422,7 +422,10 @@ test('assigned contributors and editors are guided to the next requested field a
 		insertModalSource,
 		/form\.addEventListener\('change',[\s\S]*if \(guidedComplete\) \{[\s\S]*_scheduleGuidedAdvance/,
 	);
-	assert.match(insertModalSource, /active\.closest\('\.field\.is-slot-field'\)/);
+	assert.match(
+		insertModalSource,
+		/active\.closest\(uploadFixFields\.length \? '\.field\[data-field\]' : '\.field\.is-slot-field'\)/,
+	);
 	assert.match(insertModalSource, /activeRequestedField\.dataset\.field !== fieldName/);
 	assert.match(insertModalSource, /section\.classList\.remove\('collapsed'\)/);
 	assert.match(insertModalSource, /window\.requestAnimationFrame\(revealField\)/);

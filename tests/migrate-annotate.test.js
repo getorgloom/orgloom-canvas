@@ -499,7 +499,7 @@ describe('applyMigrationPlan: normal canvas materialization', () => {
 			},
 		);
 
-		assert.equal(JSON.stringify(result), JSON.stringify({ updates: 1, creates: 0, total: 1 }));
+		assert.equal(JSON.stringify(result), JSON.stringify({ updates: 1, creates: 0, excluded: 0, total: 1 }));
 		assert.equal(record.loadedFromId, '001TARGET');
 		assert.equal(
 			JSON.stringify(record.loadedValues),

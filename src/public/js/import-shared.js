@@ -222,6 +222,7 @@
 					showBulkToast('Can’t undo the import because the canvas was edited afterward.', 'info');
 					return;
 				}
+				deps.onCanvasReplace?.();
 				canvasState.selectedObjects = snap.selectedObjects;
 				canvasState.selectedIdSeq = snap.selectedIdSeq;
 				canvasState.activeIndex = snap.activeIndex;

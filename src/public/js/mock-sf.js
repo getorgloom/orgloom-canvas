@@ -1109,17 +1109,6 @@
 		});
 	}
 
-	async function handleUploadPreflight(req) {
-		const body = await req.json().catch(() => ({}));
-		const records = Array.isArray(body.records) ? body.records : [];
-		return jsonResponse({
-			ok: true,
-			results: records.map((r) => ({ tempId: r.tempId, success: true, objectName: r.objectName })),
-			sampled: records.length,
-			total: records.length,
-		});
-	}
-
 	function handleBatchesList() {
 		const store = readStore(STORAGE_KEY.uploads);
 		const batches = Object.values(store)
@@ -1715,7 +1704,6 @@
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/upload' && handleUpload(req) },
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/upload/graph' && handleUploadGraph(req) },
 		{ method: 'POST', match: (u, req) => u.pathname === '/api/upload/bulk' && handleUploadBulk(req) },
-		{ method: 'POST', match: (u, req) => u.pathname === '/api/upload/preflight' && handleUploadPreflight(req) },
 
 		{ method: 'GET', match: (u) => u.pathname === '/api/upload-batches' && handleBatchesList() },
 		{

@@ -300,7 +300,15 @@ test('viewer and contributor edit modals omit delete and unlink controls', () =>
 		/!canEditCanvasStructure\(\)[\s\S]*!rec[\s\S]*!isLoaded[\s\S]*isTypeNode[\s\S]*isInaccessible[\s\S]*!pending && !canDeleteRecord\(rec\)/,
 	);
 	assert.match(insertModalSource, /canEditCanvasStructure\(\)\s*\? '<button[^']+data-unlink-existing/);
-	assert.match(insertModalSource, /canEditCanvasStructure\(\)\s*\? ' <button[^']+data-disconnect-assoc/);
+	assert.match(
+		insertModalSource,
+		/linkedRecordControlHtml\(\s*f,\s*lock,\s*describeLinkedTarget\(lock.target\),\s*canEditCanvasStructure\(\),/,
+	);
+	assert.match(insertModalSource, /canUnlink\s*\? '<button[^']+data-disconnect-assoc/);
+	assert.match(
+		insertModalSource,
+		/btn\.addEventListener\('click', \(e\) => \{\s*e.preventDefault\(\);\s*if \(!canEditCanvasStructure\(\)\)/,
+	);
 	assert.match(
 		insertModalSource,
 		/unlinkBtn\.addEventListener\('click', async \(\) => \{\s*if \(!canEditCanvasStructure\(\)\)/,

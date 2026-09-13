@@ -126,6 +126,75 @@
 				return out;
 			}
 
+			function cleanUnmappedColumns(columns, objectName) {
+				const fields =
+					(canvasState.describeCache?.[objectName] || canvasState.draftDescribeCache?.[objectName] || {})
+						.fields || [];
+				return (Array.isArray(columns) ? columns : [])
+					.filter((column) => column && typeof column.name === 'string' && typeof column.value === 'string')
+					.filter(
+						(column) =>
+							!fields.some(
+								(field) =>
+									field.type === 'encryptedstring' &&
+									[field.name, field.label].some(
+										(name) => String(name || '').toLowerCase() === column.name.toLowerCase(),
+									),
+							),
+					)
+					.map((column) => ({ name: column.name, value: column.value }));
+			}
+
+			async function checkImportedRecords(records) {
+				const real = records.filter((record) => record && !record.isTypeNode && !record._permissionHidden);
+				const descriptions = new Map();
+				await Promise.all(
+					[...new Set(real.map((record) => record.objectName))].map(async (name) => {
+						try {
+							descriptions.set(name, await ensureDescribe(name, { force: true }));
+						} catch (_) {
+							descriptions.set(name, null);
+						}
+					}),
+				);
+				let objectsUnavailable = 0;
+				let fieldsUnavailable = 0;
+				real.forEach((record) => {
+					const describe = descriptions.get(record.objectName);
+					const fieldNames = new Set((describe?.fields || []).map((field) => field.name.toLowerCase()));
+					const missingFields = describe
+						? Object.keys(record.values || {}).filter(
+								(name) =>
+									name !== 'attributes' &&
+									!name.startsWith('_') &&
+									!fieldNames.has(name.toLowerCase()),
+							)
+						: [];
+					delete record._importSchemaWarning;
+					if (!describe) {
+						objectsUnavailable++;
+					}
+					fieldsUnavailable += missingFields.length;
+					if (!describe || missingFields.length) {
+						record._importSchemaWarning = { objectUnavailable: !describe, fields: missingFields };
+					}
+				});
+				return (
+					(objectsUnavailable
+						? ' ' +
+							objectsUnavailable +
+							(objectsUnavailable === 1 ? ' record uses' : ' records use') +
+							' an unavailable object. Kept on the canvas, but cannot be uploaded through this connection.'
+						: '') +
+					(fieldsUnavailable
+						? ' ' +
+							fieldsUnavailable +
+							(fieldsUnavailable === 1 ? ' field value is' : ' field values are') +
+							' unavailable through this connection. Kept in the imported data and JSON export, but not available in the normal field editor or included in Salesforce writes.'
+						: '')
+				);
+			}
+
 			function _mintCanvasRecordId() {
 				try {
 					if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -325,6 +394,11 @@
 							},
 							recordCommonParts(r),
 						);
+						// Unmapped CSV data stays local and in downloads, outside Salesforce-backed/shared payloads.
+						const unmapped = cleanUnmappedColumns(r.unmappedCsvColumns, r.objectName);
+						if (unmapped.length) {
+							rec.unmappedCsvColumns = unmapped;
+						}
 						if (preserveLoadedLinks && r.loadedFromId) {
 							rec.loadedFromId = r.loadedFromId;
 							if (r.loadedValues) {
@@ -707,6 +781,7 @@
 
 			async function applyTemplate(t, opts) {
 				opts = opts || {};
+				const beforeImport = new Set(canvasState.bulkRecords);
 				const schemaOnly = !!opts.schemaOnly;
 				const merge = !!opts.merge;
 				validateTemplate(t);
@@ -731,6 +806,7 @@
 				);
 				clearEmptyStarterCard();
 				if (!merge) {
+					deps.onCanvasReplace?.();
 					canvasState.selectedObjects = [];
 					canvasState.selectedIdSeq = 1;
 					canvasState.activeIndex = 0;
@@ -790,6 +866,7 @@
 							x: Number(r.x) || 200,
 							y: (Number(r.y) || 200) + _offY,
 							values: _cleanValues(r.values),
+							unmappedCsvColumns: cleanUnmappedColumns(r.unmappedCsvColumns, r.objectName),
 						};
 						encryptedFields.hydrateIntents(rec, r.encryptedFieldIntents, canvasState);
 						if (r.loadedFromId) {
@@ -832,6 +909,9 @@
 				if (typeof setGraphView === 'function') {
 					setGraphView(schemaOnly ? 'schema' : 'bulk');
 				}
+				const importWarning = !schemaOnly
+					? await checkImportedRecords(canvasState.bulkRecords.filter((record) => !beforeImport.has(record)))
+					: '';
 				renderAll();
 				const _objectCount = (t.schema.objects || []).length;
 				if (schemaOnly) {
@@ -880,7 +960,11 @@
 						msg += ' Exported from a different org; Salesforce id references may not match here.';
 					}
 					const _caveats = skippedRecords > 0 || skippedAssoc > 0 || demotedToDrafts > 0 || _crossOrg;
-					_summaryToast(msg, _caveats ? 'error' : undefined, opts);
+					_summaryToast(
+						msg + importWarning,
+						importWarning ? 'warning' : _caveats ? 'error' : undefined,
+						opts,
+					);
 					if (opts.importFileName) {
 						pingAuditEvent('canvas_load_file', {
 							recordCount: importedCount,
@@ -899,6 +983,7 @@
 
 			async function applyCanvasPayload(payload, opts) {
 				opts = opts || {};
+				const beforeImport = new Set(canvasState.bulkRecords);
 				const merge = !!opts.merge;
 				const loadingCanvasShareRole = opts.ownedByMe === false ? opts.recipientRole || 'viewer' : null;
 				const loadingCanvasIdentity =
@@ -936,6 +1021,7 @@
 				canvasState._renderCanvasShareRole = loadingCanvasShareRole;
 				clearEmptyStarterCard();
 				if (!merge) {
+					deps.onCanvasReplace?.();
 					canvasState.selectedObjects = [];
 					canvasState.selectedIdSeq = 1;
 					canvasState.activeIndex = 0;
@@ -1179,6 +1265,9 @@
 						y: _savedCoordinate(ref.y, 200) + _offY,
 						_canvasRecordId: canvasRecordIds.get(ref),
 						loadedValues: Object.assign({}, _fresh),
+						unmappedCsvColumns: opts.importFileName
+							? cleanUnmappedColumns(ref.unmappedCsvColumns, ref.objectName)
+							: [],
 						values:
 							ref.changes && typeof ref.changes === 'object'
 								? Object.assign({}, _fresh, ref.changes)
@@ -1218,6 +1307,7 @@
 						x: _savedCoordinate(d.x, 200),
 						y: _savedCoordinate(d.y, 200) + _offY,
 						values: _cleanValues(d.values),
+						unmappedCsvColumns: cleanUnmappedColumns(d.unmappedCsvColumns, d.objectName),
 						_persistedTempId: d.tempId,
 						_canvasRecordId: canvasRecordIds.get(d),
 					};
@@ -1303,6 +1393,9 @@
 						console.warn('slot preflight failed:', error);
 					}
 				}
+				const importWarning = opts.importFileName
+					? await checkImportedRecords(canvasState.bulkRecords.filter((record) => !beforeImport.has(record)))
+					: '';
 				renderAll();
 				if (shouldPreflight && !loadingCanvasShareRole) {
 					_runSlotPreflight().catch((e) => console.warn('slot preflight failed:', e));
@@ -1351,7 +1444,7 @@
 						pendingEncrypted.slice(0, 4).join(', ') +
 						(pendingEncrypted.length > 4 ? ', and ' + (pendingEncrypted.length - 4) + ' more.' : '.');
 				}
-				_summaryToast(msg, _skips ? 'error' : undefined, opts);
+				_summaryToast(msg + importWarning, importWarning ? 'warning' : _skips ? 'error' : undefined, opts);
 				if (opts.importFileName) {
 					pingAuditEvent('canvas_load_file', {
 						recordCount: loadedById.size + draftById.size,
@@ -1371,6 +1464,7 @@
 			}
 
 			return {
+				checkImportedRecords: checkImportedRecords,
 				buildTemplate: buildTemplate,
 				sanitizeFilename: sanitizeFilename,
 				buildCanvasPayload: buildCanvasPayload,

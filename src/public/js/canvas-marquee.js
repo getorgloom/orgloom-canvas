@@ -218,25 +218,34 @@
 					const origToNew = new Map();
 					canvasState.bulkClipboard.records.forEach((r) => {
 						const newId = canvasState.bulkIdSeq++;
-						origToNew.set(r.origId, newId);
-						canvasState.bulkRecords.push({
+						const clone = {
 							id: newId,
 							objectName: r.objectName,
 							label: r.label,
 							x: r.x + offX,
 							y: r.y + offY,
 							values: cloneCreateableValues(r),
-						});
+						};
+						origToNew.set(r.origId, clone);
+						canvasState.bulkRecords.push(clone);
 						newIds.push(newId);
 					});
 					canvasState.bulkClipboard.associations.forEach((a) => {
-						const fromId = origToNew.get(a.fromOrigId);
-						const toId = origToNew.get(a.toOrigId);
-						if (fromId != null && toId != null) {
+						const from = origToNew.get(a.fromOrigId);
+						const to = origToNew.get(a.toOrigId);
+						if (from && to) {
+							// The copied relationship now targets a draft. Its old Salesforce
+							// ID must not also point back to the original parent; upload will
+							// resolve the draft association after that parent is inserted.
+							for (const fieldName of Object.keys(from.values)) {
+								if (fieldName.toLowerCase() === String(a.fieldName).toLowerCase()) {
+									delete from.values[fieldName];
+								}
+							}
 							canvasState.bulkAssociations.push({
 								id: canvasState.bulkIdSeq++,
-								fromId,
-								toId,
+								fromId: from.id,
+								toId: to.id,
 								fieldName: a.fieldName,
 							});
 						}

@@ -75,7 +75,7 @@ test('server allows normal records and field requests', () => {
 test('every upload path applies the canvas-artifact guard', () => {
 	const here = path.dirname(fileURLToPath(import.meta.url));
 	const source = fs.readFileSync(path.resolve(here, '../src/canvas-routes.js'), 'utf8');
-	for (const route of ['/api/upload', '/api/upload/graph', '/api/upload/preflight', '/api/upload/bulk']) {
+	for (const route of ['/api/upload', '/api/upload/graph', '/api/upload/bulk']) {
 		const start = source.indexOf("app.post('" + route + "'");
 		assert.notEqual(start, -1, route + ' route should exist');
 		const nextRoute = source.indexOf("\n\tapp.post('", start + 1);

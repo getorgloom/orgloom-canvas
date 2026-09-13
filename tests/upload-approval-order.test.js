@@ -18,7 +18,7 @@ test('upload routes use the shared Salesforce connection boundary', () => {
 		source,
 		/app\.post\('\/api\/upload\/access-check',[\s\S]*?_gateUploadRecords\(req, res, 'check upload access'\)/,
 	);
-	for (const route of ['/api/upload', '/api/upload/graph', '/api/upload/preflight', '/api/upload/bulk']) {
+	for (const route of ['/api/upload', '/api/upload/graph', '/api/upload/bulk']) {
 		const routeIndex = source.indexOf("'" + route + "'");
 		assert.notEqual(routeIndex, -1, route);
 		assert.match(source.slice(routeIndex, routeIndex + 90), /\.\.\.uploadRouteGuards/);
@@ -75,8 +75,7 @@ test('Graph upload loads object write metadata concurrently', () => {
 test('every record upload path rejects specialized object types before capability checks', () => {
 	const routes = [
 		['/api/upload', '/api/upload-batches'],
-		['/api/upload/graph', '/api/upload/preflight'],
-		['/api/upload/preflight', '/api/upload/bulk'],
+		['/api/upload/graph', '/api/upload/bulk'],
 		['/api/upload/bulk', '/api/objects'],
 	];
 	for (const [route, nextRoute] of routes) {

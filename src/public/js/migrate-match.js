@@ -455,6 +455,7 @@
 				document.querySelectorAll('.migrate-match-modal').forEach((el) => el.remove());
 				const objects = _distinctObjects(canvasState);
 				const snapshotFields = [
+					'_migrateExcluded',
 					'values',
 					'loadedFromId',
 					'_migrateMatchedId',
@@ -848,19 +849,29 @@
 				}
 
 				function _annotationFor(rec) {
+					if (rec && rec._migrateExcluded) {
+						return { status: 'excluded', issues: [] };
+					}
 					const engine = window.Orgloom && window.Orgloom.migrateAnnotate;
 					const describe = rec && canvasState.describeCache[rec.objectName];
 					if (!engine || !engine.computeMigrationStatus || !describe) {
 						return { status: 'pending', issues: [], resolvedRecordTypeId: null };
 					}
-					return engine.computeMigrationStatus(rec, describe);
+					const annotation = engine.computeMigrationStatus(rec, describe);
+					const dependencies = engine.exclusionIssues(
+						rec,
+						_allRecords(),
+						canvasState.bulkAssociations,
+						canvasState.describeCache,
+					);
+					return dependencies.length
+						? { ...annotation, status: 'blocked', issues: annotation.issues.concat(dependencies) }
+						: annotation;
 				}
 
 				function _effectiveRecordTypeId(rec) {
 					const describe = rec && canvasState.describeCache[rec.objectName];
 					const annotation = _annotationFor(rec);
-					const displayedValue =
-						field.type === 'datetime' && currentValue ? _dateTimeForInput(currentValue) : currentValue;
 					return (
 						(annotation && annotation.resolvedRecordTypeId) ||
 						(describe && describe.defaultRecordTypeId) ||
@@ -907,7 +918,10 @@
 						});
 					});
 					resolvedFieldMaps.forEach((resolved) => {
-						if (resolved.resolution === '__omit__') {
+						if (
+							!_allRecords()[resolved.recordIndex]?._migrateExcluded &&
+							resolved.resolution === '__omit__'
+						) {
 							counts.unavailableValues++;
 						}
 					});
@@ -1194,6 +1208,8 @@
 						escapeHtml(field.name) +
 						'"';
 					const currentValue = _lookup(rec.values, field.name);
+					const displayedValue =
+						field.type === 'datetime' && currentValue ? _dateTimeForInput(currentValue) : currentValue;
 					if (field.type === 'picklist' || field.type === 'multipicklist') {
 						const options = _picklistValuesForRecordType(field, _effectiveRecordTypeId(rec))
 							.filter((value) => value && value.active !== false)
@@ -1501,17 +1517,43 @@
 					}
 					all.forEach((rec, recordIndex) => {
 						const annotation = _annotationFor(rec);
+						if (rec._migrateExcluded) {
+							recordRows.push(
+								'<section class="mm-difference-record"><strong>' +
+									escapeHtml(_differenceRecordLabel(rec)) +
+									'</strong><p>Excluded from this migration. The saved source canvas is unchanged.</p><button type="button" class="button secondary" data-mm-include="' +
+									recordIndex +
+									'">Include again</button></section>',
+							);
+							return;
+						}
 						if (annotation.status === 'pending') {
 							recordRows.push(
 								'<section class="mm-difference-record mm-difference-record--blocked"><div class="mm-difference-record-head"><div><strong>' +
 									escapeHtml(_differenceRecordLabel(rec)) +
-									'</strong></div><span>Schema unavailable</span></div><p>Org Loom could not read this object\'s destination fields. Check the connection and try again.</p><button type="button" class="button secondary" data-mm-retry-schema="' +
+									'</strong></div><span>Object unavailable</span></div><p>This object is unavailable through the destination connection. It may not exist in that org, your Salesforce user may not have access, or its fields could not be loaded. Retry or exclude this object and all its records from the migration.</p><button type="button" class="button secondary" data-mm-exclude-object="' +
+									escapeHtml(rec.objectName) +
+									'">Exclude object from migration</button> <button type="button" class="button secondary" data-mm-retry-schema="' +
 									escapeHtml(rec.objectName) +
 									'">Retry</button></section>',
 							);
 							return;
 						}
 						const issues = annotation.issues || [];
+						if (issues.some((issue) => issue.kind === 'excluded-relationship')) {
+							recordRows.push(
+								'<section class="mm-difference-record mm-difference-record--blocked"><strong>' +
+									escapeHtml(_differenceRecordLabel(rec)) +
+									'</strong><p>' +
+									issues
+										.filter((issue) => issue.kind === 'excluded-relationship')
+										.map((issue) => escapeHtml(issue.message))
+										.join(' ') +
+									'</p><button type="button" class="button secondary" data-mm-exclude-record="' +
+									recordIndex +
+									'">Exclude this record too</button></section>',
+							);
+						}
 						const activeRequiredFields = new Set(
 							issues
 								.filter((issue) => issue.kind === 'required-unfilled')
@@ -1538,6 +1580,9 @@
 						const renderedMapKeys = new Set();
 						const issueEntries = [];
 						issues.forEach((issue) => {
+							if (issue.kind === 'excluded-relationship') {
+								return;
+							}
 							const key = issue.kind === 'missing-field' ? _fieldMapKey(recordIndex, issue.field) : null;
 							if (key) {
 								renderedMapKeys.add(key);
@@ -1599,7 +1644,11 @@
 					const sections = [];
 					if (attentionGroups.length || recordRows.length) {
 						sections.push(
-							'<div class="mm-section-heading"><strong>Needs your input</strong></div>' +
+							'<div class="mm-section-heading"><strong>' +
+								(attentionGroups.length || _differenceCounts().blocked || _differenceCounts().pending
+									? 'Needs your input'
+									: 'Excluded or reviewed records') +
+								'</strong></div>' +
 								attentionGroups.map(_fieldMappingGroupHtml).join('') +
 								recordRows.join(''),
 						);
@@ -1643,7 +1692,7 @@
 								await Promise.resolve(onApplied()).catch(() => null);
 							} catch (_err) {
 								showBulkToast(
-									'Could not read Salesforce fields. Check the connection and try again.',
+									'This object is still unavailable through the destination connection. You can exclude it from this migration.',
 									'warning',
 								);
 							}
@@ -1653,6 +1702,33 @@
 							}
 						});
 					});
+
+					differencesEl
+						.querySelectorAll('[data-mm-exclude-object], [data-mm-exclude-record], [data-mm-include]')
+						.forEach((button) => {
+							button.addEventListener('click', () => {
+								const objectName = button.getAttribute('data-mm-exclude-object');
+								if (objectName !== null) {
+									all.filter((rec) => rec.objectName === objectName).forEach((rec) => {
+										rec._migrateExcluded = true;
+									});
+								} else {
+									const include = button.hasAttribute('data-mm-include');
+									const rec =
+										all[
+											Number(
+												button.getAttribute(
+													include ? 'data-mm-include' : 'data-mm-exclude-record',
+												),
+											)
+										];
+									if (rec) {
+										rec._migrateExcluded = !include;
+									}
+								}
+								_afterDifferenceDecision();
+							});
+						});
 
 					differencesEl.querySelectorAll('[data-mm-field-resolution]').forEach((select) => {
 						select.addEventListener('change', () => {
@@ -1838,6 +1914,12 @@
 						'<li>The plan will replace migration choices with normal canvas records. Nothing is written to Salesforce until you use Upload.</li>' +
 						blankUpdateItem +
 						omissionItem +
+						(status.excluded
+							? '<li><strong>' +
+								status.excluded +
+								(status.excluded === 1 ? ' record excluded.' : ' records excluded.') +
+								'</strong> Excluded records and their canvas links will not be added to the destination canvas or uploaded. Optional relationships to them are omitted; the saved source canvas is unchanged.</li>'
+							: '') +
 						'</ul></div>';
 				}
 
@@ -1985,6 +2067,13 @@
 				}
 
 				function _decisionCard(rec, index, all) {
+					if (rec._migrateExcluded) {
+						return (
+							'<section class="mm-difference-record"><strong>' +
+							escapeHtml(_differenceRecordLabel(rec)) +
+							'</strong><p>Excluded from this migration. Open Fields to include it again.</p></section>'
+						);
+					}
 					const destinationSearch = _destinationSearchState(rec);
 					const pending = pendingMatches.has(rec);
 					const action = rec._migrateMatchedId || rec._migrateMatchIntent === 'existing' ? 'existing' : 'new';
@@ -2291,8 +2380,13 @@
 					let unresolved = 0;
 					let explicitNew = 0;
 					let total = 0;
+					let excluded = 0;
 					objects.forEach((recs) => {
 						recs.forEach((r) => {
+							if (r._migrateExcluded) {
+								excluded++;
+								return;
+							}
 							total++;
 							if (r._migrateMatchedId) {
 								updates++;
@@ -2305,6 +2399,7 @@
 					});
 					return {
 						updates: updates,
+						excluded: excluded,
 						unresolved: unresolved,
 						explicitNew: explicitNew,
 						creates: total - updates - unresolved,
@@ -2322,6 +2417,7 @@
 					differencesStep.disabled = !describesReady || pending > 0 || counts.unresolved > 0;
 					reviewStep.disabled =
 						differencesStep.disabled ||
+						counts.total === 0 ||
 						differences.blocked > 0 ||
 						differences.pending > 0 ||
 						pendingFieldMapCount > 0;
@@ -2341,29 +2437,34 @@
 					}
 					if (currentStep === 'differences') {
 						primaryBtn.disabled =
-							differences.blocked > 0 || differences.pending > 0 || pendingFieldMapCount > 0;
+							counts.total === 0 ||
+							differences.blocked > 0 ||
+							differences.pending > 0 ||
+							pendingFieldMapCount > 0;
 						primaryBtn.textContent =
-							differences.pending > 0
-								? 'Waiting for destination fields...'
-								: differences.blocked > 0
-									? differences.requiredFields === differences.blocked
-										? 'Complete ' +
-											differences.requiredFields +
-											' required field' +
-											(differences.requiredFields === 1 ? '' : 's')
-										: 'Resolve ' +
-											differences.blocked +
-											' required item' +
-											(differences.blocked === 1 ? '' : 's')
-									: pendingFieldMapCount > 0
-										? 'Choose ' +
-											pendingFieldMapCount +
-											' destination value' +
-											(pendingFieldMapCount === 1 ? '' : 's')
-										: 'View summary';
+							counts.total === 0
+								? 'No records included'
+								: differences.pending > 0
+									? 'Resolve unavailable objects'
+									: differences.blocked > 0
+										? differences.requiredFields === differences.blocked
+											? 'Complete ' +
+												differences.requiredFields +
+												' required field' +
+												(differences.requiredFields === 1 ? '' : 's')
+											: 'Resolve ' +
+												differences.blocked +
+												' required item' +
+												(differences.blocked === 1 ? '' : 's')
+										: pendingFieldMapCount > 0
+											? 'Choose ' +
+												pendingFieldMapCount +
+												' destination value' +
+												(pendingFieldMapCount === 1 ? '' : 's')
+											: 'View summary';
 						return;
 					}
-					primaryBtn.disabled = false;
+					primaryBtn.disabled = reviewStep.disabled;
 					primaryBtn.textContent = 'Apply migration to canvas';
 				}
 

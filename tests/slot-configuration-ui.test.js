@@ -263,7 +263,9 @@ test('shared tasks replace persistent contributor card status styling', () => {
 	assert.match(cssSource, /\.field\.field--task-focus\s*\{/);
 	assert.match(appSource, /id="shared-task-sidebar"/);
 	assert.match(appSource, /window\.OrgLoom\.sharedTaskSidebar\.mount/);
-	assert.match(appSource, /const showingSharedTasks = _renderSharedTaskSidebar\(\)/);
+	assert.match(appSource, /const showingUploadFixes = _renderUploadFixes\(\)/);
+	assert.match(appSource, /const showingSharedTasks = showingUploadFixes \|\| _renderSharedTaskSidebar\(\)/);
+	assert.match(appSource, /if \(showingUploadFixes\)\s*{[\s\S]*?sharedTasks.hidden = true/);
 });
 
 test('stale recipients receive actionable configuration-change guidance', () => {

@@ -12,7 +12,9 @@ test('a rolled-back graph parser failure retries through the standard upload pat
 	assert.match(routesSource, /orderedResults\.some\(isSafeGraphFallbackFailure\)/);
 	assert.match(routesSource, /retryWithoutGraph:/);
 	assert.match(uploadSource, /body\.retryWithoutGraph === true/);
-	assert.match(uploadSource, /!retryWithoutGraph && !hasUpsert/);
+	assert.match(uploadSource, /body\.retryWithoutGraph === true && !hasCommitted/);
+	assert.match(uploadSource, /csrfFetch\('\/api\/upload'/);
+	assert.doesNotMatch(uploadSource, /\/api\/upload\/preflight/);
 });
 
 test('a rolled-back Graph operation-type limit uses the same safe fallback', () => {

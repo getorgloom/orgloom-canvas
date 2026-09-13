@@ -12,6 +12,38 @@ vm.runInNewContext(source, { window, Set });
 const summarize = window.OrgLoom.importShared.summarizeCanvasContent;
 const reconcileLoadedRecordAssociations = window.OrgLoom.importShared.reconcileLoadedRecordAssociations;
 
+test('import Undo clears transient tasks only when the snapshot is actually restored', () => {
+	for (const editedAfterImport of [false, true]) {
+		const original = { id: 1, objectName: 'Account', values: { Name: 'Original' } };
+		const state = {
+			selectedObjects: [],
+			hiddenObjects: new Set(),
+			bulkRecords: [original],
+			bulkAssociations: [],
+			_renderedRecIds: new Set(),
+		};
+		let cleared = 0;
+		const capture = window.OrgLoom.importShared.makeUndoCapture({
+			canvasState: state,
+			renderAll: () => {},
+			showBulkToast: () => {},
+			onCanvasReplace: () => {
+				cleared++;
+			},
+		});
+		const undo = capture();
+		assert.equal(cleared, 0, 'capturing a snapshot is not a replacement');
+		state.bulkRecords = [{ id: 2, objectName: 'Contact', values: { LastName: 'Imported' } }];
+		undo.arm();
+		if (editedAfterImport) {
+			state.bulkRecords[0].values.LastName = 'Edited';
+		}
+		undo();
+		assert.equal(cleared, editedAfterImport ? 0 : 1);
+		assert.equal(state.bulkRecords[0].id, editedAfterImport ? 2 : 1);
+	}
+});
+
 test('real records make the current canvas meaningful import content', () => {
 	const summary = summarize({
 		bulkRecords: [

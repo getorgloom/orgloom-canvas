@@ -67,9 +67,10 @@ test('record autofill retains parsed rules without restoring the record-level ru
 	assert.match(editorSource, /tryFixValidationRules\(values, currentFields, currentRules\)/);
 });
 
-test('authoritative Salesforce validation remains in upload preflight', () => {
-	assert.match(uploadModalSource, /csrfFetch\('\/api\/upload\/preflight'/);
-	assert.match(uploadModalSource, /validate the schema, validation rules, and triggers/);
-	assert.match(routesSource, /app\.post\('\/api\/upload\/preflight'/);
+test('Salesforce validates actual uploads without a separate sample-write pass', () => {
+	assert.match(uploadModalSource, /csrfFetch\('\/api\/upload\/graph'/);
+	assert.doesNotMatch(uploadModalSource, /\/api\/upload\/preflight/);
+	assert.match(routesSource, /app\.post\('\/api\/upload\/graph'/);
+	assert.doesNotMatch(routesSource, /app\.post\('\/api\/upload\/preflight'/);
 	assert.match(routesSource, /url: apiBase \+ '\/composite\/graph'/);
 });

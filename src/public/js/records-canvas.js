@@ -199,6 +199,7 @@
 				if (!container) {
 					return;
 				}
+				container.removeAttribute('title');
 				if (typeof cytoscape !== 'function') {
 					container.innerHTML =
 						'<div class="bulk-empty" style="padding:1em">Cytoscape failed to load (check /vendor/cytoscape route).</div>';
@@ -408,6 +409,30 @@
 					} else {
 						badge = '<span class="record-draft-badge">draft</span>';
 					}
+					if (rec._importSchemaWarning) {
+						const warning = rec._importSchemaWarning;
+						const title = warning.objectUnavailable
+							? 'This object is unavailable through the connected org. The imported record is kept, but cannot be uploaded here.'
+							: 'Imported values kept but unavailable through this connection: ' +
+								warning.fields.join(', ') +
+								'. These fields are not uploaded.';
+						badge +=
+							'<span class="record-stale-badge" title="' +
+							escapeHtml(title) +
+							'">' +
+							(warning.objectUnavailable ? 'object unavailable' : 'fields unavailable') +
+							'</span>';
+					}
+					if (rec.unmappedCsvColumns?.length) {
+						badge +=
+							'<span class="record-partial-badge" title="' +
+							escapeHtml(
+								'Unmapped CSV columns kept separately, not uploaded: ' +
+									rec.unmappedCsvColumns.map((column) => column.name).join(', ') +
+									'. Export the canvas as JSON to retrieve their values.',
+							) +
+							'">unmapped CSV data</span>';
+					}
 					if (_isRecordStale(rec)) {
 						badge +=
 							'<span class="record-stale-badge" title="This record is unavailable in Salesforce. It may have been deleted, or your access may have changed.">unavailable in SF</span>';
@@ -449,7 +474,9 @@
 					const titleInner = lightningUrl
 						? '<a class="record-title-link" href="' +
 							escapeHtml(lightningUrl) +
-							'" target="_blank" rel="noopener" title="Open in Salesforce \u2197">' +
+							'" target="_blank" rel="noopener" title="' +
+							escapeHtml(titleText + ' — Open in Salesforce \u2197') +
+							'">' +
 							escapeHtml(titleText) +
 							'</a>'
 						: escapeHtml(titleText);
@@ -476,7 +503,9 @@
 						badge +
 						keepBtn +
 						moreBtn +
-						'<div class="record-title">' +
+						'<div class="record-title" title="' +
+						escapeHtml(titleText) +
+						'">' +
 						titleInner +
 						'</div>' +
 						'<div class="record-type">' +
@@ -860,6 +889,24 @@
 						},
 						{ passive: false, capture: true },
 					);
+
+					// Draft labels are pointer-transparent so dragging still reaches Cytoscape.
+					// Put their full-name tooltip on the canvas surface instead of intercepting input.
+					getCyInstance().on('mouseover', 'node', (evt) => {
+						const recId = evt.target.data('recId');
+						const rec = canvasState.bulkRecords.find((r) => r.id === recId);
+						const title =
+							rec && !rec._inaccessible && !rec.isTypeNode && !rec.isPending
+								? container.querySelector('.record-card[data-rec-id="' + rec.id + '"] .record-title')
+								: null;
+						if (title) {
+							container.title = title.getAttribute('title') || '';
+						} else {
+							container.removeAttribute('title');
+						}
+					});
+					getCyInstance().on('mouseout grab', 'node', () => container.removeAttribute('title'));
+					getCyInstance().on('pan zoom', () => container.removeAttribute('title'));
 
 					getCyInstance().on('tap', 'node', (evt) => {
 						const recId = evt.target.data('recId');

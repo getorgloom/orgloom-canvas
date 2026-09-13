@@ -315,6 +315,10 @@
 				out.push(null);
 				continue;
 			}
+			if (rec._migrateExcluded) {
+				out.push({ status: 'excluded', issues: [], resolvedRecordTypeId: null });
+				continue;
+			}
 			var describe = describeByObject[rec.objectName];
 			if (!describe) {
 				out.push({ status: 'pending', issues: [], resolvedRecordTypeId: null });
@@ -326,7 +330,7 @@
 	}
 
 	function summarize(annotations) {
-		var counts = { ready: 0, warning: 0, blocked: 0, pending: 0, total: 0 };
+		var counts = { ready: 0, warning: 0, blocked: 0, pending: 0, excluded: 0, total: 0 };
 		annotations = annotations || [];
 		for (var i = 0; i < annotations.length; i++) {
 			var a = annotations[i];
@@ -351,6 +355,9 @@
 				label: 'checking...',
 				title: 'Checking this record against the destination org.',
 			};
+		}
+		if (annotation.status === 'excluded') {
+			return { status: 'warning', label: 'excluded', title: 'Excluded from this migration.' };
 		}
 
 		var issues = Array.isArray(annotation.issues) ? annotation.issues : [];
@@ -486,6 +493,7 @@
 	}
 
 	var MIGRATION_RECORD_KEYS = [
+		'_migrateExcluded',
 		'_migrateMatchedId',
 		'_migrateMatchKey',
 		'_migrateMatchValue',
@@ -522,7 +530,44 @@
 		return null;
 	}
 
-	function applyMigrationPlan(records, associations, annotationsById, baselinesByKey) {
+	function exclusionIssues(record, records, associations, describeByObject) {
+		if (!record || record._migrateExcluded) {
+			return [];
+		}
+		var excluded = new Set(
+			(records || [])
+				.filter(function (r) {
+					return r && r._migrateExcluded;
+				})
+				.map(function (r) {
+					return String(r.id);
+				}),
+		);
+		var fields = ((describeByObject || {})[record.objectName] || {}).fields || [];
+		return (associations || [])
+			.filter(function (a) {
+				return a && String(a.fromId) === String(record.id) && excluded.has(String(a.toId));
+			})
+			.filter(function (a) {
+				var field = fields.find(function (f) {
+					return f.name.toLowerCase() === String(a.fieldName).toLowerCase();
+				});
+				return field && (field.required === true || (field.nillable === false && !field.defaultedOnCreate));
+			})
+			.map(function (a) {
+				return {
+					kind: 'excluded-relationship',
+					severity: 'blocked',
+					field: a.fieldName,
+					message:
+						'The required relationship ' +
+						a.fieldName +
+						' points to an excluded record. Include that record or exclude this dependent record too.',
+				};
+			});
+	}
+
+	function applyMigrationPlan(records, associations, annotationsById, baselinesByKey, describeByObject) {
 		// Compile the entire plan before touching live records. A failed destination
 		// refresh therefore leaves the reviewable migration state intact.
 		var source = Array.isArray(records) ? records : [];
@@ -532,16 +577,48 @@
 		var planned = [];
 		var updates = 0;
 		var creates = 0;
+		var excludedIds = new Set(
+			source
+				.filter(function (r) {
+					return r && r._migrateExcluded;
+				})
+				.map(function (r) {
+					return String(r.id);
+				}),
+		);
+		if (
+			!source.some(function (r) {
+				return r && !r.isTypeNode && !r._migrateExcluded;
+			})
+		) {
+			throw new Error('Include at least one record in the migration.');
+		}
 
 		for (var i = 0; i < source.length; i++) {
 			var record = source[i];
-			if (!record || record.isTypeNode) {
+			if (!record || record.isTypeNode || record._migrateExcluded) {
 				continue;
+			}
+			var annotation = annotations[record.id];
+			var relationshipIssues = exclusionIssues(record, source, associations, describeByObject);
+			if (relationshipIssues.length) {
+				throw new Error(relationshipIssues[0].message);
+			}
+			if (annotation && (annotation.status === 'pending' || annotation.status === 'blocked')) {
+				throw new Error('Resolve unavailable objects and required fields before applying the migration.');
 			}
 			var matchedId = record._migrateMatchedId || null;
 			var patch = prepareMigrationValues(record, annotations[record.id] || null);
 			delete patch.attributes;
 			delete patch.Id;
+			(associations || []).forEach(function (a) {
+				if (a && String(a.fromId) === String(record.id) && excludedIds.has(String(a.toId))) {
+					var key = _valueKey(patch, a.fieldName);
+					if (key) {
+						delete patch[key];
+					}
+				}
+			});
 			var next;
 			if (matchedId) {
 				var baseline = baselines[_recordKey(record.objectName, matchedId)];
@@ -608,10 +685,23 @@
 			});
 		});
 
-		return { updates: updates, creates: creates, total: updates + creates };
+		// Only the destination working copy changes; the saved source canvas is untouched.
+		for (var j = source.length - 1; j >= 0; j--) {
+			if (source[j] && excludedIds.has(String(source[j].id))) {
+				source.splice(j, 1);
+			}
+		}
+		for (var k = (associations || []).length - 1; k >= 0; k--) {
+			var edge = associations[k];
+			if (excludedIds.has(String(edge.fromId)) || excludedIds.has(String(edge.toId))) {
+				associations.splice(k, 1);
+			}
+		}
+		return { updates: updates, creates: creates, excluded: excludedIds.size, total: updates + creates };
 	}
 
 	var api = {
+		exclusionIssues: exclusionIssues,
 		computeMigrationStatus: computeMigrationStatus,
 		resolveTargetRecordTypeId: resolveTargetRecordTypeId,
 		picklistValuesForRecordType: picklistValuesForRecordType,

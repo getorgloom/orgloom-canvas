@@ -68,6 +68,38 @@
 		return uploadIneligibilityReason(record) === null;
 	}
 
+	// Presentation only: group the scoped records without changing dependency order.
+	function summarizeUploadRecords(records, skippedIds, deleteIds, describeCache) {
+		const groups = new Map();
+		for (const record of records) {
+			if (!isUploadEligibleRecord(record) || skippedIds.has(record.id)) {
+				continue;
+			}
+			let group = groups.get(record.objectName);
+			if (!group) {
+				group = {
+					objectName: record.objectName,
+					label: describeCache[record.objectName]?.label || record.objectName,
+					creates: 0,
+					updates: 0,
+					upserts: 0,
+					deletes: 0,
+				};
+				groups.set(record.objectName, group);
+			}
+			if (deleteIds.has(record.id)) {
+				group.deletes += 1;
+			} else if (record._csvOperation === 'upsert') {
+				group.upserts += 1;
+			} else if (record.loadedFromId) {
+				group.updates += 1;
+			} else {
+				group.creates += 1;
+			}
+		}
+		return Array.from(groups.values());
+	}
+
 	function recordAccessWriteReason(record, modified) {
 		const access = record && record._recordAccess;
 		if (!record || !record.loadedFromId || !access || access.checked !== true) {
@@ -524,7 +556,19 @@
 		};
 	}
 
+	function isRolledBackUploadResult(result) {
+		return (
+			!!result &&
+			(result.errorCode === 'ALL_OR_NONE_OPERATION_ROLLED_BACK' ||
+				/^The transaction was rolled back since another operation in the same transaction failed\.?$/i.test(
+					String(result.error || '').trim(),
+				))
+		);
+	}
+
 	window.OrgLoom.uploadModal = {
+		isRolledBackUploadResult,
+		summarizeUploadRecords,
 		uploadIneligibilityReason: uploadIneligibilityReason,
 		isUploadEligibleRecord: isUploadEligibleRecord,
 		recordAccessWriteReason: recordAccessWriteReason,
@@ -677,7 +721,8 @@
 				'<div class="modal-overlay"></div>' +
 				'<div class="modal-body">' +
 				'<div class="modal-header">' +
-				'<h3>Upload records to Salesforce</h3>' +
+				'<div class="upload-modal-heading"><h3 id="upload-modal-title">Upload records to Salesforce</h3>' +
+				'<div id="upload-result-summary" class="upload-result-summary" hidden></div></div>' +
 				'<button class="modal-close" data-upload-close>&times;</button>' +
 				'</div>' +
 				'<div class="modal-content" id="upload-modal-content"></div>' +
@@ -689,6 +734,34 @@
 				'</div>' +
 				'</div>';
 			document.body.appendChild(uploadModal);
+			const _fixTasks = window.OrgLoom.uploadFixesSidebar.mount({
+				canvasState,
+				escapeHtml,
+				getContext: () => ({
+					canvas: canvasState.currentCanvas?.id || null,
+					connection: JSON.stringify([
+						window.SF_ORG_ID,
+						window.SF_USER_ID,
+						getMeInfo()?.connection?.id,
+						getMeInfo()?.workspace?.id,
+					]),
+				}),
+				validateLocal: (recordIds) => _renderUploadModalSummary({ checkOnly: true, recordIds }),
+				hasUnsubmittedChanges: (record) => isRecordModified(record),
+				openRecord: (record, options) => deps.openRecordForCurrentUser(record, options),
+				recordTitle: (record) => {
+					const identity = uploadResultIdentity(
+						{ tempId: record.id, objectName: record.objectName },
+						canvasState.bulkRecords,
+						canvasState.describeCache,
+						null,
+						null,
+						recordOrdinal,
+					);
+					return identity.objectLabel + ' · ' + identity.name;
+				},
+				onChange: () => renderBulkView(),
+			});
 			uploadModal
 				.querySelectorAll('[data-upload-close]')
 				.forEach((el) => el.addEventListener('click', closeUploadModal));
@@ -864,11 +937,12 @@
 			}
 
 			async function openUploadModal(opts) {
+				resetSampleFailureActions();
+				uploadModal.querySelector('#upload-result-summary').hidden = true;
 				if (canvasState.bulkRecords.length === 0) {
 					showBulkToast('No records to upload.');
 					return;
 				}
-				_preflightOverride = false;
 				_bulkSwitchAcknowledged = false;
 				_baselineConfirmations = [];
 				_accessExcludedTempIds = new Set();
@@ -935,7 +1009,10 @@
 				_renderUploadModalSummary();
 			}
 
-			function _renderUploadModalSummary() {
+			function _renderUploadModalSummary(options = {}) {
+				if (!options.checkOnly) {
+					resetSampleFailureActions();
+				}
 				const content = uploadModal.querySelector('#upload-modal-content');
 				if (!content) {
 					return;
@@ -944,16 +1021,18 @@
 				const cancelBtn = uploadModal.querySelector('#upload-cancel');
 
 				const allCanvasRecords = canvasState.bulkRecords.filter((r) => r && !r.isTypeNode && !r.isPending);
-				const allReal = allCanvasRecords.filter(isUploadEligibleRecord);
 				const selectedCanvasRecordCount = allCanvasRecords.filter((r) =>
 					canvasState.bulkSelectedIds.has(r.id),
 				).length;
-				const selectedRealCount = allReal.filter((r) => canvasState.bulkSelectedIds.has(r.id)).length;
 				const canScope = selectedCanvasRecordCount > 0 && selectedCanvasRecordCount < allCanvasRecords.length;
-				if (!canScope) {
+				if (!options.checkOnly && !canScope) {
 					_uploadScopeSelected = false;
 				}
-				const scopedRecords = _scopedRealRecords();
+				const scopedRecords = options.recordIds
+					? canvasState.bulkRecords.filter(
+							(record) => options.recordIds.has(record.id) && isUploadEligibleRecord(record),
+						)
+					: _scopedRealRecords();
 				const accessExclusions = _recordAccessExclusions(scopedRecords);
 				const accessExcludedIds = new Set(accessExclusions.map((entry) => entry.record.id));
 				const scopedExclusions = scopeUploadExclusions(
@@ -962,7 +1041,9 @@
 					_uploadScopeSelected,
 				);
 				const scopedIds = new Set(scopedRecords.map((r) => r.id));
-				const excludedDraftLinks = _scopedExcludedDraftParentLinks();
+				const excludedDraftLinks = options.checkOnly
+					? excludedDraftParentLinks(canvasState.bulkRecords, canvasState.bulkAssociations, scopedIds, true)
+					: _scopedExcludedDraftParentLinks();
 				const requiredExcludedDraftLinks = requiredExcludedDraftParentLinks(
 					canvasState.bulkRecords,
 					excludedDraftLinks,
@@ -980,7 +1061,16 @@
 						'</span></div>'
 					: '';
 
-				const { issues: rawIssues, byRecordId: rawByRecordId, missingDescribes } = validateBulkRecords();
+				const {
+					issues: rawIssues,
+					byRecordId: rawByRecordId,
+					missingDescribes: allMissingDescribes,
+				} = validateBulkRecords();
+				// The shared validator checks the whole canvas; metadata blockers must match this upload's scope.
+				const scopedObjectNames = new Set(scopedRecords.map((record) => record.objectName));
+				const missingDescribes = new Set(
+					[...allMissingDescribes].filter((name) => scopedObjectNames.has(name)),
+				);
 				const resolvedByEncryptedProposal = (issue) => {
 					const record =
 						issue && canvasState.bulkRecords.find((candidate) => candidate.id === issue.recordId);
@@ -1081,77 +1171,81 @@
 				const willUploadCount =
 					realRecordsForCount.length - unchangedOnlySet.size - deleteIdSet.size - accessExcludedIds.size;
 				const willDeleteCount = deleteIdSet.size;
-
-				const orderResult = computeUploadOrder(unchangedSet, scopedIds, deleteIdSet);
-				const cycleIds = orderResult.cycleIds || new Set();
-				const orderEntries = orderResult.creates.filter((e) => e.upload > 0);
-				const deleteEntries = orderResult.deletes;
-				const orderRows = orderEntries
-					.map((entry, idx) => {
-						const detail =
-							entry.unchanged > 0
-								? '<span class="us-detail tag">' + entry.unchanged + ' unchanged skipped</span>'
-								: '';
+				const objectSummary = summarizeUploadRecords(
+					scopedRecords,
+					unchangedSet,
+					deleteIdSet,
+					canvasState.describeCache,
+				);
+				const objectSummaryRows = objectSummary
+					.filter((group) => group.creates || group.updates || group.upserts)
+					.map((group) => {
+						const counts = [];
+						if (group.creates) {
+							counts.push(group.creates + ' new');
+						}
+						if (group.updates) {
+							counts.push(group.updates + (group.updates === 1 ? ' update' : ' updates'));
+						}
+						if (group.upserts) {
+							counts.push(group.upserts + ' insert or update by external ID');
+						}
 						return (
-							'<div class="us-step">' +
-							(idx + 1) +
-							'</div>' +
 							'<div class="us-label">' +
-							escapeHtml(entry.label) +
-							' ' +
-							detail +
-							'</div>' +
-							'<div class="us-count">' +
-							entry.upload +
+							escapeHtml(group.label) +
+							'</div><div class="us-count">' +
+							escapeHtml(counts.join(' · ')) +
 							'</div>'
 						);
 					})
 					.join('');
-				const deleteRowsHtml = deleteEntries
-					.map(
-						(entry, idx) =>
-							'<div class="us-step us-step-delete">' +
-							(orderEntries.length + idx + 1) +
-							'</div>' +
-							'<div class="us-label">' +
-							escapeHtml(entry.label) +
-							' <span class="us-detail tag tag-danger">DELETE</span></div>' +
-							'<div class="us-count">' +
-							entry.count +
-							'</div>',
-					)
-					.join('');
+
+				const orderResult = computeUploadOrder(unchangedSet, scopedIds, deleteIdSet);
+				const cycleIds = orderResult.cycleIds || new Set();
 				const totalRecords = willUploadCount + willDeleteCount;
-				const scopeToggleHtml = canScope
-					? '<div class="upload-scope-toggle">' +
-						'<button type="button" class="upload-scope-btn' +
-						(_uploadScopeSelected ? '' : ' is-active') +
-						'" data-upload-scope="all">' +
-						'All records (' +
-						allReal.length +
-						')' +
-						'</button>' +
-						'<button type="button" class="upload-scope-btn' +
-						(_uploadScopeSelected ? ' is-active' : '') +
-						'" data-upload-scope="selected">' +
-						'Selected only (' +
-						selectedRealCount +
-						')' +
-						'</button>' +
-						'</div>'
-					: '';
 
 				const describeFailure =
 					missingDescribes.size > 0 || _describeLoadFailures.length > 0
 						? describeLoadFailureSummary(_describeLoadFailures, missingDescribes)
 						: null;
 				let preflightHtml = '';
+				if (options.checkOnly) {
+					return {
+						issues: issues
+							.filter((issue) => issue.severity === 'error')
+							.concat(
+								Array.from(cycleIds, (recordId) => ({
+									recordId,
+									severity: 'error',
+									message:
+										'This record is part of a reference cycle. Remove or change a relationship to break the cycle.',
+								})),
+							),
+						missingDescribes,
+						accessExcludedIds,
+						blocked: !!(_migActive || describeFailure || _recordAccessLoadFailure),
+					};
+				}
+				if (
+					!_migActive &&
+					!describeFailure &&
+					!_recordAccessLoadFailure &&
+					(errorCount > 0 || cycleIds.size > 0)
+				) {
+					const blockers = issues.filter((issue) => issue.severity === 'error');
+					cycleIds.forEach((recordId) =>
+						blockers.push({
+							recordId,
+							severity: 'error',
+							message:
+								'This record is part of a reference cycle. Remove or change a relationship to break the cycle.',
+						}),
+					);
+					renderBlockingUploadIssues(blockers);
+					return false;
+				}
 				if (issues.length === 0 && !describeFailure && !_recordAccessLoadFailure) {
-					preflightHtml =
-						'<div class="preflight ok">' +
-						'<span class="pf-icon">\u2713</span>' +
-						'<span class="pf-msg"><strong>Pre-flight passed.</strong> The included records are ready to upload.</span>' +
-						'</div>';
+					preflightHtml = '';
 				} else if (issues.length > 0) {
 					const recordSections = Array.from(byRecordId.entries())
 						.map(([rid, rIssues]) => {
@@ -1350,41 +1444,46 @@
 						'</div>'
 					: '';
 				const deletesBlock =
-					deleteEntries.length > 0
-						? '<div class="upload-section-head upload-section-head--danger">Then delete <span class="tag tag-danger">irreversible</span></div>' +
-							'<p class="upload-deletes-lead">These records will be DELETE\'d in Salesforce after the creates/updates above. Deletes can\u2019t be undone from Org Loom; recover from the Salesforce recycle bin within 15 days if needed.</p>' +
-							'<div class="upload-summary upload-summary--ordered upload-summary--deletes">' +
-							deleteRowsHtml +
-							'</div>'
+					willDeleteCount > 0
+						? '<div class="upload-delete-summary"><span aria-hidden="true">⌫</span><div><strong>' +
+							willDeleteCount +
+							(willDeleteCount === 1 ? ' deletion runs' : ' deletions run') +
+							' last</strong> — ' +
+							objectSummary
+								.filter((group) => group.deletes)
+								.map((group) => group.deletes + ' ' + escapeHtml(group.label))
+								.join(', ') +
+							'.<span class="upload-delete-note">Cannot be undone in Org Loom.</span></div><span class="upload-delete-badge">Irreversible</span></div>'
 						: '';
+				const systemBlocked = !!(_migActive || describeFailure || _recordAccessLoadFailure);
+				uploadModal.querySelector('#upload-modal-title').textContent = systemBlocked
+					? 'Fix before uploading'
+					: 'Upload to Salesforce';
+				uploadModal.classList.add('upload-ready-state');
+				const writeSummary = systemBlocked
+					? ''
+					: !willUploadCount && !willDeleteCount
+						? '<div class="upload-ready-count">No changes to upload.</div>'
+						: '<div class="upload-ready-count"><strong>' +
+							(willUploadCount || willDeleteCount) +
+							'</strong> ' +
+							((willUploadCount || willDeleteCount) === 1 ? 'record ready' : 'records ready') +
+							(willUploadCount ? ' to write' : ' to delete') +
+							'</div>' +
+							(objectSummaryRows
+								? '<div class="upload-summary upload-summary--objects upload-ready-objects">' +
+									objectSummaryRows +
+									'</div>'
+								: '') +
+							deletesBlock;
 				content.innerHTML =
-					scopeToggleHtml +
 					migrateBanner +
 					excludedRecordNote +
 					incompleteFieldRequestNote +
 					excludedDraftLinkNote +
 					preflightHtml +
 					accessExclusionBlock +
-					'<div class="upload-section-head">Upload order</div>' +
-					'<div class="upload-summary upload-summary--ordered">' +
-					orderRows +
-					'</div>' +
-					deletesBlock +
-					'<div class="upload-totals">' +
-					'<div class="ut-row"><span>Records included</span><strong>' +
-					totalRecords +
-					'</strong></div>' +
-					(unchangedOnlySet.size > 0
-						? '<div class="ut-row"><span>Unchanged (skipped)</span><strong>' +
-							unchangedOnlySet.size +
-							'</strong></div>'
-						: '') +
-					(accessExclusions.length > 0
-						? '<div class="ut-row"><span>Won\u2019t upload</span><strong>' +
-							accessExclusions.length +
-							'</strong></div>'
-						: '') +
-					'</div>';
+					writeSummary;
 				const _matchBtn = content.querySelector('[data-migrate-review]');
 				if (_matchBtn) {
 					_matchBtn.addEventListener('click', () => {
@@ -1394,19 +1493,13 @@
 						}
 					});
 				}
-				content.querySelectorAll('[data-upload-scope]').forEach((btn) => {
-					btn.addEventListener('click', () => {
-						const next = btn.dataset.uploadScope === 'selected';
-						if (next === _uploadScopeSelected) {
-							return;
-						}
-						_uploadScopeSelected = next;
-						_renderUploadModalSummary();
-					});
-				});
 
-				const hasWork = willUploadCount > 0 || willDeleteCount > 0;
-				if (_recordAccessLoadFailure) {
+				const hasWork = totalRecords > 0;
+				if (_migActive) {
+					confirmBtn.disabled = true;
+					confirmBtn.textContent = 'Apply migration first';
+					confirmBtn.onclick = null;
+				} else if (_recordAccessLoadFailure) {
 					confirmBtn.style.display = '';
 					confirmBtn.disabled = false;
 					confirmBtn.textContent = 'Retry access check';
@@ -1458,7 +1551,6 @@
 						cancelBtn.textContent = 'Cancel';
 					}
 					confirmBtn.onclick = confirmUpload;
-					const scopeLabel = _uploadScopeSelected ? 'selected' : '';
 					const deletesOnly = willUploadCount === 0 && willDeleteCount > 0;
 					if (errorCount > 0) {
 						confirmBtn.disabled = false;
@@ -1472,22 +1564,18 @@
 						confirmBtn.classList.remove('confirm-anyway');
 						confirmBtn.classList.add('confirm-danger');
 					} else {
-						confirmBtn.textContent = accessExclusions.length
-							? 'Continue with ' + totalRecords + ' record' + (totalRecords === 1 ? '' : 's')
-							: scopeLabel
-								? 'Upload selected'
-								: 'Upload';
+						confirmBtn.textContent = willDeleteCount ? 'Upload & delete ' + willDeleteCount : 'Upload';
 						confirmBtn.classList.remove('confirm-anyway');
-						confirmBtn.classList.remove('confirm-danger');
+						confirmBtn.classList.toggle('confirm-danger', willDeleteCount > 0);
 					}
 				}
+				return !systemBlocked && hasWork;
 			}
 
 			function closeUploadModal() {
 				uploadModal.classList.add('hidden');
 			}
 
-			let _preflightOverride = false;
 			let _bulkSwitchAcknowledged = false;
 			let _uploadScopeSelected = false;
 			let _accessExcludedTempIds = new Set();
@@ -1509,6 +1597,12 @@
 			let _allowDuplicates = false;
 			let _baselineConfirmations = [];
 			async function confirmUpload() {
+				resetSampleFailureActions();
+				if (_renderUploadModalSummary() === false) {
+					return;
+				}
+				resetSampleFailureActions();
+				uploadModal.querySelector('#upload-result-summary').hidden = true;
 				const realRecords = _scopedRealRecords();
 				if (realRecords.length === 0) {
 					return;
@@ -1518,6 +1612,30 @@
 					showBulkToast('Apply the migration plan to the canvas before uploading.', 'warning');
 					_renderUploadModalSummary();
 					return;
+				}
+				const unavailableObjects = [
+					...new Set(
+						realRecords
+							.filter((record) => record._importSchemaWarning?.objectUnavailable)
+							.map((record) => record.objectName),
+					),
+				];
+				for (const objectName of unavailableObjects) {
+					try {
+						await ensureDescribe(objectName, { force: true });
+						realRecords
+							.filter((record) => record.objectName === objectName)
+							.forEach((record) => {
+								delete record._importSchemaWarning;
+							});
+					} catch (_) {
+						showBulkToast(
+							objectName +
+								' is unavailable through this Salesforce connection. Remove its records from the upload selection or use a connection with access to this object.',
+							'warning',
+						);
+						return;
+					}
 				}
 				const currentCanvas = canvasState.currentCanvas;
 				if (currentCanvas && currentCanvas.id && !currentCanvas.ownedByMe) {
@@ -1826,14 +1944,13 @@
 
 				const submittedSnapshots = snapshotUploadRecords(payload.records, recordsForPayload);
 				const payloadJson = JSON.stringify(payload);
-				let retryWithoutGraph = false;
 				const hasUpsert = realRecords.some((r) => r._csvOperation === 'upsert');
 				const fitsGraph =
 					uploadingCountForGate > 0 &&
 					maxComponentSize <= PER_COMPONENT_CAP &&
 					uploadingCountForGate <= TOTAL_NODES_CAP &&
 					payloadJson.length <= BYTE_CAP;
-				if (!_preflightOverride && !fitsGraph && uploadingCountForGate > 0) {
+				if (!fitsGraph && uploadingCountForGate > 0) {
 					confirmBtn.disabled = false;
 					confirmBtn.textContent = 'Upload';
 					const reasons = [];
@@ -1870,7 +1987,7 @@
 						'</div>';
 					return;
 				}
-				if (!_preflightOverride && fitsGraph && !hasUpsert) {
+				if (fitsGraph && !hasUpsert) {
 					confirmBtn.disabled = true;
 					confirmBtn.textContent = 'Uploading\u2026';
 					const uploadingRecords = recordsForPayload.filter(
@@ -1973,29 +2090,15 @@
 									? crypto.randomUUID()
 									: 'att-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 							payload.attemptId = _uploadAttemptId;
-							retryWithoutGraph = true;
 						} else {
-							const errors = allResults
-								.filter((r) => !r.success && r.error)
-								.map((r) => {
-									const rec = canvasState.bulkRecords.find((br) => br.id === r.tempId);
-									return {
-										recordId: r.tempId,
-										objectName: (rec && rec.objectName) || r.objectName,
-										recordLabel: rec
-											? (rec.label || rec.objectName) + ' #' + recordOrdinal(rec)
-											: r.objectName + ' #' + r.tempId,
-										message: r.error,
-										errorCode: r.errorCode,
-										fields: r.fields,
-									};
-								});
-							renderPreflightFailure({
-								ok: false,
-								errors,
-								sampled: uploadingCountForGate,
-								total: realRecords.length,
-							});
+							// This was an actual upload attempt, even when every graph rolled back.
+							displayUploadResults(
+								allResults,
+								body.instanceUrl || '',
+								body.deletes || [],
+								body.canonicalValues || {},
+								submittedSnapshots,
+							);
 							return;
 						}
 					} catch (err) {
@@ -2047,62 +2150,6 @@
 						return;
 					}
 					_bulkSwitchAcknowledged = true;
-				}
-
-				if (!_preflightOverride && !retryWithoutGraph && !hasUpsert) {
-					confirmBtn.disabled = true;
-					confirmBtn.textContent = 'Validating\u2026';
-					content.innerHTML =
-						'<p class="center">Sending a sample to Salesforce to validate the schema, validation rules, and triggers\u2026</p>';
-					let pf;
-					try {
-						const r = await csrfFetch('/api/upload/preflight', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify(payload),
-							credentials: 'same-origin',
-						});
-						pf = await r.json();
-						if (r.status === 401) {
-							content.innerHTML =
-								'<div class="banner error">Your Salesforce session expired. ' +
-								'<a href="' +
-								safeLoginHref(pf && pf.loginUrl) +
-								'" data-sf-oauth-popup>Sign in again</a> ' +
-								'and retry the upload.' +
-								'</div>';
-							confirmBtn.disabled = true;
-							return;
-						}
-						if (!r.ok && isOrgAccessBlocked(pf)) {
-							renderApprovalRequired(content, confirmBtn, pf);
-							return;
-						}
-						if (!r.ok && pf && pf.error === 'active-org-changed') {
-							renderActiveOrgChanged(content, confirmBtn, pf);
-							return;
-						}
-						if (!r.ok && isUploadPermissionDenied(pf)) {
-							renderUploadPermissionRequired(content, confirmBtn, pf);
-							return;
-						}
-					} catch (err) {
-						console.warn('[preflight] request failed, allowing upload:', err);
-						pf = { ok: true, sampled: 0, skipped: true };
-					}
-					if (!pf.ok) {
-						renderPreflightFailure(pf);
-						return;
-					}
-					const skippedNote = pf.skipped
-						? ' <span class="tag">(no new records to validate)</span>'
-						: ' <span class="tag">(' +
-							pf.sampled +
-							' record' +
-							(pf.sampled === 1 ? '' : 's') +
-							' sampled)</span>';
-					content.innerHTML =
-						'<p class="center">Pre-flight passed' + skippedNote + ': starting upload\u2026</p>';
 				}
 
 				confirmBtn.disabled = true;
@@ -2536,85 +2583,211 @@
 				return (
 					'<div class="upload-result-identity"><strong class="upload-result-name">' +
 					escapeHtml(heading) +
-					'</strong>' +
-					(identity.cardNumber
-						? '<span class="upload-result-meta">Canvas card ' + escapeHtml(identity.cardNumber) + '</span>'
-						: '') +
-					'</div>'
+					'</strong></div>'
 				);
 			}
 
-			function renderPreflightFailure(pf) {
-				_uploadAttemptId = null;
-				const content = uploadModal.querySelector('#upload-modal-content');
-				const confirmBtn = uploadModal.querySelector('#upload-confirm');
-				const errs = Array.isArray(pf.errors) ? pf.errors : [];
-				const grouped = new Map();
-				errs.forEach((e) => {
-					const key = e.recordId != null ? 'record:' + String(e.recordId) : 'label:' + (e.recordLabel || '');
-					let bucket = grouped.get(key);
-					if (!bucket) {
-						bucket = {
-							identity: {
-								tempId: e.recordId,
-								objectName: e.objectName,
-							},
-							fallbackLabel: e.recordLabel || 'Unknown record',
-							errors: [],
-						};
-						grouped.set(key, bucket);
-					}
-					bucket.errors.push(e);
+			function uploadResultEditAttributes(result) {
+				const canOpen =
+					typeof deps.openRecordForCurrentUser === 'function' &&
+					result &&
+					canvasState.bulkRecords.some(
+						(record) => String(record.id) === String(result.tempId) && !record._inaccessible,
+					);
+				return canOpen
+					? ' role="button" tabindex="0" data-upload-edit-record="' +
+							escapeHtml(String(result.tempId)) +
+							'" title="Open this record on the canvas to review and edit it"'
+					: '';
+			}
+
+			function bindUploadResultCards(content) {
+				content.querySelectorAll('[data-upload-edit-record]').forEach((button) => {
+					const openRecord = () => {
+						const record = canvasState.bulkRecords.find(
+							(candidate) => String(candidate.id) === button.dataset.uploadEditRecord,
+						);
+						if (!record || record._inaccessible) {
+							showBulkToast('This record is no longer available on the canvas.', 'info');
+							return;
+						}
+						closeUploadModal();
+						if (_fixTasks && button.dataset.uploadFix === 'true') {
+							_fixTasks.start(record.id, button.dataset.uploadFocusField);
+							return;
+						}
+						deps.openRecordForCurrentUser(record, {
+							focusField: button.dataset.uploadFocusField || undefined,
+						});
+					};
+					button.addEventListener('click', () => {
+						const selection = window.getSelection && window.getSelection();
+						if (selection && !selection.isCollapsed && button.contains(selection.anchorNode)) {
+							return;
+						}
+						openRecord();
+					});
+					button.addEventListener('keydown', (event) => {
+						if (event.target === button && (event.key === 'Enter' || event.key === ' ')) {
+							event.preventDefault();
+							openRecord();
+						}
+					});
 				});
-				const sections = Array.from(grouped.values())
-					.map((bucket) => {
-						const errorsHtml = bucket.errors
-							.map((e) => {
-								const fieldsHtml =
-									e.fields && e.fields.length > 0
-										? '<span class="pf-field"><code>' +
-											e.fields.map(escapeHtml).join(', ') +
-											'</code></span> '
-										: '';
-								const code = e.errorCode
-									? ' <span class="pf-rec-counts">' + escapeHtml(e.errorCode) + '</span>'
-									: '';
+			}
+
+			function resetSampleFailureActions() {
+				uploadModal.classList.remove('upload-review-state');
+				uploadModal.classList.remove('upload-fix-state', 'upload-ready-state', 'upload-results-state');
+				uploadModal.querySelector('#upload-modal-title').textContent = 'Upload records to Salesforce';
+				uploadModal.querySelector('#upload-result-summary').hidden = true;
+				const confirmBtn = uploadModal.querySelector('#upload-confirm');
+				const cancelBtn = uploadModal.querySelector('#upload-cancel');
+				confirmBtn.classList.remove('secondary');
+				confirmBtn.removeAttribute('title');
+				cancelBtn.classList.add('secondary');
+				cancelBtn.textContent = 'Cancel';
+			}
+
+			function uploadIssueGroupsHtml(issues) {
+				const groups = new Map();
+				issues.forEach((issue) => {
+					const message = issue.message || 'Salesforce rejected this record.';
+					let heading = message;
+					if (
+						/Required field is empty|REQUIRED_FIELD_MISSING/.test(message + ' ' + (issue.errorCode || ''))
+					) {
+						heading = 'Required field is empty';
+					} else if (
+						/not an active picklist option|INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST/.test(
+							message + ' ' + (issue.errorCode || ''),
+						)
+					) {
+						heading = 'Value isn’t an active picklist option';
+					} else if (issue.field === '(cascade)') {
+						heading = 'Drafts depend on a record you’re deleting';
+					} else if (/reference cycle/.test(message)) {
+						heading = 'Records depend on each other';
+					} else if (issue.errorCode) {
+						heading =
+							issue.errorCode === 'FIELD_CUSTOM_VALIDATION_EXCEPTION'
+								? 'Salesforce validation rule failed'
+								: 'Salesforce rejected a record';
+					}
+					const key = heading + (issue.errorCode || '');
+					if (!groups.has(key)) {
+						groups.set(key, { heading, issues: [] });
+					}
+					groups.get(key).issues.push(issue);
+				});
+				return Array.from(groups.values())
+					.map((group) => {
+						const recordCount = new Set(
+							group.issues.map((issue) =>
+								issue.recordId == null ? issue.recordLabel : String(issue.recordId),
+							),
+						).size;
+						const rows = group.issues
+							.map((issue) => {
+								const identity = uploadResultIdentity(
+									{ tempId: issue.recordId, objectName: issue.objectName },
+									canvasState.bulkRecords,
+									canvasState.describeCache,
+									null,
+									null,
+									recordOrdinal,
+								);
+								const fieldName = issue.field || (issue.fields && issue.fields[0]) || '';
+								const describe =
+									canvasState.describeCache && canvasState.describeCache[issue.objectName];
+								const field =
+									describe &&
+									describe.fields &&
+									describe.fields.find((item) => item.name === fieldName);
+								const fieldLabel = issue.fieldLabel || (field && field.label) || fieldName;
+								const record = canvasState.bulkRecords.find(
+									(item) => String(item.id) === String(issue.recordId),
+								);
+								const editAttributes = uploadResultEditAttributes({ tempId: issue.recordId });
+								const apiNames = (issue.fields || [issue.field]).filter(
+									(name) => name && /^[A-Za-z]/.test(name),
+								);
 								return (
-									'<div class="upload-failure-msg">' +
-									fieldsHtml +
-									escapeHtml(e.message || 'Unknown error') +
-									code +
+									'<div class="upload-fix-row"><div class="upload-fix-copy"><div>' +
+									'<span class="upload-fix-object">' +
+									escapeHtml(identity.objectLabel) +
+									' · </span><strong>' +
+									escapeHtml(identity.name) +
+									(identity.cardNumber ? ' #' + escapeHtml(identity.cardNumber) : '') +
+									'</strong>' +
+									(record && record.pendingDelete
+										? ' — marked for delete'
+										: fieldLabel
+											? ' — <strong>' + escapeHtml(fieldLabel) + '</strong>'
+											: '') +
+									(apiNames.length
+										? ' <code>' + apiNames.map(escapeHtml).join(', ') + '</code>'
+										: '') +
+									'</div>' +
+									'<div class="upload-fix-message">' +
+									escapeHtml(issue.message || 'Salesforce rejected this record.') +
+									'</div>' +
+									(issue.errorCode
+										? '<div class="upload-error-details">' + escapeHtml(issue.errorCode) + '</div>'
+										: '') +
+									'</div>' +
+									(editAttributes
+										? '<button type="button" class="button upload-fix-button" data-upload-fix="true"' +
+											editAttributes +
+											(/^[A-Za-z]/.test(fieldName)
+												? ' data-upload-focus-field="' + escapeHtml(fieldName) + '"'
+												: '') +
+											'>Fix <span aria-hidden="true">→</span></button>'
+										: '') +
 									'</div>'
 								);
 							})
 							.join('');
 						return (
-							'<div class="upload-failure-block">' +
-							uploadResultIdentityHtml(bucket.identity, null, null, bucket.fallbackLabel) +
-							errorsHtml +
-							'</div>'
+							'<details class="upload-fix-group" open><summary><span class="upload-fix-dot" aria-hidden="true"></span><strong>' +
+							escapeHtml(group.heading) +
+							'</strong><span class="upload-fix-group-count">' +
+							recordCount +
+							(recordCount === 1 ? ' record' : ' records') +
+							'</span></summary>' +
+							rows +
+							'</details>'
 						);
 					})
 					.join('');
+			}
+
+			function renderBlockingUploadIssues(issues) {
+				_fixTasks?.present(
+					issues,
+					'local',
+					_scopedRealRecords().map((record) => record.id),
+				);
+				resetSampleFailureActions();
+				uploadModal.classList.add('upload-fix-state');
+				uploadModal.querySelector('#upload-modal-title').textContent = 'Fix before uploading';
+				const content = uploadModal.querySelector('#upload-modal-content');
 				content.innerHTML =
-					'<div class="upload-sample-intro">' +
-					'<strong>Salesforce rejected the sample.</strong> ' +
-					'These errors come from a real validation pass against ' +
-					(pf.sampled || 0) +
-					' sample record' +
-					(pf.sampled === 1 ? '' : 's') +
-					'. Nothing was committed. Fix them and retry, or upload anyway to see the same errors per record.' +
-					'</div>' +
-					'<div class="upload-section-head upload-section-head--fail">Not uploaded (' +
-					grouped.size +
-					')</div>' +
-					'<div class="upload-results-list">' +
-					sections +
-					'</div>';
-				confirmBtn.disabled = false;
-				confirmBtn.textContent = 'Upload anyway';
-				confirmBtn.classList.add('confirm-anyway');
-				_preflightOverride = true; // next click bypasses preflight
+					'<div class="upload-fix-banner" role="status"><span aria-hidden="true">!</span><strong>' +
+					issues.length +
+					(issues.length === 1 ? ' issue blocks' : ' issues block') +
+					' this upload</strong></div>' +
+					'<div class="upload-fix-section">Must fix <span>' +
+					issues.length +
+					'</span></div>' +
+					uploadIssueGroupsHtml(issues);
+				bindUploadResultCards(content);
+				const confirmBtn = uploadModal.querySelector('#upload-confirm');
+				confirmBtn.disabled = true;
+				confirmBtn.style.display = '';
+				confirmBtn.textContent = 'Fix ' + issues.length + ' to continue';
+				confirmBtn.onclick = null;
+				confirmBtn.classList.remove('confirm-anyway', 'confirm-danger');
 			}
 
 			function _clearCommittedMigrationMatch(rec) {
@@ -2800,12 +2973,11 @@
 				const deletesArr = Array.isArray(deletesResults) ? deletesResults : [];
 				const deleted = deletesArr.filter((d) => d && d.success);
 				const deleteFailed = deletesArr.filter((d) => d && !d.success);
-				const showUploadedSectionHeading =
-					failed.length > 0 ||
-					accessExcluded.length > 0 ||
-					unchanged.length > 0 ||
-					deleted.length > 0 ||
-					deleteFailed.length > 0;
+				const rolledBack = failed.filter(isRolledBackUploadResult);
+				const actionableFailed = failed.filter((result) => !isRolledBackUploadResult(result));
+				const hasFailures = failed.length > 0 || deleteFailed.length > 0;
+				uploadModal.classList.toggle('upload-results-state', hasFailures);
+				uploadModal.querySelector('#upload-modal-title').textContent = 'Upload results';
 				if (synced.length > 0) {
 					markCanvasGuideUploadComplete();
 				}
@@ -2823,34 +2995,29 @@
 				const recordCountText = (count, singular, plural) => count + ' ' + (count === 1 ? singular : plural);
 
 				let html = '';
-				if (failed.length > 0 && synced.length > 0) {
-					const attemptedCount = synced.length + failed.length;
-					html +=
-						'<div class="banner"><strong>' +
-						synced.length +
-						' of ' +
-						attemptedCount +
-						' ' +
-						(attemptedCount === 1 ? 'record' : 'records') +
-						' uploaded to Salesforce.</strong> ' +
-						recordCountText(failed.length, 'record was', 'records were') +
-						' not uploaded. Successful records remain saved. Fix the unsuccessful records and retry.</div>';
-				} else if (failed.length > 0) {
-					html +=
-						'<div class="banner error"><strong>No records were uploaded to Salesforce.</strong> ' +
-						recordCountText(failed.length, 'record was', 'records were') +
-						' not uploaded.</div>';
-				} else if (synced.length > 0) {
-					html +=
-						'<div class="banner success"><strong>' +
-						recordCountText(synced.length, 'record', 'records') +
-						' uploaded to Salesforce.</strong></div>';
-				} else if (accessExcluded.length > 0) {
-					html +=
-						'<div class="banner"><strong>No records were uploaded.</strong> Read-only changes remain on the canvas.</div>';
-				} else {
-					html += '<div class="banner">No records needed updating in Salesforce.</div>';
+				const resultSummary = uploadModal.querySelector('#upload-result-summary');
+				resultSummary.hidden = true;
+				resultSummary.textContent = '';
+				if (!hasFailures) {
+					if (synced.length > 0) {
+						html +=
+							'<div class="banner success"><strong>' +
+							recordCountText(synced.length, 'record', 'records') +
+							' uploaded to Salesforce.</strong></div>';
+					} else if (deleted.length > 0) {
+						html +=
+							'<div class="banner success"><strong>' +
+							recordCountText(deleted.length, 'record', 'records') +
+							' deleted in Salesforce.</strong></div>';
+					} else if (accessExcluded.length > 0) {
+						html +=
+							'<div class="banner"><strong>No records were uploaded.</strong> Read-only changes remain on the canvas.</div>';
+					} else {
+						html += '<div class="banner">No records needed updating in Salesforce.</div>';
+					}
 				}
+				const summaryHtml = html;
+				html = '';
 				if (accessExcluded.length > 0) {
 					html +=
 						'<div class="upload-section-head upload-section-head--muted">Won\u2019t upload (' +
@@ -2873,11 +3040,9 @@
 				}
 				if (synced.length > 0) {
 					html +=
-						(showUploadedSectionHeading
-							? '<div class="upload-section-head upload-section-head--ok">Uploaded (' +
-								synced.length +
-								')</div>'
-							: '') +
+						'<details class="upload-result-details"><summary>Uploaded (' +
+						synced.length +
+						')</summary>' +
 						'<div class="upload-results-list">' +
 						synced
 							.map((r) => {
@@ -2898,13 +3063,13 @@
 								);
 							})
 							.join('') +
-						'</div>';
+						'</div></details>';
 				}
 				if (unchanged.length > 0) {
 					html +=
-						'<div class="upload-section-head">Unchanged (' +
+						'<details class="upload-result-details"><summary>Skipped (' +
 						unchanged.length +
-						')</div>' +
+						')</summary>' +
 						'<div class="upload-results-list">' +
 						unchanged
 							.map((r) => {
@@ -2917,25 +3082,36 @@
 								return '<div class="upload-result-row">' + identityHtml(r) + linkHtml + '</div>';
 							})
 							.join('') +
-						'</div>';
+						'</div></details>';
 				}
+				const secondaryHtml = html;
+				html = '';
 				const dupFailed = failed.filter((r) => r && r.errorCode === 'DUPLICATES_DETECTED');
-				if (failed.length > 0) {
+				const fixIssues = [...actionableFailed, ...deleteFailed].map((result) => ({
+					recordId: result.tempId,
+					objectName: result.objectName,
+					fields: result.fields,
+					errorCode: result.errorCode,
+					message:
+						(result.error || 'Unknown error') +
+						(result.errorCode === 'DUPLICATES_DETECTED'
+							? ': a Salesforce duplicate rule matched an existing record.'
+							: ''),
+				}));
+				_fixTasks?.present(
+					fixIssues,
+					'salesforce',
+					_scopedRealRecords().map((record) => record.id),
+				);
+				if (fixIssues.length > 0) {
 					html +=
-						'<div class="upload-section-head upload-section-head--fail">Not uploaded (' +
-						failed.length +
-						')</div>';
-					failed.forEach((r) => {
-						const isDup = r && r.errorCode === 'DUPLICATES_DETECTED';
-						html +=
-							'<div class="upload-failure-block">' +
-							identityHtml(r) +
-							'<div class="upload-failure-msg">' +
-							escapeHtml(r.error || 'Unknown error') +
-							(isDup ? ': a Salesforce duplicate rule matched an existing record.' : '') +
-							'</div>' +
-							'</div>';
-					});
+						'<div class="upload-fix-banner" role="status"><span aria-hidden="true">!</span><strong>' +
+						fixIssues.length +
+						(fixIssues.length === 1 ? ' issue needs attention' : ' issues need attention') +
+						'</strong></div><details class="upload-result-details" open><summary>Failed (' +
+						fixIssues.length +
+						')</summary>' +
+						uploadIssueGroupsHtml(fixIssues);
 					if (dupFailed.length > 0) {
 						html +=
 							'<div class="banner" style="margin-top:0.6em">' +
@@ -2950,7 +3126,27 @@
 							'<button type="button" class="button secondary" id="upload-allow-dups" style="margin-left:0.4em;font-size:0.82rem;padding:0.2em 0.6em">Upload anyway</button>' +
 							'</div>';
 					}
+					html += '</details>';
 				}
+				if (rolledBack.length > 0) {
+					html +=
+						'<details class="upload-result-details"><summary>Rolled back (' +
+						rolledBack.length +
+						')</summary><p>These records were not saved because another operation in the same transaction failed.</p>' +
+						rolledBack
+							.map(
+								(result) =>
+									'<div class="upload-rollback-record"' +
+									uploadResultEditAttributes(result) +
+									'>' +
+									identityHtml(result) +
+									'</div>',
+							)
+							.join('') +
+						'</details>';
+				}
+				const failuresHtml = html;
+				html = '';
 				if (deleted.length > 0) {
 					html +=
 						'<div class="upload-section-head upload-section-head--danger">Deleted in Salesforce (' +
@@ -2969,22 +3165,10 @@
 							.join('') +
 						'</div>';
 				}
-				if (deleteFailed.length > 0) {
-					html +=
-						'<div class="upload-section-head upload-section-head--fail">Not deleted (' +
-						deleteFailed.length +
-						')</div>';
-					deleteFailed.forEach((d) => {
-						html +=
-							'<div class="upload-failure-block">' +
-							identityHtml(d) +
-							'<div class="upload-failure-msg">' +
-							escapeHtml(d.error || 'Unknown error') +
-							'</div>' +
-							'</div>';
-					});
-				}
-				content.innerHTML = html;
+				const deletedHtml = html;
+				html = '';
+				content.innerHTML = summaryHtml + failuresHtml + html + deletedHtml + secondaryHtml;
+				bindUploadResultCards(content);
 
 				const _allowDupsBtn = content.querySelector('#upload-allow-dups');
 				if (_allowDupsBtn) {
@@ -3037,6 +3221,7 @@
 					canvasState.bulkAssociations,
 				);
 				_clearSubmittedEncryptedValues(synced, submittedSnapshots, canonicalValues);
+				_fixTasks?.recordResults(synced, deletesArr);
 				canvasState.bulkRecords.forEach((rec) => {
 					if (realIdByTempId.has(rec.id)) {
 						_clearCommittedMigrationMatch(rec);
@@ -3074,17 +3259,17 @@
 				} catch (_e) {}
 
 				confirmBtn.disabled = false;
-				confirmBtn.textContent = failed.length > 0 ? 'Retry failed' : 'Close';
-				confirmBtn.onclick =
-					failed.length > 0
-						? () => {
-								confirmBtn.onclick = confirmUpload;
-								confirmUpload();
-							}
-						: closeUploadModal;
+				confirmBtn.textContent = hasFailures ? 'Retry failed' : 'Close';
+				confirmBtn.onclick = hasFailures
+					? () => {
+							confirmBtn.onclick = confirmUpload;
+							confirmUpload();
+						}
+					: closeUploadModal;
 				const cancelBtn = uploadModal.querySelector('#upload-cancel');
 				if (cancelBtn) {
-					cancelBtn.style.display = failed.length === 0 ? 'none' : '';
+					cancelBtn.textContent = 'Close';
+					cancelBtn.style.display = hasFailures ? '' : 'none';
 				}
 			}
 
@@ -3092,6 +3277,8 @@
 				openUploadModal: openUploadModal,
 				closeUploadModal: closeUploadModal,
 				confirmUpload: confirmUpload,
+				renderUploadFixes: () => _fixTasks.render(),
+				clearUploadFixes: () => _fixTasks.clear(),
 			};
 		},
 	};

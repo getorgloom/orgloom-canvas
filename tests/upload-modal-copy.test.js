@@ -15,6 +15,363 @@ const context = { window: { OrgLoom: {} } };
 vm.runInNewContext(source, context);
 const uploadModal = context.window.OrgLoom.uploadModal;
 
+test('post-upload record opening pans to the card without changing zoom or blocking the editor', () => {
+	const mountStart = appSource.indexOf('window.OrgLoom.uploadModal.mount({');
+	const start = appSource.indexOf('openRecordForCurrentUser: function (record, options)', mountStart);
+	const end = appSource.indexOf('canvasState: canvasState', start);
+	assert.ok(mountStart >= 0 && start > mountStart && end > start);
+	const record = { id: 'draft-contact' };
+	const node = { length: 1 };
+	const animations = [];
+	const opened = [];
+	const state = {
+		_cyInstance: {
+			getElementById: (id) => {
+				assert.equal(id, 'rdraft-contact');
+				return node;
+			},
+			animate: (options) => animations.push(options),
+		},
+		openRecordForCurrentUser: (value) => {
+			opened.push(value);
+			return true;
+		},
+	};
+	const deps = vm.runInNewContext('({' + appSource.slice(start, end) + '})', state);
+	assert.equal(deps.openRecordForCurrentUser(record), true);
+	assert.equal(animations[0].center.eles, node);
+	assert.equal(animations[0].duration, 380);
+	assert.equal(animations[0].zoom, undefined);
+	node.length = 0;
+	deps.openRecordForCurrentUser(record);
+	assert.equal(animations.length, 1);
+	node.length = 1;
+	state._cyInstance.animate = () => {
+		throw new Error('Animation unavailable');
+	};
+	deps.openRecordForCurrentUser(record);
+	state._cyInstance = null;
+	deps.openRecordForCurrentUser(record);
+	assert.deepEqual(opened, [record, record, record, record]);
+});
+
+function renderResults(results, deletes = []) {
+	const content = { innerHTML: '', querySelector: () => null, querySelectorAll: () => [] };
+	const confirm = {};
+	const cancel = { style: {} };
+	const summary = { hidden: true, textContent: '' };
+	const title = { textContent: '' };
+	const noop = () => {};
+	const state = {
+		window: {},
+		_fixTasks: null,
+		deps: { openRecordForCurrentUser: noop },
+		_uploadAttemptId: 'attempt',
+		_allowDuplicates: false,
+		_baselineConfirmations: [],
+		_accessExcludedTempIds: new Set(),
+		canvasState: {
+			bulkRecords: [...results, ...deletes].map((result) => ({
+				id: result.tempId,
+				objectName: result.objectName,
+			})),
+			bulkAssociations: [],
+			bulkSelectedIds: new Set(),
+			describeCache: {},
+		},
+		uploadModal: {
+			classList: { toggle: noop },
+			querySelector: (selector) =>
+				({
+					'#upload-modal-content': content,
+					'#upload-confirm': confirm,
+					'#upload-cancel': cancel,
+					'#upload-result-summary': summary,
+					'#upload-modal-title': title,
+				})[selector],
+		},
+		isRolledBackUploadResult: uploadModal.isRolledBackUploadResult,
+		uploadResultIdentity: uploadModal.uploadResultIdentity,
+		recordOrdinal: () => 1,
+		uploadResultIdentityHtml: (result) => result.objectName + ' ' + result.tempId,
+		escapeHtml: (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;'),
+		markCanvasGuideUploadComplete: noop,
+		bindUploadResultCards: noop,
+		reconcileSyncedRecords: noop,
+		_clearSubmittedEncryptedValues: noop,
+		_clearCommittedMigrationMatch: noop,
+		renderBulkView: noop,
+		publishPresenceChanges: noop,
+		flushAutosave: noop,
+		closeUploadModal: noop,
+		confirmUpload: noop,
+	};
+	const start = source.indexOf('function displayUploadResults(');
+	const end = source.indexOf('\n\t\t\treturn {', start);
+	const groupsStart = source.indexOf('function uploadIssueGroupsHtml(');
+	const groupsEnd = source.indexOf('function renderBlockingUploadIssues(', groupsStart);
+	const attrsStart = source.indexOf('function uploadResultEditAttributes(');
+	const attrsEnd = source.indexOf('function bindUploadResultCards(', attrsStart);
+	vm.runInNewContext(source.slice(attrsStart, attrsEnd), state);
+	vm.runInNewContext(source.slice(groupsStart, groupsEnd), state);
+	vm.runInNewContext(source.slice(start, end), state);
+	state.displayUploadResults(results, 'https://example.my.salesforce.com', deletes);
+	return { html: content.innerHTML, confirm, cancel, summary, state };
+}
+
+test('graph attempts use results for zero, partial, and complete success while preserving safe fallback', () => {
+	const start = source.indexOf('const allResults = (body && body.results) || [];');
+	const end = source.indexOf('\n\t\t\t\t\t} catch (err)', start);
+	assert.ok(start >= 0 && end > start);
+	const failed = { tempId: 'contact', objectName: 'Contact', success: false, error: 'Required value missing' };
+	const succeeded = { tempId: 'account', objectName: 'Account', success: true, mode: 'insert' };
+	for (const body of [
+		{ results: [failed] },
+		{ results: [failed, succeeded] },
+		{ results: [succeeded], atomicSuccess: true },
+		{ results: [failed], retryWithoutGraph: true },
+		{ results: [failed, succeeded], retryWithoutGraph: true },
+	]) {
+		const calls = [];
+		const state = {
+			body,
+			window: {},
+			payload: {},
+			submittedSnapshots: new Map(),
+			displayUploadResults: (...args) => calls.push(args),
+		};
+		vm.runInNewContext('(function () {' + source.slice(start, end) + '})()', state);
+		const fallback = body.retryWithoutGraph === true && !body.results.some((result) => result.success);
+		assert.equal(typeof state.payload.attemptId === 'string', fallback);
+		assert.equal(calls.length, fallback ? 0 : 1);
+		if (!fallback) {
+			assert.equal(calls[0][0], body.results);
+			assert.equal(calls[0][4], state.submittedSnapshots);
+		}
+	}
+	const rendered = renderResults([failed]);
+	assert.equal(rendered.summary.hidden, true);
+	assert.equal(rendered.summary.textContent, '');
+	assert.match(rendered.html, /<details class="upload-result-details" open><summary>Failed \(1\)<\/summary>/);
+	assert.equal(rendered.confirm.textContent, 'Retry failed');
+	assert.match(rendered.html, /Required value missing/);
+	assert.equal(rendered.state._uploadAttemptId, null);
+});
+
+test('rollback grouping does not hide unrelated transaction errors', () => {
+	assert.equal(uploadModal.isRolledBackUploadResult({ errorCode: 'ALL_OR_NONE_OPERATION_ROLLED_BACK' }), true);
+	assert.equal(
+		uploadModal.isRolledBackUploadResult({
+			error: 'The transaction was rolled back since another operation in the same transaction failed.',
+		}),
+		true,
+	);
+	assert.equal(
+		uploadModal.isRolledBackUploadResult({ errorCode: 'PROCESSING_HALTED', error: 'Invalid reference specified' }),
+		false,
+	);
+	assert.equal(uploadModal.isRolledBackUploadResult({ error: 'AssistantPhone cannot be null' }), false);
+});
+
+test('failed-record links use the access-aware editor and reject unavailable canvas records', () => {
+	const record = { id: 'draft-contact', objectName: 'Contact', values: { LastName: '<Test>' } };
+	const button = {
+		dataset: { uploadEditRecord: record.id },
+		contains: () => true,
+		addEventListener: (event, handler) => {
+			button[event] = handler;
+		},
+	};
+	const opened = [];
+	const closed = [];
+	const warnings = [];
+	const state = {
+		window: {},
+		_fixTasks: null,
+		canvasState: { bulkRecords: [record], describeCache: {} },
+		deps: { openRecordForCurrentUser: (value) => opened.push(value) },
+		content: { querySelectorAll: () => [button] },
+		closeUploadModal: () => closed.push(true),
+		showBulkToast: (message) => warnings.push(message),
+		uploadResultIdentity: uploadModal.uploadResultIdentity,
+		recordOrdinal: () => 1,
+		escapeHtml: (value) => String(value).replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+	};
+	const identityStart = source.indexOf('function uploadResultIdentityHtml(');
+	const identityEnd = source.indexOf('function _clearCommittedMigrationMatch(', identityStart);
+	vm.runInNewContext(source.slice(identityStart, identityEnd), state);
+	const result = { tempId: record.id, objectName: 'Contact' };
+	const html = state.uploadResultIdentityHtml(result, null, null, null, true);
+	assert.match(
+		state.uploadResultEditAttributes(result),
+		/role="button" tabindex="0" data-upload-edit-record="draft-contact"/,
+	);
+	assert.doesNotMatch(html, /<Test>/);
+	assert.doesNotMatch(html, /Canvas card/);
+	assert.doesNotMatch(state.uploadResultIdentityHtml(result), /data-upload-edit-record/);
+	const bindingStart = source.indexOf('function bindUploadResultCards(');
+	const bindingEnd = source.indexOf('function resetSampleFailureActions(', bindingStart);
+	vm.runInNewContext(source.slice(bindingStart, bindingEnd), state);
+	state.bindUploadResultCards(state.content);
+	button.click();
+	assert.deepEqual(opened, [record]);
+	assert.equal(closed.length, 1);
+	const tasksStarted = [];
+	state._fixTasks = { start: (...args) => tasksStarted.push(args) };
+	button.dataset.uploadFix = 'true';
+	button.dataset.uploadFocusField = 'LastName';
+	button.click();
+	assert.deepEqual(tasksStarted, [[record.id, 'LastName']]);
+	assert.equal(opened.length, 1, 'Fix delegates opening to the sidebar');
+	delete button.dataset.uploadFix;
+	state.window.getSelection = () => ({ isCollapsed: false, anchorNode: {} });
+	button.click();
+	assert.equal(opened.length, 1, 'selecting error text must not open the editor');
+	let prevented = 0;
+	for (const key of ['Enter', ' ']) {
+		button.keydown({
+			key,
+			target: button,
+			preventDefault: () => {
+				prevented++;
+			},
+		});
+	}
+	assert.equal(opened.length, 3);
+	assert.equal(prevented, 2);
+	state.window.getSelection = () => null;
+	record._inaccessible = true;
+	assert.equal(state.uploadResultEditAttributes(result), '');
+	button.click();
+	state.canvasState.bulkRecords = [];
+	button.click();
+	assert.equal(opened.length, 3);
+	assert.equal(warnings.length, 2);
+});
+
+test('partial results show the root error first and explain rollbacks once', () => {
+	const { html, confirm, cancel, summary } = renderResults([
+		{ tempId: 'saved', objectName: 'Account', success: true, id: '001saved' },
+		{ tempId: 'unchanged', objectName: 'Account', success: true, mode: 'unchanged', id: '001existing' },
+		{ tempId: 'bad', objectName: 'Contact', success: false, error: 'AssistantPhone cannot be null' },
+		{ tempId: 'rollback1', objectName: 'Account', success: false, errorCode: 'ALL_OR_NONE_OPERATION_ROLLED_BACK' },
+		{
+			tempId: 'rollback2',
+			objectName: 'Case',
+			success: false,
+			error: 'The transaction was rolled back since another operation in the same transaction failed.',
+		},
+	]);
+	assert.equal(summary.textContent, '');
+	assert.equal(summary.hidden, true);
+	assert.doesNotMatch(html, /1 uploaded · 3 not uploaded/);
+	assert.match(html, /Rolled back \(2\)/);
+	assert.equal((html.match(/another operation in the same transaction failed/g) || []).length, 1);
+	assert.ok(html.indexOf('AssistantPhone cannot be null') < html.indexOf('Rolled back (2)'));
+	assert.ok(html.indexOf('Rolled back (2)') < html.indexOf('<summary>Uploaded'));
+	assert.match(html, /<summary>Skipped \(1\)<\/summary>/);
+	assert.match(html, /https:\/\/example.my.salesforce.com\/lightning\/r\/Account\/001saved\/view/);
+	assert.match(html, /<details class="upload-result-details"><summary>Uploaded/);
+	assert.match(html, /<details class="upload-fix-group" open>/);
+	assert.match(html, /1 issue needs attention/);
+	assert.match(html, /<details class="upload-result-details"><summary>Rolled back \(2\)/);
+	assert.match(html, /<details class="upload-result-details" open><summary>Failed \(1\)/);
+	assert.doesNotMatch(html, /Must fix/);
+	assert.match(html, /<details class="upload-result-details"><summary>Skipped/);
+	assert.equal(confirm.textContent, 'Retry failed');
+	assert.equal(cancel.textContent, 'Close');
+});
+
+test('delete-only failures retain a retry action and successful results offer Close', () => {
+	const failure = renderResults(
+		[],
+		[{ tempId: 'delete', objectName: 'Account', success: false, error: 'Deletion denied' }],
+	);
+	assert.equal(failure.summary.hidden, true);
+	assert.match(failure.html, /<summary>Failed \(1\)/);
+	assert.match(failure.html, /Deletion denied/);
+	assert.equal(failure.confirm.textContent, 'Retry failed');
+	assert.equal(failure.cancel.style.display, '');
+	const success = renderResults([{ tempId: 'saved', objectName: 'Account', success: true, id: '001saved' }]);
+	assert.equal(success.confirm.textContent, 'Close');
+	assert.equal(success.cancel.style.display, 'none');
+	assert.equal(success.summary.hidden, true);
+	assert.doesNotMatch(success.html, /Fix the errors/);
+});
+
+test('post-upload issues share grouped Fix controls and preserve Salesforce field details', () => {
+	const { html } = renderResults(
+		['a', 'b'].map((tempId) => ({
+			tempId,
+			objectName: 'Contact',
+			success: false,
+			error: 'AssistantPhone cannot be null <test>',
+			errorCode: 'FIELD_CUSTOM_VALIDATION_EXCEPTION',
+			fields: ['AssistantPhone'],
+		})),
+	);
+	assert.equal((html.match(/class="upload-fix-group" open/g) || []).length, 1);
+	assert.match(html, /Salesforce validation rule failed/);
+	assert.match(html, /2 issues need attention/);
+	assert.match(html, /2 records<\/span>/);
+	assert.match(html, /data-upload-edit-record="a"/);
+	assert.match(html, /data-upload-edit-record="b"/);
+	assert.equal((html.match(/data-upload-focus-field="AssistantPhone"/g) || []).length, 2);
+	assert.match(html, /FIELD_CUSTOM_VALIDATION_EXCEPTION/);
+	assert.match(html, /&lt;test>/);
+	assert.doesNotMatch(html, /<test>|upload-failure-block/);
+});
+
+test('upload summary combines repeated objects and distinguishes write operations without reordering records', () => {
+	const records = [
+		{ id: 'a1', objectName: 'Account' },
+		{ id: 'c1', objectName: 'Contact' },
+		{ id: 'a2', objectName: 'Account' },
+		{ id: 'a3', objectName: 'Account', loadedFromId: '001existing' },
+		{ id: 'a4', objectName: 'Account', loadedFromId: '001deleted', pendingDelete: true },
+		{ id: 'c2', objectName: 'Contact', _csvOperation: 'upsert' },
+	];
+	const before = JSON.stringify(records);
+	const groups = uploadModal.summarizeUploadRecords(records, new Set(), new Set(['a4']), {
+		Account: { label: 'Customer' },
+	});
+	assert.deepEqual(JSON.parse(JSON.stringify(groups)), [
+		{ objectName: 'Account', label: 'Customer', creates: 2, updates: 1, upserts: 0, deletes: 1 },
+		{ objectName: 'Contact', label: 'Contact', creates: 1, updates: 0, upserts: 1, deletes: 0 },
+	]);
+	assert.equal(JSON.stringify(records), before);
+});
+
+test('upload summary excludes skipped, inaccessible and non-record items; supports deletions only', () => {
+	const records = [
+		{ id: 'unchanged', objectName: 'Account', loadedFromId: '001unchanged' },
+		{ id: 'denied', objectName: 'Account', pendingDelete: true },
+		{ id: 'type', objectName: 'Account', isTypeNode: true },
+		{ id: 'hidden', objectName: 'Account', _inaccessible: true },
+		{ id: 'request', objectName: 'Contact', slot: { kind: 'whole-record' }, values: {} },
+		{ id: 'delete', objectName: 'Contact', loadedFromId: '003deleted', pendingDelete: true },
+	];
+	const groups = uploadModal.summarizeUploadRecords(
+		records,
+		new Set(['unchanged', 'denied']),
+		new Set(['delete']),
+		{},
+	);
+	assert.deepEqual(JSON.parse(JSON.stringify(groups)), [
+		{ objectName: 'Contact', label: 'Contact', creates: 0, updates: 0, upserts: 0, deletes: 1 },
+	]);
+	assert.equal(uploadModal.summarizeUploadRecords([], new Set(), new Set(), {}).length, 0);
+});
+
+test('upload summary escapes labels and omits execution-order details while retaining validation', () => {
+	assert.match(source, /upload-ready-count/);
+	assert.match(source, /escapeHtml\(group.label\)/);
+	assert.doesNotMatch(source, /View upload order|upload-order-details|upload-summary--ordered/);
+	assert.match(source, /computeUploadOrder\(unchangedSet, scopedIds, deleteIdSet\)/);
+	assert.match(source, /if \(cycleIds.size > 0\)/);
+	assert.match(source, /const deletesBlock =\s*willDeleteCount > 0/);
+});
+
 test('selected-only upload keeps the literal selection and reports an excluded draft-parent link', () => {
 	const records = [
 		{ id: 'account-draft', objectName: 'Account', values: { Name: 'Acme' } },
@@ -535,36 +892,36 @@ test('post-upload results identify records by name without positional hash numbe
 		{ name: 'Ada Lovelace', objectLabel: 'Contact', cardNumber: null },
 	);
 	assert.match(source, /Uploaded \('/);
-	assert.match(source, /Not uploaded \('/);
-	assert.match(source, /attemptedCount/);
-	assert.match(source, /Successful records remain saved/);
+	assert.match(source, /uploadIssueGroupsHtml\(fixIssues\)/);
+	assert.doesNotMatch(source, /Fix the errors below, then retry/);
 	assert.match(source, /identity\.objectLabel \+ ' - ' \+ identity\.name/);
 	assert.doesNotMatch(source, /'<div>#' \+/);
 });
 
-test('an all-success upload does not repeat its count in an Uploaded section heading', () => {
-	assert.match(source, /const showUploadedSectionHeading =/);
-	assert.match(
-		source,
-		/showUploadedSectionHeading\s*\? '<div class="upload-section-head upload-section-head--ok">Uploaded \('/,
-	);
+test('issue groups default open while uploaded and skipped default closed', () => {
+	assert.match(source, /<details class="upload-fix-group" open>/);
+	assert.match(source, /<details class="upload-result-details"><summary>Uploaded/);
+	assert.match(source, /<details class="upload-result-details"><summary>Skipped/);
+	assert.doesNotMatch(source, /upload-result-details--muted/);
+	assert.match(source, /summaryHtml \+ failuresHtml \+ html \+ deletedHtml \+ secondaryHtml/);
 	assert.match(source, /failed\.length > 0 \|\|[\s\S]*?deleteFailed\.length > 0/);
 	assert.doesNotMatch(source, /unchanged records? needed/);
 	assert.doesNotMatch(source, /had no local edits, so we didn/);
 });
 
-test('Salesforce sample failures use the post-upload result style and record identity', () => {
-	const start = source.indexOf('function renderPreflightFailure(pf)');
-	const end = source.indexOf('function _clearCommittedMigrationMatch', start);
-	const failureRenderer = source.slice(start, end);
-
-	assert.match(failureRenderer, /class="upload-sample-intro"/);
-	assert.doesNotMatch(failureRenderer, /class="banner error"/);
-	assert.match(failureRenderer, /upload-section-head upload-section-head--fail/);
-	assert.match(failureRenderer, /class="upload-failure-block"/);
-	assert.match(failureRenderer, /uploadResultIdentityHtml\(/);
-	assert.match(failureRenderer, /class="upload-failure-msg"/);
-	assert.doesNotMatch(failureRenderer, /<details class="pf-record"/);
+test('sample upload is absent from the client, server, and playground', () => {
+	const mockSource = fs.readFileSync(path.resolve(here, '../src/public/js/mock-sf.js'), 'utf8');
+	for (const code of [source, routesSource, mockSource]) {
+		assert.doesNotMatch(
+			code,
+			/\/api\/upload\/preflight|handleUploadPreflight|renderPreflightFailure|_preflightOverride/,
+		);
+	}
+	assert.doesNotMatch(source, /Sending a sample to Salesforce|Pre-flight passed/);
+	assert.match(source, /_renderUploadModalSummary\(\) === false/);
+	assert.match(source, /csrfFetch\('\/api\/upload\/graph'/);
+	assert.match(source, /csrfFetch\('\/api\/upload'/);
+	assert.match(source, /csrfFetch\('\/api\/upload\/bulk'/);
 });
 
 test('unnamed upload results use the real canvas card number only as a fallback', () => {
@@ -582,11 +939,11 @@ test('unnamed upload results use the real canvas card number only as a fallback'
 });
 
 test('upload preflight clearly separates included records from disclosed exclusions', () => {
-	assert.match(source, /<span>Records included<\/span>/);
-	assert.match(source, /<span>Unchanged \(skipped\)<\/span>/);
-	assert.match(source, /<span>Won\\u2019t upload<\/span>/);
+	assert.match(source, /upload-ready-count/);
+	assert.doesNotMatch(source, /upload-skipped-note/);
+	assert.match(source, /These changes are excluded/);
 	assert.match(source, /const totalRecords = willUploadCount \+ willDeleteCount/);
-	assert.match(source, /Continue with ' \+ totalRecords \+ ' record/);
+	assert.match(source, /Upload & delete/);
 	assert.doesNotMatch(source, /Eligible operations|eligible operation/);
 	assert.doesNotMatch(source, /loaded records? ha(?:s|ve) no local changes and will be skipped/);
 	assert.doesNotMatch(source, /Records will upload in the order below/);
@@ -639,7 +996,7 @@ test('upload checks local org approval before claiming that Salesforce upload ha
 	assert.match(source, /No records were written\. Retry/);
 });
 
-test('permission denials are not presented as Salesforce sample failures', () => {
+test('upload permission denials retain their dedicated recovery message', () => {
 	assert.match(source, /function isUploadPermissionDenied\(body\)/);
 	assert.match(source, /body\.capability === 'upload-records'/);
 	assert.match(source, /<strong>Upload permission required\.<\/strong>/);
@@ -650,7 +1007,7 @@ test('permission denials are not presented as Salesforce sample failures', () =>
 	assert.match(source, /tip\.setAttribute\('title', title\)/);
 	assert.match(
 		source,
-		/if \(!r\.ok && isUploadPermissionDenied\(pf\)\) \{\s*renderUploadPermissionRequired\(content, confirmBtn, pf\);\s*return;/,
+		/if \(!r\.ok && isUploadPermissionDenied\(body\)\) \{\s*renderUploadPermissionRequired\(content, confirmBtn, body\);\s*return;/,
 	);
 });
 
@@ -731,8 +1088,8 @@ test('an unapplied migration plan is a hard upload gate', () => {
 	assert.doesNotMatch(source, /function _migrateUploadValues/);
 });
 
-test('deterministic validation failure retires the rolled-back attempt token', () => {
-	assert.match(source, /function renderPreflightFailure\(pf\) \{[\s\S]*?_uploadAttemptId = null;/);
+test('completed upload results retire the attempt token, including all-failed uploads', () => {
+	assert.match(source, /function displayUploadResults\([\s\S]*?_uploadAttemptId = null;/);
 });
 
 test('uncertain upload guard explains the duplicate risk and concrete recovery steps', () => {

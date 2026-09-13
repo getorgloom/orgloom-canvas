@@ -14,6 +14,100 @@ function api() {
 	return window.OrgLoom.insertModal._test;
 }
 
+function escapeHtml(value) {
+	return String(value).replace(
+		/[&<>"']/g,
+		(char) =>
+			({
+				'&': '&amp;',
+				'<': '&lt;',
+				'>': '&gt;',
+				'"': '&quot;',
+				"'": '&#39;',
+			})[char],
+	);
+}
+
+test('linked field renders one compact record control and an optional Unlink action', () => {
+	const { linkedRecordControlHtml } = api();
+	const field = { name: 'AccountId' };
+	const lock = { association: { id: 10 }, target: { values: { Name: 'Acme' } } };
+	const html = linkedRecordControlHtml(field, lock, 'Acme · Account #2', true, escapeHtml);
+	assert.match(html, /<span>Acme<\/span>/);
+	assert.match(html, /title="AccountId · Acme · Account #2"/);
+	assert.match(html, /type="hidden"[^>]+data-locked-assoc="10"/);
+	assert.match(html, /type="button"[^>]+data-open-assoc-field="AccountId"/);
+	assert.match(html, /data-disconnect-assoc="10"[^>]*>Unlink<\/button>/);
+	assert.doesNotMatch(html, /Linked via association|Disconnect|type="text"/);
+	const readOnly = linkedRecordControlHtml(field, lock, 'Acme · Account #2', false, escapeHtml);
+	assert.doesNotMatch(readOnly, /data-disconnect-assoc/);
+});
+
+test('linked field escapes record names and attributes and provides unnamed/contact fallbacks', () => {
+	const { linkedRecordControlHtml } = api();
+	const lock = { association: { id: '"unsafe' }, target: { values: { Name: '<img src=x>' } } };
+	const html = linkedRecordControlHtml({ name: '"field' }, lock, '"tooltip', true, escapeHtml);
+	assert.doesNotMatch(html, /<img|=""field|=""unsafe/);
+	assert.match(html, /&lt;img src=x&gt;/);
+	lock.target.values = { FirstName: 'Test', LastName: 'Contact' };
+	assert.match(
+		linkedRecordControlHtml({ name: 'WhoId' }, lock, 'Contact #3', false, escapeHtml),
+		/<span>Test Contact<\/span>/,
+	);
+	lock.target.values = {};
+	assert.match(
+		linkedRecordControlHtml({ name: 'WhoId' }, lock, 'Contact #3', false, escapeHtml),
+		/<span>Contact #3<\/span>/,
+	);
+});
+
+function linkedNavigation({ dirty = false, encrypted = false, inaccessible = false, missing = false } = {}) {
+	const start = source.indexOf("modal.querySelectorAll('[data-open-assoc-field]')");
+	const end = source.indexOf("modal.querySelectorAll('[data-disconnect-assoc]')", start);
+	const calls = [];
+	let click;
+	const target = { id: 2, objectName: 'Account', _inaccessible: inaccessible };
+	vm.runInNewContext(source.slice(start, end), {
+		modal: {
+			querySelectorAll: () => [
+				{
+					dataset: { openAssocField: 'AccountId' },
+					addEventListener: (_type, fn) => {
+						click = fn;
+					},
+				},
+			],
+		},
+		associationLockForField: (name) => {
+			assert.equal(name, 'AccountId');
+			return missing ? null : { target };
+		},
+		editorTouchedFields: new Set(dirty ? ['Name'] : []),
+		currentEncryptedDraftValues: new Map(encrypted ? [['Secret__c', 'replacement']] : []),
+		showBulkToast: (message) => calls.push(['toast', message]),
+		closeModal: () => calls.push(['close']),
+		openInsertModal: (objectName, opts) => calls.push(['open', objectName, opts.record]),
+	});
+	click();
+	return { calls, target };
+}
+
+test('opening a linked card releases the current editor before opening the actual target', () => {
+	const { calls, target } = linkedNavigation();
+	assert.deepEqual(calls, [['close'], ['open', 'Account', target]]);
+});
+
+test('linked-card navigation cannot discard edits or open unavailable records', () => {
+	for (const options of [{ dirty: true }, { encrypted: true }]) {
+		const { calls } = linkedNavigation(options);
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0][0], 'toast');
+		assert.match(calls[0][1], /Save or cancel/);
+	}
+	assert.deepEqual(linkedNavigation({ inaccessible: true }).calls, []);
+	assert.deepEqual(linkedNavigation({ missing: true }).calls, []);
+});
+
 function fixture() {
 	const target = {
 		id: 1,
