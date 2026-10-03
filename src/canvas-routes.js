@@ -104,6 +104,7 @@ import { runBulkJob } from './sf-bulk.js';
 import { listObjects, loadDescribeForObject, getQueryableSObjects, cleanLabel, isNoiseSObject } from './sf-describe.js';
 import { isSpecializedSObject, specializedObjectError } from './sf-object-support.js';
 import {
+	buildRecordSearch,
 	escapeSoqlLiteral,
 	formatSoqlFieldLiteral,
 	normalizeSoqlFieldValue,
@@ -6658,7 +6659,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			function _soqlId(v) {
 				const s = String(v).trim();
-				if (!/^[a-zA-Z0-9]{15,18}$/.test(s)) {
+				if (!/^(?:[a-zA-Z0-9]{15}|[a-zA-Z0-9]{18})$/.test(s)) {
 					throw new Error('Invalid Salesforce id: ' + s);
 				}
 				return "'" + s + "'";
@@ -6757,7 +6758,7 @@ export function mountCanvasRoutes(app, options = {}) {
 						return `${fieldName} IN (${parts})`;
 					}
 				}
-				if (t === 'reference') {
+				if (t === 'reference' || t === 'id') {
 					if (op === 'equals') {
 						return `${fieldName} = ${_soqlId(v)}`;
 					}
@@ -6805,9 +6806,18 @@ export function mountCanvasRoutes(app, options = {}) {
 				throw new Error('Unsupported operator "' + op + '" for ' + t + ' field "' + fieldName + '"');
 			}
 
+			let search;
+			try {
+				search = String(body.search || '').trim() ? buildRecordSearch(describe, objectName, body.search) : null;
+			} catch (e) {
+				return res.status(400).json({ error: e.code, message: e.message });
+			}
 			let whereFragments;
 			try {
 				whereFragments = filters.map(_compileFilter).filter(Boolean);
+				if (search?.clause) {
+					whereFragments.push(search.clause);
+				}
 			} catch (e) {
 				return res.status(400).json({ error: 'invalid-filter', message: e.message });
 			}
@@ -6825,6 +6835,11 @@ export function mountCanvasRoutes(app, options = {}) {
 			const nameFieldDesc = (describe.fields || []).find((f) => f && f.nameField);
 			if (nameFieldDesc) {
 				previewFields.push(nameFieldDesc.name);
+			}
+			for (const field of search?.searchFields || []) {
+				if (!previewFields.includes(field)) {
+					previewFields.push(field);
+				}
 			}
 			for (const f of filters) {
 				if (f && f.field && fieldByName.has(f.field) && !previewFields.includes(f.field)) {
@@ -7073,45 +7088,20 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			const conn = req.sf.conn;
 			const describe = await conn.sobject(name).describe();
-			const fields = Array.isArray(describe.fields) ? describe.fields : [];
-			const nameFieldMeta = fields.find((f) => f.nameField);
-			if (!nameFieldMeta) {
-				return res.status(400).json({
-					error: 'search-field-unavailable',
-					message: 'Salesforce did not provide a name field for this object.',
-				});
+			let search;
+			try {
+				search = buildRecordSearch(describe, name, req.query.q);
+			} catch (e) {
+				return res.status(400).json({ error: e.code, message: e.message });
 			}
-			const q = String(req.query.q || '').trim();
-			const nameFieldCheck = q
-				? validateSoqlFilterField(describe, nameFieldMeta.name)
-				: { ok: true, field: nameFieldMeta };
-			if (!nameFieldCheck.ok) {
-				return res.status(400).json({
-					error: 'search-field-not-filterable',
-					message: nameFieldCheck.message,
-				});
-			}
-			const nameField = nameFieldCheck.field.name;
-			const searchFields = [nameFieldCheck.field];
-			const caseSubject = name === 'Case' ? fields.find((field) => field && field.name === 'Subject') : null;
-			if (caseSubject) {
-				const subjectCheck = q
-					? validateSoqlFilterField(describe, caseSubject.name)
-					: { ok: true, field: caseSubject };
-				if (subjectCheck.ok) {
-					searchFields.push(subjectCheck.field);
-				}
-			}
-			const escaped = escapeSoqlLiteral(q);
-			const where = q
-				? ` WHERE (${searchFields.map((field) => `${field.name} LIKE '%${escaped}%'`).join(' OR ')})`
-				: '';
-			const selectFields = Array.from(new Set(['Id', ...searchFields.map((field) => field.name)]));
-			const soql = `SELECT ${selectFields.join(', ')} FROM ${name}${where} ORDER BY ${nameField} LIMIT 20`;
+			const { nameField, searchFields, clause } = search;
+			const where = clause ? ' WHERE ' + clause : '';
+			const selectFields = Array.from(new Set(['Id', ...(nameField ? [nameField] : []), ...searchFields]));
+			const soql = `SELECT ${selectFields.join(', ')} FROM ${name}${where} ORDER BY ${nameField || 'Id'} LIMIT 20`;
 			const result = await conn.query(soql);
 			res.json({
 				nameField,
-				searchFields: searchFields.map((field) => field.name),
+				searchFields,
 				records: (result.records || []).map((record) => {
 					const primary = record[nameField] == null ? '' : String(record[nameField]);
 					const subject = name === 'Case' && record.Subject != null ? String(record.Subject).trim() : '';

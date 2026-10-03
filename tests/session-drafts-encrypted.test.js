@@ -16,6 +16,7 @@ function harness() {
 	const sessionStorage = storage();
 	const window = { OrgLoom: {}, sessionStorage };
 	const context = vm.createContext({ window, console });
+	vm.runInContext(readFileSync(new URL('../src/public/js/recovery-storage.js', import.meta.url), 'utf8'), context);
 	vm.runInContext(readFileSync(new URL('../src/public/js/encrypted-fields.js', import.meta.url), 'utf8'), context);
 	vm.runInContext(readFileSync(new URL('../src/public/js/session-drafts.js', import.meta.url), 'utf8'), context);
 	const canvasState = {
@@ -33,7 +34,7 @@ function harness() {
 		canvasState,
 		encryptedFields: window.OrgLoom.encryptedFields,
 	});
-	return { api, canvasState, sessionStorage };
+	return { api, canvasState, sessionStorage, window };
 }
 
 test('session draft recovery neither writes nor restores encrypted field values', () => {
@@ -44,13 +45,30 @@ test('session draft recovery neither writes nor restores encrypted field values'
 	api.persistDraftValues('canvas-1');
 	const raw = sessionStorage.getItem('orgloom:draftValues:canvas-1');
 	assert.equal(raw.includes('never store this'), false);
-	assert.deepEqual(JSON.parse(raw), { 4: { Name: 'Safe' } });
+	assert.deepEqual(JSON.parse(raw).values, { 4: { Name: 'Safe' } });
 
 	sessionStorage.setItem(
 		'orgloom:draftValues:canvas-1',
-		JSON.stringify({ 4: { Name: 'Restored', Secret__c: 'legacy leaked value' } }),
+		JSON.stringify({ v: 1, ts: Date.now(), values: { 4: { Name: 'Restored', Secret__c: 'legacy leaked value' } } }),
 	);
 	canvasState.bulkRecords[0].values = {};
 	assert.equal(api.rehydrateDraftValues('canvas-1'), 1);
 	assert.deepEqual(JSON.parse(JSON.stringify(canvasState.bulkRecords[0].values)), { Name: 'Restored' });
+});
+
+test('expired or legacy undated drafts are deleted; logout blocks subsequent draft writes', () => {
+	const { api, canvasState, sessionStorage, window } = harness();
+	canvasState.bulkRecords = [{ id: 4, objectName: 'Account', values: {} }];
+	for (const payload of [
+		{ 4: { Name: 'Legacy' } },
+		{ v: 1, ts: Date.now() - 2 * 60 * 60 * 1000, values: { 4: { Name: 'Expired' } } },
+	]) {
+		sessionStorage.setItem('orgloom:draftValues:canvas-1', JSON.stringify(payload));
+		assert.equal(api.rehydrateDraftValues('canvas-1'), 0);
+		assert.equal(sessionStorage.getItem('orgloom:draftValues:canvas-1'), null);
+	}
+	window.OrgLoom.sessionEnded = true;
+	canvasState.bulkRecords[0].values = { Name: 'Late update' };
+	api.persistDraftValues('canvas-1');
+	assert.equal(sessionStorage.getItem('orgloom:draftValues:canvas-1'), null);
 });

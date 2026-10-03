@@ -190,6 +190,92 @@ describe('playground feature access', () => {
 });
 
 describe('dataset integrity: describes vs records', () => {
+	test('browse search combines with filters and loads every match beyond the preview page', async () => {
+		const expected = Array.from(
+			W.OrgLoomMock.records.Account.filter((r) => r.AnnualRevenue > 3000000).map((r) => r.Id),
+		);
+		assert.ok(expected.length > 25);
+		const request = {
+			objectName: 'Account',
+			search: 'Demo',
+			filters: [{ field: 'AnnualRevenue', op: 'gt', value: 3000000 }],
+			limit: 25,
+			onCanvasIds: [expected[0]],
+		};
+		const { body } = await call('POST', '/api/browse', request);
+		assert.equal(body.count, expected.length);
+		assert.equal(body.loadableCount, expected.length - 1);
+		assert.equal(body.records.length, 25);
+		const next = await call('POST', '/api/browse', { ...request, offset: 25 });
+		assert.deepEqual(
+			next.body.records.map((r) => r.Id),
+			expected.slice(25),
+		);
+		const loaded = await call('POST', '/api/query', { soql: body.loadSoql });
+		assert.deepEqual(
+			loaded.body.records.map((r) => r.loadedFromId),
+			expected,
+		);
+		const cleared = await call('POST', '/api/browse', { ...request, search: '' });
+		assert.equal(cleared.body.count, expected.length);
+		const empty = await call('POST', '/api/browse', { ...request, search: 'no-such-demo-record' });
+		assert.equal(empty.body.count, 0);
+		const emptyLoad = await call('POST', '/api/query', { soql: empty.body.loadSoql });
+		assert.equal(emptyLoad.body.records.length, 0);
+	});
+
+	test('browse searches exact IDs and Case number or subject like the record picker', async () => {
+		const record = W.OrgLoomMock.records.Case[0];
+		for (const search of [record.Id, record.Id.slice(0, 15), record.CaseNumber, record.Subject]) {
+			const { body } = await call('POST', '/api/browse', { objectName: 'Case', search });
+			assert.ok(body.records.some((r) => r.Id === record.Id));
+			assert.ok(body.count < W.OrgLoomMock.records.Case.length);
+		}
+		const picker = await call('GET', '/api/objects/Case/search?q=' + encodeURIComponent(record.Subject));
+		assert.ok(picker.body.records.some((r) => r.id === record.Id));
+	});
+
+	test('describe metadata exposes filterable fields for Browse Records', async () => {
+		for (const objectName of Object.keys(W.OrgLoomMock.describes)) {
+			const { body } = await call('GET', '/api/objects/' + objectName + '/describe');
+			assert.ok(
+				body.fields.some((field) => field.filterable === true),
+				objectName + ' has filter choices',
+			);
+			for (const field of body.fields) {
+				assert.equal(typeof field.filterable, 'boolean', objectName + '.' + field.name);
+			}
+		}
+		const { body } = await call('GET', '/api/objects/Account/describe');
+		for (const name of ['Name', 'Industry', 'AnnualRevenue', 'OwnerId', 'BillingStreet']) {
+			assert.equal(body.fields.find((field) => field.name === name).filterable, true, name);
+		}
+		assert.equal(body.fields.find((field) => field.name === 'Description').filterable, false);
+	});
+
+	test('browse filters narrow the playground preview by text, picklist, and number', async () => {
+		const cases = [
+			{ field: 'Name', op: 'contains', value: 'Alder', matches: (r) => r.Name.includes('Alder') },
+			{ field: 'Industry', op: 'equals', value: 'Technology', matches: (r) => r.Industry === 'Technology' },
+			{ field: 'AnnualRevenue', op: 'gt', value: '3000000', matches: (r) => r.AnnualRevenue > 3000000 },
+		];
+		for (const { matches, ...filter } of cases) {
+			const expected = W.OrgLoomMock.records.Account.filter(matches).map((r) => r.Id);
+			assert.ok(expected.length > 0 && expected.length < W.OrgLoomMock.records.Account.length);
+			const { status, body } = await call('POST', '/api/browse', {
+				objectName: 'Account',
+				filters: [filter],
+				limit: 200,
+			});
+			assert.equal(status, 200);
+			assert.equal(body.count, expected.length);
+			assert.deepEqual(
+				body.records.map((r) => r.Id),
+				Array.from(expected),
+			);
+		}
+	});
+
 	test('a dataset update removes stale playground-local fixtures', () => {
 		assert.equal(W.localStorage.getItem('orgloom.playground.datasetVersion'), '3');
 		assert.equal(W.localStorage.getItem('orgloom.playground.canvases'), null);

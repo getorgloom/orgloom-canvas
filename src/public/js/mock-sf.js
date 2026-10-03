@@ -657,23 +657,37 @@
 		});
 	}
 
+	function searchFieldsFor(objectName) {
+		return [nameFieldFor(objectName), ...(objectName === 'Case' ? ['Subject'] : [])];
+	}
+	function matchesSearch(record, objectName, query) {
+		const q = String(query || '').trim();
+		if (!q) {
+			return true;
+		}
+		if (/^(?:[a-zA-Z0-9]{15}|[a-zA-Z0-9]{18})$/.test(q)) {
+			return idMatches(record.Id, q);
+		}
+		return searchFieldsFor(objectName).some((name) =>
+			String(record[name] || '')
+				.toLowerCase()
+				.includes(q.toLowerCase()),
+		);
+	}
 	function handleSearch(objectName, query) {
 		const list = recordsFor(objectName);
 		if (!list.length) {
 			return jsonResponse({ records: [], nameField: 'Name' });
 		}
 		const nameField = nameFieldFor(objectName);
-		const q = (query || '').toLowerCase().trim();
-		const matched = q
-			? list.filter((r) =>
-					String(r[nameField] || '')
-						.toLowerCase()
-						.includes(q),
-				)
-			: list.slice(0, 20);
+		const matched = list.filter((r) => matchesSearch(r, objectName, query));
 		return jsonResponse({
 			nameField,
-			records: matched.slice(0, 20).map((r) => ({ id: r.Id, name: r[nameField] })),
+			searchFields: searchFieldsFor(objectName),
+			records: matched.slice(0, 20).map((r) => ({
+				id: r.Id,
+				name: objectName === 'Case' && r.Subject ? r[nameField] + ' — ' + r.Subject : r[nameField],
+			})),
 		});
 	}
 
@@ -1348,7 +1362,7 @@
 			return v;
 		}
 
-		if (explicitIds && explicitIds.length > 0) {
+		if (explicitIds) {
 			const allRecords = recordsFor(queryObject);
 			const wanted = new Set(explicitIds);
 			const matching = allRecords.filter((r) => r && wanted.has(r.Id));
@@ -1497,7 +1511,9 @@
 					return true;
 			}
 		}
-		let matching = allRecords.filter((rec) => filters.every((f) => _matches(rec, f)));
+		let matching = allRecords.filter(
+			(rec) => matchesSearch(rec, objectName, body.search) && filters.every((f) => _matches(rec, f)),
+		);
 		if (sort && sort.field) {
 			const dir = sort.direction === 'desc' ? -1 : 1;
 			matching = matching.slice().sort((a, b) => {
@@ -1529,6 +1545,9 @@
 		if (nameCandidate) {
 			previewFields.push(nameCandidate);
 		}
+		if (objectName === 'Case' && !previewFields.includes('CaseNumber')) {
+			previewFields.push('CaseNumber');
+		}
 		for (const f of filters) {
 			if (f && f.field && sample[f.field] !== undefined && !previewFields.includes(f.field)) {
 				previewFields.push(f.field);
@@ -1549,7 +1568,15 @@
 
 		const orderClause =
 			sort && sort.field ? ' ORDER BY ' + sort.field + ' ' + (sort.direction === 'desc' ? 'DESC' : 'ASC') : '';
-		const loadSoql = 'SELECT Id FROM ' + objectName + orderClause;
+		// The demo query handler supports explicit IDs, not arbitrary WHERE expressions.
+		// Carry all matching IDs (not just the preview page) into the canvas load.
+		const loadSoql =
+			'SELECT Id FROM ' +
+			objectName +
+			' WHERE Id IN (' +
+			matching.map((rec) => "'" + rec.Id + "'").join(', ') +
+			')' +
+			orderClause;
 		const previewSoql = loadSoql + ' LIMIT ' + limit + ' OFFSET ' + offset;
 		return jsonResponse({
 			count,

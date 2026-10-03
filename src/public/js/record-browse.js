@@ -43,10 +43,10 @@
 				{ op: 'isNotNull', label: 'is not empty' },
 			];
 		}
-		if (t === 'reference') {
+		if (t === 'reference' || t === 'id') {
 			return [
-				{ op: 'equals', label: 'equals (Id)' },
-				{ op: 'notEquals', label: 'not equals (Id)' },
+				{ op: 'equals', label: 'equals' },
+				{ op: 'notEquals', label: 'does not equal' },
 				{ op: 'isNull', label: 'is empty' },
 				{ op: 'isNotNull', label: 'is not empty' },
 			];
@@ -178,6 +178,7 @@
 				return {
 					objectName: initialObjectName || null,
 					filters: [], // [{ id, field, op, value }]
+					search: '',
 					sort: null, // { field, direction }
 					limit: 25,
 					offset: 0,
@@ -537,6 +538,7 @@
 						body: JSON.stringify({
 							objectName: _state.objectName,
 							filters: requestFilters,
+							search: _state.search,
 							sort: _state.sort,
 							limit: _state.limit,
 							offset: _state.offset,
@@ -718,6 +720,14 @@
 
 			function _renderBody(content) {
 				const objectPicker = content.querySelector('.rb-object-picker');
+				const searchInput = content.querySelector('.rb-search');
+				searchInput.disabled = !_state.objectName;
+				searchInput.value = _state.search;
+				searchInput.placeholder =
+					_state.objectName === 'Case'
+						? 'Search by case number, subject, or record ID'
+						: 'Search by name or record ID';
+				searchInput.setAttribute('aria-label', searchInput.placeholder);
 				const filterArea = content.querySelector('.rb-filters');
 				if (!objectPicker.dataset.populated) {
 					_loadObjects()
@@ -761,10 +771,21 @@
 			}
 
 			function _wireBodyHandlers(content) {
+				content.querySelector('.rb-search').addEventListener('input', (ev) => {
+					_state.search = ev.target.value;
+					_state.offset = 0;
+					_scheduleFetch(content);
+				});
 				content.querySelector('.rb-object-picker').addEventListener('change', async (ev) => {
+					clearTimeout(_fetchTimer);
+					_fetchSeq += 1;
 					const name = ev.target.value;
 					_state.objectName = name || null;
 					_state.filters = [];
+					_state.search = '';
+					_state.sort = null;
+					content.querySelector('.rb-search').value = '';
+					content.querySelector('.rb-search').disabled = true;
 					_state.offset = 0;
 					_state.lastResult = null;
 					content.querySelector('.rb-count').textContent = name ? 'Loading describe…' : '';
@@ -781,6 +802,9 @@
 					} catch (e) {
 						content.querySelector('.rb-count').textContent =
 							'Describe load failed: ' + (e.message || String(e));
+						return;
+					}
+					if (_state.objectName !== name) {
 						return;
 					}
 					_renderBody(content);
@@ -1144,11 +1168,12 @@
 					'<button class="modal-close" data-rb-close>&times;</button>' +
 					'</div>' +
 					'<div class="modal-content rb-content">' +
-					'<p class="tag">Filter records by field values. The count updates live as you build. Load matching records onto the canvas when you’re ready.</p>' +
+					'<p class="tag">Search records and narrow the results with field filters. Load matching records onto the canvas when you’re ready.</p>' +
 					'<div class="rb-toolbar">' +
 					'<label class="rb-label">Object</label>' +
 					'<select class="rb-object-picker"><option value="">Loading objects…</option></select>' +
 					'</div>' +
+					'<input type="search" class="rb-search" aria-label="Search by name or record ID" placeholder="Search by name or record ID" maxlength="200" autocomplete="off" disabled>' +
 					'<div class="rb-section-head">Filters</div>' +
 					'<div class="rb-filters"></div>' +
 					'<div class="rb-results-head">' +

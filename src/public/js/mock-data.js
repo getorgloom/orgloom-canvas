@@ -837,6 +837,11 @@
 			{
 				label: opts.name,
 				type: 'string',
+				// Browse Records uses the same explicit capability flag as live Salesforce describes.
+				filterable:
+					!['base64', 'address', 'location', 'anyType', 'complexvalue', 'encryptedstring'].includes(
+						opts.type,
+					) && !(opts.type === 'textarea' && opts.length > 255),
 				length: 255,
 				nameField: false,
 				updateable: true,

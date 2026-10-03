@@ -6,10 +6,21 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../src/public/js/record-browse.js', import.meta.url), 'utf8');
 const anchor = '\twindow.OrgLoom.recordBrowse = {';
 assert.ok(source.includes(anchor), 'record-browse test injection anchor must remain available');
-const instrumented = source.replace(anchor, '\twindow.__salesforceIdInList = _salesforceIdInList;\n\n' + anchor);
+const instrumented = source.replace(
+	anchor,
+	'\twindow.__salesforceIdInList = _salesforceIdInList;\n\twindow.__operatorsFor = _operatorsFor;\n\n' + anchor,
+);
 const context = { window: { OrgLoom: {} } };
 vm.runInNewContext(instrumented, context);
 const salesforceIdInList = context.window.__salesforceIdInList;
+
+test('Id filters offer the same operators as lookup IDs', () => {
+	const operators = context.window.__operatorsFor({ type: 'id' });
+	assert.deepEqual(
+		Array.from(operators, (item) => item.op),
+		['equals', 'notEquals', 'isNull', 'isNotNull'],
+	);
+});
 
 test('Browse builds an IN list only from 15- or 18-character Salesforce IDs', () => {
 	assert.equal(

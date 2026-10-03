@@ -43,6 +43,7 @@ function harness() {
 		clearTimeout: () => {},
 	};
 	vm.createContext(sandbox);
+	vm.runInContext(readFileSync(new URL('../src/public/js/recovery-storage.js', import.meta.url), 'utf8'), sandbox);
 	vm.runInContext(readFileSync(new URL('../src/public/js/encrypted-fields.js', import.meta.url), 'utf8'), sandbox);
 	vm.runInContext(readFileSync(new URL('../src/public/js/canvas-autosave.js', import.meta.url), 'utf8'), sandbox);
 
@@ -77,6 +78,40 @@ function setScope(win, canvasState, { account, org, user }) {
 
 const REAL = { account: 'acc_real', org: '00DREAL', user: '005REAL' };
 const DEMO = { account: 'playground', org: '00DDEMO00000000AAA', user: '005DEMO00000000AAA' };
+
+test('logout prevents autosave and migration writers from recreating cleared recovery data', () => {
+	const h = harness();
+	setScope(h.win, h.canvasState, REAL);
+	h.canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Private' } }];
+	h.api.autosaveFlush();
+	h.api.migrationStash({ status: 'awaiting-target' });
+	h.win.OrgLoom.sessionEnded = true;
+	h.win.OrgLoom.recoveryStorage.clear();
+	h.api.autosaveFlush();
+	h.api.autosaveSchedule();
+	h.api.orgSwitchStash({ intent: 'reauth' });
+	h.api.migrationStash({ status: 'awaiting-target' });
+	assert.equal(h.sessionStorage.length, 0);
+});
+
+test('expired autosave and migration snapshots cannot be restored', () => {
+	const h = harness();
+	setScope(h.win, h.canvasState, REAL);
+	h.canvasState.bulkRecords = [{ id: 1, objectName: 'Account', values: { Name: 'Private' } }];
+	h.api.autosaveFlush();
+	h.api.migrationStash({ status: 'awaiting-target' });
+	for (const key of h.sessionStorage._dump()) {
+		if (key.startsWith('orgloom:canvas-draft:v1') || key === 'orgloom:migration:v1') {
+			const data = JSON.parse(h.sessionStorage.getItem(key));
+			data.ts = Date.now() - 2 * 60 * 60 * 1000;
+			h.sessionStorage.setItem(key, JSON.stringify(data));
+		}
+	}
+	h.canvasState.bulkRecords = [];
+	assert.equal(h.api.autosaveRestore(), false);
+	assert.equal(h.api.migrationResume(), false);
+	assert.equal(h.canvasState.bulkRecords.length, 0);
+});
 
 describe('autosave scope-namespacing (playground vs real)', () => {
 	test('encrypted values never enter autosave storage and intent survives restore', () => {

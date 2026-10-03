@@ -17,6 +17,8 @@
 			}
 			const canvasState = deps.canvasState;
 			const encryptedFields = deps.encryptedFields;
+			const sessionStorage = window.OrgLoom.recoveryStorage;
+			if (!sessionStorage) throw new Error('canvas-autosave.mount: missing recoveryStorage');
 
 			function _recordsForStorage(records) {
 				return (records || []).map((record) => {

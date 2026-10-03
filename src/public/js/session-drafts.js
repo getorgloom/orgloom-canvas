@@ -11,6 +11,8 @@
 			}
 			const canvasState = deps.canvasState;
 			const encryptedFields = deps.encryptedFields;
+			const storage = window.OrgLoom.recoveryStorage;
+			if (!storage) throw new Error('session-drafts.mount: missing recoveryStorage');
 
 			function _storageKey(canvasId) {
 				return 'orgloom:draftValues:' + canvasId;
@@ -21,12 +23,14 @@
 					return {};
 				}
 				try {
-					const raw = window.sessionStorage.getItem(_storageKey(canvasId));
+					const raw = storage.getItem(_storageKey(canvasId));
 					if (!raw) {
 						return {};
 					}
 					const parsed = JSON.parse(raw);
-					return parsed && typeof parsed === 'object' ? parsed : {};
+					return parsed && parsed.v === 1 && parsed.values && typeof parsed.values === 'object'
+						? parsed.values
+						: {};
 				} catch (_) {
 					return {};
 				}
@@ -38,9 +42,9 @@
 				}
 				try {
 					if (!map || Object.keys(map).length === 0) {
-						window.sessionStorage.removeItem(_storageKey(canvasId));
+						storage.removeItem(_storageKey(canvasId));
 					} else {
-						window.sessionStorage.setItem(_storageKey(canvasId), JSON.stringify(map));
+						storage.setItem(_storageKey(canvasId), JSON.stringify({ v: 1, ts: Date.now(), values: map }));
 					}
 				} catch (_) {}
 			}
@@ -143,7 +147,7 @@
 					return;
 				}
 				try {
-					window.sessionStorage.removeItem(_storageKey(canvasId));
+					storage.removeItem(_storageKey(canvasId));
 				} catch (_) {}
 			}
 

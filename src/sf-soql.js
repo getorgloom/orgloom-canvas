@@ -54,6 +54,53 @@ export function validateSoqlFilterField(describe, fieldName, options = {}) {
 	return { ok: true, field };
 }
 
+// Shared by the single-record picker and Browse Records; callers keep their own pagination.
+export function buildRecordSearch(describe, objectName, query) {
+	const q = String(query || '').trim();
+	const fail = (code, message) => {
+		throw Object.assign(new Error(message), { code });
+	};
+	if (q.length > 200) {
+		fail('search-too-long', 'Search must be 200 characters or fewer.');
+	}
+	const fields = describe.fields || [];
+	const nameField = fields.find((f) => f && f.nameField)?.name;
+	if (/^(?:[a-zA-Z0-9]{15}|[a-zA-Z0-9]{18})$/.test(q)) {
+		const check = validateSoqlFilterField(describe, 'Id');
+		if (!check.ok) {
+			fail('search-field-not-filterable', check.message);
+		}
+		return { nameField, searchFields: ['Id'], clause: `Id = '${q}'` };
+	}
+	if (!nameField) {
+		fail(
+			'search-field-unavailable',
+			'Salesforce did not provide a name field for this object. Search by record ID or use field filters.',
+		);
+	}
+	const names = [nameField];
+	if (objectName === 'Case' && fields.some((f) => f && f.name === 'Subject')) {
+		names.push('Subject');
+	}
+	const searchFields = names.filter((name, index) => {
+		if (!q) {
+			return true;
+		}
+		const check = validateSoqlFilterField(describe, name);
+		if (!check.ok && index === 0) {
+			fail('search-field-not-filterable', check.message);
+		}
+		return check.ok;
+	});
+	// Treat user input as literal text, including LIKE wildcard characters.
+	const escaped = escapeSoqlLiteral(q).replace(/[%_]/g, '\\$&');
+	return {
+		nameField,
+		searchFields,
+		clause: q ? '(' + searchFields.map((name) => `${name} LIKE '%${escaped}%'`).join(' OR ') + ')' : '',
+	};
+}
+
 const SOQL_NUMERIC_FIELD_TYPES = new Set(['int', 'long', 'double', 'currency', 'percent']);
 
 function canonicalDecimal(value, integerOnly) {

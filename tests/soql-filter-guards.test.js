@@ -4,6 +4,7 @@ import express from 'express';
 import { readFileSync } from 'node:fs';
 import { initTestDb } from './helpers/db.js';
 import { ext } from '../src/extensions.js';
+import { buildRecordSearch } from '../src/sf-soql.js';
 
 let server;
 let baseUrl;
@@ -138,6 +139,91 @@ async function jsonRequest(path, options = {}) {
 }
 
 describe('app-generated SOQL WHERE field guards', () => {
+	test('Browse supports Id equality and inequality for 15- and 18-character IDs', async () => {
+		for (const value of ['001000000000001', '001000000000001AAA']) {
+			for (const [op, sqlOp] of [
+				['equals', '='],
+				['notEquals', '!='],
+			]) {
+				capturedQueries = [];
+				const { response, body } = await jsonRequest('/api/browse', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ objectName: 'Account', filters: [{ field: 'Id', op, value }] }),
+				});
+				assert.equal(response.status, 200);
+				assert.ok(capturedQueries[0].includes(`WHERE Id ${sqlOp} '${value}'`));
+				assert.ok(body.loadSoql.includes(`WHERE Id ${sqlOp} '${value}'`));
+			}
+		}
+	});
+
+	test('Browse rejects malformed Id filter values before querying Salesforce', async () => {
+		for (const value of ['001000000000001A', '001000000000001AA', "001000000000001' OR Name != ''", 'not-an-id']) {
+			const { response, body } = await jsonRequest('/api/browse', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ objectName: 'Account', filters: [{ field: 'Id', op: 'equals', value }] }),
+			});
+			assert.equal(response.status, 400);
+			assert.equal(body.error, 'invalid-filter');
+		}
+		assert.equal(capturedQueries.length, 0);
+	});
+
+	test('Browse combines search and filters for count, preview, overlap, and uncapped loading', async () => {
+		const { response, body } = await jsonRequest('/api/browse', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				objectName: 'Case',
+				search: 'printer',
+				filters: [{ field: 'AccountId', op: 'equals', value: '001000000000001AAA' }],
+				onCanvasIds: ['500000000000001AAA'],
+				limit: 25,
+				offset: 25,
+			}),
+		});
+		assert.equal(response.status, 200);
+		for (const query of [...capturedQueries, body.loadSoql]) {
+			assert.ok(
+				query.includes(
+					"AccountId = '001000000000001AAA' AND (CaseNumber LIKE '%printer%' OR Subject LIKE '%printer%')",
+				),
+				query,
+			);
+		}
+		assert.equal(capturedQueries.length, 3);
+		assert.match(body.previewSoql, /LIMIT 25 OFFSET 25$/);
+		assert.doesNotMatch(body.loadSoql, /LIMIT|OFFSET/);
+		assert.ok(body.previewFields.includes('Subject'));
+	});
+
+	test('Browse supports exact IDs and rejects unfilterable or overlong searches', async () => {
+		for (const search of ['001000000000001', '001000000000001AAA']) {
+			assert.equal(buildRecordSearch(describes.Account, 'Account', search).clause, `Id = '${search}'`);
+		}
+		for (const [objectName, search, code] of [
+			['Unsearchable__c', 'test', 'search-field-not-filterable'],
+			['Account', 'x'.repeat(201), 'search-too-long'],
+		]) {
+			const { response, body } = await jsonRequest('/api/browse', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ objectName, search }),
+			});
+			assert.equal(response.status, 400);
+			assert.equal(body.error, code);
+		}
+		assert.equal(capturedQueries.length, 0);
+	});
+
+	test('shared search escapes quotes, backslashes and LIKE wildcards as literal text', () => {
+		assert.equal(buildRecordSearch(describes.Account, 'Account', "O'Reilly").clause, "(Name LIKE '%O\\'Reilly%')");
+		assert.equal(buildRecordSearch(describes.Account, 'Account', 'a\\b%_').clause, "(Name LIKE '%a\\\\b\\%\\_%')");
+		assert.equal(buildRecordSearch(describes.Account, 'Account', '   ').clause, '');
+	});
+
 	test('affected UI pickers only offer filterable fields', () => {
 		assert.match(browseClientSource, /f\.filterable === true/);
 		assert.match(linkedCsvSource, /f\.externalId && f\.filterable === true && f\.createable/);

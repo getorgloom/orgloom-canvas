@@ -2518,8 +2518,8 @@ function csrfFetch(url, options) {
 
 	const DESCRIBE_TTL_MS = 10 * 60 * 1000;
 	// Bump when projected field metadata changes so a prior tab cannot reuse an
-	// incomplete describe shape (for example, one without htmlFormatted).
-	const DESCRIBE_STORAGE_PREFIX = 'orgloom-describe-v7';
+	// incomplete describe shape (for example, playground fields without filterable).
+	const DESCRIBE_STORAGE_PREFIX = 'orgloom-describe-v8';
 	const DESCRIBE_STORAGE_ORG = window.SF_ORG_ID || 'unknown';
 	const DESCRIBE_STORAGE_USER = window.SF_USER_ID || 'unknown';
 	// Field permissions can differ between users connected to the same org.

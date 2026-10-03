@@ -12037,6 +12037,40 @@ tbody tr[data-row-open]:nth-child(10) {
 	font-family: var(--font-sans);
 	font-size: 0.86rem;
 }
+.record-browse-modal .rb-search {
+	appearance: none;
+	color-scheme: dark;
+	width: 100%;
+	min-width: 0;
+	min-height: 40px;
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0.6em 0.85em;
+	background: var(--bg-inset);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	color: var(--ink);
+	font-family: var(--font-sans);
+	font-size: 0.86rem;
+	line-height: 1.4;
+}
+.record-browse-modal .rb-search::placeholder {
+	color: var(--muted);
+	opacity: 1;
+}
+.record-browse-modal .rb-search:hover:not(:disabled) {
+	border-color: var(--border-hot);
+}
+.record-browse-modal .rb-search:focus-visible {
+	border-color: var(--border-hot);
+	outline: 2px solid var(--ink-soft);
+	outline-offset: 2px;
+}
+.record-browse-modal .rb-search:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
 .record-browse-modal .rb-section-head {
 	font-size: 0.74rem;
 	font-family: var(--font-mono);
@@ -18383,8 +18417,8 @@ body.canvas-recipient-mode .graph-bulk {
 	margin: 0 0 0.6em;
 	color: var(--ink-soft);
 }
-.blog-post-body p {
-	line-height: 1.7;
+.blog-post-body p + p {
+	margin-top: 1.25em;
 }
 .blog-post-body h2 {
 	margin-top: 1.5em;
