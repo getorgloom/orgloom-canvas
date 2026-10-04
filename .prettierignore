@@ -1,0 +1,2 @@
+src/public/js/vendor/**
+tests/upload-batches-sf-id.test.js
