@@ -1205,6 +1205,19 @@ span.app-plan-chip:hover {
 	line-height: 1.55;
 }
 
+.pricing-beta-invite {
+	margin-top: 1.5em;
+	padding: 1.25em;
+	border: 1px solid var(--accent);
+	border-radius: 10px;
+	background: var(--bg-elev);
+}
+.pricing-beta-invite p {
+	margin: 0 0 1em;
+	color: var(--ink-soft);
+	line-height: 1.5;
+}
+
 .pricing-billing-toggle-wrap {
 	text-align: center;
 	margin: 0 auto 1.6em;
