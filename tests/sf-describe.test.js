@@ -1,0 +1,440 @@
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+	decodeValidForBitmap,
+	inferScpController,
+	cleanLabel,
+	isNoiseSObject,
+	isSpecializedSObject,
+	getQueryableSObjects,
+	listObjects,
+	loadDescribeForObject,
+} from '../src/sf-describe.js';
+
+test('AF-040: describe-global preserves create permission for object gating', async () => {
+	const conn = {
+		async describeGlobal() {
+			return {
+				sobjects: [
+					{
+						name: 'Allowed__c',
+						label: 'Allowed',
+						labelPlural: 'Allowed',
+						queryable: true,
+						createable: true,
+						deletable: true,
+					},
+					{
+						name: 'Denied__c',
+						label: 'Denied',
+						labelPlural: 'Denied',
+						queryable: true,
+						createable: false,
+						deletable: false,
+					},
+				],
+			};
+		},
+	};
+	const objects = await listObjects(conn, 'af-040', 'user-af-040');
+	assert.equal(objects.find((object) => object.name === 'Allowed__c').createable, true);
+	assert.equal(objects.find((object) => object.name === 'Denied__c').createable, false);
+	assert.equal(objects.find((object) => object.name === 'Allowed__c').deletable, true);
+	assert.equal(objects.find((object) => object.name === 'Denied__c').deletable, false);
+});
+
+test('object describe preserves Salesforce delete permission', async () => {
+	const conn = {
+		version: '60.0',
+		sobject() {
+			return {
+				async describe() {
+					return {
+						name: 'Account',
+						label: 'Account',
+						createable: true,
+						updateable: true,
+						deletable: false,
+						queryable: true,
+						fields: [],
+						recordTypeInfos: [],
+					};
+				},
+			};
+		},
+		async request() {
+			throw new Error('UI API unavailable in unit test');
+		},
+	};
+	const describe = await loadDescribeForObject(conn, 'Account');
+	assert.equal(describe.deletable, false);
+});
+
+test('record-type picklist metadata preserves an authoritative empty option list', async () => {
+	const recordTypeId = '012000000000001AAA';
+	const conn = {
+		version: '60.0',
+		sobject() {
+			return {
+				async describe() {
+					return {
+						name: 'Account',
+						label: 'Account',
+						createable: true,
+						updateable: true,
+						deletable: true,
+						queryable: true,
+						recordTypeInfos: [{ recordTypeId, developerName: 'Master' }],
+						fields: [
+							{
+								name: 'Status__c',
+								label: 'Status',
+								type: 'picklist',
+								createable: true,
+								updateable: true,
+								restrictedPicklist: true,
+								picklistValues: [{ value: 'Generic', label: 'Generic', active: true }],
+							},
+						],
+					};
+				},
+			};
+		},
+		async request(url) {
+			if (url.endsWith('/ui-api/object-info/Account')) {
+				return {
+					defaultRecordTypeId: recordTypeId,
+					recordTypeInfos: {
+						[recordTypeId]: { available: true, name: 'Master' },
+					},
+					fields: {},
+				};
+			}
+			if (url.endsWith('/picklist-values/' + recordTypeId)) {
+				return {
+					picklistFieldValues: {
+						Status__c: { values: [], defaultValue: null },
+					},
+				};
+			}
+			throw new Error('Unexpected request: ' + url);
+		},
+	};
+
+	const result = await loadDescribeForObject(conn, 'Account');
+	const status = result.fields.find((field) => field.name === 'Status__c');
+	assert.deepEqual(status.picklistValuesByRecordType[recordTypeId], []);
+	assert.deepEqual(status.picklistValues, []);
+});
+
+test('record-type picklist metadata keeps each record type option set isolated', async () => {
+	const test1Id = '012000000000001AAA';
+	const test2Id = '012000000000002AAA';
+	const valuesByRecordType = {
+		[test1Id]: ['test1'],
+		[test2Id]: ['test11', 'test111'],
+	};
+	const conn = {
+		version: '60.0',
+		sobject() {
+			return {
+				async describe() {
+					return {
+						name: 'Account',
+						label: 'Account',
+						createable: true,
+						updateable: true,
+						deletable: true,
+						queryable: true,
+						recordTypeInfos: [
+							{ recordTypeId: test1Id, developerName: 'test' },
+							{ recordTypeId: test2Id, developerName: 'test2' },
+						],
+						fields: [
+							{
+								name: 'test_drop__c',
+								label: 'test drop',
+								type: 'picklist',
+								createable: true,
+								updateable: true,
+								restrictedPicklist: true,
+								picklistValues: ['test1', 'test11', 'test111'].map((value) => ({
+									value,
+									label: value,
+									active: true,
+								})),
+							},
+						],
+					};
+				},
+			};
+		},
+		async request(url) {
+			if (url.endsWith('/ui-api/object-info/Account')) {
+				return {
+					defaultRecordTypeId: test1Id,
+					recordTypeInfos: {
+						[test1Id]: { available: true, name: 'test' },
+						[test2Id]: { available: true, name: 'test2' },
+					},
+					fields: {},
+				};
+			}
+			const recordTypeId = Object.keys(valuesByRecordType).find((id) => url.endsWith('/picklist-values/' + id));
+			if (recordTypeId) {
+				return {
+					picklistFieldValues: {
+						test_drop__c: {
+							values: valuesByRecordType[recordTypeId].map((value) => ({ value, label: value })),
+							defaultValue: null,
+						},
+					},
+				};
+			}
+			throw new Error('Unexpected request: ' + url);
+		},
+	};
+
+	const result = await loadDescribeForObject(conn, 'Account');
+	const field = result.fields.find((candidate) => candidate.name === 'test_drop__c');
+	assert.deepEqual(
+		field.picklistValuesByRecordType[test1Id].map((value) => value.value),
+		['test1'],
+	);
+	assert.deepEqual(
+		field.picklistValuesByRecordType[test2Id].map((value) => value.value),
+		['test11', 'test111'],
+	);
+});
+
+test('failed record-type metadata is not replaced with generic describe values', async () => {
+	const recordTypeId = '012000000000002AAA';
+	const conn = {
+		version: '60.0',
+		sobject() {
+			return {
+				async describe() {
+					return {
+						name: 'Account',
+						label: 'Account',
+						createable: true,
+						updateable: true,
+						deletable: true,
+						queryable: true,
+						recordTypeInfos: [{ recordTypeId, developerName: 'test2' }],
+						fields: [
+							{
+								name: 'test_drop__c',
+								label: 'test drop',
+								type: 'picklist',
+								createable: true,
+								updateable: true,
+								picklistValues: [{ value: 'test1', label: 'test1', active: true }],
+							},
+						],
+					};
+				},
+			};
+		},
+		async request(url) {
+			if (url.endsWith('/ui-api/object-info/Account')) {
+				return {
+					defaultRecordTypeId: recordTypeId,
+					recordTypeInfos: { [recordTypeId]: { available: true, name: 'test2' } },
+					fields: {},
+				};
+			}
+			throw new Error('Record-type metadata unavailable');
+		},
+	};
+
+	const result = await loadDescribeForObject(conn, 'Account');
+	const field = result.fields.find((candidate) => candidate.name === 'test_drop__c');
+	assert.equal(Object.hasOwn(field.picklistValuesByRecordType, recordTypeId), false);
+	assert.deepEqual(
+		field.picklistValues.map((value) => value.value),
+		['test1'],
+	);
+});
+
+function fakeConn(objectNames) {
+	let calls = 0;
+	return {
+		get describeGlobalCalls() {
+			return calls;
+		},
+		async describeGlobal() {
+			calls++;
+			return { sobjects: objectNames.map((name) => ({ name, queryable: true })) };
+		},
+	};
+}
+
+describe('decodeValidForBitmap', () => {
+	const b64 = (...bytes) => Buffer.from(bytes).toString('base64');
+
+	test('MSB of first byte is controller index 0', () => {
+		assert.deepEqual(decodeValidForBitmap(b64(0x80)), [0]);
+	});
+
+	test('two high bits → indices 0 and 1', () => {
+		assert.deepEqual(decodeValidForBitmap(b64(0xc0)), [0, 1]);
+	});
+
+	test('LSB of first byte is index 7', () => {
+		assert.deepEqual(decodeValidForBitmap(b64(0x01)), [7]);
+	});
+
+	test('second byte starts at index 8', () => {
+		assert.deepEqual(decodeValidForBitmap(b64(0x00, 0x80)), [8]);
+		assert.deepEqual(decodeValidForBitmap(b64(0x00, 0x01)), [15]);
+	});
+
+	test('mixed multi-byte bitmap decodes every set bit in order', () => {
+		assert.deepEqual(decodeValidForBitmap(b64(0xa0, 0x05)), [0, 2, 13, 15]);
+	});
+
+	test('all-zero bitmap → no valid controller values', () => {
+		assert.deepEqual(decodeValidForBitmap(b64(0x00, 0x00)), []);
+	});
+
+	test('null / undefined / non-string → empty array', () => {
+		assert.deepEqual(decodeValidForBitmap(null), []);
+		assert.deepEqual(decodeValidForBitmap(undefined), []);
+		assert.deepEqual(decodeValidForBitmap(42), []);
+		assert.deepEqual(decodeValidForBitmap(''), []);
+	});
+});
+
+describe('inferScpController', () => {
+	const fields = [
+		{ name: 'BillingStateCode' },
+		{ name: 'BillingCountryCode' },
+		{ name: 'ShippingState' },
+		{ name: 'Status' },
+	];
+
+	test('StateCode field maps to the matching CountryCode field', () => {
+		assert.equal(inferScpController('BillingStateCode', fields), 'BillingCountryCode');
+	});
+
+	test('no matching Country field → null', () => {
+		assert.equal(inferScpController('ShippingState', fields), null);
+	});
+
+	test('non-State fields → null', () => {
+		assert.equal(inferScpController('Status', fields), null);
+		assert.equal(inferScpController('Industry', fields), null);
+	});
+});
+
+describe('cleanLabel', () => {
+	test('passes normal labels through', () => {
+		assert.equal(cleanLabel('Account', 'Fallback'), 'Account');
+	});
+
+	test('__MISSING LABEL__ placeholder falls back', () => {
+		assert.equal(cleanLabel('__MISSING LABEL__ PropertyFile x', 'MyObj__c'), 'MyObj__c');
+	});
+
+	test('non-string label falls back', () => {
+		assert.equal(cleanLabel(null, 'X'), 'X');
+		assert.equal(cleanLabel(undefined, 'X'), 'X');
+	});
+});
+
+describe('isNoiseSObject', () => {
+	test('business objects are kept', () => {
+		for (const n of ['Account', 'Contact', 'Opportunity', 'Case', 'Lead', 'Order', 'Product2']) {
+			assert.equal(isNoiseSObject(n), false, n + ' should be kept');
+		}
+	});
+
+	test('ordinary custom objects are kept, even noise-shaped names', () => {
+		assert.equal(isNoiseSObject('My_Custom__c'), false);
+		assert.equal(isNoiseSObject('AccountHistory__c'), false, '__c beats the History suffix rule');
+		assert.equal(isNoiseSObject('FlowThing__c'), false, '__c beats the Flow prefix rule');
+	});
+
+	test('specialized object families are filtered from normal discovery', () => {
+		for (const n of [
+			'Telemetry__e',
+			'Rules__mdt',
+			'Archive__b',
+			'ExternalThing__x',
+			'FAQ__kav',
+			'BatchApexErrorEvent',
+			'LogoutEventStream',
+			'KnowledgeArticleVersion',
+			'KnowledgeArticleVersionHistory',
+		]) {
+			assert.equal(isSpecializedSObject(n), true, n + ' should be specialized');
+			assert.equal(isNoiseSObject(n), true, n + ' should be excluded');
+		}
+		assert.equal(isSpecializedSObject('Event'), false, 'calendar Event is an ordinary record object');
+		assert.equal(isNoiseSObject('Event'), false);
+		assert.equal(isSpecializedSObject('Project__c'), false);
+		assert.equal(isNoiseSObject('Project__c'), false);
+	});
+
+	test('system suffixes are filtered', () => {
+		for (const n of ['AccountHistory', 'AccountFeed', 'AccountShare', 'AccountChangeEvent']) {
+			assert.equal(isNoiseSObject(n), true, n + ' should be noise');
+		}
+	});
+
+	test('system prefixes and exact names are filtered', () => {
+		for (const n of [
+			'ApexClass',
+			'AuthProvider',
+			'ContentDocument',
+			'PermissionSet',
+			'RecentlyViewed',
+			'AsyncApexJob',
+		]) {
+			assert.equal(isNoiseSObject(n), true, n + ' should be noise');
+		}
+	});
+
+	test('empty / null names are noise (defensive)', () => {
+		assert.equal(isNoiseSObject(''), true);
+		assert.equal(isNoiseSObject(null), true);
+	});
+});
+
+describe('getQueryableSObjects cache isolation', () => {
+	test('caches per truthy org and Salesforce user (second call skips describeGlobal)', async () => {
+		const conn = fakeConn(['Account', 'Contact']);
+		const set1 = await getQueryableSObjects(conn, 'org-cache-A', 'user-cache-A');
+		const set2 = await getQueryableSObjects(conn, 'org-cache-A', 'user-cache-A');
+		assert.ok(set1.has('Account') && set1.has('Contact'));
+		assert.equal(conn.describeGlobalCalls, 1, 'second call served from cache');
+		assert.equal(set1, set2, 'same cached Set instance');
+	});
+
+	test('does not reuse queryable objects across Salesforce users in the same org', async () => {
+		const admin = fakeConn(['Account', 'Admin_Only__c']);
+		const restricted = fakeConn(['Account', 'Restricted_Only__c']);
+		const adminSet = await getQueryableSObjects(admin, 'shared-org', 'admin-user');
+		const restrictedSet = await getQueryableSObjects(restricted, 'shared-org', 'restricted-user');
+		assert.ok(adminSet.has('Admin_Only__c'));
+		assert.ok(!restrictedSet.has('Admin_Only__c'));
+		assert.ok(restrictedSet.has('Restricted_Only__c'));
+		assert.equal(admin.describeGlobalCalls, 1);
+		assert.equal(restricted.describeGlobalCalls, 1);
+	});
+
+	test('falsy orgId is NEVER cached: two orgs never cross-contaminate', async () => {
+		const orgA = fakeConn(['Account', 'CustomA__c']);
+		const orgB = fakeConn(['Account', 'CustomB__c']);
+		const setA = await getQueryableSObjects(orgA, null);
+		const setB = await getQueryableSObjects(orgB, null);
+		assert.ok(setA.has('CustomA__c') && !setA.has('CustomB__c'), 'org A gets only its own objects');
+		assert.ok(setB.has('CustomB__c') && !setB.has('CustomA__c'), 'org B not contaminated by org A');
+		assert.equal(orgA.describeGlobalCalls, 1);
+		assert.equal(orgB.describeGlobalCalls, 1);
+		const setA2 = await getQueryableSObjects(orgA, null);
+		assert.equal(orgA.describeGlobalCalls, 2, 'falsy org re-fetches every call');
+		assert.ok(setA2.has('CustomA__c'));
+	});
+});
