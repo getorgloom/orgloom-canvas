@@ -134,6 +134,6 @@ test('finishing the final field or closing the editor never opens another record
 
 test('opening and closing editors resets upload guidance; change events retain shared-task advancement', () => {
 	assert.match(source, /uploadFixFields = Array\.isArray\(opts\.uploadFixFields\)/);
-	assert.match(source, /function closeModal\(\)\s*{\s*uploadFixFields = \[\]/);
+	assert.match(source, /function closeModal\(\)\s*{[^]*?uploadFixFields = \[\]/);
 	assert.match(source, /form\.addEventListener\('change',[\s\S]*if \(guidedComplete\) \{\s*_scheduleGuidedAdvance/);
 });

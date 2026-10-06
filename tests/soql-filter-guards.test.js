@@ -17,6 +17,23 @@ const canvasCardMenuSource = readFileSync(new URL('../src/public/js/canvas-card-
 const typeNodeSource = readFileSync(new URL('../src/public/js/type-node.js', import.meta.url), 'utf8');
 
 const describes = {
+	Contact: {
+		name: 'Contact',
+		fields: [
+			{ name: 'Id', type: 'id', createable: false },
+			{ name: 'Name', type: 'string', nameField: true, createable: false },
+			{ name: 'LastName', type: 'string', createable: true },
+			{ name: 'AccountId', type: 'reference', filterable: true, referenceTo: ['Account'], createable: true },
+			{ name: 'CreatedById', type: 'reference', createable: false, updateable: false },
+			{ name: 'LastModifiedById', type: 'reference', createable: false, updateable: false },
+			{ name: 'CreatedDate', type: 'datetime', createable: false, updateable: false },
+			{ name: 'LastModifiedDate', type: 'datetime', createable: false, updateable: false },
+			{ name: 'Read_Only_Formula__c', type: 'string', calculated: true, createable: false, updateable: false },
+			{ name: 'MailingAddress', type: 'address', createable: false },
+			{ name: 'MailingStreet', type: 'string', createable: true },
+			{ name: 'Location__c', type: 'location', createable: true },
+		],
+	},
 	Account: {
 		name: 'Account',
 		fields: [
@@ -301,6 +318,26 @@ describe('app-generated SOQL WHERE field guards', () => {
 		assert.equal(searched.body.skipped, true);
 		assert.equal(searched.body.reason, 'field-not-filterable');
 		assert.equal(capturedQueries.length, 0);
+	});
+
+	test('Find related loads audit and other read-only fields from the user-scoped describe', async () => {
+		const { response } = await jsonRequest('/api/objects/Contact/by-ref?field=AccountId&id=001000000000001AAA');
+		assert.equal(response.status, 200);
+		assert.equal(capturedQueries.length, 1);
+		const fields = capturedQueries[0].match(/^SELECT (.+) FROM Contact WHERE /)[1].split(', ');
+		assert.deepEqual(fields, [
+			'Id',
+			'Name',
+			'LastName',
+			'AccountId',
+			'CreatedById',
+			'LastModifiedById',
+			'CreatedDate',
+			'LastModifiedDate',
+			'Read_Only_Formula__c',
+			'MailingStreet',
+		]);
+		assert.match(capturedQueries[0], /WHERE AccountId = '001000000000001AAA' LIMIT 50$/);
 	});
 
 	test('name-field search rejects a non-filterable name before querying', async () => {

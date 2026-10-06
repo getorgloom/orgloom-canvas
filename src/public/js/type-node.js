@@ -559,6 +559,8 @@
 						}
 					}
 					const targetSelId = targetSel ? targetSel.id : null;
+					// A fetch can finish after the user has replaced the canvas or removed its host.
+					if (!canvasState.bulkRecords.includes(base)) return;
 					let added = 0;
 					let reused = 0;
 					const newRecs = [];
@@ -589,6 +591,9 @@
 						showBulkToast(_cap.reason);
 						return;
 					}
+					const beforeRecords = canvasState.bulkRecords.slice();
+					const beforeLinks = new Set(canvasState.bulkAssociations.map((link) => link.id));
+					const filledValues = [];
 					records.forEach((r, i) => {
 						const v = recToValues(r);
 						const existing = canvasState.bulkRecords.find(
@@ -652,6 +657,14 @@
 							(!holderRec.values || holderRec.values[fieldName] == null)
 						) {
 							holderRec.values = holderRec.values || {};
+							if (!newRecs.includes(holderRec)) {
+								filledValues.push({
+									record: holderRec,
+									fieldName,
+									hadValue: Object.prototype.hasOwnProperty.call(holderRec.values, fieldName),
+									value: holderRec.values[fieldName],
+								});
+							}
 							holderRec.values[fieldName] = targetRec.loadedFromId;
 						}
 					});
@@ -675,6 +688,46 @@
 					if (newRecs.length > 0 && targetSel) {
 						newRecs.forEach((nr) => inferAssociationsForRecord(nr, targetSel));
 						purgeRedundantTypeNodes();
+					}
+					const addedIds = new Set(newRecs.map((record) => record.id));
+					const addedLinks = new Set(
+						canvasState.bulkAssociations.filter((link) => !beforeLinks.has(link.id)).map((link) => link.id),
+					);
+					const removedTypes = beforeRecords.filter(
+						(record) =>
+							record.isTypeNode && !record._chipLoader && !canvasState.bulkRecords.includes(record),
+					);
+					if (addedIds.size || addedLinks.size || filledValues.length || removedTypes.length) {
+						deps.pushUndo?.('Load related records', () => {
+							// Preserve reused records and unrelated changes; do not rewind IDs or the whole canvas.
+							canvasState.bulkRecords = canvasState.bulkRecords.filter(
+								(record) =>
+									!addedIds.has(record.id) &&
+									!(record.isTypeNode && addedIds.has(record.hostRecordId)),
+							);
+							canvasState.bulkAssociations = canvasState.bulkAssociations.filter(
+								(link) =>
+									!addedLinks.has(link.id) && !addedIds.has(link.fromId) && !addedIds.has(link.toId),
+							);
+							addedIds.forEach((id) => canvasState.bulkSelectedIds.delete(id));
+							if (addedLinks.has(canvasState.bulkSelectedEdgeId)) canvasState.bulkSelectedEdgeId = null;
+							for (const previous of filledValues) {
+								if (!canvasState.bulkRecords.includes(previous.record)) continue;
+								if (previous.hadValue) previous.record.values[previous.fieldName] = previous.value;
+								else delete previous.record.values[previous.fieldName];
+							}
+							for (const placeholder of removedTypes) {
+								if (
+									!canvasState.bulkRecords.some((record) => record.id === placeholder.id) &&
+									canvasState.bulkRecords.some((record) => record.id === placeholder.hostRecordId)
+								) {
+									placeholder._loading = false;
+									canvasState.bulkRecords.push(placeholder);
+								}
+							}
+							renderBulkView();
+							showBulkToast('Undid loading related records.');
+						});
 					}
 					if (newRecs.length > 0 && targetSel) {
 						newRecs.forEach((nr) => {

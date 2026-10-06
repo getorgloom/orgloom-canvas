@@ -921,8 +921,159 @@
 		);
 	}
 
+	// Field labels, datalists and ARIA references must resolve inside their own editor.
+	function scopeEditorIds(root, prefix) {
+		if (!prefix) return;
+		const ids = new Map();
+		root.querySelectorAll('[id]').forEach((el) => {
+			ids.set(el.id, prefix + el.id);
+			el.id = prefix + el.id;
+		});
+		for (const attribute of ['for', 'list', 'aria-controls', 'aria-describedby', 'aria-labelledby']) {
+			root.querySelectorAll('[' + attribute + ']').forEach((el) => {
+				el.setAttribute(
+					attribute,
+					el
+						.getAttribute(attribute)
+						.split(/\s+/)
+						.map((id) => ids.get(id) || id)
+						.join(' '),
+				);
+			});
+		}
+	}
+
+	let nextEditorId = 0;
+	function mountMultiple(deps, mountEditor = window.OrgLoom.insertModal.mount) {
+		const editors = new Map();
+		let active = null;
+		let helper = null;
+		function getHelper() {
+			if (!helper)
+				helper = mountEditor({
+					...deps,
+					canvasState: Object.assign(Object.create(deps.canvasState), { currentRecordRef: null }),
+					editorId: 'record-editor-helper-',
+					helperOnly: true,
+				});
+			return helper;
+		}
+		function activate(entry) {
+			active = entry;
+			deps.canvasState.currentRecordRef = entry.record;
+			for (const other of editors.values()) other.api.setActive(other === entry);
+		}
+		function createEditor(record, key) {
+			let currentRecordRef = null;
+			// All canvas data stays shared, but an editor never borrows another editor's record.
+			const localState = new Proxy(deps.canvasState, {
+				get(target, name) {
+					return name === 'currentRecordRef' ? currentRecordRef : target[name];
+				},
+				set(target, name, value) {
+					if (name === 'currentRecordRef') currentRecordRef = value;
+					else target[name] = value;
+					return true;
+				},
+			});
+			const entry = { record, api: null };
+			entry.api = mountEditor({
+				...deps,
+				canvasState: localState,
+				editorId: 'record-editor-' + ++nextEditorId + '-',
+				keepOpen: true,
+				openLinkedRecord: (record) => api.openInsertModal(record.objectName, { record }),
+				onActivate: () => activate(entry),
+				pushPresenceFocus: (focus) => {
+					if (active === entry) deps.pushPresenceFocus(focus);
+				},
+				onClose: () => {
+					editors.delete(key);
+					entry.api.destroy();
+					if (active === entry) {
+						active = null;
+						deps.canvasState.currentRecordRef = null;
+						const remaining = Array.from(editors.values()).pop();
+						if (remaining) remaining.api.activate();
+					}
+				},
+			});
+			editors.set(key, entry);
+			return entry;
+		}
+		function closeAll() {
+			for (const entry of Array.from(editors.values())) entry.api.closeModal();
+		}
+		const api = {
+			openInsertModal(objectName, options = {}) {
+				const record = options.record || null;
+				objectName = objectName || (record && record.objectName);
+				if (typeof objectName !== 'string' || !objectName.trim()) {
+					deps.showBulkToast(
+						'This record is missing its Salesforce object type. Reload the canvas and try again.',
+						'error',
+					);
+					return;
+				}
+				const key = record ? record.id : 'new:' + objectName;
+				let entry = editors.get(key);
+				if (entry && entry.record !== record) {
+					entry.api.closeModal();
+					entry = null;
+				}
+				if (entry) {
+					entry.api.activate(options);
+					return;
+				}
+				entry = createEditor(record, key);
+				activate(entry);
+				entry.api.openInsertModal(objectName, options);
+			},
+			closeModal: () => {
+				if (active) active.api.closeModal();
+			},
+			closeAll,
+			updateUploadFixFields(recordId, fields) {
+				for (const entry of editors.values()) {
+					if (entry.record && String(entry.record.id) === String(recordId))
+						entry.api.updateUploadFixFields(fields);
+				}
+			},
+			syncOpenRecords() {
+				for (const entry of Array.from(editors.values())) {
+					if (entry.record && !(deps.canvasState.bulkRecords || []).includes(entry.record))
+						entry.api.closeModal();
+				}
+			},
+			hasPendingEncryptedUploadValues: () =>
+				getHelper().hasPendingEncryptedUploadValues() ||
+				Array.from(editors.values()).some((entry) => entry.api.hasPendingEncryptedUploadValues()),
+			showModalToast: (...args) => active && active.api.showModalToast(...args),
+		};
+		for (const method of ['refreshCurrentRecordAccess', 'refreshCurrentFieldLocks', 'refreshCurrentRecordValues']) {
+			api[method] = (...args) => {
+				for (const entry of editors.values()) entry.api[method](...args);
+			};
+		}
+		for (const method of [
+			'_prefetchLayoutForRecord',
+			'tryParseRule',
+			'tryFixValidationRules',
+			'fieldTypeFilter',
+			'sampleValueForField',
+		]) {
+			api[method] = (...args) => {
+				return getHelper()[method](...args);
+			};
+		}
+		return api;
+	}
+
 	window.OrgLoom.insertModal = {
+		mountMultiple,
 		_test: {
+			mountMultiple,
+			scopeEditorIds,
 			linkedRecordControlHtml,
 			unlinkRelationshipImpact,
 			applyLoadedRecordUnlink,
@@ -1005,6 +1156,11 @@
 				throw new Error('insert-modal.mount: missing required deps');
 			}
 			const canvasState = deps.canvasState;
+			const lifecycle = new AbortController();
+			let formLifecycle = new AbortController();
+			let openVersion = 0;
+			let editorActive = !deps.keepOpen;
+			const interactionCleanups = new Set();
 			const encryptedFields = window.OrgLoom && window.OrgLoom.encryptedFields;
 			if (!encryptedFields) {
 				throw new Error('encrypted-fields.js must load before insert-modal.js');
@@ -1193,24 +1349,33 @@
 				'<div class="modal-overlay" data-close></div>' +
 				'<div class="modal-body">' +
 				'<div class="modal-header">' +
-				'<h3 id="modal-title">New record</h3>' +
-				'<div class="modal-subtitle" id="modal-subtitle"></div>' +
+				'<h3 data-editor-element="modal-title">New record</h3>' +
+				'<div class="modal-subtitle" data-editor-element="modal-subtitle"></div>' +
 				'<button class="modal-close" data-close title="Collapse to card" aria-label="Collapse to card">' +
 				'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">' +
 				'<path d="M2 6h4V2M12 8H8v4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
 				'</svg>' +
 				'</button>' +
 				'</div>' +
-				'<div class="modal-content" id="modal-content"><p class="center">Loading…</p></div>' +
-				'<div class="modal-toast" id="modal-toast" hidden></div>' +
+				'<div class="modal-content" data-editor-element="modal-content"><p class="center">Loading…</p></div>' +
+				'<div class="modal-toast" data-editor-element="modal-toast" hidden></div>' +
 				'<div class="modal-footer">' +
-				'<button class="button danger" id="modal-mark-delete" hidden style="margin-right:auto" title="Stages a Salesforce DELETE that ships with your next upload">Mark for delete</button>' +
-				'<button class="button secondary" id="modal-configure-request" hidden>Configure request</button>' +
+				'<button class="button danger" data-editor-element="modal-mark-delete" hidden style="margin-right:auto" title="Stages a Salesforce DELETE that ships with your next upload">Mark for delete</button>' +
+				'<button class="button secondary" data-editor-element="modal-configure-request" hidden>Configure request</button>' +
 				'<button class="button secondary" data-close>Cancel</button>' +
-				'<button class="button" id="modal-submit" disabled>Save draft</button>' +
+				'<button class="button" data-editor-element="modal-submit" disabled>Save draft</button>' +
 				'</div>' +
 				'</div>';
-			document.body.appendChild(modal);
+			if (!deps.helperOnly) document.body.appendChild(modal);
+			function activate(options = {}) {
+				if (typeof deps.onActivate === 'function') deps.onActivate();
+				const focus = _presenceFocusForRecord(canvasState.currentRecordRef);
+				if (focus) pushPresenceFocus(focus);
+				if (Array.isArray(options.uploadFixFields)) uploadFixFields = options.uploadFixFields;
+				if (options.focusField) focusTaskField(options.focusField);
+			}
+			modal.addEventListener('mousedown', () => activate(), { signal: lifecycle.signal });
+			modal.addEventListener('focusin', () => activate(), { signal: lifecycle.signal });
 
 			function cancelEncryptedTooltipHide() {
 				if (encryptedTooltipHideTimer) {
@@ -1298,20 +1463,33 @@
 				encryptedTooltipHideTimer = setTimeout(closeEncryptedTooltip, 120);
 			}
 			modal.querySelectorAll('[data-close]').forEach((el) => el.addEventListener('click', closeModal));
-			modal.querySelector('#modal-content').addEventListener('scroll', closeEncryptedTooltip, {
-				passive: true,
-			});
-			window.addEventListener('resize', closeEncryptedTooltip, { passive: true });
-			document.addEventListener('keydown', (e) => {
-				if (e.key === 'Escape' && !document.querySelector('.unlink-relationship-modal')) {
-					closeEncryptedTooltip();
-					closeModal();
-				}
-			});
+			modal
+				.querySelector('[data-editor-element="modal-content"]')
+				.addEventListener('scroll', closeEncryptedTooltip, {
+					passive: true,
+				});
+			window.addEventListener('resize', closeEncryptedTooltip, { passive: true, signal: lifecycle.signal });
+			document.addEventListener(
+				'keydown',
+				(e) => {
+					if (
+						e.key === 'Escape' &&
+						!e.defaultPrevented &&
+						editorActive &&
+						!modal.classList.contains('hidden') &&
+						!document.querySelector('.unlink-relationship-modal')
+					) {
+						e.preventDefault();
+						closeEncryptedTooltip();
+						closeModal();
+					}
+				},
+				{ signal: lifecycle.signal },
+			);
 
 			function _syncSubmitButtonAccess(options) {
-				const submitBtn = modal.querySelector('#modal-submit');
-				const configureBtn = modal.querySelector('#modal-configure-request');
+				const submitBtn = modal.querySelector('[data-editor-element="modal-submit"]');
+				const configureBtn = modal.querySelector('[data-editor-element="modal-configure-request"]');
 				const record = canvasState.currentRecordRef;
 				const configurableRecordRequest = !!(
 					canEditCanvasStructure() &&
@@ -1340,7 +1518,7 @@
 				return submitBtn;
 			}
 
-			const _configureRequestBtn = modal.querySelector('#modal-configure-request');
+			const _configureRequestBtn = modal.querySelector('[data-editor-element="modal-configure-request"]');
 			if (_configureRequestBtn) {
 				_configureRequestBtn.addEventListener('click', () => {
 					const record = canvasState.currentRecordRef;
@@ -1352,7 +1530,7 @@
 				});
 			}
 
-			const _markDeleteBtn = modal.querySelector('#modal-mark-delete');
+			const _markDeleteBtn = modal.querySelector('[data-editor-element="modal-mark-delete"]');
 			function _updateMarkDeleteButton() {
 				if (!_markDeleteBtn) {
 					return;
@@ -1475,6 +1653,7 @@
 					}
 				};
 				const onUp = () => {
+					interactionCleanups.delete(onUp);
 					modal.classList.remove('is-resizing');
 					document.removeEventListener('mousemove', onMove);
 					document.removeEventListener('mouseup', onUp);
@@ -1484,6 +1663,7 @@
 				};
 				document.addEventListener('mousemove', onMove);
 				document.addEventListener('mouseup', onUp);
+				interactionCleanups.add(onUp);
 			}
 
 			let _inlineRecId = null; // record id currently pinned
@@ -1599,6 +1779,7 @@
 					_attachInlineDrag(header, cy, cyNode, container);
 				}
 				_inlineOutsideClickHandler = (ev) => {
+					if (deps.keepOpen) return;
 					if (!modal.classList.contains('is-inline')) {
 						return;
 					}
@@ -1624,7 +1805,9 @@
 					closeModal();
 				};
 				setTimeout(() => {
-					document.addEventListener('mousedown', _inlineOutsideClickHandler, true);
+					if (_inlineOutsideClickHandler && modal.classList.contains('is-inline')) {
+						document.addEventListener('mousedown', _inlineOutsideClickHandler, true);
+					}
 				}, 0);
 				return true;
 			}
@@ -1701,6 +1884,7 @@
 					startNodeX = pos.x;
 					startNodeY = pos.y;
 					modal.classList.add('is-dragging');
+					interactionCleanups.add(onUp);
 					document.addEventListener('mousemove', onMove);
 					document.addEventListener('mouseup', onUp);
 					ev.preventDefault();
@@ -1721,6 +1905,7 @@
 					}
 				};
 				const onUp = () => {
+					interactionCleanups.delete(onUp);
 					const movedRec = didMove && canvasState.bulkRecords.find((record) => record.id === _inlineRecId);
 					dragging = false;
 					didMove = false;
@@ -1806,7 +1991,7 @@
 
 			let _modalToastTimer = null;
 			function showModalToast(message, variant) {
-				const toastEl = modal.querySelector('#modal-toast');
+				const toastEl = modal.querySelector('[data-editor-element="modal-toast"]');
 				if (!toastEl) {
 					return;
 				}
@@ -2271,7 +2456,7 @@
 			}
 
 			function _scrollTaskFieldIntoView(field) {
-				const scroller = modal.querySelector('#modal-content');
+				const scroller = modal.querySelector('[data-editor-element="modal-content"]');
 				const reduceMotion =
 					typeof window.matchMedia === 'function' &&
 					window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -2371,6 +2556,8 @@
 			}
 
 			function openInsertModal(objectName, opts) {
+				const version = ++openVersion;
+				const stillOpen = () => version === openVersion && !modal.classList.contains('hidden');
 				opts = opts || {};
 				uploadFixFields = Array.isArray(opts.uploadFixFields)
 					? Array.from(
@@ -2426,9 +2613,10 @@
 				if (opts.record) {
 					_enterInlineMode(opts.record);
 				}
-				modal.querySelector('#modal-title').textContent = 'Loading ' + objectName + '…';
+				modal.querySelector('[data-editor-element="modal-title"]').textContent = 'Loading ' + objectName + '…';
 				_syncSubmitButtonAccess({ loading: true });
-				modal.querySelector('#modal-content').innerHTML = '<p class="center">Loading fields…</p>';
+				modal.querySelector('[data-editor-element="modal-content"]').innerHTML =
+					'<p class="center">Loading fields…</p>';
 				_updateMarkDeleteButton();
 
 				// Keep rules available for rule-aware sample autofill, but present object metadata in the schema builder.
@@ -2447,6 +2635,7 @@
 					: ensureRules(objectName);
 				Promise.all([describePromise, rulesPromise])
 					.then(([describe, rulesResult]) => {
+						if (!stillOpen()) return;
 						// Describe metadata, not hard-coded object rules, determines what this user may edit.
 						currentFields = (describe.fields || []).map((field) =>
 							Object.assign({}, field, {
@@ -2520,8 +2709,8 @@
 							titlePrefix = 'New ' + describe.label;
 							subtitleText = describe.label + ' \u00b7 draft';
 						}
-						modal.querySelector('#modal-title').textContent = titlePrefix;
-						const subtitleEl = modal.querySelector('#modal-subtitle');
+						modal.querySelector('[data-editor-element="modal-title"]').textContent = titlePrefix;
+						const subtitleEl = modal.querySelector('[data-editor-element="modal-subtitle"]');
 						if (subtitleEl) {
 							subtitleEl.textContent = subtitleText;
 						}
@@ -2529,6 +2718,7 @@
 						const recId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
 						return fetchEditLayout(currentObject, currentRecordTypeId, recId, currentLayoutMode)
 							.then(async (layout) => {
+								if (!stillOpen()) return;
 								currentLayout = layout;
 								let picklistLayout = layout;
 								if (layout && layout.recordTypeId && !hasExplicitRecordTypeId) {
@@ -2549,6 +2739,7 @@
 										);
 									}
 								}
+								if (!stillOpen()) return;
 								if (canvasState.currentRecordRef && layout && layout.recordAccess) {
 									Object.defineProperty(canvasState.currentRecordRef, '_recordAccess', {
 										value: layout.recordAccess,
@@ -2577,6 +2768,7 @@
 								currentLayout = null;
 							})
 							.then(() => {
+								if (!stillOpen()) return;
 								renderForm('');
 								wireLiveValidation();
 								const submitBtn = _syncSubmitButtonAccess();
@@ -2613,12 +2805,17 @@
 							});
 					})
 					.catch((err) => {
-						modal.querySelector('#modal-content').innerHTML =
+						if (!stillOpen()) return;
+						modal.querySelector('[data-editor-element="modal-content"]').innerHTML =
 							'<div class="banner error">Failed to load fields: ' + escapeHtml(err.message) + '</div>';
 					});
 			}
 
 			function closeModal() {
+				if (modal.classList.contains('hidden')) return;
+				openVersion += 1;
+				for (const cleanup of Array.from(interactionCleanups)) cleanup();
+				formLifecycle.abort();
 				uploadFixFields = [];
 				closeEncryptedTooltip();
 				if (guidedAdvanceTimer) {
@@ -2635,14 +2832,20 @@
 				currentRecordTypes = [];
 				currentRecordTypeId = null;
 				currentLayoutMode = null;
+				currentEncryptedFormValues.clear();
+				currentEncryptedDraftValues.clear();
+				currentEncryptedDismissedFields.clear();
 				try {
 					pushPresenceFocus(null);
 				} catch (_) {
 					/* best-effort */
 				}
+				if (typeof deps.onClose === 'function') deps.onClose();
 			}
 
 			function renderForm(banner) {
+				formLifecycle.abort();
+				formLifecycle = new AbortController();
 				closeEncryptedTooltip();
 				const byLabel = (a, b) => a.label.localeCompare(b.label);
 				const hasLoadedSalesforceRecord = !!(
@@ -2832,7 +3035,7 @@
 						}
 					}
 				}
-				html += '<form id="insert-form" autocomplete="off">';
+				html += '<form data-editor-element="insert-form" autocomplete="off">';
 
 				const loadedId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
 				if (modalEditMode === 'existing' && loadedId) {
@@ -3266,7 +3469,8 @@
 
 				html += '</form>';
 
-				modal.querySelector('#modal-content').innerHTML = html;
+				modal.querySelector('[data-editor-element="modal-content"]').innerHTML = html;
+				scopeEditorIds(modal.querySelector('[data-editor-element="modal-content"]'), deps.editorId);
 
 				modal.querySelectorAll('[data-toggle]').forEach((h) => {
 					h.addEventListener('click', () => {
@@ -3284,13 +3488,20 @@
 						if (!lock || !lock.target || lock.target._inaccessible) {
 							return;
 						}
-						if (editorTouchedFields.size > 0 || currentEncryptedDraftValues.size > 0) {
+						if (
+							!deps.openLinkedRecord &&
+							(editorTouchedFields.size > 0 || currentEncryptedDraftValues.size > 0)
+						) {
 							showBulkToast('Save or cancel your edits before opening the linked record.', 'info');
 							return;
 						}
 						const target = lock.target;
-						closeModal();
-						openInsertModal(target.objectName, { record: target });
+						if (deps.openLinkedRecord) {
+							deps.openLinkedRecord(target);
+						} else {
+							closeModal();
+							openInsertModal(target.objectName, { record: target });
+						}
 					});
 				});
 				modal.querySelectorAll('[data-disconnect-assoc]').forEach((btn) => {
@@ -3657,7 +3868,7 @@
 			}
 
 			function wireLiveValidation() {
-				const form = modal.querySelector('#insert-form');
+				const form = modal.querySelector('[data-editor-element="insert-form"]');
 				if (!form) {
 					return;
 				}
@@ -4027,7 +4238,7 @@
 			}
 
 			function updateRequiredFieldStyles() {
-				const form = modal.querySelector('#insert-form');
+				const form = modal.querySelector('[data-editor-element="insert-form"]');
 				if (!form) {
 					return;
 				}
@@ -4742,11 +4953,15 @@
 					});
 				}
 
-				document.addEventListener('mousedown', (ev) => {
-					if (!picker.contains(ev.target)) {
-						resultsBox.hidden = true;
-					}
-				});
+				document.addEventListener(
+					'mousedown',
+					(ev) => {
+						if (!picker.contains(ev.target)) {
+							resultsBox.hidden = true;
+						}
+					},
+					{ signal: formLifecycle.signal },
+				);
 				searchInput.addEventListener('keydown', (ev) => {
 					if (ev.key === 'Escape') {
 						resultsBox.hidden = true;
@@ -5239,12 +5454,14 @@
 					item('all', 'custom', 'All empty, custom only', false);
 				document.body.appendChild(pop);
 				const cleanup = () => {
+					interactionCleanups.delete(cleanup);
 					if (pop.parentNode) {
 						pop.remove();
 					}
 					document.removeEventListener('mousedown', outside, true);
 					document.removeEventListener('keydown', onEsc, true);
 				};
+				interactionCleanups.add(cleanup);
 				pop.querySelectorAll('button[data-seed-scope]').forEach((b) => {
 					b.addEventListener('click', () => {
 						cleanup();
@@ -5262,6 +5479,7 @@
 					}
 				};
 				setTimeout(() => {
+					if (!pop.isConnected) return;
 					document.addEventListener('mousedown', outside, true);
 					document.addEventListener('keydown', onEsc, true);
 				}, 0);
@@ -5283,12 +5501,14 @@
 					'<button type="button" data-fill-type="custom">Custom only</button>';
 				document.body.appendChild(pop);
 				const cleanup = () => {
+					interactionCleanups.delete(cleanup);
 					if (pop.parentNode) {
 						pop.remove();
 					}
 					document.removeEventListener('mousedown', outside, true);
 					document.removeEventListener('keydown', onEsc, true);
 				};
+				interactionCleanups.add(cleanup);
 				pop.querySelectorAll('button[data-fill-type]').forEach((b) => {
 					b.addEventListener('click', () => {
 						cleanup();
@@ -5306,6 +5526,7 @@
 					}
 				};
 				setTimeout(() => {
+					if (!pop.isConnected) return;
 					document.addEventListener('mousedown', outside, true);
 					document.addEventListener('keydown', onEsc, true);
 				}, 0);
@@ -5336,7 +5557,8 @@
 				refreshEditorValidation();
 			}
 
-			modal.querySelector('#modal-submit').addEventListener('click', async () => {
+			modal.querySelector('[data-editor-element="modal-submit"]').addEventListener('click', async () => {
+				const submitVersion = openVersion;
 				try {
 					if (!currentObject) {
 						showModalToast('This record is no longer open. Close the editor and try again.', 'error');
@@ -5352,7 +5574,7 @@
 						);
 						return;
 					}
-					const form = modal.querySelector('#insert-form');
+					const form = modal.querySelector('[data-editor-element="insert-form"]');
 					const existingRecord = !!(
 						canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId
 					);
@@ -5546,6 +5768,7 @@
 									await commitRecordFields(canvasState.currentRecordRef, changedValues, {
 										relationshipFields: Array.from(relationshipChanges),
 									});
+									if (submitVersion !== openVersion) return;
 								} catch (error) {
 									_syncSubmitButtonAccess();
 									showModalToast(
@@ -5860,6 +6083,27 @@
 			}
 
 			return {
+				activate,
+				updateUploadFixFields(fields) {
+					uploadFixFields = fields.slice();
+					if (guidedAdvanceTimer) {
+						clearTimeout(guidedAdvanceTimer);
+						guidedAdvanceTimer = null;
+					}
+				},
+				setActive(value) {
+					editorActive = value;
+					modal.classList.toggle('is-active-editor', value);
+				},
+				destroy() {
+					openVersion += 1;
+					lifecycle.abort();
+					formLifecycle.abort();
+					closeEncryptedTooltip();
+					_exitInlineMode();
+					if (_modalToastTimer) clearTimeout(_modalToastTimer);
+					modal.remove();
+				},
 				openInsertModal: openInsertModal,
 				closeModal: closeModal,
 				showModalToast: showModalToast,

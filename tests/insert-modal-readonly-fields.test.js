@@ -762,7 +762,7 @@ test('Salesforce picklists remain dropdowns while true combobox fields accept cu
 	assert.equal(formInputValue('picklist', ''), null);
 	assert.equal(formInputValue('multipicklist', ' One ; Two; '), 'One;Two');
 	assert.match(source, /class="picklist-combobox"/);
-	assert.match(source, /<form id="insert-form" autocomplete="off">/);
+	assert.match(source, /<form data-editor-element="insert-form" autocomplete="off">/);
 });
 
 test('saving an existing record writes only fields intentionally touched in the editor', () => {
@@ -847,7 +847,7 @@ test('request owners and editors can complete whole-record requests', () => {
 	assert.equal(sharedRecordEditAccess('viewer', recipientRequest, 'mine'), false);
 	assert.equal(sharedRecordEditAccess('contributor', recipientRequest, 'mine'), true);
 	assert.equal(sharedRecordEditAccess('editor', recipientRequest, 'generic'), true);
-	assert.match(source, /id="modal-configure-request"/);
+	assert.match(source, /data-editor-element="modal-configure-request"/);
 	assert.match(source, /configureBtn\.hidden = !configurableRecordRequest \|\| !configureRequest/);
 });
 

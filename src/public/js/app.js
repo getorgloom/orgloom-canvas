@@ -645,6 +645,10 @@ function csrfFetch(url, options) {
 	};
 	let _renderUploadFixes = () => false;
 	let _clearUploadFixes = () => {};
+	let _ins = null;
+	function closeRecordEditors() {
+		if (_ins) _ins.closeAll();
+	}
 
 	function _getCanvasShareRole() {
 		if (canvasState._renderCanvasShareRole) {
@@ -1763,6 +1767,7 @@ function csrfFetch(url, options) {
 	graph.querySelector('#graph-canvas').addEventListener(
 		'wheel',
 		(e) => {
+			if (e.defaultPrevented) return;
 			if (!e.ctrlKey) {
 				return;
 			}
@@ -1777,7 +1782,7 @@ function csrfFetch(url, options) {
 			const my = e.clientY - rect.top + canvas.scrollTop;
 			const contentX = mx / canvasState.graphZoom;
 			const contentY = my / canvasState.graphZoom;
-			const step = e.deltaY > 0 ? 0.9 : 1.1;
+			const step = window.OrgLoom.cyInteractions.wheelZoomFactor(e);
 			const next = Math.max(GRAPH_ZOOM_MIN, Math.min(GRAPH_ZOOM_MAX, canvasState.graphZoom * step));
 			if (next === canvasState.graphZoom) {
 				return;
@@ -1853,6 +1858,7 @@ function csrfFetch(url, options) {
 	graph.addEventListener(
 		'wheel',
 		(e) => {
+			if (e.defaultPrevented) return;
 			if (canvasState.graphView !== 'bulk') {
 				return;
 			}
@@ -1869,7 +1875,7 @@ function csrfFetch(url, options) {
 			const my = e.clientY - rect.top + canvas.scrollTop;
 			const contentX = mx / canvasState.bulkZoom;
 			const contentY = my / canvasState.bulkZoom;
-			const step = e.deltaY > 0 ? 0.9 : 1.1;
+			const step = window.OrgLoom.cyInteractions.wheelZoomFactor(e);
 			const next = Math.max(BULK_ZOOM_MIN, Math.min(BULK_ZOOM_MAX, canvasState.bulkZoom * step));
 			if (next === canvasState.bulkZoom) {
 				return;
@@ -2488,6 +2494,7 @@ function csrfFetch(url, options) {
 
 	function resetToBasePicker() {
 		_clearUploadFixes();
+		closeRecordEditors();
 		canvasState.selectedObjects = [];
 		canvasState.selectedIdSeq = 1;
 		canvasState.activeIndex = 0;
@@ -3043,6 +3050,7 @@ function csrfFetch(url, options) {
 	}
 
 	function renderBulkView() {
+		if (_ins) _ins.syncOpenRecords();
 		_autosaveSchedule();
 		_canvasSaveState.refresh();
 		recomputeMigrationAnnotationsSync();
@@ -3852,7 +3860,10 @@ function csrfFetch(url, options) {
 		return _importShared.gateImportFile(file, _JSON_IMPORT_GATE);
 	}
 	const _captureCanvasUndoSnapshot = _importShared.makeUndoCapture({
-		onCanvasReplace: () => _clearUploadFixes(),
+		onCanvasReplace: () => {
+			_clearUploadFixes();
+			closeRecordEditors();
+		},
 		canvasState: canvasState,
 		renderAll: function () {
 			renderAll();
@@ -5189,6 +5200,7 @@ function csrfFetch(url, options) {
 	});
 
 	const _cm = window.OrgLoom.canvasCardMenu.mount({
+		ensureDescribe: ensureDescribe,
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
 		escapeHtml: escapeHtml,
@@ -6613,6 +6625,7 @@ function csrfFetch(url, options) {
 		attachCyMarqueeSelect: attachCyMarqueeSelect,
 		attachCyMiddleClickPan: attachCyMiddleClickPan,
 		attachCySpacePan: attachCySpacePan,
+		attachCyWheelZoom: attachCyWheelZoom,
 		openRecord: function () {
 			return openRecordForCurrentUser.apply(null, arguments);
 		},
@@ -6763,7 +6776,7 @@ function csrfFetch(url, options) {
 			_presence.unsubscribe();
 		} catch (_) {}
 
-		document.querySelectorAll('.modal.is-inline').forEach((modal) => modal.remove());
+		closeRecordEditors();
 		canvasState.currentCanvas = null;
 		_canvasSaveState.reset();
 		canvasState.currentRecordRef = null;
@@ -6942,6 +6955,7 @@ function csrfFetch(url, options) {
 	const attachSfUserPicker = _csh.attachSfUserPicker;
 
 	const _um = window.OrgLoom.uploadModal.mount({
+		updateUploadFixFields: (recordId, fields) => _ins?.updateUploadFixFields(recordId, fields),
 		openRecordForCurrentUser: function (record, options) {
 			try {
 				const node = _cyInstance && record && _cyInstance.getElementById('r' + record.id);
@@ -7022,6 +7036,7 @@ function csrfFetch(url, options) {
 	const _sfIdMatch = _rr._sfIdMatch;
 
 	const _tn = window.OrgLoom.typeNode.mount({
+		pushUndo: pushUndo,
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
 		refreshCapabilities: _loadCaps,
@@ -7138,7 +7153,10 @@ function csrfFetch(url, options) {
 	const relayoutNewRecords = _treeLayout.relayoutNewRecords;
 
 	const _lcsv = window.OrgLoom.linkedCsv.mount({
-		onCanvasReplace: () => _clearUploadFixes(),
+		onCanvasReplace: () => {
+			_clearUploadFixes();
+			closeRecordEditors();
+		},
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
 		escapeHtml: escapeHtml,
@@ -7214,7 +7232,10 @@ function csrfFetch(url, options) {
 	const openBrowseModal = _rb.openBrowseModal;
 
 	const _tpl = window.OrgLoom.templates.mount({
-		onCanvasReplace: () => _clearUploadFixes(),
+		onCanvasReplace: () => {
+			_clearUploadFixes();
+			closeRecordEditors();
+		},
 		canvasState: canvasState,
 		showBulkToast: showBulkToast,
 		canvasCapCheck: canvasCapCheck,
@@ -7379,7 +7400,6 @@ function csrfFetch(url, options) {
 			return false;
 		}
 	}
-	let _ins = null;
 	const _presence = window.OrgLoom.presence.mount({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -7447,7 +7467,7 @@ function csrfFetch(url, options) {
 			canvasState._renderCanvasShareRole = role;
 			if (detail && (detail.revoked || detail.change === 'decreased')) {
 				_clearUploadFixes();
-				document.querySelectorAll('.modal.is-inline').forEach((modal) => modal.remove());
+				closeRecordEditors();
 				canvasState.bulkSelectedIds.clear();
 				canvasState.bulkSelectedEdgeId = null;
 			}
@@ -7511,7 +7531,7 @@ function csrfFetch(url, options) {
 	});
 	const openBulkEditModal = _bem.openModal;
 
-	_ins = window.OrgLoom.insertModal.mount({
+	_ins = window.OrgLoom.insertModal.mountMultiple({
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
 		escapeHtml: escapeHtml,

@@ -80,8 +80,8 @@
 				modal.className = 'modal soql-import-modal';
 				const headerCopy =
 					isPlayground && !presetSoql
-						? '<p class="tag"><strong>Imports are capped at 500 records.</strong> Demo mode &middot; the query below is preset for the playground. Sign up to write your own SOQL against your real org.</p>'
-						: '<p class="tag"><strong>Up to 500 records per import.</strong> Read-only SELECT, must include <code>Id</code>. Subqueries on child relationships are supported (e.g. <code>SELECT Id, Name, (SELECT Id, FirstName FROM Contacts) FROM Account</code>).</p>';
+						? '<p class="tag">Demo query. Connect Salesforce to run your own.</p>'
+						: '<p class="tag">Include <code>Id</code> in your query. Up to 500 records per import.</p>';
 				const textareaAttrs =
 					isPlayground && !presetSoql
 						? ' readonly aria-readonly="true" style="width:100%;font-family:monospace;font-size:13px;background:var(--bg-elev);color:var(--ink-soft);cursor:not-allowed;"'
@@ -96,7 +96,7 @@
 					'</div>' +
 					'<div class="modal-content">' +
 					headerCopy +
-					'<textarea id="soql-query" rows="8"' +
+					'<textarea id="soql-query" aria-label="SOQL query" rows="8"' +
 					textareaAttrs +
 					'>' +
 					escapeHtml(textareaValue) +
@@ -107,13 +107,17 @@
 					'<input type="checkbox" id="soql-full-fields" checked' +
 					(isPlayground ? ' disabled aria-disabled="true"' : '') +
 					'>' +
-					'<span><strong>Load all fields</strong> &middot; refetch each record with every field you can read in Salesforce, not just the ones in your SELECT. Uncheck for a compact view of only the fields you queried.</span>' +
+					'<span><strong>Load all fields</strong> &middot; Include fields not listed in your query.</span>' +
 					'</label>' +
+					'<details class="soql-query-help"><summary>Query help</summary>' +
+					'<p>Use a read-only SELECT query and include <code>Id</code>. You can import up to 500 records, including related records from child subqueries.</p>' +
+					'<pre><code>SELECT Id, Name,\n  (SELECT Id, FirstName FROM Contacts)\nFROM Account\nLIMIT 5</code></pre>' +
+					'</details>' +
 					'<div id="soql-preview" class="soql-preview"></div>' +
 					'</div>' +
 					'<div class="modal-footer">' +
 					'<button class="button secondary" data-soql-close>Cancel</button>' +
-					'<button class="button secondary" id="soql-preview-btn">Run preview</button>' +
+					'<button class="button secondary" id="soql-preview-btn">Preview</button>' +
 					'<button class="button" id="soql-commit-btn">Add to canvas</button>' +
 					'</div>' +
 					'</div>';
@@ -136,6 +140,18 @@
 				const commitBtn = modal.querySelector('#soql-commit-btn');
 				const fullFieldsCb = modal.querySelector('#soql-full-fields');
 				let lastResult = null;
+				let showRecordIds = false;
+				previewPane.addEventListener('click', (event) => {
+					const toggle = event.target.closest('[data-soql-toggle-ids]');
+					if (!toggle) {
+						return;
+					}
+					showRecordIds = !showRecordIds;
+					toggle.setAttribute('aria-pressed', String(showRecordIds));
+					previewPane
+						.querySelector('.soql-preview-tablewrap')
+						.classList.toggle('soql-show-ids', showRecordIds);
+				});
 				setTimeout(() => textarea.focus(), 0);
 
 				let lastResultSoql = null;
@@ -253,10 +269,6 @@
 							} else {
 								nameCell = escapeHtml(identText);
 							}
-							const fieldHint =
-								ident && ident.field !== 'Name'
-									? ' <span class="soql-field-hint">' + escapeHtml(ident.field) + '</span>'
-									: '';
 							return (
 								'<tr><td class="soql-col-obj"><span class="tag">' +
 								escapeHtml(rec.objectName) +
@@ -266,7 +278,6 @@
 								'</td>' +
 								'<td class="soql-col-name">' +
 								nameCell +
-								fieldHint +
 								'</td></tr>'
 							);
 						})
@@ -280,30 +291,29 @@
 								' will be added.</div>'
 							: '';
 					const tableHtml = body.records.length
-						? '<div class="soql-preview-tablewrap"><table class="soql-preview-table">' +
-							'<thead><tr><th>Object</th><th>ID</th><th>Name</th></tr></thead><tbody>' +
+						? '<div class="soql-preview-tablewrap' +
+							(showRecordIds ? ' soql-show-ids' : '') +
+							'"><table class="soql-preview-table">' +
+							'<thead><tr><th>Object</th><th class="soql-col-id">ID</th><th>Name</th></tr></thead><tbody>' +
 							rowsHtml +
 							'</tbody></table></div>' +
 							moreNote
 						: '';
-					const componentNote =
-						body.records.length > 75
-							? '<div class="banner">Heads-up: ' +
-								body.records.length +
-								' records added in one go won’t fit Composite Graph upload (cap is 75 per connected component). You can still browse / edit them; uploads will need bulk fallback.</div>'
-							: '';
 					previewPane.innerHTML =
 						truncationNote +
-						componentNote +
-						'<div class="soql-summary"><strong>' +
+						'<div class="soql-preview-heading"><div class="soql-summary"><strong>' +
 						body.records.length +
 						' record' +
 						(body.records.length === 1 ? '' : 's') +
 						'</strong> ready to add' +
 						(breakdown ? ' (' + breakdown + ')' : '') +
-						'. Total in SF: ' +
-						body.totalSize +
 						'.</div>' +
+						(body.records.length
+							? '<button type="button" class="soql-toggle-ids" data-soql-toggle-ids aria-pressed="' +
+								showRecordIds +
+								'">Show IDs</button>'
+							: '') +
+						'</div>' +
 						tableHtml;
 				}
 

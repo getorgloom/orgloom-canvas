@@ -7257,14 +7257,13 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!fieldCheck.ok) {
 				return res.json({ records: [], skipped: true, reason: fieldCheck.reason });
 			}
+			// Existing records need readable fields, not just fields allowed on insert.
+			// Salesforce's user-scoped describe/query enforce field access; keep audit
+			// and other read-only values while excluding compound containers.
 			const selectable = Array.from(
 				new Set(
 					['Id'].concat(
-						describe.fields
-							.filter(
-								(f) => (f.createable || f.nameField) && f.type !== 'address' && f.type !== 'location',
-							)
-							.map((f) => f.name),
+						describe.fields.filter((f) => f.type !== 'address' && f.type !== 'location').map((f) => f.name),
 					),
 				),
 			);

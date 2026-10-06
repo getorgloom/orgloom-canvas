@@ -12,6 +12,7 @@ function harness(records, capResult, overrides = {}) {
 	const window = {};
 	const toasts = [];
 	const events = [];
+	const undo = [];
 	vm.runInNewContext(source, {
 		window,
 		Set,
@@ -38,6 +39,7 @@ function harness(records, capResult, overrides = {}) {
 	};
 	const api = window.OrgLoom.typeNode.mount({
 		canvasState: state,
+		pushUndo: (label, fn) => undo.push({ label, fn }),
 		csrfFetch: async () => {
 			throw new Error('not expected');
 		},
@@ -71,8 +73,130 @@ function harness(records, capResult, overrides = {}) {
 		getBulkRenderShiftX: () => 0,
 		getBulkRenderShiftY: () => 0,
 	});
-	return { api, state, toasts, events };
+	return { api, state, toasts, events, undo };
 }
+
+function relatedFixture({ chip = true } = {}) {
+	const base = { id: 1, objectName: 'Account', loadedFromId: '001base', values: { Name: 'Keep me' }, x: 0, y: 0 };
+	const loader = {
+		id: 2,
+		isTypeNode: true,
+		_chipLoader: chip,
+		hostRecordId: 1,
+		objectName: 'Contact',
+		direction: 'child',
+		fieldOnOther: 'AccountId',
+		x: 0,
+		y: 160,
+	};
+	return { base, loader };
+}
+
+test('a related load is one undo step that removes only new records and links', async () => {
+	const { base, loader } = relatedFixture();
+	const existing = {
+		id: 3,
+		objectName: 'Contact',
+		loadedFromId: '003existing',
+		values: { LastName: 'Keep edits' },
+		x: 500,
+		y: 0,
+	};
+	const { api, state, undo } = harness([base, loader, existing], { ok: true, blocked: false });
+	const oldLink = { id: 900, fromId: 3, toId: 1, fieldName: 'OtherId' };
+	state.bulkAssociations.push(oldLink);
+	await api.openTypeNode(loader, {
+		recordsOverride: [
+			{ Id: '003new', LastName: 'New' },
+			{ Id: '003existing', LastName: 'Server name' },
+		],
+	});
+	assert.equal(undo.length, 1);
+	const added = state.bulkRecords.find((record) => record.loadedFromId === '003new');
+	state.bulkSelectedIds.add(added.id);
+	assert.equal(existing.values.AccountId, base.loadedFromId);
+	base.values.Name = 'Unrelated change';
+	undo.pop().fn();
+	assert.deepEqual(state.bulkRecords, [base, existing]);
+	assert.deepEqual(state.bulkAssociations, [oldLink]);
+	assert.equal(existing.values.LastName, 'Keep edits');
+	assert.equal(Object.hasOwn(existing.values, 'AccountId'), false);
+	assert.equal(base.values.Name, 'Unrelated change');
+	assert.equal(state.bulkSelectedIds.has(added.id), false);
+});
+
+test('undo restores a consumed related placeholder and allows reloading', async () => {
+	const { base, loader } = relatedFixture({ chip: false });
+	const { api, state, undo } = harness([base, loader], { ok: true, blocked: false });
+	const options = { recordsOverride: [{ Id: '003new' }] };
+	await api.openTypeNode(loader, options);
+	undo.pop().fn();
+	assert.deepEqual(state.bulkRecords, [base, loader]);
+	assert.equal(loader._loading, false);
+	await api.openTypeNode(loader, options);
+	assert.equal(state.bulkRecords.filter((record) => record.loadedFromId === '003new').length, 1);
+	assert.equal(undo.length, 1);
+});
+
+test('successive related search picks can each be undone without removing earlier picks', async () => {
+	const { base, loader } = relatedFixture();
+	const { api, state, undo } = harness([base, loader], { ok: true, blocked: false });
+	for (const id of ['003first', '003second']) {
+		await api.openTypeNode(loader, { recordsOverride: [{ Id: id }], preserveTypeNode: true });
+	}
+	assert.equal(undo.length, 2);
+	undo.pop().fn();
+	assert.equal(
+		state.bulkRecords.some((record) => record.loadedFromId === '003second'),
+		false,
+	);
+	assert.equal(
+		state.bulkRecords.some((record) => record.loadedFromId === '003first'),
+		true,
+	);
+	undo.pop().fn();
+	assert.deepEqual(state.bulkRecords, [base, loader]);
+});
+
+test('blocked, failed, and empty related loads do not create undo entries', async () => {
+	for (const mode of ['blocked', 'failed', 'empty']) {
+		const { base, loader } = relatedFixture();
+		const { api, undo } = harness(
+			[base, loader],
+			{ ok: mode !== 'blocked', blocked: mode === 'blocked', reason: 'Full' },
+			{
+				fetchByRefCached: async () => {
+					if (mode === 'failed') throw new Error('Network');
+					return [];
+				},
+			},
+		);
+		await api.openTypeNode(loader, mode === 'blocked' ? { recordsOverride: [{ Id: '003new' }] } : {});
+		assert.equal(undo.length, 0);
+	}
+});
+
+test('undoing a related parent load restores the existing child relationship value', async () => {
+	const base = { id: 1, objectName: 'Contact', loadedFromId: '003child', values: { AccountId: null }, x: 0, y: 0 };
+	const loader = {
+		id: 2,
+		isTypeNode: true,
+		_chipLoader: true,
+		hostRecordId: 1,
+		objectName: 'Account',
+		direction: 'parent',
+		fieldOnThis: 'AccountId',
+		x: 0,
+		y: 160,
+	};
+	const { api, state, undo } = harness([base, loader], { ok: true, blocked: false });
+	await api.openTypeNode(loader, { recordsOverride: [{ Id: '001parent', Name: 'Parent' }] });
+	assert.equal(base.values.AccountId, '001parent');
+	undo.pop().fn();
+	assert.equal(base.values.AccountId, null);
+	assert.deepEqual(state.bulkRecords, [base]);
+	assert.equal(state.bulkAssociations.length, 0);
+});
 
 test('an empty related-record query shows a no-records toast', async () => {
 	const base = { id: 1, objectName: 'Account', loadedFromId: '001000000000001AAA', x: 0, y: 0 };

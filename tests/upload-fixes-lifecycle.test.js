@@ -99,7 +99,12 @@ test('app connects replacement, reset, Undo, and access-loss boundaries to fix c
 		'_lcsv = window.OrgLoom.linkedCsv.mount',
 		'_tpl = window.OrgLoom.templates.mount',
 	]) {
-		assert.ok(app.includes(mount + '({\n\t\tonCanvasReplace: () => _clearUploadFixes(),'));
+		const start = app.indexOf(mount + '({');
+		assert.ok(start >= 0);
+		assert.match(
+			app.slice(start, start + 180),
+			/onCanvasReplace: \(\) =>\s*{\s*_clearUploadFixes\(\);\s*closeRecordEditors\(\);/,
+		);
 	}
 	assert.match(app, /function resetToBasePicker\(\)\s*{\s*_clearUploadFixes\(\)/);
 	assert.match(

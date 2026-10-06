@@ -17,6 +17,7 @@
 			const keyFor = (issue, source) =>
 				JSON.stringify([
 					source,
+					issue.operation || '',
 					String(issue.recordId),
 					issue.field || '',
 					fieldsFor(issue),
@@ -77,6 +78,7 @@
 					}
 					task.baseline = fingerprint(record, task.fields);
 					task.confirmed = false;
+					task.confirmedDelete = false;
 				}
 			}
 			function present(issues, source, ids) {
@@ -108,7 +110,7 @@
 					let status = 'Needs attention';
 					if (task.confirmedDelete && !record) {
 						complete = true;
-						status = 'Complete';
+						status = 'Check passed';
 					} else if (!record) {
 						status = 'Record removed from canvas';
 					} else if (blocked) {
@@ -123,12 +125,16 @@
 									(issue.field || '') === (task.field || '')),
 						);
 						complete = !metadataMissing && !remains;
-						status = complete ? 'Complete' : metadataMissing ? 'Unable to verify yet' : 'Needs attention';
+						status = complete
+							? 'Check passed'
+							: metadataMissing
+								? 'Unable to verify yet'
+								: 'Needs attention';
 					} else {
 						const current = fingerprint(record, task.fields);
 						complete = task.confirmed && current === task.verified;
 						changed = !complete && current !== task.baseline;
-						status = complete ? 'Complete' : changed ? 'Changed' : 'Needs attention';
+						status = complete ? 'Check passed' : changed ? 'Changed' : 'Needs attention';
 					}
 					return {
 						...task,
@@ -161,6 +167,27 @@
 					uploadFixFields,
 				});
 			}
+			function dismissTask(id) {
+				if (!validContext() || !active) return false;
+				const task = tasks.find((item) => item.id === String(id));
+				if (!task) return false;
+				tasks = tasks.filter((item) => item !== task);
+				const fields = Array.from(
+					new Set(
+						refresh()
+							.filter(
+								(item) =>
+									String(item.recordId) === String(task.recordId) && !item.complete && !item.blocked,
+							)
+							.flatMap((item) => item.fields),
+					),
+				);
+				deps.onDismiss?.(task.recordId, fields);
+				if (!tasks.length) clear();
+				render();
+				deps.onChange?.();
+				return true;
+			}
 			function start(recordId, fieldName) {
 				if (!validContext() || !pending) {
 					return false;
@@ -186,20 +213,26 @@
 					return;
 				}
 				for (const task of tasks) {
-					const deleted = (deletes || []).some(
-						(item) => String(item.tempId) === String(task.recordId) && item.success,
-					);
+					const deletion = (deletes || []).find((item) => String(item.tempId) === String(task.recordId));
 					const result = (results || []).find((item) => String(item.tempId) === String(task.recordId));
-					if (deleted || (result?.success && result.mode !== 'unchanged')) {
+					const deleted = deletion?.success === true;
+					const failed =
+						deletion?.success === false || (task.operation !== 'delete' && result?.success === false);
+					if (failed) {
+						task.confirmed = false;
+						task.confirmedDelete = false;
+						task.baseline = fingerprint(recordFor(task.recordId), task.fields);
+					} else if (
+						deleted ||
+						(task.operation !== 'delete' && result?.success === true && result.mode !== 'unchanged')
+					) {
+						// A successful write cannot verify a failed DELETE, even on the same record.
 						// Reconciliation preserves edits made while the upload was running. Those
 						// newer values have not been verified by this successful response.
 						const record = recordFor(task.recordId);
 						task.confirmed = deleted || (!!record && !deps.hasUnsubmittedChanges?.(record));
 						task.confirmedDelete = deleted;
 						task.verified = fingerprint(recordFor(task.recordId), task.fields);
-					} else if (result && !result.success) {
-						task.confirmed = false;
-						task.baseline = fingerprint(recordFor(task.recordId), task.fields);
 					}
 				}
 			}
@@ -213,14 +246,13 @@
 					host.hidden = true;
 					return false;
 				}
-				const completed = list.filter((task) => task.complete).length;
+				const remaining = list.filter((task) => !task.complete).length;
 				const oldScroll = host.querySelector('.shared-task-sections')?.scrollTop || 0;
 				const html =
 					'<div class="shared-task-header"><div><h3>Upload fixes</h3><p>' +
-					completed +
-					' of ' +
-					list.length +
-					' complete</p></div>' +
+					remaining +
+					(remaining === 1 ? ' issue remaining' : ' issues remaining') +
+					'</p></div>' +
 					'<button type="button" class="shared-task-toggle" data-upload-fixes-toggle aria-expanded="' +
 					!collapsed +
 					'" aria-controls="upload-fixes-list">' +
@@ -262,7 +294,17 @@
 								(task.changed
 									? ''
 									: '<small class="shared-task-status">' + escapeHtml(task.status) + '</small>') +
-								'</span></button></li>',
+								'</span></button><button type="button" class="shared-task-toggle upload-fix-dismiss" data-upload-fix-dismiss="' +
+								task.id +
+								'" title="Dismiss this fix" aria-label="' +
+								escapeHtml(
+									'Dismiss fix for ' +
+										task.title +
+										(!task.blocked && task.fields.length
+											? ': ' + (task.fieldLabel || task.fields.join(', '))
+											: ''),
+								) +
+								'">×</button></li>',
 						)
 						.join('') +
 					'</ol></div>';
@@ -277,6 +319,11 @@
 				if (!host.dataset.wired) {
 					host.dataset.wired = '1';
 					host.addEventListener('click', (event) => {
+						const dismiss = event.target.closest('[data-upload-fix-dismiss]');
+						if (dismiss) {
+							dismissTask(dismiss.dataset.uploadFixDismiss);
+							return;
+						}
 						if (event.target.closest('[data-upload-fixes-dismiss]')) {
 							clear();
 							deps.onChange?.();
@@ -295,7 +342,7 @@
 				}
 				return true;
 			}
-			return { present, start, render, refresh, recordResults, clear, openTask };
+			return { present, start, render, refresh, recordResults, clear, openTask, dismissTask };
 		},
 	};
 })();

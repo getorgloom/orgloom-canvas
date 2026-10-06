@@ -222,6 +222,18 @@
 					}
 				}
 				let dangerItems = '';
+				const markDeleteHtml =
+					'<button type="button" class="fop-item fop-item-danger" data-card-action="mark-delete">' +
+					'<span class="fop-label">Mark for delete in Salesforce</span>' +
+					'<span class="fop-name">Stages a DELETE that ships with your next upload</span></button>';
+				const describe = canvasState.describeCache && canvasState.describeCache[rec.objectName];
+				const needsDeletePermissions =
+					isLoaded &&
+					!isTypeNode &&
+					!isInaccessible &&
+					!isPendingDelete &&
+					(!describe || typeof describe.deletable !== 'boolean') &&
+					typeof deps.ensureDescribe === 'function';
 				if (!isTypeNode) {
 					dangerItems += '<div class="fop-divider"></div>';
 					dangerItems +=
@@ -240,12 +252,11 @@
 								'<span class="fop-label">Keep this record</span>' +
 								'<span class="fop-name">Unmark: Salesforce DELETE on next upload is cancelled</span>' +
 								'</button>';
-						} else if (canDeleteRecord(rec)) {
+						} else if (needsDeletePermissions) {
 							dangerItems +=
-								'<button type="button" class="fop-item fop-item-danger" data-card-action="mark-delete">' +
-								'<span class="fop-label">Mark for delete in Salesforce</span>' +
-								'<span class="fop-name">Stages a DELETE that ships with your next upload</span>' +
-								'</button>';
+								'<div data-delete-permissions><button type="button" class="fop-item" disabled>Checking delete permissions…</button></div>';
+						} else if (canDeleteRecord(rec)) {
+							dangerItems += markDeleteHtml;
 						}
 					}
 				}
@@ -256,6 +267,28 @@
 					slotItems +
 					dangerItems;
 				document.body.appendChild(pop);
+				if (needsDeletePermissions) {
+					// Related-record browsing need not load object describe metadata; the editor does.
+					// Load it here too, without treating unknown permissions as a denial or granting access.
+					Promise.resolve()
+						.then(() => deps.ensureDescribe(rec.objectName, describe ? { force: true } : undefined))
+						.then(() => {
+							if (!pop.isConnected) return;
+							const target = pop.querySelector('[data-delete-permissions]');
+							if (target)
+								target.innerHTML =
+									canEditCanvasStructure() && !rec._inaccessible && canDeleteRecord(rec)
+										? markDeleteHtml
+										: '<button type="button" class="fop-item" disabled>Delete not permitted</button>';
+						})
+						.catch(() => {
+							if (!pop.isConnected) return;
+							const target = pop.querySelector('[data-delete-permissions]');
+							if (target)
+								target.innerHTML =
+									'<button type="button" class="fop-item" disabled>Could not check delete permissions. Reopen this menu to retry.</button>';
+						});
+				}
 				{
 					const margin = 8;
 					const menuH = pop.offsetHeight;

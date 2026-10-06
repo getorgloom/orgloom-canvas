@@ -761,6 +761,7 @@
 					return identity.objectLabel + ' · ' + identity.name;
 				},
 				onChange: () => renderBulkView(),
+				onDismiss: (recordId, fields) => deps.updateUploadFixFields?.(recordId, fields),
 			});
 			uploadModal
 				.querySelectorAll('[data-upload-close]')
@@ -3089,6 +3090,7 @@
 				const dupFailed = failed.filter((r) => r && r.errorCode === 'DUPLICATES_DETECTED');
 				const fixIssues = [...actionableFailed, ...deleteFailed].map((result) => ({
 					recordId: result.tempId,
+					operation: deleteFailed.includes(result) ? 'delete' : 'write',
 					objectName: result.objectName,
 					fields: result.fields,
 					errorCode: result.errorCode,
@@ -3221,7 +3223,7 @@
 					canvasState.bulkAssociations,
 				);
 				_clearSubmittedEncryptedValues(synced, submittedSnapshots, canonicalValues);
-				_fixTasks?.recordResults(synced, deletesArr);
+				_fixTasks?.recordResults([...synced, ...failed], deletesArr);
 				canvasState.bulkRecords.forEach((rec) => {
 					if (realIdByTempId.has(rec.id)) {
 						_clearCommittedMigrationMatch(rec);

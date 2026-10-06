@@ -96,7 +96,7 @@ test('opening an owner record request shows its response with configuration avai
 	assert.match(appSource, /function openRecordForCurrentUser\(rec, options\)/);
 	assert.doesNotMatch(appSource, /if \(!shareRole\) \{[\s\S]*configureExistingSlot\(rec\)/);
 	assert.match(appSource, /openInsertModal\(rec\.objectName, Object\.assign\(\{ record: rec \}/);
-	assert.match(insertModalSource, /id="modal-configure-request"/);
+	assert.match(insertModalSource, /data-editor-element="modal-configure-request"/);
 	assert.match(
 		insertModalSource,
 		/const configurableRecordRequest = !!\(\s*canEditCanvasStructure\(\)[\s\S]*\(record\.slot\.kind \|\| 'whole-record'\)/,

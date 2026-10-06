@@ -61,13 +61,20 @@ test('linked field escapes record names and attributes and provides unnamed/cont
 	);
 });
 
-function linkedNavigation({ dirty = false, encrypted = false, inaccessible = false, missing = false } = {}) {
+function linkedNavigation({
+	dirty = false,
+	encrypted = false,
+	inaccessible = false,
+	missing = false,
+	multiple = false,
+} = {}) {
 	const start = source.indexOf("modal.querySelectorAll('[data-open-assoc-field]')");
 	const end = source.indexOf("modal.querySelectorAll('[data-disconnect-assoc]')", start);
 	const calls = [];
 	let click;
 	const target = { id: 2, objectName: 'Account', _inaccessible: inaccessible };
 	vm.runInNewContext(source.slice(start, end), {
+		deps: multiple ? { openLinkedRecord: (record) => calls.push(['open-linked', record]) } : {},
 		modal: {
 			querySelectorAll: () => [
 				{
@@ -95,6 +102,11 @@ function linkedNavigation({ dirty = false, encrypted = false, inaccessible = fal
 test('opening a linked card releases the current editor before opening the actual target', () => {
 	const { calls, target } = linkedNavigation();
 	assert.deepEqual(calls, [['close'], ['open', 'Account', target]]);
+});
+
+test('multi-card linked navigation preserves the current editor and its unsaved fields', () => {
+	const { calls, target } = linkedNavigation({ multiple: true, dirty: true, encrypted: true });
+	assert.deepEqual(calls, [['open-linked', target]]);
 });
 
 test('linked-card navigation cannot discard edits or open unavailable records', () => {

@@ -4,7 +4,17 @@
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	function wheelZoomFactor(event) {
+		// Normalize line/page units and preserve small high-resolution wheel deltas.
+		const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 800 : 1;
+		const pixels = Number(event.deltaY) * unit;
+		if (!Number.isFinite(pixels)) return 1;
+		// Bound a single event, including accelerated mouse-wheel input.
+		return Math.pow(0.9, Math.max(-100, Math.min(100, pixels)) / 100);
+	}
+
 	window.OrgLoom.cyInteractions = {
+		wheelZoomFactor,
 		mount: function mount(deps) {
 			const required = ['getCanvasSpaceHeld', 'setCanvasMiddleMousePanning'];
 			if (!deps) {
@@ -349,48 +359,55 @@
 			}
 
 			const _cyMmbAttached = new WeakSet();
-			const _cyWheelAttached = new WeakSet();
+			const _cyWheelAttached = new WeakMap();
 			function attachCyWheelZoom(cy, container) {
-				if (!cy || !container || _cyWheelAttached.has(cy)) {
+				if (!cy || !container || cy.destroyed()) {
 					return;
 				}
-				_cyWheelAttached.add(cy);
-				document.addEventListener(
-					'wheel',
-					(ev) => {
-						if (!container.contains(ev.target)) {
-							return;
-						}
-						const rect = container.getBoundingClientRect();
-						if (
-							ev.clientX < rect.left ||
-							ev.clientX > rect.right ||
-							ev.clientY < rect.top ||
-							ev.clientY > rect.bottom
-						) {
-							return;
-						}
-						if (ev.ctrlKey) {
-							ev.preventDefault();
-						}
-						if (ev.deltaY === 0) {
-							return;
-						}
-						if (!ev.ctrlKey) {
-							ev.preventDefault();
-						}
-						const rx = ev.clientX - rect.left;
-						const ry = ev.clientY - rect.top;
-						const step = ev.deltaY > 0 ? 0.9 : 1.1;
-						const cur = cy.zoom();
-						const next = Math.max(0.2, Math.min(4, cur * step));
-						if (next === cur) {
-							return;
-						}
-						cy.zoom({ level: next, renderedPosition: { x: rx, y: ry } });
-					},
-					{ passive: false, capture: true },
-				);
+				const previous = _cyWheelAttached.get(container);
+				if (previous && previous.cy === cy) return;
+				if (previous) previous.cleanup();
+				const onWheel = (ev) => {
+					if (cy.destroyed() || ev.defaultPrevented) return;
+					if (!container.contains(ev.target)) {
+						return;
+					}
+					const rect = container.getBoundingClientRect();
+					if (
+						ev.clientX < rect.left ||
+						ev.clientX > rect.right ||
+						ev.clientY < rect.top ||
+						ev.clientY > rect.bottom
+					) {
+						return;
+					}
+					if (ev.ctrlKey) {
+						ev.preventDefault();
+					}
+					if (ev.deltaY === 0) {
+						return;
+					}
+					if (!ev.ctrlKey) {
+						ev.preventDefault();
+					}
+					const rx = ev.clientX - rect.left;
+					const ry = ev.clientY - rect.top;
+					const step = wheelZoomFactor(ev);
+					const cur = cy.zoom();
+					const next = Math.max(0.2, Math.min(4, cur * step));
+					if (next === cur) {
+						return;
+					}
+					cy.zoom({ level: next, renderedPosition: { x: rx, y: ry } });
+				};
+				const cleanup = () => {
+					document.removeEventListener('wheel', onWheel, true);
+					cy.off('destroy', cleanup);
+					if (_cyWheelAttached.get(container)?.cy === cy) _cyWheelAttached.delete(container);
+				};
+				_cyWheelAttached.set(container, { cy, cleanup });
+				document.addEventListener('wheel', onWheel, { passive: false, capture: true });
+				cy.on('destroy', cleanup);
 			}
 
 			function attachCyMiddleClickPan(cy, container) {

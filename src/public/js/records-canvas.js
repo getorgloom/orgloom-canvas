@@ -50,6 +50,7 @@
 				'attachCyMarqueeSelect',
 				'attachCyMiddleClickPan',
 				'attachCySpacePan',
+				'attachCyWheelZoom',
 				'openRecord',
 				'getCanvasShareRole',
 				'hasCapability',
@@ -113,6 +114,7 @@
 			const attachCyMarqueeSelect = deps.attachCyMarqueeSelect;
 			const attachCyMiddleClickPan = deps.attachCyMiddleClickPan;
 			const attachCySpacePan = deps.attachCySpacePan;
+			const attachCyWheelZoom = deps.attachCyWheelZoom;
 			const openRecord = deps.openRecord;
 			const getCanvasShareRole = deps.getCanvasShareRole;
 			const hasCapability = deps.hasCapability;
@@ -850,45 +852,7 @@
 					attachCySpacePan(getCyInstance(), container);
 					attachCyEdgeMarkers(getCyInstance(), container);
 
-					document.addEventListener(
-						'wheel',
-						(ev) => {
-							if (!getCyInstance()) {
-								return;
-							}
-							if (!container.contains(ev.target)) {
-								return;
-							}
-							const rect = container.getBoundingClientRect();
-							if (
-								ev.clientX < rect.left ||
-								ev.clientX > rect.right ||
-								ev.clientY < rect.top ||
-								ev.clientY > rect.bottom
-							) {
-								return;
-							}
-							if (ev.ctrlKey) {
-								ev.preventDefault();
-							}
-							if (ev.deltaY === 0) {
-								return;
-							}
-							if (!ev.ctrlKey) {
-								ev.preventDefault();
-							}
-							const rx = ev.clientX - rect.left;
-							const ry = ev.clientY - rect.top;
-							const step = ev.deltaY > 0 ? 0.9 : 1.1;
-							const cur = getCyInstance().zoom();
-							const next = Math.max(0.2, Math.min(4, cur * step));
-							if (next === cur) {
-								return;
-							}
-							getCyInstance().zoom({ level: next, renderedPosition: { x: rx, y: ry } });
-						},
-						{ passive: false, capture: true },
-					);
+					attachCyWheelZoom(getCyInstance(), container);
 
 					// Draft labels are pointer-transparent so dragging still reaches Cytoscape.
 					// Put their full-name tooltip on the canvas surface instead of intercepting input.

@@ -2826,6 +2826,9 @@ tbody tr[data-row-open]:hover code {
 .modal.is-inline .modal-overlay {
 	display: none;
 }
+.modal.is-inline.is-active-editor {
+	z-index: 101;
+}
 .sf-reauth-prompt .sf-reauth-options {
 	display: flex;
 	flex-direction: column;
@@ -4993,6 +4996,21 @@ body.canvas-share-banner-active .presence-saved-banner {
 .upload-fixes-sidebar .shared-task-button:disabled {
 	cursor: default;
 }
+.upload-fixes-sidebar .shared-task-list > li {
+	display: flex;
+	align-items: flex-start;
+}
+.upload-fixes-sidebar .shared-task-button {
+	flex: 1;
+	min-width: 0;
+}
+.upload-fixes-sidebar .upload-fix-dismiss {
+	margin: 0.55em 0.45em 0 0;
+	min-width: 28px;
+	min-height: 28px;
+	justify-content: center;
+	font-size: 1rem;
+}
 .shared-task-header {
 	display: flex;
 	align-items: center;
@@ -5164,6 +5182,21 @@ body.canvas-share-banner-active .presence-saved-banner {
 }
 .upload-fix--changed .shared-task-icon {
 	border-color: var(--border);
+	color: var(--muted);
+}
+.upload-fixes-sidebar .shared-task--complete .shared-task-icon {
+	border-color: var(--border);
+	background: var(--bg-hover);
+	color: var(--muted);
+}
+.upload-fixes-sidebar .shared-task--complete .shared-task-button {
+	background: transparent;
+}
+.upload-fixes-sidebar .shared-task--complete .shared-task-button:hover,
+.upload-fixes-sidebar .shared-task--complete .shared-task-button:focus-visible {
+	background: var(--bg-hover);
+}
+.upload-fixes-sidebar .shared-task--complete .shared-task-status {
 	color: var(--muted);
 }
 .canvas-onboarding-progress {
@@ -12295,6 +12328,43 @@ tbody tr[data-row-open]:nth-child(10) {
 .soql-import-modal .soql-preview:not(:empty) {
 	margin-top: 0.75em;
 }
+.soql-import-modal .soql-query-help {
+	margin-top: 0.75em;
+	font-size: 0.84rem;
+	color: var(--ink-soft);
+}
+.soql-import-modal .soql-query-help summary {
+	cursor: pointer;
+	color: var(--accent);
+}
+.soql-import-modal .soql-query-help pre {
+	overflow-x: auto;
+	padding: 0.75em;
+	background: var(--bg-elev);
+	border-radius: 6px;
+}
+.soql-import-modal .soql-preview-heading {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 0.5em;
+}
+.soql-import-modal .soql-toggle-ids {
+	background: transparent;
+	border: 0;
+	padding: 0.25em 0;
+	color: var(--accent);
+	font: inherit;
+	font-size: 0.8rem;
+	cursor: pointer;
+}
+.soql-import-modal .soql-toggle-ids[aria-pressed='true'] {
+	text-decoration: underline;
+}
+.soql-import-modal .soql-preview-tablewrap:not(.soql-show-ids) .soql-col-id {
+	display: none;
+}
 .soql-import-modal .soql-summary {
 	margin: 0.7em 0 0.5em;
 	color: var(--ink);
@@ -12347,12 +12417,6 @@ tbody tr[data-row-open]:nth-child(10) {
 }
 .soql-import-modal .soql-preview-table .soql-id-link:hover {
 	text-decoration: underline;
-}
-.soql-import-modal .soql-field-hint {
-	color: var(--ink-soft);
-	font-size: 0.72rem;
-	margin-left: 0.45em;
-	opacity: 0.75;
 }
 .soql-import-modal .soql-more-note {
 	padding: 0.5em 0.7em;

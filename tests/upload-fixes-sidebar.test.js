@@ -27,6 +27,7 @@ function setup() {
 		issue,
 		otherIssue,
 		opened: [],
+		dismissed: [],
 		scopes: [],
 		changes: 0,
 		context: { canvas: null, connection: 'org1/user1' },
@@ -51,6 +52,7 @@ function setup() {
 		onChange: () => {
 			env.changes++;
 		},
+		onDismiss: (recordId, fields) => env.dismissed.push({ recordId, fields: Array.from(fields) }),
 	});
 	return env;
 }
@@ -65,7 +67,7 @@ test('Fix opens the clicked field and lists every issue from the attempted scope
 	assert.equal(e.opened[0].options.focusField, 'LastName');
 	assert.equal(e.api.refresh().length, 2);
 	assert.deepEqual(e.scopes.at(-1), ['a', 'c']);
-	assert.match(e.host.innerHTML, /0 of 2 complete/);
+	assert.match(e.host.innerHTML, /2 issues remaining/);
 });
 
 test('local completion uses validation, updates checkmarks, and reopens when invalid again', () => {
@@ -77,7 +79,9 @@ test('local completion uses validation, updates checkmarks, and reopens when inv
 	e.check.issues = [e.otherIssue];
 	e.api.render();
 	assert.equal(e.api.refresh()[0].complete, true);
-	assert.match(e.host.innerHTML, /1 of 1 complete/);
+	assert.match(e.host.innerHTML, /0 issues remaining/);
+	assert.match(e.host.innerHTML, /Check passed/);
+	assert.equal(e.api.refresh()[0].status, 'Check passed');
 	assert.match(e.host.innerHTML, /✓/);
 	e.check.issues = [{ ...e.issue, message: 'A different error in the same field' }];
 	assert.equal(e.api.refresh()[0].complete, false);
@@ -194,6 +198,61 @@ test('repeated errors are deduplicated and a later Salesforce failure resets con
 	assert.equal(e.api.refresh()[0].complete, false);
 });
 
+test('a failed parent delete is not completed by an update or a child delete attempt', () => {
+	const e = setup();
+	const issue = { recordId: 'a', operation: 'delete', message: 'Cannot delete while child records exist.' };
+	e.api.present([issue], 'salesforce', ['a']);
+	e.api.start('a');
+	e.other.pendingDelete = true;
+	e.api.recordResults([{ tempId: 'a', success: true, mode: 'update' }], [{ tempId: 'c', success: false }]);
+	assert.equal(e.api.refresh()[0].complete, false, 'an update of the parent is not a successful delete');
+	e.api.recordResults([], [{ tempId: 'c', success: true }]);
+	assert.equal(e.api.refresh()[0].complete, false, 'even deleting the child does not verify the parent delete');
+	e.api.recordResults([], [{ tempId: 'a', success: false }]);
+	assert.equal(e.api.refresh()[0].complete, false);
+	e.state.bulkRecords = [e.other];
+	e.api.recordResults([], [{ tempId: 'a', success: true }]);
+	assert.equal(e.api.refresh()[0].complete, true);
+});
+
+test('write and delete errors for the same record remain separate tasks', () => {
+	const e = setup();
+	e.api.present(
+		[
+			{ ...e.issue, operation: 'write' },
+			{ ...e.issue, operation: 'delete' },
+		],
+		'salesforce',
+		['a'],
+	);
+	e.api.start('a');
+	e.api.recordResults([{ tempId: 'a', success: true, mode: 'update' }]);
+	assert.equal(e.api.refresh().length, 2);
+	assert.equal(e.api.refresh().find((task) => task.operation === 'write').complete, true);
+	assert.equal(e.api.refresh().find((task) => task.operation === 'delete').complete, false);
+});
+
+test('upload results preserve failed operations and pass failures to the fix tracker', () => {
+	const uploadSource = fs.readFileSync(new URL('../src/public/js/upload-modal.js', import.meta.url), 'utf8');
+	assert.match(uploadSource, /operation: deleteFailed\.includes\(result\) \? 'delete' : 'write'/);
+	assert.match(uploadSource, /recordResults\(\[\.\.\.synced, \.\.\.failed\], deletesArr\)/);
+});
+
+test('failed delete responses and new errors invalidate earlier deletion confirmation', () => {
+	for (const viaPresent of [false, true]) {
+		const e = setup();
+		const issue = { ...e.issue, operation: 'delete' };
+		e.api.present([issue], 'salesforce', ['a']);
+		e.api.start('a');
+		e.state.bulkRecords = [e.other];
+		e.api.recordResults([], [{ tempId: 'a', success: true }]);
+		assert.equal(e.api.refresh()[0].complete, true);
+		if (viaPresent) e.api.present([issue], 'salesforce', ['a']);
+		else e.api.recordResults([], [{ tempId: 'a', success: false }]);
+		assert.equal(e.api.refresh()[0].complete, false);
+	}
+});
+
 test('changing canvas or connection clears tasks; first save preserves them', () => {
 	const e = setup();
 	e.api.present([e.issue], 'local', ['a']);
@@ -234,13 +293,70 @@ test('inaccessible records conceal details and cannot be opened', () => {
 	assert.equal(e.api.openTask('1'), false);
 });
 
+test('individual dismissal removes only that task without changing records or validation', () => {
+	for (const source of ['local', 'salesforce']) {
+		const e = setup();
+		const phoneIssue = { ...e.issue, field: 'Phone', message: 'Phone is required.' };
+		e.check.issues = [e.issue, phoneIssue, e.otherIssue];
+		e.api.present(e.check.issues, source, ['a', 'c']);
+		e.api.start('a');
+		const before = JSON.stringify(e.state);
+		e.host.click({
+			target: {
+				closest: (selector) =>
+					selector === '[data-upload-fix-dismiss]' ? { dataset: { uploadFixDismiss: '1' } } : null,
+			},
+		});
+		assert.equal(e.opened.length, 1, 'dismissing does not open or focus a record');
+		assert.equal(e.api.refresh().length, 2);
+		assert.equal(e.api.openTask('1'), false);
+		assert.equal(JSON.stringify(e.state), before);
+		assert.equal(e.check.issues.length, 3, 'validation still reports dismissed problems');
+		assert.match(e.host.innerHTML, /2 issues remaining/);
+		assert.deepEqual(e.dismissed[0], { recordId: 'a', fields: ['Phone'] });
+		e.api.start('a', 'Phone');
+		assert.equal(e.api.refresh().length, 2, 'reopening the current list does not restore dismissed tasks');
+		e.api.present([e.issue], source, ['a']);
+		assert.equal(e.api.refresh().length, 3, 'a later validation attempt can report the problem again');
+	}
+});
+
+test('dismissing the last fix hides the sidebar and clears stale pending issues', () => {
+	const e = setup();
+	e.api.present([e.issue], 'local', ['a']);
+	e.api.start('a');
+	assert.equal(e.api.dismissTask('missing'), false);
+	assert.equal(e.api.dismissTask('1'), true);
+	assert.equal(e.host.hidden, true);
+	assert.equal(e.host.innerHTML, '');
+	assert.equal(e.api.start('a'), false);
+	assert.deepEqual(e.dismissed[0], { recordId: 'a', fields: [] });
+	e.api.present([e.issue], 'local', ['a']);
+	assert.equal(e.api.start('a'), true);
+});
+
+test('completed and inaccessible fixes remain individually dismissible', () => {
+	const e = setup();
+	e.api.present([e.issue, e.otherIssue], 'local', ['a', 'c']);
+	e.api.start('a');
+	e.check.issues = [e.otherIssue];
+	e.other._inaccessible = true;
+	e.api.render();
+	assert.match(e.host.innerHTML, /aria-label="Dismiss fix for Account/);
+	assert.match(e.host.innerHTML, /aria-label="Dismiss fix for Unavailable record"/);
+	assert.equal(e.api.dismissTask('1'), true);
+	assert.match(e.host.innerHTML, /1 issue remaining/);
+	assert.equal(e.api.dismissTask('2'), true);
+	assert.equal(e.host.hidden, true);
+});
+
 test('fix state remains private to the sidebar and is never serialized into canvas storage', () => {
 	assert.doesNotMatch(source, /localStorage|sessionStorage|csrfFetch|fetch\(|canvasState\.[\w]+\s*=/);
 	const app = fs.readFileSync(new URL('../src/public/js/app.js', import.meta.url), 'utf8');
 	const templates = fs.readFileSync(new URL('../src/public/js/templates.js', import.meta.url), 'utf8');
 	const template = fs.readFileSync(new URL('../src/views/index.ejs', import.meta.url), 'utf8');
 	assert.match(app, /async function startNewCanvas\(\)\s*{\s*_clearUploadFixes\(\)/);
-	assert.match(app, /onCanvasReplace: \(\) => _clearUploadFixes\(\)/);
+	assert.match(app, /onCanvasReplace: \(\) =>\s*{\s*_clearUploadFixes\(\);\s*closeRecordEditors\(\);/);
 	assert.equal(templates.match(/deps\.onCanvasReplace\?\.\(\)/g).length, 2);
 	assert.ok(template.indexOf('/js/upload-fixes-sidebar.js') < template.indexOf('/js/upload-modal.js'));
 });
