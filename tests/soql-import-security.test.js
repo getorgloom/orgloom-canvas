@@ -48,6 +48,7 @@ function makeMockConn() {
 			fields: [{ name: 'Id' }, { name: 'Name' }, { name: 'Industry' }, { name: 'Phone' }, { name: 'Type' }],
 			childRelationships: [
 				{ relationshipName: 'Contacts', childSObject: 'Contact', field: 'AccountId' },
+				{ relationshipName: 'Cases', childSObject: 'Case', field: 'AccountId' },
 				{ relationshipName: 'Tasks', childSObject: 'Task', field: 'WhatId' },
 				{ relationshipName: 'SetupAuditTrails', childSObject: 'SetupAuditTrail', field: 'CreatedById' },
 				{ relationshipName: 'SpecializedEvents', childSObject: 'Notice__e', field: 'Account__c' },
@@ -56,7 +57,16 @@ function makeMockConn() {
 		Contact: {
 			name: 'Contact',
 			fields: [{ name: 'Id' }, { name: 'FirstName' }, { name: 'LastName' }, { name: 'AccountId' }],
-			childRelationships: [],
+			childRelationships: [
+				{ relationshipName: 'Cases', childSObject: 'Case', field: 'ContactId' },
+				{ relationshipName: 'SetupAuditTrails', childSObject: 'SetupAuditTrail', field: 'CreatedById' },
+				{ relationshipName: 'SpecializedEvents', childSObject: 'Notice__e', field: 'Contact__c' },
+			],
+		},
+		Case: {
+			name: 'Case',
+			fields: [{ name: 'Id' }, { name: 'Subject' }, { name: 'ContactId' }, { name: 'AccountId' }],
+			childRelationships: [{ relationshipName: 'Tasks', childSObject: 'Task', field: 'WhatId' }],
 		},
 		Task: {
 			name: 'Task',
@@ -76,10 +86,13 @@ function makeMockConn() {
 		},
 		sobject: (name) => ({
 			describe: async () => {
-				if (!describes[name]) {
+				const description = Object.values(describes).find(
+					(item) => item.name.toLowerCase() === name.toLowerCase(),
+				);
+				if (!description) {
 					throw new Error('NOT_FOUND: sObject type ' + name + ' is not supported.');
 				}
-				return describes[name];
+				return description;
 			},
 			retrieve: async (ids) => {
 				captured.retrieves.push({ name, ids: Array.isArray(ids) ? ids.slice() : [ids] });
@@ -160,6 +173,189 @@ beforeEach(() => {
 	if (resetRateLimit) {
 		resetRateLimit();
 	}
+});
+
+describe('nested child query import', () => {
+	const soql =
+		"select id, (select id, (select id from cases) from contacts) from account where name = 'Test Account'";
+	function seedCases(count = 1) {
+		const account = makeRows(1)[0];
+		const contact = makeChildRows(1)[0];
+		contact.Cases = {
+			records: Array.from({ length: count }, (_, i) => ({
+				Id: '500' + String(i).padStart(15, '0'),
+				ContactId: contact.Id,
+				Subject: 'Case ' + i,
+			})),
+			totalSize: count,
+			done: true,
+		};
+		account.Contacts = { records: [contact], totalSize: 1, done: true };
+		activeMock.setNextQueryResult({ records: [account], totalSize: 1, done: true });
+		return { account, contact, cases: contact.Cases.records };
+	}
+
+	test('the reported query imports grandchildren and links each level to its immediate parent', async () => {
+		seedCases();
+		const response = await post({ soql, fullFields: false });
+		assert.equal(response.status, 200);
+		const body = await response.json();
+		assert.deepEqual(
+			body.records.map((r) => r.objectName),
+			['Account', 'Contact', 'Case'],
+		);
+		assert.deepEqual(body.associations, [
+			{ fromTempId: 't2', toTempId: 't1', fieldName: 'AccountId' },
+			{ fromTempId: 't3', toTempId: 't2', fieldName: 'ContactId' },
+		]);
+		assert.equal(body.records[2].values.Subject, 'Case 0');
+		assert.equal(body.records[1].values.Cases, undefined);
+		assert.equal(body.records[0].values.Contacts, undefined);
+		assert.equal(activeMock.captured.queries[0], soql + ' LIMIT 500');
+	});
+
+	test('full-fields mode retrieves every nested object without losing relationship edges', async () => {
+		seedCases();
+		const response = await post({ soql });
+		assert.equal(response.status, 200);
+		const body = await response.json();
+		assert.deepEqual(
+			activeMock.captured.retrieves.map((r) => r.name),
+			['Account', 'Contact', 'Case'],
+		);
+		assert.equal(body.associations.length, 2);
+		assert.ok(body.records.every((r) => r.values.Name.startsWith('Full ')));
+	});
+
+	test('sibling and nested relationships with the same name use different foreign keys', async () => {
+		const { account } = seedCases();
+		account.Cases = { records: [{ Id: '500direct', Subject: 'Direct account case' }] };
+		const response = await post({
+			soql: 'SELECT Id, (SELECT Id, (SELECT Id FROM Cases) FROM Contacts), (SELECT Id FROM Cases) FROM Account',
+			fullFields: false,
+		});
+		assert.equal(response.status, 200);
+		const body = await response.json();
+		assert.equal(body.records.length, 4);
+		assert.deepEqual(
+			body.associations.map((edge) => edge.fieldName),
+			['AccountId', 'ContactId', 'AccountId'],
+		);
+		assert.equal(body.associations[2].toTempId, body.records[0].tempId);
+	});
+
+	test('five object levels are imported and linked', async () => {
+		const { cases } = seedCases();
+		activeMock.describes.Task.childRelationships = [
+			{ relationshipName: 'Attachments', childSObject: 'Attachment', field: 'ParentId' },
+		];
+		activeMock.describes.Attachment = { name: 'Attachment', fields: [{ name: 'Id' }], childRelationships: [] };
+		cases[0].Tasks = { records: [{ Id: '00T1', Attachments: { records: [{ Id: '00P1' }] } }] };
+		const response = await post({
+			soql: 'SELECT Id, (SELECT Id, (SELECT Id, (SELECT Id, (SELECT Id FROM Attachments) FROM Tasks) FROM Cases) FROM Contacts) FROM Account',
+			fullFields: false,
+		});
+		assert.equal(response.status, 200);
+		const body = await response.json();
+		assert.deepEqual(
+			body.records.map((r) => r.objectName),
+			['Account', 'Contact', 'Case', 'Task', 'Attachment'],
+		);
+		assert.equal(body.associations.length, 4);
+		assert.equal(body.associations[3].toTempId, body.records[3].tempId);
+	});
+
+	test('the 500-record limit includes grandchildren, rejecting the entire result at 501', async () => {
+		seedCases(498);
+		const exact = await post({ soql, fullFields: false });
+		assert.equal(exact.status, 200);
+		assert.equal((await exact.json()).records.length, 500);
+		seedCases(499);
+		const over = await post({ soql });
+		assert.equal(over.status, 400);
+		const body = await over.json();
+		assert.equal(body.error, 'result-exceeds-cap');
+		assert.equal(body.records, undefined);
+		assert.equal(activeMock.captured.retrieves.length, 0);
+	});
+
+	test('nested objects are checked against the denylist and specialized-object guard before querying', async () => {
+		for (const [relationship, error] of [
+			['SetupAuditTrails', 'object-not-allowed'],
+			['SpecializedEvents', 'specialized-object-unsupported'],
+		]) {
+			const response = await post({
+				soql: 'SELECT Id, (SELECT Id, (SELECT Id FROM ' + relationship + ') FROM Contacts) FROM Account',
+			});
+			assert.equal(response.status, 400);
+			assert.equal((await response.json()).error, error);
+		}
+		assert.equal(activeMock.captured.queries.length, 0);
+	});
+
+	test('invalid nested relationships and failed describes fail before querying', async () => {
+		const invalid = await post({ soql: soql.replace('from cases', 'from Contacts') });
+		assert.equal(invalid.status, 400);
+		const body = await invalid.json();
+		assert.equal(body.error, 'unknown-subquery-relationship');
+		assert.match(body.message, /on Contact/);
+		delete activeMock.describes.Case;
+		const missing = await post({ soql });
+		assert.equal(missing.status, 400);
+		assert.equal((await missing.json()).error, 'child-describe-failed');
+		assert.equal(activeMock.captured.queries.length, 0);
+	});
+
+	test('missing grandchild Id and incomplete child result pages are not silently dropped', async () => {
+		let seeded = seedCases();
+		delete seeded.cases[0].Id;
+		const missing = await post({ soql });
+		assert.equal(missing.status, 400);
+		assert.equal((await missing.json()).error, 'subquery-must-include-id');
+		seeded = seedCases();
+		seeded.contact.Cases.done = false;
+		const incomplete = await post({ soql });
+		assert.equal(incomplete.status, 400);
+		assert.equal((await incomplete.json()).error, 'incomplete-subquery-results');
+		assert.equal(activeMock.captured.retrieves.length, 0);
+	});
+
+	test('empty or null grandchildren still import their parents', async () => {
+		const { contact } = seedCases(0);
+		for (const value of [contact.Cases, null]) {
+			contact.Cases = value;
+			const response = await post({ soql, fullFields: false });
+			assert.equal(response.status, 200);
+			assert.equal((await response.json()).records.length, 2);
+		}
+	});
+
+	test('quoted parentheses and SELECT text are not mistaken for nested queries', async () => {
+		seedCases();
+		const query =
+			"SELECT Id, (SELECT Id, (SELECT Id FROM Cases WHERE Subject = 'Bob\\'s (SELECT Id FROM Nope)') FROM Contacts LIMIT 2) FROM Account WHERE Name = 'Test (Account)' LIMIT 3";
+		const response = await post({ soql: query, fullFields: false });
+		assert.equal(response.status, 200);
+		assert.equal((await response.json()).records.length, 3);
+		assert.equal(activeMock.captured.queries[0], query);
+	});
+
+	test('nested aggregates, malformed parentheses, and excessive depth are rejected', async () => {
+		for (const [query, error] of [
+			[soql.replace('select id from cases', 'select COUNT(Id) from cases'), 'aggregate-subquery-not-supported'],
+			['SELECT Id, (SELECT Id FROM Contacts FROM Account', 'invalid-query'],
+			[
+				'SELECT Id, (SELECT Id, (SELECT Id, (SELECT Id, (SELECT Id, (SELECT Id FROM Children) FROM Children) FROM Children) FROM Cases) FROM Contacts) FROM Account',
+				'query-too-deep',
+			],
+		]) {
+			const response = await post({ soql: query });
+			assert.equal(response.status, 400);
+			// The existing outer FROM guard can reject malformed queries even earlier.
+			assert.ok([error, 'no-from-clause'].includes((await response.json()).error));
+		}
+		assert.equal(activeMock.captured.queries.length, 0);
+	});
 });
 
 describe('Finding #1: safety LIMIT append is robust to string/subquery LIMITs', () => {

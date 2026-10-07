@@ -1,6 +1,6 @@
 (function () {
 	'use strict';
-	// Exports visible record values and relationship hints without promising lossless canvas recovery.
+	// Exports current record values, excluding encrypted and inaccessible data.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -16,6 +16,7 @@
 	]);
 
 	const FIELD_PRIORITY = ['Id', 'Name', 'FirstName', 'LastName', 'Subject', 'Title', 'CaseNumber', 'Email', 'Phone'];
+	const FORMULA_PREFIX = /^[=+\-@\t\r]/;
 
 	window.OrgLoom.canvasExportCsv = {
 		mount: function mount(deps) {
@@ -48,7 +49,7 @@
 				}
 				let s = typeof v === 'string' ? v : String(v);
 				// Neutralize spreadsheet formulas before quoting the CSV cell.
-				if (/^[=+\-@\t\r]/.test(s)) {
+				if (FORMULA_PREFIX.test(s)) {
 					s = "'" + s;
 				}
 				if (/[",\r\n]/.test(s)) {
@@ -68,7 +69,9 @@
 			}
 
 			function selectScopedRecords(scope) {
-				const all = (canvasState.bulkRecords || []).filter((r) => r && !r.isTypeNode && !r.isPending);
+				const all = (canvasState.bulkRecords || []).filter(
+					(r) => r && !r.isTypeNode && !r.isPending && !r._permissionHidden && !r._inaccessible,
+				);
 				if (scope === 'selected') {
 					const sel = canvasState.bulkSelectedIds;
 					return all.filter((r) => sel && sel.has(r.id));
@@ -95,15 +98,49 @@
 
 			function buildCsv(records, fields, leadingColumns) {
 				const lead = Array.isArray(leadingColumns) ? leadingColumns : [];
+				// Record exact escaped cells so import never has to guess whether an apostrophe is real data.
+				const escapedCells = records.map((r) =>
+					fields.flatMap((field) => {
+						const value = r.values?.[field];
+						return value != null && FORMULA_PREFIX.test(String(value))
+							? [[field, "'" + String(value)]]
+							: [];
+					}),
+				);
+				const hasEscapes = escapedCells.some((cells) => cells.length);
 				const headerCells = lead.map((c) => csvEscape(c.header)).concat(fields.map((f) => csvEscape(f)));
+				if (hasEscapes) headerCells.push('__OrgLoom_EscapedCells');
 				const lines = [headerCells.join(',')];
-				records.forEach((r) => {
+				records.forEach((r, index) => {
 					const values = (r && r.values) || {};
 					const leadCells = lead.map((c) => csvEscape(c.get(r)));
 					const fieldCells = fields.map((f) => csvEscape(values[f]));
+					if (hasEscapes)
+						fieldCells.push(
+							escapedCells[index].length
+								? csvEscape(JSON.stringify({ version: 1, cells: escapedCells[index] }))
+								: '',
+						);
 					lines.push(leadCells.concat(fieldCells).join(','));
 				});
 				return '﻿' + lines.join('\r\n');
+			}
+
+			function exportRows(records) {
+				return records
+					.filter((record) => !record._inaccessible && !record._permissionHidden)
+					.map((record) => {
+						const values = window.OrgLoom.valueCompare.exportRecordValues(record, canvasState);
+						const clears = record.loadedFromId
+							? Object.keys(values).filter(
+									(field) =>
+										field !== 'Id' &&
+										!SYSTEM_FIELDS.has(field) &&
+										(values[field] == null || values[field] === ''),
+								)
+							: [];
+						return { values, clears };
+					});
 			}
 
 			function triggerDownload(filename, csvText) {
@@ -208,7 +245,7 @@
 				const scopeAllDisabled = _state.allCount === 0 ? ' disabled' : '';
 				const scopeSelectedDisabled = _state.selectedCount === 0 ? ' disabled' : '';
 				body.innerHTML =
-					'<p class="tag">Downloads the records on this canvas as CSV, one file per object type. System-managed fields (audit timestamps, IsDeleted) are excluded.</p>' +
+					'<p class="tag">Downloads current record values, one CSV per object type. Encrypted fields, inaccessible records, and system-managed fields are excluded. Empty fields are listed in __OrgLoom_ClearFields to preserve blanks on re-import.</p>' +
 					'<div class="cec-section">' +
 					'<label class="cec-section-head">Scope</label>' +
 					'<label class="cec-opt"><input type="radio" name="cec-scope" value="all"' +
@@ -315,14 +352,25 @@
 					}
 					return;
 				}
+				let projected;
+				try {
+					projected = exportRows(records);
+				} catch (error) {
+					showBulkToast(error.message, 'error');
+					if (downloadButton) {
+						downloadButton.disabled = false;
+						downloadButton.textContent = 'Download';
+					}
+					return;
+				}
 				const stem = sanitizeFilename(_state.filename || 'canvas');
 				const byObject = new Map();
-				records.forEach((r) => {
+				records.forEach((r, index) => {
 					const key = r.objectName || 'Unknown';
 					if (!byObject.has(key)) {
 						byObject.set(key, []);
 					}
-					byObject.get(key).push(r);
+					byObject.get(key).push(projected[index]);
 				});
 				const entries = Array.from(byObject.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 				const single = entries.length === 1;
@@ -345,7 +393,15 @@
 					}
 					const [objName, recs] = entries[i++];
 					const fields = orderFields(collectFieldUnion(recs));
-					const csv = buildCsv(recs, fields, []);
+					const extra = recs.some((r) => r.clears.length)
+						? [
+								{
+									header: '__OrgLoom_ClearFields',
+									get: (r) => (r.clears.length ? JSON.stringify(r.clears) : ''),
+								},
+							]
+						: [];
+					const csv = buildCsv(recs, fields, extra);
 					const name = single ? stem + '.csv' : stem + '-' + sanitizeFilename(objName) + '.csv';
 					triggerDownload(name, csv);
 					setTimeout(fireNext, 120);
@@ -388,6 +444,7 @@
 				_test: {
 					csvEscape: csvEscape,
 					buildCsv: buildCsv,
+					exportRows: exportRows,
 					orderFields: orderFields,
 					collectFieldUnion: collectFieldUnion,
 					sanitizeFilename: sanitizeFilename,

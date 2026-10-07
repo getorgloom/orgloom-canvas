@@ -356,7 +356,10 @@ test('fix state remains private to the sidebar and is never serialized into canv
 	const templates = fs.readFileSync(new URL('../src/public/js/templates.js', import.meta.url), 'utf8');
 	const template = fs.readFileSync(new URL('../src/views/index.ejs', import.meta.url), 'utf8');
 	assert.match(app, /async function startNewCanvas\(\)\s*{\s*_clearUploadFixes\(\)/);
-	assert.match(app, /onCanvasReplace: \(\) =>\s*{\s*_clearUploadFixes\(\);\s*closeRecordEditors\(\);/);
+	assert.match(
+		app,
+		/onCanvasReplace: \(\) =>\s*{\s*clearUndoHistory\(\);\s*_clearUploadFixes\(\);\s*closeRecordEditors\(\);/,
+	);
 	assert.equal(templates.match(/deps\.onCanvasReplace\?\.\(\)/g).length, 2);
 	assert.ok(template.indexOf('/js/upload-fixes-sidebar.js') < template.indexOf('/js/upload-modal.js'));
 });

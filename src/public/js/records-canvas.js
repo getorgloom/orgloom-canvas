@@ -36,8 +36,14 @@
 		return candidate && candidate.label ? String(candidate.label) : '';
 	}
 
+	function recordObjectLabel(record, escapeHtml) {
+		const objectName = String(record.objectName || 'Record');
+		const label = String(record.label || objectName);
+		return '<span class="record-type-tag" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</span>';
+	}
+
 	window.OrgLoom.recordsCanvas = {
-		_test: { reconcileExistingEdge, canRenderDerivedRecordLink, migrationMatchLabel },
+		_test: { reconcileExistingEdge, canRenderDerivedRecordLink, migrationMatchLabel, recordObjectLabel },
 		mount: function mount(deps) {
 			const required = [
 				'canvasState',
@@ -511,9 +517,7 @@
 						titleInner +
 						'</div>' +
 						'<div class="record-type">' +
-						'<span class="record-type-tag">' +
-						escapeHtml(rec.label || rec.objectName) +
-						'</span>' +
+						recordObjectLabel(rec, escapeHtml) +
 						'<span class="record-ordinal">#' +
 						recordOrdinal(rec) +
 						'</span>' +

@@ -196,7 +196,7 @@ test('starting fresh clears transient state and mints a new draft identity', () 
 	assert.match(lifecycle[1], /canvasState\.currentCanvas = null/);
 	assert.match(lifecycle[1], /_clearDraftCanvasId\(\)/);
 	assert.match(lifecycle[1], /_ensureDraftCanvasId\(\)/);
-	assert.match(lifecycle[1], /undoStack\.length = 0/);
+	assert.match(lifecycle[1], /clearUndoHistory\(\)/);
 });
 
 test('new canvas is a no-op when the user is already on a fresh blank canvas', async () => {

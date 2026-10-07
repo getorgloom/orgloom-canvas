@@ -7023,12 +7023,24 @@ button.confirm-danger:hover {
 	pointer-events: none;
 }
 /* Canvas record cards and relationship affordances */
+.record-card.has-existing {
+	--record-status-border: color-mix(in srgb, var(--info) 65%, var(--border));
+}
+.record-card.has-draft {
+	--record-status-border: color-mix(in srgb, var(--success) 65%, var(--border));
+}
+.record-card.has-modified {
+	--record-status-border: color-mix(in srgb, var(--warn) 65%, var(--border));
+}
+.record-card.has-pending-delete {
+	--record-status-border: color-mix(in srgb, var(--danger) 65%, var(--border));
+}
 .record-card {
 	position: absolute;
 	min-width: 160px;
 	max-width: 220px;
 	background: var(--bg-card);
-	border: 1px solid var(--border);
+	border: 1px solid var(--record-status-border, var(--border));
 	border-radius: 5px;
 	padding: 0.65em 0.85em;
 	box-shadow: var(--shadow-soft);
@@ -7096,13 +7108,12 @@ button.confirm-danger:hover {
 	cursor: grabbing;
 	box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
 	z-index: 30;
-	border-color: var(--accent);
+	border-color: var(--record-status-border, var(--accent));
 }
 .record-card.selected {
-	border-color: var(--accent);
-	box-shadow:
-		0 0 0 1px var(--accent),
-		0 4px 12px rgba(214, 139, 60, 0.22);
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+	box-shadow: 0 4px 12px rgba(214, 139, 60, 0.22);
 }
 .record-card.connect-source {
 	border-color: var(--warn);
@@ -7202,6 +7213,11 @@ button.confirm-danger:hover {
 	font-size: 0.65rem;
 }
 .record-card .record-type-tag {
+	min-width: 0;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	background: var(--accent-soft);
 	color: var(--accent);
 	padding: 1px 6px;
@@ -7212,6 +7228,7 @@ button.confirm-danger:hover {
 	font-family: var(--font-mono);
 }
 .record-card .record-ordinal {
+	flex-shrink: 0;
 	color: var(--ink-faint);
 	font-family: var(--font-mono);
 }
@@ -7310,9 +7327,6 @@ button.confirm-danger:hover {
 	pointer-events: auto;
 	cursor: pointer;
 }
-.record-card.has-draft {
-	border-left: 3px solid var(--success);
-}
 .record-card .record-draft-badge {
 	position: absolute;
 	top: -8px;
@@ -7327,9 +7341,6 @@ button.confirm-danger:hover {
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
 }
-.record-card.has-existing {
-	border-left: 3px solid var(--info);
-}
 .record-card .record-existing-badge {
 	position: absolute;
 	top: -8px;
@@ -7341,9 +7352,6 @@ button.confirm-danger:hover {
 	padding: 1px 6px;
 	border-radius: 10px;
 	font-family: var(--font-mono);
-}
-.record-card.has-modified {
-	border-left: 3px solid var(--warn);
 }
 .record-card .record-modified-badge {
 	position: absolute;
@@ -7360,7 +7368,6 @@ button.confirm-danger:hover {
 	letter-spacing: 0.05em;
 }
 .record-card.has-pending-delete {
-	border-left: 3px solid var(--danger, #d35858);
 	opacity: 0.82;
 }
 .record-card.has-pending-delete .record-title,
@@ -7382,9 +7389,6 @@ button.confirm-danger:hover {
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	white-space: nowrap;
-}
-.record-card.record-card-salesforce-readonly {
-	border-left-color: var(--muted);
 }
 .record-card .record-readonly-badge {
 	display: inline-flex;
@@ -9095,8 +9099,9 @@ body:has(.trial-banner:not([hidden])) .graph-overlay {
 	z-index: 20;
 }
 .record-card.multi-selected {
-	border-color: var(--accent);
-	box-shadow: 0 0 0 2px rgba(214, 139, 60, 0.35);
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+	box-shadow: 0 4px 12px rgba(214, 139, 60, 0.22);
 }
 .bulk-selection-chip {
 	position: absolute;

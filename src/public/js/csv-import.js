@@ -96,7 +96,46 @@
 			}
 			seenHeaders.add(key);
 		});
-		return { headers, rows: rows.slice(1), errors };
+		const dataRows = rows.slice(1);
+		const escapeColumn = headers.indexOf('__OrgLoom_EscapedCells');
+		if (escapeColumn !== -1 && errors.length === 0) {
+			for (const [rowIndex, dataRow] of dataRows.entries()) {
+				if (dataRow.length !== headers.length) {
+					errors.push('Invalid Org Loom export row ' + (rowIndex + 2) + ': column count mismatch.');
+					continue;
+				}
+				try {
+					const raw = dataRow[escapeColumn];
+					if (raw) {
+						const metadata = JSON.parse(raw);
+						if (!metadata || metadata.version !== 1 || !Array.isArray(metadata.cells))
+							throw new Error('Invalid metadata');
+						const seen = new Set();
+						for (const cell of metadata.cells) {
+							if (
+								!Array.isArray(cell) ||
+								cell.length !== 2 ||
+								typeof cell[0] !== 'string' ||
+								typeof cell[1] !== 'string' ||
+								!/^'[=+\-@\t\r]/.test(cell[1])
+							)
+								throw new Error('Invalid escaped cell');
+							const index = headers.indexOf(cell[0]);
+							if (index < 0 || index === escapeColumn || seen.has(index))
+								throw new Error('Invalid field');
+							seen.add(index);
+							// If a spreadsheet/user already changed it, leave the new value untouched.
+							if (dataRow[index] === cell[1]) dataRow[index] = dataRow[index].slice(1);
+						}
+					}
+				} catch (_) {
+					errors.push('Invalid Org Loom escape metadata on row ' + (rowIndex + 2) + '.');
+				}
+				dataRow.splice(escapeColumn, 1);
+			}
+			headers.splice(escapeColumn, 1);
+		}
+		return { headers, rows: dataRows, errors };
 	}
 
 	function csvNormalizeKey(s) {
@@ -202,6 +241,10 @@
 		});
 		const mapping = {};
 		headers.forEach((h, i) => {
+			if (h === '__OrgLoom_ClearFields') {
+				mapping[i] = null;
+				return;
+			}
 			const k = csvNormalizeKey(h);
 			mapping[i] = byName[k] || byLabel[k] || null;
 		});

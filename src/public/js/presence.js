@@ -176,6 +176,8 @@
 				}
 			}
 			const _mutationInFlight = new Map();
+			const _mutationQueue = [];
+			let _activeMutation = null;
 			const _mutationRetry = new Map();
 			const _failedMutationKeys = new Set();
 			let _mutationFailureCount = 0;
@@ -201,7 +203,7 @@
 				if (_mutationFailureCount >= 3 && !_syncWarningShown) {
 					_syncWarningShown = true;
 					showBulkToast(
-						'Live sharing is temporarily disconnected. Your changes remain on this canvas, but collaborators may not see them yet. Org Loom will keep retrying.',
+						'Some changes have not synced yet. Your changes remain on this canvas, but collaborators may not see them yet. Org Loom will keep retrying.',
 						'error',
 					);
 				}
@@ -216,13 +218,15 @@
 				_mutationFailureCount = 0;
 				if (_syncWarningShown) {
 					_syncWarningShown = false;
-					showBulkToast('Live sharing reconnected. Your pending changes are now synchronized.', 'info');
+					showBulkToast('Previously delayed changes have synced.', 'info');
 				}
 			}
 
 			function _resetMutationTracking() {
 				_mutationGeneration += 1;
 				_mutationInFlight.clear();
+				_mutationQueue.length = 0;
+				_activeMutation = null;
 				_mutationRetry.clear();
 				_failedMutationKeys.clear();
 				_mutationFailureCount = 0;
@@ -235,13 +239,36 @@
 				}
 				const token = { generation: _mutationGeneration };
 				_mutationInFlight.set(key, token);
+				_mutationQueue.push({ key, token, requestFactory, onAccepted });
+				_drainMutationQueue();
+				return true;
+			}
+
+			function _drainMutationQueue() {
+				if (_activeMutation || _mutationQueue.length === 0) {
+					return;
+				}
+				// Assign sequence numbers when sending, not when queued. Only one
+				// structural request may be in flight so independent HTTP requests
+				// cannot overtake each other at the server.
+				const { key, token, requestFactory, onAccepted } = _mutationQueue.shift();
+				_activeMutation = token;
+				function finished() {
+					if (_mutationInFlight.get(key) === token) {
+						_mutationInFlight.delete(key);
+					}
+					if (_activeMutation === token) {
+						_activeMutation = null;
+						_drainMutationQueue();
+					}
+				}
 				let request;
 				try {
 					request = requestFactory();
 				} catch (_error) {
-					_mutationInFlight.delete(key);
 					_mutationFailure(key);
-					return false;
+					finished();
+					return;
 				}
 				Promise.resolve(request)
 					.then(async (response) => {
@@ -265,12 +292,7 @@
 							_mutationFailure(key);
 						}
 					})
-					.finally(() => {
-						if (_mutationInFlight.get(key) === token) {
-							_mutationInFlight.delete(key);
-						}
-					});
-				return true;
+					.finally(finished);
 			}
 			const _peers = new Map();
 			const _shareCounts = new Map();
@@ -2254,6 +2276,7 @@
 				_localAccessRevoked = revoked;
 				if (revoked || data.change === 'decreased') {
 					_localCanEdit = false;
+					_resetMutationTracking();
 				}
 				onAccessChanged({
 					role: data.role || null,
@@ -2834,6 +2857,7 @@
 			}
 
 			async function commitRecordFields(record, fields, options) {
+				options?.beforeCommit?.();
 				const names = Object.keys(fields || {});
 				if (names.length === 0 || !_currentCanvasId) {
 					return { ok: true, localOnly: true };
@@ -2888,6 +2912,7 @@
 						notifyOwner: false,
 					};
 				}
+				options?.beforeCommit?.();
 				const response = await csrfFetch(endpoint, {
 					method: 'POST',
 					credentials: 'same-origin',

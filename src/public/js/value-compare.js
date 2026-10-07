@@ -79,6 +79,28 @@
 		return valuesDiffer(rec.values || {}, rec.loadedValues || {});
 	}
 
+	// File exports are snapshots of current values, without protected/runtime fields.
+	function exportRecordValues(record, state) {
+		const encrypted = window.OrgLoom.encryptedFields;
+		if (!encrypted) throw new Error('Encrypted-field protection is unavailable. Refresh before exporting.');
+		if (record._inaccessible || record._permissionHidden) return {};
+		const values = encrypted.stripValues(state, record.objectName, record.values || {});
+		const out = {};
+		for (const [field, value] of Object.entries(values)) {
+			if (field === 'attributes' || field.startsWith('_')) continue;
+			out[field] = value === undefined ? null : value;
+		}
+		if (record.loadedFromId && record.loadedValues) {
+			const baseline = encrypted.stripValues(state, record.objectName, record.loadedValues);
+			for (const field of Object.keys(baseline)) {
+				if (field === 'attributes' || field.startsWith('_')) continue;
+				if (!Object.hasOwn(values, field)) out[field] = null;
+			}
+		}
+		if (record.loadedFromId) out.Id = record.loadedFromId;
+		return out;
+	}
+
 	function relationshipChangesRecord(rec, associations, records) {
 		if (!rec || !rec.loadedFromId || rec._inaccessible) {
 			return false;
@@ -191,6 +213,7 @@
 		valuesEquivalent: valuesEquivalent,
 		valuesDiffer: valuesDiffer,
 		changedFieldNames: changedFieldNames,
+		exportRecordValues: exportRecordValues,
 		isRecordModified: isRecordModified,
 		relationshipChangesRecord: relationshipChangesRecord,
 		isRecordPendingDelete: isRecordPendingDelete,

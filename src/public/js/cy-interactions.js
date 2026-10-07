@@ -68,13 +68,15 @@
 				cy.edges('[kind = "fk"], [kind = "host"], [kind = "ring"]').forEach((edge) => {
 					const r1 = edge.renderedSourceEndpoint();
 					const r2 = edge.renderedTargetEndpoint();
-					if (!r1 || !r2) {
+					// During graph updates, endpoints may exist before their rendered
+					// coordinates are ready. The next render will redraw these markers.
+					if (!r1 || !r2 || ![r1.x, r1.y, r2.x, r2.y].every(Number.isFinite)) {
 						return;
 					}
 					const dx = r2.x - r1.x,
 						dy = r2.y - r1.y;
 					const len = Math.hypot(dx, dy);
-					if (len < 1) {
+					if (!Number.isFinite(len) || len < 1) {
 						return;
 					}
 					const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;

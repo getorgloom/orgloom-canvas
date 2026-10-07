@@ -4,6 +4,86 @@
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	// Keep only edited fields in memory. File-export projections are not undo snapshots.
+	function registerFieldEditUndo(deps, record, previousValues, fields, previousAssociations) {
+		if (!deps.pushUndo || !fields.length) return;
+		const state = deps.canvasState;
+		const copy = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+		const before = {};
+		const after = {};
+		for (const field of fields) {
+			if (Object.hasOwn(previousValues, field)) before[field] = copy(previousValues[field]);
+			after[field] = copy(record.values[field]);
+		}
+		const relevant = (a) => a.fromId === record.id && fields.includes(a.fieldName);
+		const oldLinks = copy(previousAssociations.filter(relevant));
+		const savedLinks = JSON.stringify(state.bulkAssociations.filter(relevant));
+		const baseline = record.loadedValues;
+		const baselineData = JSON.stringify(fields.map((field) => baseline?.[field]));
+		const loadedId = record.loadedFromId;
+		const canvasId = state.currentCanvas?.id;
+		deps.pushUndo('Undo record edit', async (isCurrent = () => true) => {
+			const assertCurrent = (committed = false) => {
+				if (
+					!isCurrent() ||
+					state.currentCanvas?.id !== canvasId ||
+					!state.bulkRecords.includes(record) ||
+					record._inaccessible ||
+					record._permissionHidden ||
+					record.pendingDelete ||
+					record.loadedFromId !== loadedId ||
+					record.loadedValues !== baseline ||
+					JSON.stringify(fields.map((field) => record.loadedValues?.[field])) !== baselineData ||
+					!deps.canUndoFields(record, fields) ||
+					fields.some(
+						(field) =>
+							!window.OrgLoom.valueCompare.valuesEquivalent(record.values[field], after[field]) &&
+							!(
+								committed &&
+								window.OrgLoom.valueCompare.valuesEquivalent(record.values[field], restored[field])
+							),
+					) ||
+					JSON.stringify(state.bulkAssociations.filter(relevant)) !== savedLinks ||
+					oldLinks.some((a) => !state.bulkRecords.some((r) => r.id === a.toId))
+				) {
+					const error = new Error(
+						'This edit can no longer be undone because the record, its access, or its saved values changed.',
+					);
+					error.undoDiscard = true;
+					throw error;
+				}
+			};
+			assertCurrent();
+			const restored = Object.fromEntries(
+				fields.map((field) => [field, before[field] === undefined ? null : copy(before[field])]),
+			);
+			// Linked fields can omit their literal ID locally; peers still need the actual target ID.
+			for (const link of oldLinks) {
+				const target = state.bulkRecords.find((r) => r.id === link.toId);
+				if (target?.loadedFromId) restored[link.fieldName] = target.loadedFromId;
+			}
+			try {
+				await deps.commitRecordFields(record, restored, {
+					relationshipFields: fields.filter((field) => oldLinks.some((a) => a.fieldName === field)),
+					beforeCommit: assertCurrent,
+				});
+				assertCurrent(true);
+				for (const field of fields) {
+					if (Object.hasOwn(before, field)) record.values[field] = copy(before[field]);
+					else delete record.values[field];
+				}
+				state.bulkAssociations = state.bulkAssociations.filter((a) => !relevant(a)).concat(copy(oldLinks));
+				record._valuesRevision = (Number(record._valuesRevision) || 0) + 1;
+				deps.onFieldsUndone?.(record, restored);
+				deps.renderChips();
+				deps.renderBulkView();
+				deps.showBulkToast('Undid record changes.');
+			} finally {
+				deps.releaseRecordFieldLocks(record);
+			}
+		});
+	}
+
 	function dateTimeForInput(value) {
 		const api = window.OrgLoom && window.OrgLoom.datetime;
 		if (api && typeof api.toDateTimeLocal === 'function') {
@@ -1072,6 +1152,7 @@
 	window.OrgLoom.insertModal = {
 		mountMultiple,
 		_test: {
+			registerFieldEditUndo,
 			mountMultiple,
 			scopeEditorIds,
 			linkedRecordControlHtml,
@@ -5661,6 +5742,7 @@
 						return;
 					}
 					let payload = collectFormValues();
+					const previousAssociations = canvasState.bulkAssociations.slice();
 					const relationshipChanges = reconcileContributorRelationships(payload);
 					const record = canvasState.currentRecordRef;
 					let encryptedChangedCount = 0;
@@ -5788,6 +5870,43 @@
 								);
 								canvasState.currentRecordRef._valuesRevision =
 									(Number(canvasState.currentRecordRef._valuesRevision) || 0) + 1;
+								registerFieldEditUndo(
+									{
+										...deps,
+										commitRecordFields,
+										releaseRecordFieldLocks,
+										canUndoFields: (targetRecord, names) => {
+											const role = getCanvasShareRole();
+											if (
+												salesforceRecordIsReadOnly(targetRecord) ||
+												!sharedRecordEditAccess(
+													role,
+													targetRecord,
+													_slotAssignmentState(targetRecord),
+												)
+											)
+												return false;
+											const requested = contributorRequestedFieldNames(role, targetRecord);
+											const describe =
+												canvasState.describeCache[targetRecord.objectName] ||
+												canvasState.draftDescribeCache?.[targetRecord.objectName];
+											return names.every((name) => {
+												const field = describe?.fields?.find((f) => f.name === name);
+												return (
+													field &&
+													!field.calculated &&
+													field.type !== 'encryptedstring' &&
+													(targetRecord.loadedFromId ? field.updateable : field.createable) &&
+													(!requested || requested.has(name))
+												);
+											});
+										},
+									},
+									canvasState.currentRecordRef,
+									previousValues,
+									changed,
+									previousAssociations,
+								);
 							}
 							const savedCount = changed.length + encryptedChangedCount;
 							msg =

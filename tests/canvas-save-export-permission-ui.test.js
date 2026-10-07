@@ -41,7 +41,7 @@ test('file and CSV exports remain visible but locked without their respective pe
 
 test('file export rechecks permission immediately before creating the download', () => {
 	const exportStart = saveLoadSource.indexOf('async function promptFileExport()');
-	const exportEnd = saveLoadSource.indexOf('function _showExportOptionsDialog', exportStart);
+	const exportEnd = saveLoadSource.indexOf('async function verifyFileExportPermission', exportStart);
 	const exportSource = saveLoadSource.slice(exportStart, exportEnd);
 
 	assert.ok(exportStart >= 0);
@@ -51,9 +51,7 @@ test('file export rechecks permission immediately before creating the download',
 	assert.match(saveLoadSource, /\/api\/capabilities\/export-canvas\/check/);
 	assert.match(saveLoadSource, /response\.status === 403/);
 	assert.match(saveLoadSource, /refreshCapabilities\(\)/);
-	assert.match(saveLoadSource, /class="app-export-options-error" role="alert" hidden/);
-	assert.match(saveLoadSource, /confirmAccess\(\{ showError: false \}\)/);
-	assert.match(saveLoadSource, /errorBox\.textContent = access\.message/);
+	assert.doesNotMatch(saveLoadSource, /eo-preserve-loaded|_showExportOptionsDialog/);
 	assert.match(saveLoadSource, /<h3>Unable to export canvas<\/h3>/);
 	assert.match(saveLoadSource, /No file was downloaded\.<\/p>/);
 	assert.match(saveLoadMountSource, /refreshCapabilities:[\s\S]*return _loadCaps\(\)\.then/);

@@ -35,6 +35,7 @@ import {
 } from './slot-helpers.js';
 import { recordsToShareFromManifest } from './sf-record-share.js';
 import { recipientRequiresPlan } from './shared-canvas-entitlement.js';
+import { parseSoqlImportQuery, flattenSoqlImportResults, SoqlImportError } from './soql-import-results.js';
 
 let workspacesDb = null;
 let usageDb = null;
@@ -6169,49 +6170,60 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (parentDescribe && parentDescribe.name) {
 				objectName = parentDescribe.name;
 			}
-			const childRelByName = new Map();
-			(parentDescribe.childRelationships || []).forEach((cr) => {
-				if (cr && cr.relationshipName) {
-					childRelByName.set(cr.relationshipName.toLowerCase(), cr);
-				}
-			});
-
-			const subqueryFromMatches = soqlRaw.match(/\(\s*SELECT\b[\s\S]+?\bFROM\s+(\w+)\s*[\s\S]*?\)/gi) || [];
-			for (const subq of subqueryFromMatches) {
-				if (/\b(COUNT|SUM|AVG|MIN|MAX|COUNT_DISTINCT)\s*\(/i.test(subq)) {
-					return res.status(400).json({ error: 'aggregate-subquery-not-supported' });
-				}
-				const innerFromMatch = subq.match(/\bFROM\s+(\w+)/i);
-				if (!innerFromMatch) {
-					continue;
-				}
-				const relName = innerFromMatch[1];
-				const childRel = childRelByName.get(relName.toLowerCase());
-				if (!childRel) {
-					return res.status(400).json({
-						error: 'unknown-subquery-relationship',
-						message:
+			const queryPlan = parseSoqlImportQuery(soqlRaw);
+			async function resolveQueryPlan(node, describe) {
+				node.objectName = describe.name;
+				node.fieldNames = new Set((describe.fields || []).map((field) => field.name));
+				for (const child of node.children) {
+					const childSkeleton = _maskSoqlSkeleton(child.soql);
+					const childFrom = childSkeleton.match(/\bFROM\s+(\w+)/i);
+					if (!childFrom) {
+						throw new SoqlImportError('no-from-clause');
+					}
+					if (/\b(COUNT|SUM|AVG|MIN|MAX|COUNT_DISTINCT)\b/i.test(childSkeleton.slice(0, childFrom.index))) {
+						throw new SoqlImportError('aggregate-subquery-not-supported');
+					}
+					const relName = childFrom[1];
+					const relationship = (describe.childRelationships || []).find(
+						(rel) => rel.relationshipName && rel.relationshipName.toLowerCase() === relName.toLowerCase(),
+					);
+					if (!relationship || !relationship.childSObject) {
+						throw new SoqlImportError(
+							'unknown-subquery-relationship',
 							'Subquery relationship "' +
-							relName +
-							'" is not a child relationship on ' +
-							objectName +
-							'. Use the relationship name (e.g., "Contacts" for Account → Contact).',
-					});
-				}
-				if (childRel.childSObject && SOQL_OBJECT_DENYLIST.has(childRel.childSObject.toLowerCase())) {
-					return res.status(400).json({
-						error: 'object-not-allowed',
-						message:
+								relName +
+								'" is not a child relationship on ' +
+								describe.name +
+								'. Use the child relationship name.',
+						);
+					}
+					const childObject = relationship.childSObject;
+					if (SOQL_OBJECT_DENYLIST.has(childObject.toLowerCase())) {
+						throw new SoqlImportError(
+							'object-not-allowed',
 							'Subquery on ' +
-							childRel.childSObject +
-							' is not allowed here - SOQL import is for business records, not code, metadata, or security/setup objects.',
-					});
-				}
-				if (childRel.childSObject && isSpecializedSObject(childRel.childSObject)) {
-					return res.status(400).json(specializedObjectError([childRel.childSObject], 'import'));
+								childObject +
+								' is not allowed here - SOQL import is for business records, not code, metadata, or security/setup objects.',
+						);
+					}
+					if (isSpecializedSObject(childObject)) {
+						const error = specializedObjectError([childObject], 'import');
+						throw new SoqlImportError(error.error, error.message);
+					}
+					let childDescribe;
+					try {
+						childDescribe = await getDescribe(childObject);
+					} catch (err) {
+						throw new SoqlImportError(
+							'child-describe-failed',
+							'Could not describe ' + childObject + ': ' + err.message,
+						);
+					}
+					child.relationship = relationship;
+					await resolveQueryPlan(child, childDescribe);
 				}
 			}
-			const parentFieldNames = new Set((parentDescribe.fields || []).map((f) => f.name));
+			await resolveQueryPlan(queryPlan, parentDescribe);
 
 			let result;
 			try {
@@ -6230,95 +6242,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				}
 			}
 
-			const records = [];
-			const associations = [];
-			let nextTempId = 1;
-			const tempIdFor = () => 't' + nextTempId++;
-
-			for (const row of result.records) {
-				const parentTempId = tempIdFor();
-				const parentValues = {};
-				const subqueryKeys = [];
-				Object.keys(row).forEach((k) => {
-					if (k === 'attributes') {
-						return;
-					}
-					if (parentFieldNames.has(k)) {
-						if (row[k] !== null) {
-							parentValues[k] = row[k];
-						}
-					} else if (row[k] && typeof row[k] === 'object' && Array.isArray(row[k].records)) {
-						subqueryKeys.push(k);
-					}
-				});
-				records.push({ tempId: parentTempId, objectName, loadedFromId: row.Id, values: parentValues });
-
-				for (const key of subqueryKeys) {
-					const childRel = childRelByName.get(key.toLowerCase());
-					if (!childRel) {
-						continue;
-					}
-					const childObjectName = childRel.childSObject;
-					if (!childObjectName) {
-						continue;
-					}
-					let childDescribe;
-					try {
-						childDescribe = await getDescribe(childObjectName);
-					} catch (err) {
-						return res.status(400).json({
-							error: 'child-describe-failed',
-							message: 'Could not describe ' + childObjectName + ': ' + (err && err.message),
-						});
-					}
-					const childFieldNames = new Set((childDescribe.fields || []).map((f) => f.name));
-
-					const subResult = row[key];
-					if (!Array.isArray(subResult.records)) {
-						return res.status(400).json({ error: 'aggregate-subquery-not-supported' });
-					}
-					for (const childRow of subResult.records) {
-						if (!childRow || !childRow.Id) {
-							return res.status(400).json({ error: 'subquery-must-include-id' });
-						}
-						const childTempId = tempIdFor();
-						const childValues = {};
-						Object.keys(childRow).forEach((ck) => {
-							if (ck === 'attributes') {
-								return;
-							}
-							if (childFieldNames.has(ck) && childRow[ck] !== null) {
-								childValues[ck] = childRow[ck];
-							}
-						});
-						records.push({
-							tempId: childTempId,
-							objectName: childObjectName,
-							loadedFromId: childRow.Id,
-							values: childValues,
-						});
-						if (childRel.field) {
-							associations.push({
-								fromTempId: childTempId,
-								toTempId: parentTempId,
-								fieldName: childRel.field,
-							});
-						}
-					}
-				}
-
-				if (records.length > SOQL_ROW_CAP) {
-					return res.status(400).json({
-						error: 'result-exceeds-cap',
-						message:
-							'Result would add ' +
-							records.length +
-							' records (canvas cap is ' +
-							SOQL_ROW_CAP +
-							'). Add a LIMIT or narrow your subqueries.',
-					});
-				}
-			}
+			const { records, associations } = flattenSoqlImportResults(result.records, queryPlan, SOQL_ROW_CAP);
 
 			if (fullFields && records.length > 0) {
 				const idsByObject = new Map();
@@ -6399,6 +6323,9 @@ export function mountCanvasRoutes(app, options = {}) {
 				fullFields,
 			});
 		} catch (err) {
+			if (err instanceof SoqlImportError) {
+				return res.status(400).json(err.body);
+			}
 			console.error('[api/query] failed:', err);
 			try {
 				await ext.auditWrite({
@@ -9256,5 +9183,12 @@ export function mountCanvasRoutes(app, options = {}) {
 		} catch (err) {
 			next(err);
 		}
+	});
+	app.all('/api/canvas/:id/presence/draft', (_req, res) => {
+		res.set('Allow', 'POST');
+		res.status(405).json({
+			error: 'method-not-allowed',
+			message: 'Draft live updates require POST. This endpoint cannot be opened as a page.',
+		});
 	});
 }

@@ -4,6 +4,27 @@
 
 	window.OrgLoom = window.OrgLoom || {};
 
+	function csvDataColumns(file) {
+		// Keep original indexes: the hidden metadata still drives explicit clears during import.
+		return (file.headers || [])
+			.map((name, index) => ({ name, index }))
+			.filter((column) => column.name !== '__OrgLoom_ClearFields');
+	}
+
+	function exportedClearFields(file, row) {
+		const index = (file.headers || []).indexOf('__OrgLoom_ClearFields');
+		if (index < 0 || !row[index]) return new Set();
+		try {
+			const fields = JSON.parse(row[index]);
+			return new Set(
+				Array.isArray(fields) ? fields.filter((field) => typeof field === 'string' && field !== 'Id') : [],
+			);
+		} catch (_) {
+			return new Set();
+		}
+	}
+	window.OrgLoom.exportedClearFields = exportedClearFields;
+
 	function unmappedCsvColumns(file, row, relationshipColumns) {
 		const encryptedNames = new Set(
 			(file.describe?.fields || [])
@@ -12,6 +33,7 @@
 		);
 		return (file.headers || []).flatMap((name, index) => {
 			if (
+				name === '__OrgLoom_ClearFields' ||
 				file.mapping?.[index] ||
 				relationshipColumns.has(index) ||
 				row[index] == null ||
@@ -341,6 +363,7 @@
 		if (!file || !Array.isArray(file.headers)) {
 			return false;
 		}
+		if (file.headers[columnIdx] === '__OrgLoom_ClearFields') return false;
 		if ((file.mapping || {})[columnIdx]) {
 			return true;
 		}
@@ -355,6 +378,7 @@
 
 	window.OrgLoom.linkedCsv = {
 		_test: {
+			csvDataColumns,
 			csvFieldDisposition,
 			csvRowOperation,
 			csvFieldAccessSuffix,
@@ -1165,6 +1189,7 @@
 					return;
 				}
 				const file = state.files[fileIdx];
+				if (file.headers[columnIdx] === '__OrgLoom_ClearFields') return;
 				if (!file.mapping) {
 					file.mapping = {};
 				}
@@ -1329,14 +1354,17 @@
 													'</option>',
 											)
 											.join('');
-									const mappedCount = Object.values(file.mapping || {}).filter(Boolean).length;
+									const dataColumns = csvDataColumns(file);
+									const mappedCount = dataColumns.filter(({ index }) => file.mapping?.[index]).length;
 									const relationshipColumnIdxs = new Set(
 										(state.links || [])
 											.filter((link) => link.fromFileIdx === i && link.fromColumnIdx != null)
 											.map((link) => link.fromColumnIdx),
 									);
 									const relationshipCount = relationshipColumnIdxs.size;
-									const unmappedCount = file.headers.length - mappedCount - relationshipCount;
+									const unmappedCount = dataColumns.filter(
+										({ index }) => !file.mapping?.[index] && !relationshipColumnIdxs.has(index),
+									).length;
 									const meta = file.objectName
 										? '<span class="tag' +
 											(unmappedCount > 0 ? ' warn' : '') +
@@ -1416,8 +1444,8 @@
 											}
 											return String(a.label || a.name).localeCompare(String(b.label || b.name));
 										});
-										const rows = file.headers
-											.map((h, ci) => {
+										const rows = dataColumns
+											.map(({ name: h, index: ci }) => {
 												const usedByRelationship = relationshipColumnIdxs.has(ci);
 												const current = file.mapping[ci] || '';
 												const opts =
@@ -1610,7 +1638,7 @@
 					});
 				const linksHtml =
 					links.length === 0
-						? '<p class="tag">No relationship columns selected. In a file\'s column mapper, choose “Match to a related record in another CSV - not uploaded” for a column that identifies a related record.</p>'
+						? ''
 						: orderedLinks
 								.map(({ link, index: i }, position) => {
 									const fromFile = link.fromFileIdx == null ? null : state.files[link.fromFileIdx];
@@ -1979,9 +2007,9 @@
 							'</div>' +
 							'</div>'
 						: '') +
-					(state.files.length > 0
-						? '<div class="lcsv-step"><strong>Relationships</strong>' +
-							'<p class="tag">Use this section when a value in one CSV row identifies a related record. These matching values build canvas relationships and are not uploaded as Salesforce field values.</p>' +
+					(links.length > 0
+						? '<div class="lcsv-step"><strong>Cross-file matching</strong>' +
+							'<p class="tag">Match the selected columns to records in another CSV. These matching values create canvas links and are not uploaded as field values.</p>' +
 							'<div class="lcsv-links">' +
 							linksHtml +
 							'</div>' +
@@ -2573,11 +2601,13 @@
 					const idColIdx = idColIdxStr != null ? Number(idColIdxStr) : null;
 					file.rows.forEach((row, rowIdx) => {
 						const values = {};
+						const clearFields = exportedClearFields(file, row);
 						const unmapped = unmappedCsvColumns(file, row, relationshipColumns);
 						const omittedFields = fieldPlan.omittedByRow.get(cellKey(fromFileIdx, rowIdx));
 						mappedIdxs.forEach((iStr) => {
 							const i = Number(iStr);
 							const field = file.mapping[i];
+							if (file.headers[i] === '__OrgLoom_ClearFields') return;
 							if (omittedFields && omittedFields.has(field)) {
 								return;
 							}
@@ -2591,7 +2621,9 @@
 								return;
 							}
 							const v = row[i];
-							if (v !== undefined && v !== '') {
+							if (clearFields.has(file.headers[i]) && (v == null || v === '')) {
+								values[field] = null;
+							} else if (v !== undefined && v !== '') {
 								values[field] = v;
 							}
 						});
@@ -2737,7 +2769,9 @@
 					_unchangedNote +
 					_fkNote +
 					'.' +
-					(validFiles.some((file) => file.headers.some((_name, index) => !file.mapping[index]))
+					(validFiles.some((file) =>
+						file.headers.some((name, index) => name !== '__OrgLoom_ClearFields' && !file.mapping[index]),
+					)
 						? ' Unmapped columns are kept separately with the records and in JSON exports, not uploaded as Salesforce fields. Recognized encrypted-field values are not retained.'
 						: '');
 				if (_undoImport && showBulkToastWithAction) {

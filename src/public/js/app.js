@@ -163,18 +163,7 @@ function csrfFetch(url, options) {
 	const _rawToastWithAction = _uif.showBulkToastWithAction;
 	const showBulkToastWithAction = (message, actionLabel, action, variant) => {
 		if (typeof action === 'function' && /undo/i.test(String(actionLabel || ''))) {
-			let spent = false;
-			const once = () => {
-				if (spent) {
-					return false;
-				}
-				spent = true;
-				action();
-				return true;
-			};
-			if (typeof pushUndo === 'function') {
-				pushUndo(actionLabel, once);
-			}
+			const once = pushUndo(actionLabel, action);
 			return _rawToastWithAction(message, actionLabel, once, variant);
 		}
 		return _rawToastWithAction(message, actionLabel, action, variant);
@@ -4643,11 +4632,37 @@ function csrfFetch(url, options) {
 	const openPasteCountPrompt = _marquee.openPasteCountPrompt;
 
 	const undoStack = [];
+	let undoGeneration = 0;
+	let undoInProgress = false;
+	function clearUndoHistory() {
+		undoStack.length = 0;
+		undoGeneration++;
+	}
 	function pushUndo(label, fn) {
-		undoStack.push({ label, fn });
+		const generation = undoGeneration;
+		let spent = false;
+		const once = () => {
+			if (spent || generation !== undoGeneration) return false;
+			spent = true;
+			try {
+				const result = fn(() => generation === undoGeneration);
+				if (result && typeof result.then === 'function') {
+					return result.catch((error) => {
+						spent = false;
+						throw error;
+					});
+				}
+				return result;
+			} catch (error) {
+				spent = false;
+				throw error;
+			}
+		};
+		undoStack.push({ label, fn: once });
 		if (undoStack.length > 20) {
 			undoStack.shift();
 		}
+		return once;
 	}
 	function trimUndoStack(n) {
 		for (let i = 0; i < n && undoStack.length > 0; i++) {
@@ -4672,11 +4687,34 @@ function csrfFetch(url, options) {
 		}
 		if (rec) {
 			pushUndo('Restore deleted record', () => {
+				if (
+					canvasState.bulkRecords.some(
+						(r) =>
+							r.id === rec.id ||
+							(rec.loadedFromId &&
+								r.objectName === rec.objectName &&
+								r.loadedFromId &&
+								String(r.loadedFromId).slice(0, 15) === String(rec.loadedFromId).slice(0, 15)),
+					)
+				) {
+					showBulkToast('This record is already on the canvas.', 'info');
+					return;
+				}
 				canvasState.bulkRecords.push(rec);
 				killedAssocs.forEach((a) => {
+					const holder = canvasState.bulkRecords.find((r) => r.id === a.fromId);
+					const target = canvasState.bulkRecords.find((r) => r.id === a.toId);
+					const value = holder?.values?.[a.fieldName];
 					if (
-						canvasState.bulkRecords.some((r) => r.id === a.fromId) &&
-						canvasState.bulkRecords.some((r) => r.id === a.toId)
+						holder &&
+						target &&
+						(!target.loadedFromId ||
+							value == null ||
+							value === '' ||
+							String(value).slice(0, 15) === String(target.loadedFromId).slice(0, 15)) &&
+						!canvasState.bulkAssociations.some(
+							(link) => link.fromId === a.fromId && link.fieldName === a.fieldName,
+						)
 					) {
 						canvasState.bulkAssociations.push(a);
 					}
@@ -5013,7 +5051,7 @@ function csrfFetch(url, options) {
 		}
 	}
 
-	document.addEventListener('keydown', (e) => {
+	document.addEventListener('keydown', async (e) => {
 		if (!(e.key === 'z' || e.key === 'Z')) {
 			return;
 		}
@@ -5034,18 +5072,26 @@ function csrfFetch(url, options) {
 			return;
 		}
 		e.preventDefault();
-		while (undoStack.length > 0) {
-			const op = undoStack.pop();
-			let ran = true;
-			try {
-				ran = op.fn() !== false;
-			} catch (err) {
-				showBulkToast('Undo failed: ' + (err.message || err), 'error');
-				ran = true;
+		if (undoInProgress) return;
+		undoInProgress = true;
+		const generation = undoGeneration;
+		try {
+			while (undoStack.length > 0 && generation === undoGeneration) {
+				const op = undoStack.pop();
+				let ran = true;
+				try {
+					ran = (await op.fn()) !== false;
+				} catch (err) {
+					if (generation === undoGeneration && !err.undoDiscard) undoStack.push(op);
+					showBulkToast('Undo failed: ' + (err.message || err), 'error');
+					ran = true;
+				}
+				if (ran) {
+					break;
+				}
 			}
-			if (ran) {
-				break;
-			}
+		} finally {
+			undoInProgress = false;
 		}
 	});
 
@@ -6796,7 +6842,7 @@ function csrfFetch(url, options) {
 		canvasState._autoSpawnedPending = false;
 		_selectedDerivedEdge = null;
 		_cyPendingEdge = null;
-		undoStack.length = 0;
+		clearUndoHistory();
 		_setStaleRefsFromLoad([]);
 		exitMigrateMode();
 
@@ -7154,6 +7200,7 @@ function csrfFetch(url, options) {
 
 	const _lcsv = window.OrgLoom.linkedCsv.mount({
 		onCanvasReplace: () => {
+			clearUndoHistory();
 			_clearUploadFixes();
 			closeRecordEditors();
 		},
@@ -7233,6 +7280,7 @@ function csrfFetch(url, options) {
 
 	const _tpl = window.OrgLoom.templates.mount({
 		onCanvasReplace: () => {
+			clearUndoHistory();
 			_clearUploadFixes();
 			closeRecordEditors();
 		},
@@ -7532,6 +7580,8 @@ function csrfFetch(url, options) {
 	const openBulkEditModal = _bem.openModal;
 
 	_ins = window.OrgLoom.insertModal.mountMultiple({
+		pushUndo: pushUndo,
+		onFieldsUndone: (record, fields) => _ins.refreshCurrentRecordValues(record, fields),
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
 		escapeHtml: escapeHtml,

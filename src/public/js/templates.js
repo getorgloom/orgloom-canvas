@@ -63,7 +63,7 @@
 
 			const _CANVAS_RECORD_CAP_get = () => _getCanvasRecordCap();
 
-			const TEMPLATE_VERSION = 1;
+			const TEMPLATE_VERSION = 2;
 			const TEMPLATE_RECORD_CAP = 500;
 			try {
 				localStorage.removeItem('sf-loader-templates-v1');
@@ -371,7 +371,6 @@
 			function buildTemplate(opts) {
 				opts = opts || {};
 				const schemaOnly = !!opts.schemaOnly;
-				const preserveLoadedLinks = !!opts.preserveLoadedLinks;
 				const objects = serializeObjects(false);
 				let records;
 				let associations;
@@ -380,7 +379,16 @@
 					records = [];
 					associations = [];
 				} else {
-					const base = canvasState.bulkRecords.filter((r) => !r.isTypeNode);
+					const base = canvasState.bulkRecords.filter(
+						(r) => !r.isTypeNode && !r.isPending && !r._permissionHidden && !r._inaccessible,
+					);
+					const excludedIds = new Set(
+						canvasState.bulkRecords.filter((r) => !base.includes(r)).map((r) => r.id),
+					);
+					const links = canvasState.bulkAssociations.filter(
+						(a) => !excludedIds.has(a.fromId) && !excludedIds.has(a.toId),
+					);
+					validateRecordGraph(base, links);
 					includesLoadedData = base.some((r) => !!r.loadedFromId);
 					records = base.map((r) => {
 						const rec = Object.assign(
@@ -390,24 +398,31 @@
 								label: r.label,
 								x: r.x,
 								y: r.y,
-								values: encryptedFields.stripValues(canvasState, r.objectName, r.values),
 							},
 							recordCommonParts(r),
 						);
+						const values = window.OrgLoom.valueCompare.exportRecordValues(r, canvasState);
+						rec.values = values;
+						if (r.loadedFromId) {
+							rec.loadedFromId = r.loadedFromId;
+							if (r.loadedValues) {
+								const baseline = window.OrgLoom.valueCompare.exportRecordValues(
+									{ ...r, values: r.loadedValues },
+									canvasState,
+								);
+								// Only changed fields need old values to restore dirty status, not a second full snapshot.
+								rec.originalValues = {};
+								for (const field of window.OrgLoom.valueCompare.changedFieldNames(values, baseline)) {
+									if (field === 'Id') continue;
+									rec.originalValues[field] = baseline[field] === undefined ? null : baseline[field];
+									if (!Object.hasOwn(values, field)) values[field] = null;
+								}
+							}
+						}
 						// Unmapped CSV data stays local and in downloads, outside Salesforce-backed/shared payloads.
 						const unmapped = cleanUnmappedColumns(r.unmappedCsvColumns, r.objectName);
 						if (unmapped.length) {
 							rec.unmappedCsvColumns = unmapped;
-						}
-						if (preserveLoadedLinks && r.loadedFromId) {
-							rec.loadedFromId = r.loadedFromId;
-							if (r.loadedValues) {
-								rec.loadedValues = encryptedFields.stripValues(
-									canvasState,
-									r.objectName,
-									r.loadedValues,
-								);
-							}
 						}
 						return rec;
 					});
@@ -420,22 +435,20 @@
 								').',
 						);
 					}
-					const keptIds = new Set(records.map((r) => r.id));
-					associations = canvasState.bulkAssociations
-						.filter((a) => keptIds.has(a.fromId) && keptIds.has(a.toId))
-						.map((a) => ({ fromId: a.fromId, toId: a.toId, fieldName: a.fieldName }));
+					associations = links.map((a) => ({ fromId: a.fromId, toId: a.toId, fieldName: a.fieldName }));
 				}
 				return {
 					_meta: {
 						app: 'Org Loom',
 						version: TEMPLATE_VERSION,
+						recordData: 'snapshot-with-changes',
 						exportedFrom: window.SF_ORG_ID || null,
 						exportedBy: window.SF_USER_ID || null,
 						exportedByName: window.SF_USER_NAME || null,
 						exportedAt: new Date().toISOString(),
 						schemaOnly,
 						includesLoadedData,
-						preservesLoadedLinks: preserveLoadedLinks && includesLoadedData,
+						preservesLoadedLinks: includesLoadedData,
 						includedLoadedObjects: includesLoadedData
 							? Array.from(
 									new Set(
@@ -545,7 +558,7 @@
 				return {
 					_meta: {
 						app: 'Org Loom',
-						version: TEMPLATE_VERSION,
+						version: 1,
 						savedFrom: window.SF_ORG_ID || null,
 						savedBy: window.SF_USER_ID || null,
 						savedByName: window.SF_USER_NAME || null,
@@ -557,14 +570,10 @@
 				};
 			}
 
-			function downloadTemplate(name, schemaOnly, opts) {
-				opts = opts || {};
+			function downloadTemplate(name, schemaOnly) {
 				let payload;
 				try {
-					payload = buildTemplate({
-						schemaOnly,
-						preserveLoadedLinks: !!opts.preserveLoadedLinks,
-					});
+					payload = buildTemplate({ schemaOnly });
 				} catch (e) {
 					showBulkToast(e.message, 'error');
 					return;
@@ -761,6 +770,82 @@
 				if (t.records.length > TEMPLATE_RECORD_CAP) {
 					throw new Error('Template exceeds the ' + TEMPLATE_RECORD_CAP + '-record cap.');
 				}
+				validateRecordGraph(t.records, t.associations);
+				if (t._meta.recordData === 'snapshot-with-changes') {
+					for (const r of t.records) {
+						if (
+							r.originalValues != null &&
+							(typeof r.originalValues !== 'object' ||
+								Array.isArray(r.originalValues) ||
+								Object.hasOwn(r.originalValues, 'Id'))
+						)
+							throw new Error('Invalid original field values.');
+					}
+				}
+				if (t._meta.recordData === 'references-and-changes') {
+					for (const r of t.records) {
+						if (r.loadedFromId && !/^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/.test(r.loadedFromId))
+							throw new Error('Invalid Salesforce record ID.');
+						if (
+							r.changes != null &&
+							(typeof r.changes !== 'object' ||
+								Array.isArray(r.changes) ||
+								Object.hasOwn(r.changes, 'Id'))
+						)
+							throw new Error('Invalid record changes.');
+					}
+				}
+			}
+
+			// Never guess which duplicate record or lookup target an imported/exported ID means.
+			function validateRecordGraph(records, associations) {
+				const byId = new Map();
+				for (const record of records) {
+					if (
+						!_isRecordEntry(record) ||
+						!(
+							(typeof record.id === 'number' && Number.isSafeInteger(record.id)) ||
+							(typeof record.id === 'string' && record.id.trim())
+						)
+					) {
+						throw new Error('Invalid canvas snapshot: a record is missing a valid ID.');
+					}
+					const key = String(record.id);
+					if (byId.has(key))
+						throw new Error(
+							'Invalid canvas snapshot: duplicate record ID ' + key + '. No records were changed.',
+						);
+					byId.set(key, record);
+				}
+				const usedFields = new Set();
+				for (const link of associations) {
+					const from = byId.get(String(link?.fromId));
+					const to = byId.get(String(link?.toId));
+					if (!from || !to || typeof link.fieldName !== 'string' || !link.fieldName.trim()) {
+						throw new Error('Invalid canvas snapshot: a relationship has a missing record or field.');
+					}
+					const key = JSON.stringify([String(from.id), link.fieldName.toLowerCase()]);
+					if (usedFields.has(key))
+						throw new Error(
+							'Invalid canvas snapshot: more than one connection uses ' +
+								link.fieldName +
+								' on record ' +
+								from.id +
+								'.',
+						);
+					usedFields.add(key);
+					const value = (from.changes || from.values)?.[link.fieldName];
+					if (
+						to.loadedFromId &&
+						value != null &&
+						value !== '' &&
+						String(value).slice(0, 15) !== String(to.loadedFromId).slice(0, 15)
+					) {
+						throw new Error(
+							'Invalid canvas snapshot: ' + link.fieldName + ' disagrees with its connected record.',
+						);
+					}
+				}
 			}
 
 			function validateCanvasPayload(p) {
@@ -785,8 +870,77 @@
 				const schemaOnly = !!opts.schemaOnly;
 				const merge = !!opts.merge;
 				validateTemplate(t);
+				if (
+					!schemaOnly &&
+					t._meta.recordData === 'references-and-changes' &&
+					t.records.some((r) => r.loadedFromId)
+				) {
+					if (!window.SF_ORG_ID || t._meta.exportedFrom !== window.SF_ORG_ID) {
+						throw new Error(
+							'Connect to the Salesforce org this file was exported from to reload its existing records.',
+						);
+					}
+					// Fetch before replacing anything, and never fall back to partial drafts on failure.
+					const records = new Array(t.records.length);
+					let next = 0;
+					const worker = async () => {
+						while (next < t.records.length) {
+							const index = next++;
+							const r = t.records[index];
+							if (
+								!r.loadedFromId ||
+								(merge &&
+									canvasState.bulkRecords.some(
+										(existing) =>
+											existing.objectName === r.objectName &&
+											existing.loadedFromId === r.loadedFromId,
+									))
+							) {
+								records[index] = r;
+								continue;
+							}
+							const response = await csrfFetch(
+								'/api/objects/' +
+									encodeURIComponent(r.objectName) +
+									'/records/' +
+									encodeURIComponent(r.loadedFromId),
+								{ credentials: 'same-origin' },
+							);
+							if (!response.ok)
+								throw new Error(
+									'Could not reload an existing ' +
+										r.objectName +
+										' record from Salesforce. No records were imported.',
+								);
+							const fresh = await response.json();
+							if (!fresh || !fresh.Id)
+								throw new Error('Salesforce returned an incomplete record. No records were imported.');
+							records[index] = { ...r, loadedValues: fresh, values: { ...fresh, ...(r.changes || {}) } };
+						}
+					};
+					await Promise.all(Array.from({ length: Math.min(6, t.records.length) }, worker));
+					t = { ...t, records };
+				}
+				const sameOrg = !!t._meta.exportedFrom && t._meta.exportedFrom === window.SF_ORG_ID;
+				const honorLoadedLinks = !!t._meta.preservesLoadedLinks && sameOrg;
+				const loadedKey = (r) =>
+					r.loadedFromId ? r.objectName + '::' + String(r.loadedFromId).slice(0, 15) : null;
+				const existingLoaded = new Map();
+				if (merge && honorLoadedLinks) {
+					canvasState.bulkRecords
+						.filter((r) => !r.isTypeNode && r.loadedFromId)
+						.forEach((r) => existingLoaded.set(loadedKey(r), r.id));
+				}
 				{
-					const incoming = Array.isArray(t.records) ? t.records.length : 0;
+					const seen = new Set(existingLoaded.keys());
+					const incoming = schemaOnly
+						? 0
+						: t.records.filter((r) => {
+								const key = merge && honorLoadedLinks && loadedKey(r);
+								if (key && seen.has(key)) return false;
+								if (key) seen.add(key);
+								return true;
+							}).length;
 					const existingCount = merge ? _realRecordCount() : 0;
 					if (existingCount + incoming > _CANVAS_RECORD_CAP_get()) {
 						throw new Error(
@@ -841,12 +995,11 @@
 					}
 				}
 				let skippedRecords = 0;
+				let reusedRecords = 0;
 				let skippedAssoc = 0;
 				let demotedToDrafts = 0;
 				if (!schemaOnly) {
 					const idMap = new Map();
-					const sameOrg = !!(t._meta && t._meta.exportedFrom) && t._meta.exportedFrom === window.SF_ORG_ID;
-					const honorLoadedLinks = !!(t._meta && t._meta.preservesLoadedLinks) && sameOrg;
 					const _offY = _mergeOffsetY(
 						merge,
 						t.records.filter(_isRecordEntry).map((r) => Number(r.y) || 200),
@@ -856,16 +1009,23 @@
 							skippedRecords += 1;
 							return;
 						}
+						const key = merge && honorLoadedLinks && loadedKey(r);
+						if (key && existingLoaded.has(key)) {
+							idMap.set(String(r.id), existingLoaded.get(key));
+							reusedRecords++;
+							return;
+						}
 						const newId = canvasState.bulkIdSeq++;
-						idMap.set(r.id, newId);
+						idMap.set(String(r.id), newId);
+						if (key) existingLoaded.set(key, newId);
 						const matchingSel = canvasState.selectedObjects.find((s) => s.name === r.objectName);
 						const rec = {
 							id: newId,
 							objectName: r.objectName,
 							label: (matchingSel && matchingSel.label) || r.label || r.objectName,
-							x: Number(r.x) || 200,
-							y: (Number(r.y) || 200) + _offY,
-							values: _cleanValues(r.values),
+							x: _savedCoordinate(r.x, 200),
+							y: _savedCoordinate(r.y, 200) + _offY,
+							values: JSON.parse(JSON.stringify(_cleanValues(r.values))),
 							unmappedCsvColumns: cleanUnmappedColumns(r.unmappedCsvColumns, r.objectName),
 						};
 						encryptedFields.hydrateIntents(rec, r.encryptedFieldIntents, canvasState);
@@ -874,6 +1034,9 @@
 								rec.loadedFromId = r.loadedFromId;
 								if (r.loadedValues && typeof r.loadedValues === 'object') {
 									rec.loadedValues = Object.assign({}, r.loadedValues);
+								}
+								if (t._meta.recordData === 'snapshot-with-changes' && r.originalValues) {
+									rec.loadedValues = { ...rec.values, ...r.originalValues };
 								}
 								if (r.pendingDelete) {
 									rec.pendingDelete = true;
@@ -888,10 +1051,29 @@
 						}
 						canvasState.bulkRecords.push(rec);
 					});
-					const usedFk = new Set();
+					const usedFk = new Set(canvasState.bulkAssociations.map((a) => a.fromId + '::' + a.fieldName));
 					t.associations.forEach((a) => {
-						const from = idMap.get(a && a.fromId);
-						const to = idMap.get(a && a.toId);
+						const from = idMap.get(String(a && a.fromId));
+						const to = idMap.get(String(a && a.toId));
+						if (
+							canvasState.bulkAssociations.some(
+								(link) => link.fromId === from && link.toId === to && link.fieldName === a.fieldName,
+							)
+						)
+							return;
+						// A merge must not overwrite a reused card's locally edited lookup.
+						const holder = canvasState.bulkRecords.find((r) => r.id === from);
+						const target = canvasState.bulkRecords.find((r) => r.id === to);
+						if (
+							beforeImport.has(holder) &&
+							(!target?.loadedFromId ||
+								!holder.values?.[a.fieldName] ||
+								String(holder.values[a.fieldName]).slice(0, 15) !==
+									String(target.loadedFromId).slice(0, 15))
+						) {
+							skippedAssoc++;
+							return;
+						}
 						if (!_admitAssociation(usedFk, from, to, a && a.fieldName)) {
 							skippedAssoc += 1;
 							return;
@@ -937,7 +1119,7 @@
 					}
 				} else {
 					const totalRecords = t.records.length;
-					const importedCount = totalRecords - skippedRecords;
+					const importedCount = totalRecords - skippedRecords - reusedRecords;
 					let msg =
 						'Imported ' +
 						importedCount +
@@ -947,6 +1129,7 @@
 						(totalRecords === 1 ? '' : 's') +
 						'.';
 					msg += _skipSuffix(skippedRecords, skippedAssoc);
+					if (reusedRecords) msg += ' ' + reusedRecords + ' already on the canvas (kept unchanged).';
 					if (demotedToDrafts > 0) {
 						msg +=
 							' ' +

@@ -12,6 +12,68 @@ vm.runInNewContext(source, { window, Set });
 const csvImport = window.OrgLoom.csvImport.mount({ csrfFetch: async () => ({ ok: true }) });
 const parse = csvImport.parseCsv;
 
+test('clear-field metadata is never auto-mapped even to a matching Salesforce label', () => {
+	const mapping = csvImport.csvAutoMapHeaders(
+		['__OrgLoom_ClearFields', 'Phone'],
+		[
+			{ name: 'Metadata__c', label: '__OrgLoom_ClearFields', type: 'string' },
+			{ name: 'Phone', label: 'Phone', type: 'phone' },
+		],
+	);
+	assert.equal(mapping[0], null);
+	assert.equal(mapping[1], 'Phone');
+});
+
+const cell = (value) => '"' + String(value).replace(/"/g, '""') + '"';
+const escapedFile = (value, metadata) =>
+	'Phone,__OrgLoom_EscapedCells\r\n' + cell(value) + ',' + cell(JSON.stringify(metadata));
+
+test('ordinary and older CSVs preserve literal apostrophes without escape metadata', () => {
+	assert.equal(parse("Phone\r\n'+1 602 555").rows[0][0], "'+1 602 555");
+	assert.equal(parse("Name\r\nO'Brien").rows[0][0], "O'Brien");
+});
+
+test('escape metadata only reverses the exact value originally escaped', () => {
+	const metadata = { version: 1, cells: [['Phone', "'+1 602 555"]] };
+	for (const [value, expected] of [
+		["'+1 602 555", '+1 602 555'],
+		['+1 602 555', '+1 602 555'],
+		["'+44 123", "'+44 123"],
+		["''+1 602 555", "''+1 602 555"],
+	]) {
+		const result = parse(escapedFile(value, metadata));
+		assert.equal(result.errors.length, 0);
+		assert.equal(result.rows[0][0], expected);
+		assert.deepEqual([...result.headers], ['Phone']);
+	}
+});
+
+test('malformed escape metadata is rejected, not silently treated as a field edit', () => {
+	for (const metadata of [
+		null,
+		{},
+		{ version: 2, cells: [] },
+		{ version: 1, cells: 'bad' },
+		{ version: 1, cells: [['Missing', "'+1"]] },
+		{ version: 1, cells: [['Phone', 3]] },
+		{ version: 1, cells: [['Phone', "'ordinary"]] },
+		{
+			version: 1,
+			cells: [
+				['Phone', "'+1"],
+				['Phone', "'+1"],
+			],
+		},
+	]) {
+		assert.ok(parse(escapedFile("'+1", metadata)).errors.length);
+	}
+});
+
+test('escape metadata does not hide ragged rows or ambiguous headers', () => {
+	assert.ok(parse('Phone,__OrgLoom_EscapedCells\r\n123').errors.length);
+	assert.ok(parse('Phone,Phone,__OrgLoom_EscapedCells\r\n123,456,').errors.length);
+});
+
 test('quoted commas, escaped quotes, embedded newlines, BOM and Unicode preserve exact values', () => {
 	const out = parse('\uFEFFName,Notes\r\n"José, Jr.","line 1\nline ""two"""\r\n');
 	assert.deepEqual([...out.headers], ['Name', 'Notes']);

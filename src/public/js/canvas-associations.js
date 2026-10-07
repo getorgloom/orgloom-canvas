@@ -125,12 +125,25 @@
 				const toId = direction === 'fwd' ? targetRec.id : srcRec.id;
 				const holderRec = canvasState.bulkRecords.find((r) => r.id === fromId);
 				const targetEndRec = canvasState.bulkRecords.find((r) => r.id === toId);
-				canvasState.bulkAssociations.push({
+				if (
+					!holderRec ||
+					!targetEndRec ||
+					!fieldName ||
+					holderRec !== (direction === 'fwd' ? srcRec : targetRec) ||
+					targetEndRec !== (direction === 'fwd' ? targetRec : srcRec) ||
+					canvasState.bulkAssociations.some((a) => a.fromId === fromId && a.fieldName === fieldName)
+				) {
+					return false;
+				}
+				const hadValue = Object.prototype.hasOwnProperty.call(holderRec.values || {}, fieldName);
+				const previousValue = (holderRec.values || {})[fieldName];
+				const link = {
 					id: canvasState.bulkIdSeq++,
 					fromId,
 					toId,
 					fieldName,
-				});
+				};
+				canvasState.bulkAssociations.push(link);
 
 				if (holderRec && targetEndRec) {
 					holderRec.values = holderRec.values || {};
@@ -140,6 +153,21 @@
 						delete holderRec.values[fieldName];
 					}
 				}
+				const linkedValue = holderRec.values[fieldName];
+				pushUndo('Undo connection', () => {
+					if (!canvasState.bulkRecords.includes(holderRec) || !canvasState.bulkAssociations.includes(link))
+						return false;
+					canvasState.bulkAssociations = canvasState.bulkAssociations.filter((a) => a !== link);
+					if (
+						!canvasState.bulkAssociations.some((a) => a.fromId === fromId && a.fieldName === fieldName) &&
+						holderRec.values[fieldName] === linkedValue
+					) {
+						if (hadValue) holderRec.values[fieldName] = previousValue;
+						else delete holderRec.values[fieldName];
+					}
+					renderBulkView();
+					showBulkToast('Undid connection.');
+				});
 				renderBulkView();
 			}
 
@@ -228,7 +256,22 @@
 						clrVal = holderRec.values[killed.fieldName];
 						delete holderRec.values[killed.fieldName];
 					}
+					const afterDeleteValue = holderRec?.values?.[killed.fieldName];
 					pushUndo('Restore deleted connection', () => {
+						if (
+							!canvasState.bulkRecords.includes(holderRec) ||
+							!canvasState.bulkRecords.includes(targetRec)
+						)
+							return false;
+						if (
+							canvasState.bulkAssociations.some(
+								(a) => a.fromId === killed.fromId && a.fieldName === killed.fieldName,
+							) ||
+							holderRec.values?.[killed.fieldName] !== afterDeleteValue
+						) {
+							showBulkToast('Cannot restore this connection because the lookup has changed.', 'info');
+							return;
+						}
 						canvasState.bulkAssociations.push(killed);
 						if (clrId != null) {
 							const hr = canvasState.bulkRecords.find((r) => r.id === clrId);
@@ -264,6 +307,14 @@
 				const prev = rec.values[fieldName];
 				pushUndo('Restore deleted connection', () => {
 					const r2 = canvasState.bulkRecords.find((r) => r.id === recId);
+					if (r2 !== rec) return false;
+					if (
+						r2.values?.[fieldName] != null ||
+						canvasState.bulkAssociations.some((a) => a.fromId === recId && a.fieldName === fieldName)
+					) {
+						showBulkToast('Cannot restore this connection because the lookup has changed.', 'info');
+						return;
+					}
 					if (r2) {
 						r2.values = r2.values || {};
 						r2.values[fieldName] = prev;

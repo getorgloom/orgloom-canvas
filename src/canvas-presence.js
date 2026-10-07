@@ -280,12 +280,13 @@ function _roleRank(role) {
 	return role === 'editor' ? 3 : role === 'contributor' ? 2 : role === 'viewer' ? 1 : 0;
 }
 
-function _acceptSequence(entry, sequence) {
-	// Ignore out-of-order browser events so a delayed cursor or draft cannot overwrite newer state.
-	if (!Number.isSafeInteger(sequence) || sequence <= entry.lastSequence) {
+function _acceptSequence(entry, sequence, channel = 'mutation') {
+	// Cursor/focus traffic must not invalidate unrelated canvas mutations. Keep
+	// stale-event protection within each channel; the client serializes mutations.
+	if (!Number.isSafeInteger(sequence) || sequence <= entry.lastSequences[channel]) {
 		return false;
 	}
-	entry.lastSequence = sequence;
+	entry.lastSequences[channel] = sequence;
 	return true;
 }
 
@@ -1558,7 +1559,7 @@ export function subscribe({
 		cursor: null,
 		focus: null,
 		lastSeenAt: Date.now(),
-		lastSequence: 0,
+		lastSequences: { mutation: 0, cursor: 0, focus: 0 },
 		lastCanvasRevision: revisionState.durableRevision,
 		sseRes,
 	};
@@ -1698,7 +1699,7 @@ export function updateCursor({ canvasId, connectionId, x, y, world, sequence, re
 	if (entry.accessRevoked) {
 		return false;
 	}
-	if (!_acceptSequence(entry, sequence)) {
+	if (!_acceptSequence(entry, sequence, 'cursor')) {
 		return false;
 	}
 	const cx = typeof x === 'number' ? x : null;
@@ -2463,7 +2464,7 @@ export function updateFocus({ canvasId, connectionId, focus, sequence, requestin
 	if (entry.accessRevoked) {
 		return false;
 	}
-	if (!_acceptSequence(entry, sequence)) {
+	if (!_acceptSequence(entry, sequence, 'focus')) {
 		return false;
 	}
 	entry.focus = focus || null;

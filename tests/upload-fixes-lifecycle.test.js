@@ -12,6 +12,61 @@ const confirmSource = csv.slice(
 	csv.indexOf('\n\t\t\treturn {\n\t\t\t\topenModal:'),
 );
 
+test('CSV re-import clears only explicitly marked fields and rehydrates unchanged values', async () => {
+	const window = {};
+	vm.runInNewContext(read('import-shared.js'), { window });
+	vm.runInNewContext(csv, { window });
+	const ids = ['001000000000001AAA', '001000000000002AAA'];
+	const file = {
+		objectName: 'Account',
+		headers: ['Id', 'Name', 'Phone', '__OrgLoom_ClearFields'],
+		mapping: { 0: 'Id', 1: 'Name', 2: 'Phone' },
+		rows: [
+			[ids[0], '', '', '["Phone"]'],
+			[ids[1], 'Edited name', '', ''],
+		],
+	};
+	const canvasState = {
+		bulkRecords: [],
+		bulkAssociations: [],
+		bulkIdSeq: 1,
+		selectedObjects: [{ id: 1, name: 'Account', label: 'Account' }],
+	};
+	const noop = () => {};
+	const env = {
+		window,
+		canvasState,
+		linkedCsvState: { files: [file] },
+		deps: {},
+		linkedCsvReady: () => true,
+		linkedCsvRender: noop,
+		csvImportCanceled: () => false,
+		csvResolveExistingIds: async () => ({
+			liveById: new Map(ids.map((id) => [id.slice(0, 15), { Id: id, Name: 'Live name', Phone: 'Live phone' }])),
+			draftKeys: new Set(),
+		}),
+		_planMappedFieldWrites: () => ({ issues: [], omittedByRow: new Map() }),
+		getGraph: () => ({ querySelector: () => null }),
+		canvasCapCheck: () => ({ cap: 500 }),
+		captureUndoSnapshot: null,
+		clearEmptyStarterCard: noop,
+		unmappedCsvColumns: window.OrgLoom.unmappedCsvColumns,
+		exportedClearFields: window.OrgLoom.exportedClearFields,
+		closeLinkedCsvModal: noop,
+		setSkipNextCyAutoPan: noop,
+		renderBulkView: noop,
+		relayoutNewRecords: noop,
+		showBulkToast: noop,
+		pingAuditEvent: noop,
+	};
+	await vm.runInNewContext('(' + confirmSource.trim() + ')', env)({ replaceCanvas: false });
+	assert.equal(canvasState.bulkRecords[0].values.Name, 'Live name');
+	assert.equal(canvasState.bulkRecords[0].values.Phone, null);
+	assert.equal(canvasState.bulkRecords[1].values.Name, 'Edited name');
+	assert.equal(canvasState.bulkRecords[1].values.Phone, 'Live phone');
+	assert.equal(canvasState.bulkRecords[0].unmappedCsvColumns.length, 0);
+});
+
 for (const scenario of ['replace', 'add', 'canceled', 'blocked', 'invalid']) {
 	test('CSV import task lifecycle: ' + scenario, async () => {
 		const oldRecord = { id: 1, objectName: 'Account', values: { Name: '' } };
@@ -69,6 +124,7 @@ for (const scenario of ['replace', 'add', 'canceled', 'blocked', 'invalid']) {
 			captureUndoSnapshot: null,
 			clearEmptyStarterCard: noop,
 			unmappedCsvColumns: () => [],
+			exportedClearFields: () => new Set(),
 			closeLinkedCsvModal: noop,
 			setSkipNextCyAutoPan: noop,
 			renderBulkView: () => fixes.render(),
@@ -102,8 +158,8 @@ test('app connects replacement, reset, Undo, and access-loss boundaries to fix c
 		const start = app.indexOf(mount + '({');
 		assert.ok(start >= 0);
 		assert.match(
-			app.slice(start, start + 180),
-			/onCanvasReplace: \(\) =>\s*{\s*_clearUploadFixes\(\);\s*closeRecordEditors\(\);/,
+			app.slice(start, start + 240),
+			/onCanvasReplace: \(\) =>\s*{\s*(?:clearUndoHistory\(\);\s*)?_clearUploadFixes\(\);\s*closeRecordEditors\(\);/,
 		);
 	}
 	assert.match(app, /function resetToBasePicker\(\)\s*{\s*_clearUploadFixes\(\)/);

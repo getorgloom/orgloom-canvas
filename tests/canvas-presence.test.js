@@ -55,6 +55,29 @@ function events(res) {
 }
 
 describe('canvas presence security and ordering', () => {
+	test('cursor and focus cannot overtake mutations, while stale events remain rejected', () => {
+		const canvasId = 'diagnostic-independent-sequences';
+		const res = response();
+		const connectionId = subscribe({ canvasId, workspaceId: 'w', accountId: 'owner', canEdit: true, sseRes: res });
+		const common = { canvasId, connectionId, requestingAccountId: 'owner' };
+		try {
+			assert.equal(updateCursor({ ...common, sequence: 10, x: 5, y: 6 }), true);
+			assert.equal(updateFocus({ ...common, sequence: 9, focus: { ref: 'draft-one' } }), true);
+			const draft = { ...common, tempId: 'draft-one', fields: { Name: 'New value' } };
+			assert.equal(updateDraft({ ...draft, sequence: 8 }), true);
+			assert.equal(updateDraft({ ...draft, sequence: 7, fields: { Name: 'Stale' } }), false);
+			assert.equal(updateDraft({ ...draft, sequence: 8 }), false);
+			assert.equal(updateCursor({ ...common, sequence: 9, x: 1, y: 1 }), false);
+			assert.equal(updateFocus({ ...common, sequence: 8, focus: null }), false);
+			assert.equal(updateDraft({ ...draft, sequence: 11 }), true);
+			assert.equal(updateCursor({ ...common, sequence: 11, x: 7, y: 8 }), true);
+			assert.equal(updateDraft({ ...draft, sequence: 12, requestingAccountId: 'intruder' }), false);
+			assert.equal(updateDraft({ ...draft, sequence: 12 }), true);
+		} finally {
+			res.fire('close');
+		}
+	});
+
 	test('separates exactly stacked cards without changing the durable payload', () => {
 		const payload = {
 			schema: { objects: [{ name: 'Account', label: 'Account' }] },

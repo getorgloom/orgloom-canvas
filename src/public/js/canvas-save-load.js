@@ -741,29 +741,13 @@
 					showBulkToast('Add records to the canvas before exporting.', 'error');
 					return;
 				}
-				const loadedCount = real.filter((r) => !!r.loadedFromId).length;
-				let preserveLoadedLinks = false;
-				if (loadedCount > 0) {
-					const choice = await _showExportOptionsDialog({
-						loadedCount,
-						totalCount: real.length,
-						confirmAccess: verifyFileExportPermission,
-					});
-					if (choice == null) {
-						return;
-					} // user cancelled
-					preserveLoadedLinks = !!choice.preserveLoadedLinks;
-				} else {
-					const access = await verifyFileExportPermission();
-					if (!access.allowed) {
-						return false;
-					}
-				}
+				const access = await verifyFileExportPermission();
+				if (!access.allowed) return false;
 				const name =
 					canvasState.currentCanvas && canvasState.currentCanvas.title
 						? canvasState.currentCanvas.title
 						: 'orgloom-canvas-' + new Date().toISOString().slice(0, 10);
-				downloadTemplate(name, false, { preserveLoadedLinks });
+				downloadTemplate(name, false);
 				return true;
 			}
 
@@ -837,100 +821,6 @@
 				document.addEventListener('keydown', onKey);
 				modal.querySelectorAll('[data-export-denied-close]').forEach((el) => {
 					el.addEventListener('click', close);
-				});
-			}
-
-			function _showExportOptionsDialog({ loadedCount, totalCount, confirmAccess }) {
-				return new Promise((resolve) => {
-					document.querySelectorAll('.app-export-options-modal').forEach((el) => el.remove());
-					const modal = document.createElement('div');
-					modal.className = 'modal app-export-options-modal';
-					const recordWord = loadedCount === 1 ? 'record' : 'records';
-					modal.innerHTML =
-						'<div class="modal-overlay" data-eo-close></div>' +
-						'<div class="modal-body" style="max-width:480px">' +
-						'<div class="modal-header">' +
-						'<h3>Export canvas to file</h3>' +
-						'<button class="modal-close" data-eo-close>&times;</button>' +
-						'</div>' +
-						'<div class="modal-content">' +
-						'<p>Download all ' +
-						totalCount +
-						' record' +
-						(totalCount === 1 ? '' : 's') +
-						' on this canvas as a JSON file (schema, drafts, associations).</p>' +
-						'<label style="display:flex;gap:0.6em;align-items:flex-start;margin-top:0.8em;padding:0.7em;border:1px solid var(--border);border-radius:4px;cursor:pointer">' +
-						'<input type="checkbox" id="eo-preserve-loaded" style="margin-top:0.2em">' +
-						'<span style="flex:1">' +
-						'<strong>Keep links to ' +
-						loadedCount +
-						' existing Salesforce ' +
-						recordWord +
-						'</strong>' +
-						'<div class="tag" style="margin-top:0.25em;font-size:0.78rem">' +
-						'On: re-import into the same Salesforce org reconnects to the live records (good for refresh-recover).<br>' +
-						'Off: existing records re-import as fresh drafts. Portable across orgs; re-importing into the same org may create duplicates.' +
-						'</div>' +
-						'</span>' +
-						'</label>' +
-						'<div class="app-export-options-error" role="alert" hidden></div>' +
-						'</div>' +
-						'<div class="modal-footer">' +
-						'<button class="button secondary" data-eo-cancel>Cancel</button>' +
-						'<button class="button" data-eo-confirm>Download</button>' +
-						'</div>' +
-						'</div>';
-					document.body.appendChild(modal);
-					let settled = false;
-					let checkingAccess = false;
-					const finish = (value) => {
-						if (settled) {
-							return;
-						}
-						settled = true;
-						document.removeEventListener('keydown', onKey);
-						modal.remove();
-						resolve(value);
-					};
-					const attemptDownload = async () => {
-						if (settled || checkingAccess) {
-							return;
-						}
-						checkingAccess = true;
-						const confirmButton = modal.querySelector('[data-eo-confirm]');
-						const errorBox = modal.querySelector('.app-export-options-error');
-						confirmButton.disabled = true;
-						confirmButton.textContent = 'Checking access…';
-						errorBox.hidden = true;
-						errorBox.textContent = '';
-						const access = await confirmAccess({ showError: false });
-						if (settled) {
-							return;
-						}
-						checkingAccess = false;
-						if (!access.allowed) {
-							errorBox.textContent = access.message;
-							errorBox.hidden = false;
-							confirmButton.disabled = false;
-							confirmButton.textContent = 'Download';
-							return;
-						}
-						const cb = modal.querySelector('#eo-preserve-loaded');
-						finish({ preserveLoadedLinks: !!(cb && cb.checked) });
-					};
-					const onKey = (e) => {
-						if (e.key === 'Escape') {
-							finish(null);
-						} else if (e.key === 'Enter') {
-							attemptDownload();
-						}
-					};
-					document.addEventListener('keydown', onKey);
-					modal
-						.querySelectorAll('[data-eo-close], [data-eo-cancel]')
-						.forEach((el) => el.addEventListener('click', () => finish(null)));
-					modal.querySelector('[data-eo-confirm]').addEventListener('click', attemptDownload);
-					setTimeout(() => modal.querySelector('[data-eo-confirm]').focus(), 0);
 				});
 			}
 

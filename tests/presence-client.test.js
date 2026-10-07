@@ -764,16 +764,94 @@ describe('presence client request gating', () => {
 		const draftCreates = harness.requests.filter((request) => request.url.endsWith('/presence/draft'));
 		assert.ok(draftCreates.every((request) => request.body.kind === 'create'));
 		assert.equal(new Set(draftCreates.map((request) => request.body.tempId)).size, 1);
+		assert.ok(harness.toasts.some((toast) => toast.type === 'error' && /not synced yet/.test(toast.message)));
 		assert.ok(
-			harness.toasts.some((toast) => toast.type === 'error' && /temporarily disconnected/.test(toast.message)),
+			harness.toasts.some((toast) => toast.type === 'info' && /delayed changes have synced/.test(toast.message)),
 		);
-		assert.ok(harness.toasts.some((toast) => toast.type === 'info' && /reconnected/.test(toast.message)));
 
 		const settledRequestCount = harness.requests.length;
 		harness.advance(2000);
 		harness.tick();
 		await new Promise((resolve) => setImmediate(resolve));
 		assert.equal(harness.requests.length, settledRequestCount);
+	});
+
+	test('serializes structural requests but lets focus traffic proceed while a write is pending', async () => {
+		const pending = [];
+		const harness = mountPresence({
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/draft')) {
+					return new Promise((resolve) => pending.push(resolve));
+				}
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('draft-38383838-3838-4838-8838-383838383838');
+		harness.sources[0].emit('presence-init', {
+			you: { connectionId: 'owner', role: 'owner', canEdit: true },
+			peers: [{ connectionId: 'peer' }],
+		});
+		harness.canvasState.bulkRecords.push(
+			{ id: 1, _persistedTempId: 'one', objectName: 'Contact', values: { LastName: 'One' } },
+			{ id: 2, _persistedTempId: 'two', objectName: 'Contact', values: { LastName: 'Two' } },
+		);
+		harness.api.publishChanges();
+		const drafts = () => harness.requests.filter((r) => r.url.endsWith('/presence/draft'));
+		assert.equal(drafts().length, 1);
+		harness.api.pushFocus({ kind: 'record', ref: 'one' });
+		const focus = harness.requests.find((r) => r.url.endsWith('/presence/focus'));
+		assert.ok(focus, 'focus is not blocked by a structural request');
+		pending.shift()({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(drafts().length, 2);
+		assert.ok(drafts()[1].body.sequence > focus.body.sequence, 'sequence is assigned at dispatch');
+		pending.shift()({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		harness.api.publishChanges();
+		assert.equal(drafts().length, 2, 'acknowledged records are not sent again');
+
+		harness.canvasState.bulkRecords[0].values.LastName = 'Changed one';
+		harness.canvasState.bulkRecords[1].values.LastName = 'Changed two';
+		harness.api.publishChanges();
+		assert.equal(drafts().length, 3);
+		harness.sources[0].emit('presence', {
+			type: 'access-changed',
+			previousRole: 'owner',
+			role: 'viewer',
+			change: 'decreased',
+		});
+		pending.shift()({ ok: false });
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(drafts().length, 3, 'queued mutations are dropped when editing permission is removed');
+	});
+
+	test('drops queued writes on a canvas switch and ignores old acknowledgements', async () => {
+		let resolveOld;
+		const harness = mountPresence({
+			fetchHandler() {
+				return new Promise((resolve) => {
+					resolveOld = resolve;
+				});
+			},
+		});
+		harness.api.subscribeToCanvas('draft-39393939-3939-4939-8939-393939393939');
+		harness.sources[0].emit('presence-init', {
+			you: { connectionId: 'old', role: 'owner', canEdit: true },
+			peers: [],
+		});
+		harness.canvasState.bulkRecords.push(
+			{ id: 1, _persistedTempId: 'one', objectName: 'Contact', values: { LastName: 'One' } },
+			{ id: 2, _persistedTempId: 'two', objectName: 'Contact', values: { LastName: 'Two' } },
+		);
+		harness.api.publishChanges();
+		assert.equal(harness.requests.length, 1);
+		harness.api.unsubscribe();
+		harness.canvasState.bulkRecords.length = 0;
+		harness.api.subscribeToCanvas('draft-40404040-4040-4040-8040-404040404040');
+		resolveOld({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(harness.requests.length, 1, 'old queued requests never reach the new canvas');
+		assert.equal(harness.toasts.length, 0);
 	});
 
 	test('keeps newer field edits pending while an earlier value awaits acknowledgement', async () => {
@@ -1764,7 +1842,7 @@ describe('presence client request gating', () => {
 		assert.equal(harness.canvasState.bulkRecords.length, 2);
 	});
 
-	test('publishes and applies links for loaded records, drafts, and record requests', () => {
+	test('publishes and applies links for loaded records, drafts, and record requests', async () => {
 		const records = [
 			{
 				id: 1,
@@ -1798,6 +1876,7 @@ describe('presence client request gating', () => {
 			{ id: 12, fromId: 3, toId: 2, fieldName: 'Primary_Contact__c' },
 		);
 		harness.tick();
+		await new Promise((resolve) => setImmediate(resolve));
 		const linkRequests = harness.requests.filter((request) => request.url.endsWith('/presence/draft-link'));
 		assert.equal(linkRequests.length, 3);
 		assert.deepEqual(linkRequests[0].body.fromRef, {

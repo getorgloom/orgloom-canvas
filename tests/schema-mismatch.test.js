@@ -76,7 +76,8 @@ test('CSV unmapped values stay separate from Salesforce fields; relationship key
 function templateHarness() {
 	const window = { OrgLoom: { importShared: { admitAssociation: () => true, skipSuffix: () => '' } } };
 	const context = { window, console, localStorage: { removeItem() {} } };
-	for (const file of ['encrypted-fields.js', 'templates.js']) vm.runInNewContext(read(file), context);
+	for (const file of ['encrypted-fields.js', 'value-compare.js', 'templates.js'])
+		vm.runInNewContext(read(file), context);
 	const state = {
 		selectedObjects: [],
 		selectedIdSeq: 1,

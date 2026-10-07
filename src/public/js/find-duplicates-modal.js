@@ -323,12 +323,37 @@
 					.sort((a, b) => a.objectName.localeCompare(b.objectName));
 			}
 
+			function _duplicateLosers(sections) {
+				const groups = sections.flatMap((section) => section.groups);
+				const winners = new Set(groups.map((group) => group.winnerId));
+				return Array.from(
+					new Map(
+						groups
+							.flatMap((group) => group.records)
+							.filter((record) => !winners.has(record.id))
+							.map((record) => [record.id, record]),
+					).values(),
+				);
+			}
+
+			function _applyLabel(sections) {
+				const losers = _duplicateLosers(sections);
+				const existing = losers.filter((record) => record.loadedFromId).length;
+				const drafts = losers.length - existing;
+				if (!losers.length) return 'No duplicates selected';
+				if (existing && drafts) return 'Apply changes';
+				return existing
+					? 'Mark ' + existing + ' for delete'
+					: 'Remove ' + drafts + ' draft' + (drafts === 1 ? '' : 's');
+			}
+
 			function _renderBody(overlay, sections) {
 				const body = overlay.querySelector('.fdm-body');
 				if (!body) {
 					return;
 				}
-				let html = '';
+				let html =
+					'<p class="tag">Choose one record to keep in each group. Existing duplicates stay on the canvas, marked for deletion on your next upload. Draft duplicates are removed from the canvas only.</p>';
 				let losersTotal = 0;
 				sections.forEach((section) => {
 					html +=
@@ -351,8 +376,8 @@
 							const isWinner = group.winnerId === rec.id;
 							const rowClass = 'fdm-row' + (isWinner ? ' fdm-row--keep' : ' fdm-row--remove');
 							const badge = rec.loadedFromId
-								? '<span class="fdm-badge fdm-badge--loaded" title="Loaded from Salesforce, will be marked for delete on Apply">loaded</span>'
-								: '<span class="fdm-badge fdm-badge--draft" title="Draft record, will be removed from canvas on Apply">draft</span>';
+								? '<span class="fdm-badge fdm-badge--loaded" title="Existing Salesforce record">existing</span>'
+								: '<span class="fdm-badge fdm-badge--draft" title="Draft record, not yet in Salesforce">draft</span>';
 							const gotoBtn =
 								'<button type="button" class="fdm-row-goto" data-fdm-goto="' +
 								rec.id +
@@ -374,7 +399,7 @@
 								escapeHtml(groupKey) +
 								'">' +
 								'<span class="fdm-row-keep-tag">' +
-								(isWinner ? 'KEEP' : 'REMOVE') +
+								(isWinner ? 'KEEP' : rec.loadedFromId ? 'MARK FOR DELETE' : 'REMOVE DRAFT') +
 								'</span>' +
 								'<span class="fdm-row-ord">' +
 								escapeHtml(section.objectName) +
@@ -403,10 +428,7 @@
 				const applyBtn = overlay.querySelector('.fdm-apply');
 				if (applyBtn) {
 					applyBtn.disabled = losersTotal === 0;
-					applyBtn.textContent =
-						losersTotal === 0
-							? 'Nothing to remove'
-							: 'Remove ' + losersTotal + ' duplicate' + (losersTotal === 1 ? '' : 's');
+					applyBtn.textContent = _applyLabel(sections);
 				}
 				body.querySelectorAll('[data-fdm-winner]').forEach((input) => {
 					input.addEventListener('change', () => {
@@ -463,43 +485,38 @@
 				const applyBtn = overlay.querySelector('.fdm-apply');
 				if (applyBtn) {
 					applyBtn.disabled = true;
-					applyBtn.textContent = 'Nothing to remove';
+					applyBtn.textContent = 'No duplicates selected';
 				}
 			}
 
 			function _apply(sections) {
 				// Draft losers are removed locally; existing losers are only staged for a later upload.
-				const winners = new Set();
-				const losers = [];
-				sections.forEach((section) => {
-					section.groups.forEach((group) => {
-						winners.add(group.winnerId);
-						group.records.forEach((rec) => {
-							if (rec.id !== group.winnerId) {
-								losers.push(rec);
-							}
-						});
-					});
-				});
+				const losers = _duplicateLosers(sections).filter(
+					(rec) => canvasState.bulkRecords.includes(rec) && !isRecordPendingDelete(rec),
+				);
 				const _snapBulk = canvasState.bulkRecords.slice();
 				const _snapAssoc = canvasState.bulkAssociations.slice();
 				const _snapSelected = new Set(canvasState.bulkSelectedIds);
 				const _undoSizeBefore = undoStackSize ? undoStackSize() : 0;
 				const _markedLoserIds = [];
 				let drafts = 0,
-					marked = 0;
+					marked = 0,
+					skipped = 0;
 				losers.forEach((rec) => {
 					if (rec.loadedFromId) {
 						if (markPendingDelete(rec.id)) {
 							marked++;
 							_markedLoserIds.push(rec.id);
+						} else {
+							skipped++;
 						}
 					}
 				});
 				losers.forEach((rec) => {
 					if (!rec.loadedFromId) {
 						deleteRecord(rec.id);
-						drafts++;
+						if (!canvasState.bulkRecords.includes(rec)) drafts++;
+						else skipped++;
 					}
 				});
 				if (trimUndoStack && undoStackSize) {
@@ -511,9 +528,15 @@
 					parts.push(drafts + ' draft' + (drafts === 1 ? '' : 's') + ' removed');
 				}
 				if (marked > 0) {
-					parts.push(marked + ' loaded record' + (marked === 1 ? '' : 's') + ' marked for delete');
+					parts.push(
+						marked +
+							' existing record' +
+							(marked === 1 ? '' : 's') +
+							' marked for delete on the next upload',
+					);
 				}
-				const msg = parts.length === 0 ? 'No duplicates removed.' : parts.join(' · ');
+				if (skipped) parts.push(skipped + ' skipped; resolve pending edits or check delete access');
+				const msg = parts.length === 0 ? 'No duplicates changed.' : parts.join(' · ');
 				const _postBulk = canvasState.bulkRecords;
 				const _postAssoc = canvasState.bulkAssociations;
 				const _postFingerprint = JSON.stringify({
@@ -534,7 +557,7 @@
 						canvasState.bulkAssociations !== _postAssoc ||
 						currentFingerprint !== _postFingerprint
 					) {
-						showBulkToast('Can’t undo duplicate removal because the canvas was edited afterward.', 'info');
+						showBulkToast('Can’t undo duplicate changes because the canvas was edited afterward.', 'info');
 						return;
 					}
 					canvasState.bulkRecords = _snapBulk;
@@ -547,7 +570,7 @@
 						}
 					});
 					renderBulkView();
-					showBulkToast('Restored the removed duplicates.');
+					showBulkToast('Undid duplicate changes.');
 				};
 				if (drafts + marked > 0 && showBulkToastWithAction) {
 					showBulkToastWithAction(msg, 'Undo', _undo);
@@ -799,9 +822,7 @@
 					'<button class="button fdm-apply"' +
 					(losersTotal === 0 ? ' disabled' : '') +
 					'>' +
-					(losersTotal === 0
-						? 'Nothing to remove'
-						: 'Remove ' + losersTotal + ' duplicate' + (losersTotal === 1 ? '' : 's')) +
+					_applyLabel(sections) +
 					'</button>';
 				footer.querySelectorAll('[data-fdm-close]').forEach((el) => el.addEventListener('click', cleanup));
 				const backBtn = footer.querySelector('#fdm-back');
@@ -822,7 +843,10 @@
 				}
 			}
 
-			return { openFindDuplicatesModal: openFindDuplicatesModal };
+			return {
+				openFindDuplicatesModal: openFindDuplicatesModal,
+				_test: { apply: _apply, applyLabel: _applyLabel, renderBody: _renderBody },
+			};
 		},
 	};
 })();

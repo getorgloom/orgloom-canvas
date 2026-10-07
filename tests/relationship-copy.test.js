@@ -24,5 +24,5 @@ test('customer-facing relationship copy uses plain relationship language', () =>
 		/no FK links|FK columns|FK linking|Draft FK|reference this record via FK|audit FK spokes|FK-driven selections/i,
 	);
 	assert.match(source, /relationship to another canvas record/);
-	assert.match(source, /matching values build canvas relationships/);
+	assert.match(source, /matching values create canvas links/);
 });
