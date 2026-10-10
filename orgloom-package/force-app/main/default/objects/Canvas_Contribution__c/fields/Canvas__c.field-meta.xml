@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Canvas__c</fullName>
+    <deleteConstraint>Cascade</deleteConstraint>
+    <description>The Salesforce metadata record for the canvas receiving this contribution.</description>
+    <label>Canvas</label>
+    <referenceTo>Orgloom_Canvas__c</referenceTo>
+    <relationshipLabel>Canvas Contributions</relationshipLabel>
+    <relationshipName>Canvas_Contributions</relationshipName>
+    <required>true</required>
+    <type>Lookup</type>
+</CustomField>

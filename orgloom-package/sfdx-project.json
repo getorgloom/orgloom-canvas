@@ -1,0 +1,33 @@
+{
+  "packageDirectories": [
+    {
+      "versionName": "ver 0.5",
+      "versionNumber": "0.5.0.NEXT",
+      "path": "force-app",
+      "package": "Orgloom",
+      "postInstallScript": "OrgloomPostInstall",
+      "versionDescription": "Provides custom objects for encrypted canvas storage, canvas contributions, and audit events; a protected custom setting for org-specific encryption keys; Apex services for setup and key operations; a REST service used by Org Loom; audit automation; and user and administrator permission sets."
+    }
+  ],
+  "namespace": "orgloom",
+  "sfdcLoginUrl": "https://login.salesforce.com",
+  "sourceApiVersion": "66.0",
+  "packageAliases": {
+    "Orgloom": "0Hoao0000003RYLCA2",
+    "Orgloom@0.2.0-1": "04tao000005cQbJAAU",
+    "Orgloom@0.3.0-1": "04tao000005cXL3AAM",
+    "Orgloom@0.4.0-1": "04tao000005d00TAAQ",
+    "Orgloom@0.5.0-1": "04tao000005d0N3AAI",
+    "Orgloom@0.5.0-2": "04tao000005d0OfAAI",
+    "Orgloom@0.5.0-3": "04tao000005d0QHAAY",
+    "Orgloom@0.5.0-4": "04tao000005d0RtAAI",
+    "Orgloom@0.5.0-5": "04tao000005d0N4AAI",
+    "Orgloom@0.5.0-6": "04tao000005d0TVAAY",
+    "Orgloom@0.5.0-7": "04tao000005d8vhAAA",
+    "Orgloom@0.5.0-8": "04tao000005dGEvAAM",
+    "Orgloom@0.5.0-9": "04tao000005dNI1AAM",
+    "Orgloom@0.5.0-10": "04tao000005dNMrAAM",
+    "Orgloom@0.5.0-11": "04tao000005dWefAAE",
+    "Orgloom@0.5.0-12": "04tao000005dalVAAQ"
+  }
+}

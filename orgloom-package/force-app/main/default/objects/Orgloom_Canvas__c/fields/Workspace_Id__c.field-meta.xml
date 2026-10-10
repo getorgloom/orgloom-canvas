@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Workspace_Id__c</fullName>
+    <description>Org Loom workspace ID that the canvas belongs to. Used for multi-workspace scoping in queries and reports; admins can build list views filtered to a single workspace.</description>
+    <externalId>false</externalId>
+    <label>Workspace ID</label>
+    <length>36</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

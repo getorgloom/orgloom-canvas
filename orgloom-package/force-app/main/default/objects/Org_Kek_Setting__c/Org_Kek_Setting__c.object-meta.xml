@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <customSettingsType>List</customSettingsType>
+    <description>Holds the per-org Key Encryption Key (KEK) used by OrgloomKekService to wrap and unwrap per-canvas / per-batch data encryption keys (DEKs). This is a PROTECTED List custom setting: visibility=Protected means the subscriber org CANNOT read the KEK material by any route: not via SOQL, not in the Setup UI, not through the REST/SOAP API, and not from any Apex outside the orgloom namespace. Only the Org Loom managed package's own Apex (OrgloomKekService) can read/write it. One row per org, keyed by the built-in Name field = 'default'. The v1 REST surface does not expose key deletion or destruction.</description>
+    <enableFeeds>false</enableFeeds>
+    <label>Orgloom KEK Setting</label>
+    <visibility>Protected</visibility>
+</CustomObject>

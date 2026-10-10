@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Recorded_At__c</fullName>
+    <description>When the Orgloom server originally observed the action. Use this for chronological display and delivery reconciliation rather than CreatedDate, which can lag when dispatch is queued or retried.</description>
+    <label>Recorded At</label>
+    <required>true</required>
+    <type>DateTime</type>
+</CustomField>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Algorithm__c</fullName>
+    <description>Algorithm tag describing how Wrapped_Key__c is used. Forward compat for future algorithm migrations (e.g. if Salesforce ever ships AES-GCM in Apex). Current value: 'AES-256-CBC+HMAC-SHA256'.</description>
+    <label>Algorithm</label>
+    <length>64</length>
+    <required>true</required>
+    <type>Text</type>
+</CustomField>

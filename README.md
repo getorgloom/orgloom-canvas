@@ -4,7 +4,7 @@ Org Loom Canvas is the source-available canvas core at the center of [Org Loom](
 
 The canvas brings existing records, drafts, and relationships into one visual workspace. It includes the Salesforce integration and browser interface used to import, edit, validate, upload, and recall record changes.
 
-This repository contains the canvas portion of Org Loom. Hosted account, workspace, billing, and administration features are maintained separately.
+This repository contains the canvas portion of Org Loom and a reviewable copy of the [Salesforce managed package source](./orgloom-package). Hosted account, workspace, billing, and administration features are maintained separately.
 
 ## Feedback and source publication
 

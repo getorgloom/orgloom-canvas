@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Action__c</fullName>
+    <description>The audit action string (upload, canvas_shared, workspace_member_role_changed, etc.). Matches the value Orgloom uses internally.</description>
+    <label>Action</label>
+    <length>64</length>
+    <required>true</required>
+    <type>Text</type>
+</CustomField>

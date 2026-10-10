@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Target_Id__c</fullName>
+    <description>Identifier of the specific thing acted on: Salesforce record id when applicable, otherwise Orgloom-internal id (canvas id, workspace member account id, mcp token id, etc.).</description>
+    <label>Target Id</label>
+    <length>64</length>
+    <required>false</required>
+    <type>Text</type>
+</CustomField>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>My_Canvases</fullName>
+    <columns>NAME</columns>
+    <columns>Workspace_Id__c</columns>
+    <columns>Record_Count__c</columns>
+    <columns>Last_Edited_At__c</columns>
+    <columns>LAST_UPDATE</columns>
+    <filterScope>Mine</filterScope>
+    <label>My Canvases</label>
+</ListView>

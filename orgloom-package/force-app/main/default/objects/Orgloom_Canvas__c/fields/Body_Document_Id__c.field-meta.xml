@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Body_Document_Id__c</fullName>
+    <description>ContentDocument ID (18-char) where the encrypted canvas body is stored. The ContentDocument is linked to this record via a ContentDocumentLink with ShareType='I' so the file's visibility is inherited from this record's share. Server reads this field on canvas-load to resolve the blob.</description>
+    <externalId>false</externalId>
+    <label>Body Document Id</label>
+    <length>18</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

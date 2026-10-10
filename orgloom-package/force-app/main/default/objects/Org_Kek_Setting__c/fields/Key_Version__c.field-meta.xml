@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Key_Version__c</fullName>
+    <description>Monotonically increasing version, bumped only on KEK rotation. Wrapped DEKs persisted before rotation reference the old version; rewrapDek() detects mismatch and re-wraps under current. Starts at 1.</description>
+    <label>Key Version</label>
+    <precision>4</precision>
+    <required>true</required>
+    <scale>0</scale>
+    <type>Number</type>
+</CustomField>

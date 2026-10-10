@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Canvas_Id__c</fullName>
+    <caseSensitive>true</caseSensitive>
+    <description>Org Loom's internal canvas ID (UUID). Used as the External Id join key between the SF record and Org Loom's database. Unique within the org.</description>
+    <externalId>true</externalId>
+    <label>Canvas ID</label>
+    <length>36</length>
+    <required>true</required>
+    <trackHistory>false</trackHistory>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>
