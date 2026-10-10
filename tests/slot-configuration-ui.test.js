@@ -20,10 +20,10 @@ const insertModalSource = fs.readFileSync(path.resolve(here, '../src/public/js/i
 
 test('record and field requests have distinct owner actions', () => {
 	assert.match(menuSource, /data-card-action="configure-slot"/);
-	assert.match(menuSource, /Configure .*field request.*record request/s);
+	assert.match(menuSource, /Edit request&hellip;/);
 	assert.match(menuSource, /const canConfigureSlot = canEditCanvasStructure\(\) && _canAuthorSlots\(\)/);
 	assert.doesNotMatch(menuSource, /data-card-action="to-slot"/);
-	assert.match(menuSource, /Request fields on this /);
+	assert.match(menuSource, /Request fields&hellip;/);
 	assert.match(bulkMenuSource, /data-add-menu="request"/);
 	assert.match(bulkMenuSource, /Request a record/);
 	assert.match(toolbarSource, />\+ Add records<\/button>/);

@@ -192,7 +192,7 @@
 					exportRecordsAttrs +
 					'>' +
 					(exportRecordsAccess.allowed ? '' : '\uD83D\uDD12 ') +
-					'Export records (CSV) <span class="tpl-action-sub">records only, opens in Excel</span></button>';
+					'Export records (CSV) <span class="tpl-action-sub">Records only; links to draft records aren&rsquo;t included.</span></button>';
 				const _downloadHeader = '<div class="tpl-header">Download to your machine</div>';
 				pop.innerHTML =
 					'<div class="tpl-header">Save this canvas</div>' +
@@ -233,6 +233,7 @@
 				const name = await showPromptModal({
 					title: opts.title || 'Name this canvas',
 					label: opts.label || 'Name',
+					hideLabel: true,
 					placeholder: 'e.g. QA seed for Order flow',
 					defaultValue: opts.defaultName || '',
 					submitText: opts.submitText || 'Save',
@@ -962,16 +963,12 @@
 						: '') +
 					'>' +
 					'<strong>+ New canvas</strong>' +
-					'<span class="tpl-action-sub">' +
-					(freshBlankCanvas ? 'you are already on a blank canvas' : 'start with a blank working canvas') +
-					'</span>' +
 					'</button>' +
 					'<div class="tpl-header">' +
 					headerLabel +
 					'</div>' +
 					'<div class="tpl-access-note" id="browse-sf-access-note" hidden></div>' +
-					'<div class="tpl-local-list" id="browse-sf-list"><div class="tpl-empty">Loading\u2026</div></div>' +
-					'<div class="tpl-footer">Canvases are scoped to the workspace you\u2019re viewing and your active Salesforce connection.</div>';
+					'<div class="tpl-local-list" id="browse-sf-list"><div class="tpl-empty">Loading\u2026</div></div>';
 				const newCanvasButton = pop.querySelector('[data-new-canvas]');
 				if (newCanvasButton) {
 					newCanvasButton.addEventListener('click', async () => {

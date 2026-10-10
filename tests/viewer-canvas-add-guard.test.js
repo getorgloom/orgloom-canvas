@@ -294,12 +294,8 @@ test('viewer and contributor card mutation controls are hidden and centrally gua
 	);
 });
 
-test('viewer and contributor edit modals omit delete and unlink controls', () => {
-	assert.match(
-		insertModalSource,
-		/!canEditCanvasStructure\(\)[\s\S]*!rec[\s\S]*!isLoaded[\s\S]*isTypeNode[\s\S]*isInaccessible[\s\S]*!pending && !canDeleteRecord\(rec\)/,
-	);
-	assert.match(insertModalSource, /canEditCanvasStructure\(\)\s*\? '<button[^']+data-unlink-existing/);
+test('edit modals omit record actions and still guard relationship unlink controls', () => {
+	assert.doesNotMatch(insertModalSource, /modal-mark-delete|data-unlink-existing|record-unlink/);
 	assert.match(
 		insertModalSource,
 		/linkedRecordControlHtml\(\s*f,\s*lock,\s*describeLinkedTarget\(lock.target\),\s*canEditCanvasStructure\(\),/,
@@ -311,7 +307,7 @@ test('viewer and contributor edit modals omit delete and unlink controls', () =>
 	);
 	assert.match(
 		insertModalSource,
-		/unlinkBtn\.addEventListener\('click', async \(\) => \{\s*if \(!canEditCanvasStructure\(\)\)/,
+		/async function unlinkRecord\(record, targetState = canvasState\) \{\s*if \(!canEditCanvasStructure\(\)\)/,
 	);
 });
 

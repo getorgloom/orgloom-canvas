@@ -107,6 +107,8 @@ function mountPresence({
 	const sources = [];
 	const intervals = [];
 	const timeouts = [];
+	const timedCallbacks = new Map();
+	let timerSequence = 0;
 	class EventSource {
 		constructor(url) {
 			this.url = url;
@@ -158,14 +160,20 @@ function mountPresence({
 			intervals.push(callback);
 			return intervals.length;
 		},
-		setTimeout: (callback) => {
+		setTimeout: (callback, delay = 0) => {
+			const id = ++timerSequence;
 			if (deferTimeouts) {
 				timeouts.push(callback);
-				return timeouts.length;
+				return id;
+			}
+			if (delay > 0) {
+				timedCallbacks.set(id, { callback, at: now + delay });
+				return id;
 			}
 			callback();
-			return 1;
+			return id;
 		},
+		clearTimeout: (id) => timedCallbacks.delete(id),
 		clearInterval() {},
 	});
 	const canvasState = {
@@ -178,7 +186,11 @@ function mountPresence({
 	const api = window.OrgLoom.presence.mount({
 		canvasState,
 		csrfFetch: async (url, options) => {
-			const request = { url, body: options && options.body ? JSON.parse(options.body) : null };
+			const request = {
+				url,
+				body: options && options.body ? JSON.parse(options.body) : null,
+				signal: options?.signal,
+			};
 			requests.push(request);
 			if (fetchHandler) {
 				return fetchHandler(request);
@@ -236,8 +248,8 @@ function mountPresence({
 		body: document.body,
 		sources,
 		reloadCount: () => reloads,
-		move(x = 20, y = 30) {
-			now += 101;
+		move(x = 20, y = 30, elapsed = 101) {
+			now += elapsed;
 			host?.dispatch('mousemove', { clientX: x, clientY: y });
 		},
 		leaveCanvas() {
@@ -261,11 +273,198 @@ function mountPresence({
 		},
 		advance(milliseconds) {
 			now += milliseconds;
+			for (const [id, timer] of timedCallbacks) {
+				if (timer.at <= now) {
+					timedCallbacks.delete(id);
+					timer.callback();
+				}
+			}
 		},
 	};
 }
 
 describe('presence client request gating', () => {
+	test('reloading or switching canvases cannot publish temporary removals and resumes genuine edits', async () => {
+		for (const nextId of ['069000000000001AAA', '069000000000002AAA']) {
+			const record = {
+				id: 1,
+				objectName: 'Account',
+				loadedFromId: '001000000000001AAA',
+				_canvasRecordId: 'account-card',
+				values: { Name: 'Saved' },
+				loadedValues: { Name: 'Saved' },
+			};
+			const harness = mountPresence({ records: [record] });
+			harness.canvasState.currentCanvas = { id: '069000000000001AAA', ownedByMe: false };
+			harness.api.subscribeToCanvas('069000000000001AAA');
+			const oldSource = harness.sources[0];
+			oldSource.emit('presence-init', { you: { connectionId: 'old', role: 'editor', canEdit: true }, peers: [] });
+			const finishOuter = harness.api.beginCanvasLoad();
+			const finishInner = harness.api.beginCanvasLoad();
+			assert.equal(oldSource.readyState, 2);
+			harness.canvasState.currentCanvas = { id: nextId, ownedByMe: false };
+			harness.canvasState.bulkRecords = [];
+			harness.api.publishChanges();
+			harness.tick();
+			finishInner();
+			harness.tick();
+			assert.equal(harness.sources.length, 1, 'nested load must not reconnect early');
+			assert.equal(harness.requests.length, 0);
+			harness.canvasState.bulkRecords = [record];
+			finishOuter();
+			finishOuter();
+			assert.equal(harness.sources.length, 2);
+			assert.ok(harness.sources[1].url.includes(nextId));
+			oldSource.emit('presence', {
+				type: 'loaded-removed',
+				sfId: record.loadedFromId,
+				collabRef: 'account-card',
+			});
+			assert.equal(harness.canvasState.bulkRecords.length, 1, 'old subscription must not change new state');
+			harness.sources[1].emit('presence-init', {
+				you: { connectionId: 'new', role: 'editor', canEdit: true },
+				peers: [],
+			});
+			harness.api.publishChanges();
+			assert.equal(harness.requests.length, 0, 'loading is not an edit');
+			record.values.Name = 'Actual edit';
+			harness.api.publishChanges();
+			await new Promise((resolve) => setImmediate(resolve));
+			assert.equal(harness.requests.length, 1);
+			assert.ok(harness.requests[0].url.includes(nextId + '/presence/loaded-record'));
+			assert.equal(harness.requests[0].body.fields.Name, 'Actual edit');
+		}
+	});
+
+	test('failed replacement stays disconnected until a successful load, and a local file stays detached', () => {
+		const harness = mountPresence();
+		harness.canvasState.currentCanvas = { id: '069000000000001AAA', ownedByMe: false };
+		harness.api.subscribeToCanvas('069000000000001AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'old', canEdit: true }, peers: [] });
+		const finish = harness.api.beginCanvasLoad();
+		finish(false);
+		harness.tick();
+		assert.equal(harness.sources.length, 1);
+		assert.equal(harness.requests.length, 0);
+		const finishFile = harness.api.beginCanvasLoad();
+		harness.canvasState.currentCanvas = null;
+		finishFile();
+		harness.tick();
+		assert.equal(harness.sources.length, 1);
+		assert.equal(harness.requests.length, 0);
+	});
+
+	test('publishing cannot remove old cards after the selected canvas identity changes', () => {
+		const harness = mountPresence({
+			records: [{ id: 1, loadedFromId: '001000000000001AAA', _canvasRecordId: 'card' }],
+		});
+		harness.api.subscribeToCanvas('069000000000001AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'old', canEdit: true }, peers: [] });
+		harness.canvasState.currentCanvas = { id: '069000000000002AAA' };
+		harness.canvasState.bulkRecords = [];
+		harness.api.publishChanges();
+		assert.equal(harness.requests.length, 0);
+	});
+
+	test('live snapshot reconstruction cannot broadcast removals of loaded records or drafts', async () => {
+		let release;
+		const gate = new Promise((resolve) => {
+			release = resolve;
+		});
+		const records = [
+			{
+				id: 1,
+				objectName: 'Account',
+				loadedFromId: '001000000000001AAA',
+				_canvasRecordId: 'loaded',
+				values: {},
+				loadedValues: {},
+			},
+			{
+				id: 2,
+				objectName: 'Contact',
+				_persistedTempId: 'draft',
+				_canvasRecordId: 'draft',
+				values: { LastName: 'Draft' },
+			},
+		];
+		const harness = mountPresence({ records, snapshotApplyGate: gate });
+		harness.canvasState.currentCanvas = { id: '069000000000001AAA', ownedByMe: false };
+		harness.api.subscribeToCanvas('069000000000001AAA');
+		const source = harness.sources[0];
+		source.emit('presence-init', {
+			you: { connectionId: 'editor', role: 'editor', canEdit: true },
+			peers: [],
+			hasLiveSnapshot: true,
+		});
+		harness.canvasState.bulkRecords = [];
+		harness.api.publishChanges();
+		assert.equal(harness.requests.length, 0, 'wait for initial snapshot');
+		source.emit('presence', { type: 'live-snapshot', revision: 1, durableRevision: 1, payload: {} });
+		harness.tick();
+		harness.api.publishChanges();
+		assert.equal(harness.requests.length, 0, 'do not publish partially reconstructed state');
+		harness.canvasState.bulkRecords = records;
+		release();
+		await new Promise((resolve) => setImmediate(resolve));
+		harness.api.publishChanges();
+		assert.equal(harness.requests.length, 0);
+		harness.canvasState.bulkRecords = [];
+		harness.api.publishChanges();
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.ok(harness.requests.some((request) => request.url.endsWith('/record-remove')));
+		assert.ok(harness.requests.some((request) => request.body?.kind === 'remove'));
+	});
+
+	test('replacement waits for an old snapshot and drops queued writes and stale acknowledgements', async () => {
+		let releaseSnapshot;
+		let releaseRequest;
+		const snapshotGate = new Promise((resolve) => {
+			releaseSnapshot = resolve;
+		});
+		const requestGate = new Promise((resolve) => {
+			releaseRequest = resolve;
+		});
+		const records = [1, 2].map((id) => ({
+			id,
+			objectName: 'Account',
+			_persistedTempId: 'draft-' + id,
+			values: { Name: 'Before' },
+		}));
+		const harness = mountPresence({ records, snapshotApplyGate: snapshotGate, fetchHandler: () => requestGate });
+		harness.canvasState.currentCanvas = { id: '069000000000001AAA', ownedByMe: false };
+		harness.api.subscribeToCanvas('069000000000001AAA');
+		const source = harness.sources[0];
+		source.emit('presence-init', { you: { connectionId: 'old', canEdit: true }, peers: [] });
+		records.forEach((record) => {
+			record.values.Name = 'Changed';
+		});
+		harness.api.publishChanges();
+		assert.equal(harness.requests.length, 1);
+		source.emit('presence', { type: 'live-snapshot', revision: 1, payload: {} });
+		const finish = harness.api.beginCanvasLoad();
+		let ready = false;
+		finish.ready.then(() => {
+			ready = true;
+		});
+		releaseRequest({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(ready, false);
+		assert.equal(harness.requests.length, 1, 'old queued request must not dispatch');
+		releaseSnapshot();
+		await finish.ready;
+		assert.equal(ready, true);
+		harness.canvasState.currentCanvas = { id: '069000000000002AAA', ownedByMe: false };
+		harness.canvasState.bulkRecords = [];
+		finish();
+		assert.ok(harness.sources[1].url.includes('069000000000002AAA'));
+		assert.equal(
+			harness.canvasState._presenceCanvasId,
+			undefined,
+			'old snapshot must not update replacement revision',
+		);
+	});
+
 	test('makes access increases optional and access decreases blocking', () => {
 		const increased = mountPresence();
 		increased.api.subscribeToCanvas('069000000000001AAA');
@@ -324,7 +523,7 @@ describe('presence client request gating', () => {
 		assert.match(harness.body._children.at(-1).innerHTML, /Return to workspace/);
 	});
 
-	test('sends cursor and focus only while another viewer is present', () => {
+	test('sends cursor and focus only while another viewer is present', async () => {
 		const harness = mountPresence();
 		harness.api.subscribeToCanvas('draft-11111111-1111-4111-8111-111111111111');
 		const source = harness.sources[0];
@@ -345,6 +544,8 @@ describe('presence client request gating', () => {
 		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/cursor')).length, 1);
 
 		source.emit('presence', { type: 'leave', connectionId: 'peer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		harness.advance(100);
 		const cursorRequests = harness.requests.filter((request) => request.url.endsWith('/presence/cursor'));
 		assert.equal(cursorRequests.length, 2);
 		assert.equal(cursorRequests[1].body.x, null);
@@ -353,6 +554,151 @@ describe('presence client request gating', () => {
 		harness.api.pushFocus({ kind: 'record', ref: '001000000000002' });
 		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/cursor')).length, 2);
 		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/focus')).length, 1);
+	});
+
+	test('coalesces slow cursor requests into the latest position without aborting', async () => {
+		const complete = [];
+		const harness = mountPresence({
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/cursor')) return new Promise((resolve) => complete.push(resolve));
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000001AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'mine' }, peers: [{ connectionId: 'peer' }] });
+		harness.move(10, 20);
+		harness.move(30, 40);
+		harness.move(50, 60);
+		let cursors = harness.requests.filter((request) => request.url.endsWith('/presence/cursor'));
+		assert.equal(cursors.length, 1);
+		assert.equal(cursors[0].signal.aborted, false);
+		complete.shift()({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		cursors = harness.requests.filter((request) => request.url.endsWith('/presence/cursor'));
+		assert.equal(cursors.length, 2);
+		assert.equal(cursors[1].body.x, 50);
+		assert.equal(cursors[1].body.y, 60);
+		assert.ok(cursors[1].body.sequence > cursors[0].body.sequence);
+		complete.shift()({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		harness.advance(1000);
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/cursor')).length, 2);
+	});
+
+	test('sends the final mouse position after the throttle interval even when movement stops', async () => {
+		const harness = mountPresence();
+		harness.api.subscribeToCanvas('069000000000001AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'mine' }, peers: [{ connectionId: 'peer' }] });
+		harness.move(10, 20);
+		await new Promise((resolve) => setImmediate(resolve));
+		harness.move(30, 40, 10);
+		harness.move(50, 60, 10);
+		harness.advance(79);
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/cursor')).length, 1);
+		harness.advance(1);
+		const cursors = harness.requests.filter((request) => request.url.endsWith('/presence/cursor'));
+		assert.equal(cursors.length, 2);
+		assert.equal(cursors[1].body.x, 50);
+		assert.equal(cursors[1].body.y, 60);
+	});
+
+	test('mouse leave replaces queued movement with a serialized cursor clear', async () => {
+		let finish;
+		const harness = mountPresence({
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/cursor') && request.body.x !== null)
+					return new Promise((resolve) => {
+						finish = resolve;
+					});
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000001AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'mine' }, peers: [{ connectionId: 'peer' }] });
+		harness.move(10, 20);
+		harness.move(30, 40);
+		harness.leaveCanvas();
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/cursor')).length, 1);
+		finish({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		const cursors = harness.requests.filter((request) => request.url.endsWith('/presence/cursor'));
+		assert.equal(cursors.length, 2);
+		assert.equal(cursors[1].body.x, null);
+		harness.advance(1000);
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/cursor')).length, 2);
+	});
+
+	test('connection changes discard queued cursor positions and ignore old completions', async () => {
+		const complete = [];
+		const harness = mountPresence({
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/cursor')) return new Promise((resolve) => complete.push(resolve));
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000001AAA');
+		const init = (connectionId) => ({ you: { connectionId }, peers: [{ connectionId: 'peer' }] });
+		harness.sources[0].emit('presence-init', init('old'));
+		harness.move(10, 20);
+		harness.move(30, 40);
+		harness.api.subscribeToCanvas('069000000000002AAA');
+		harness.sources[1].emit('presence-init', init('new'));
+		harness.move(50, 60);
+		harness.move(70, 80);
+		complete.shift()({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		let cursors = harness.requests.filter((request) => request.url.endsWith('/presence/cursor'));
+		assert.equal(cursors.length, 2);
+		assert.equal(cursors[0].signal.aborted, true);
+		assert.equal(cursors[1].signal.aborted, false);
+		complete.shift()({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		cursors = harness.requests.filter((request) => request.url.endsWith('/presence/cursor'));
+		assert.equal(cursors.length, 3);
+		assert.equal(cursors[2].body.x, 70);
+		assert.equal(cursors[2].body.connectionId, 'new');
+	});
+
+	for (const change of ['reconnect', 'unsubscribe', 'revoke']) {
+		test(`cancels a scheduled cursor update on ${change}`, async () => {
+			const harness = mountPresence();
+			harness.api.subscribeToCanvas('069000000000001AAA');
+			const init = { you: { connectionId: 'mine' }, peers: [{ connectionId: 'peer' }] };
+			harness.sources[0].emit('presence-init', init);
+			harness.move(10, 20);
+			await new Promise((resolve) => setImmediate(resolve));
+			harness.move(30, 40, 10);
+			if (change === 'unsubscribe') harness.api.unsubscribe();
+			else if (change === 'reconnect')
+				harness.sources[0].emit('presence-init', { ...init, you: { connectionId: 'new' } });
+			else harness.sources[0].emit('presence', { type: 'access-changed', change: 'revoked', revoked: true });
+			harness.advance(1000);
+			await new Promise((resolve) => setImmediate(resolve));
+			assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/cursor')).length, 1);
+		});
+	}
+
+	test('a cursor network failure releases the queue for newer movement', async () => {
+		let rejectFirst;
+		let count = 0;
+		const harness = mountPresence({
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/cursor') && count++ === 0)
+					return new Promise((resolve, reject) => {
+						rejectFirst = reject;
+					});
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000001AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'mine' }, peers: [{ connectionId: 'peer' }] });
+		harness.move(10, 20);
+		harness.move(30, 40);
+		rejectFirst(new Error('network failure'));
+		await new Promise((resolve) => setImmediate(resolve));
+		const cursors = harness.requests.filter((request) => request.url.endsWith('/presence/cursor'));
+		assert.equal(cursors.length, 2);
+		assert.equal(cursors[1].body.x, 30);
 	});
 
 	test('replaces stale cursor elements when the presence stream reconnects', () => {
@@ -388,7 +734,7 @@ describe('presence client request gating', () => {
 		assert.deepEqual(harness.cursorConnections(), ['peer-new']);
 	});
 
-	test('binds cursor tracking after the canvas DOM renders late and after host replacement', () => {
+	test('binds cursor tracking after the canvas DOM renders late and after host replacement', async () => {
 		const harness = mountPresence({ hostInitially: false });
 		harness.api.subscribeToCanvas('draft-22222222-2222-4222-8222-222222222222');
 		const source = harness.sources[0];
@@ -407,14 +753,15 @@ describe('presence client request gating', () => {
 		oldHost.dispatch('mousemove', { clientX: 40, clientY: 50 });
 		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/cursor')).length, 1);
 		harness.move(40, 50);
+		await new Promise((resolve) => setImmediate(resolve));
 		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/cursor')).length, 2);
 	});
 
 	test('renders record focus for loaded records, drafts, and record requests', () => {
 		const records = [
-			{ id: 1, loadedFromId: '001000000000001' },
-			{ id: 2, _persistedTempId: 'draft-2' },
-			{ id: 3, slot: { slotId: 'slot-3' } },
+			{ id: 1, loadedFromId: '001000000000001', _canvasRecordId: 'card-1' },
+			{ id: 2, _persistedTempId: 'draft-2', _canvasRecordId: 'card-2' },
+			{ id: 3, _persistedTempId: 'draft-3', _canvasRecordId: 'card-3', slot: { slotId: 'slot-3' } },
 		];
 		const harness = mountPresence({ records });
 		harness.api.subscribeToCanvas('draft-33333333-3333-4333-8333-333333333333');
@@ -952,6 +1299,256 @@ describe('presence client request gating', () => {
 		harness.tick();
 		await new Promise((resolve) => setImmediate(resolve));
 		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/layout')).length, 2);
+	});
+
+	test('prunes removed cards from layout retries without blocking remaining positions', async () => {
+		const records = ['removed', 'retained'].map((id, index) => ({
+			id,
+			objectName: 'Account',
+			loadedFromId: '00100000000000' + (index + 1),
+			_canvasRecordId: id,
+			values: {},
+			x: 100,
+			y: 200,
+		}));
+		let attempts = 0;
+		const harness = mountPresence({
+			records,
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/layout')) return { ok: ++attempts > 1 };
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000198AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'owner', canEdit: true }, peers: [] });
+		harness.api.publishLayout(records);
+		await new Promise((resolve) => setImmediate(resolve));
+		records.shift();
+		harness.advance(30000);
+		harness.tick();
+		await new Promise((resolve) => setImmediate(resolve));
+		const layouts = harness.requests.filter((request) => request.url.endsWith('/presence/layout'));
+		assert.equal(layouts.length, 2);
+		assert.deepEqual(
+			layouts[1].body.positions.map((position) => position.collabRef),
+			['retained'],
+		);
+	});
+
+	test('waits for a new draft acknowledgement before sending its latest position', async () => {
+		let attempts = 0;
+		let acceptCreate;
+		const harness = mountPresence({
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/draft') && request.body.kind === 'create') {
+					if (++attempts === 1) return { ok: false };
+					return new Promise((resolve) => {
+						acceptCreate = resolve;
+					});
+				}
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000198AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'owner', canEdit: true }, peers: [] });
+		const record = { id: 1, objectName: 'Contact', values: { LastName: 'Demo' }, x: 100, y: 200 };
+		harness.canvasState.bulkRecords.push(record);
+		harness.api.publishLayout([record]);
+		harness.api.publishChanges();
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/layout')).length, 0);
+		record.x = 450;
+		harness.api.publishLayout([record]);
+		harness.advance(1000);
+		harness.tick();
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/layout')).length, 0);
+		acceptCreate({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		const layouts = harness.requests.filter((request) => request.url.endsWith('/presence/layout'));
+		assert.equal(layouts.length, 1);
+		assert.equal(layouts[0].body.positions[0].x, 450);
+		assert.equal(layouts[0].body.positions[0].ref, record._collabId);
+	});
+
+	test('does not send a queued layout for a card removed while another mutation is in flight', async () => {
+		let acceptUpdate;
+		const record = {
+			id: 1,
+			objectName: 'Account',
+			loadedFromId: '001000000000001',
+			_canvasRecordId: 'card',
+			values: { Name: 'Before' },
+			x: 100,
+			y: 200,
+		};
+		const harness = mountPresence({
+			records: [record],
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/loaded-record'))
+					return new Promise((resolve) => {
+						acceptUpdate = resolve;
+					});
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000198AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'owner', canEdit: true }, peers: [] });
+		record.values.Name = 'After';
+		harness.api.publishChanges();
+		harness.api.publishLayout([record]);
+		harness.canvasState.bulkRecords.length = 0;
+		acceptUpdate({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		harness.advance(30000);
+		harness.tick();
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/layout')).length, 0);
+		assert.equal(harness.toasts.length, 0);
+	});
+
+	test('drops obsolete retries without claiming success or moving another copy of the same Salesforce record', async () => {
+		const record = { id: 1, loadedFromId: '001000000000001', _canvasRecordId: 'removed-card', x: 100, y: 200 };
+		const other = { id: 2, loadedFromId: record.loadedFromId, _canvasRecordId: 'other-card', x: 300, y: 400 };
+		let reject = true;
+		const harness = mountPresence({
+			records: [record, other],
+			fetchHandler(request) {
+				return { ok: !request.url.endsWith('/presence/layout') || !reject };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000198AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'owner', canEdit: true }, peers: [] });
+		harness.api.publishLayout([record]);
+		await new Promise((resolve) => setImmediate(resolve));
+		for (let i = 0; i < 2; i++) {
+			harness.advance(30000);
+			harness.tick();
+			await new Promise((resolve) => setImmediate(resolve));
+		}
+		assert.equal(harness.toasts.filter((toast) => toast.type === 'error').length, 1);
+		harness.canvasState.bulkRecords.shift();
+		harness.advance(30000);
+		harness.tick();
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/layout')).length, 3);
+		assert.equal(
+			harness.toasts.some((toast) => toast.message.includes('have synced')),
+			false,
+		);
+		reject = false;
+		other.x = 500;
+		harness.api.publishLayout([other]);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/layout')).length, 4);
+		assert.equal(
+			harness.toasts.some((toast) => toast.message.includes('have synced')),
+			false,
+		);
+	});
+
+	test('waits for a newly loaded card acknowledgement without blocking known cards', async () => {
+		const existing = { id: 1, loadedFromId: '001000000000001', _canvasRecordId: 'existing', x: 100, y: 200 };
+		let acceptCreate;
+		const harness = mountPresence({
+			records: [existing],
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/loaded-record'))
+					return new Promise((resolve) => {
+						acceptCreate = resolve;
+					});
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000198AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'owner', canEdit: true }, peers: [] });
+		const added = {
+			id: 2,
+			objectName: 'Contact',
+			loadedFromId: '003000000000001',
+			_canvasRecordId: 'added',
+			values: {},
+			x: 300,
+			y: 400,
+		};
+		harness.canvasState.bulkRecords.push(added);
+		harness.api.publishLayout([existing, added]);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.deepEqual(
+			harness.requests
+				.find((request) => request.url.endsWith('/presence/layout'))
+				.body.positions.map((position) => position.collabRef),
+			['existing'],
+		);
+		harness.api.publishChanges();
+		acceptCreate({ ok: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.deepEqual(
+			harness.requests
+				.filter((request) => request.url.endsWith('/presence/layout'))
+				.at(-1)
+				.body.positions.map((position) => position.collabRef),
+			['added'],
+		);
+	});
+
+	test('refreshes a pending draft position to the loaded reference after promotion', async () => {
+		const record = {
+			id: 1,
+			objectName: 'Account',
+			_persistedTempId: 'draft-1',
+			_canvasRecordId: 'card-1',
+			values: { Name: 'Demo' },
+			x: 100,
+			y: 200,
+		};
+		let attempts = 0;
+		const harness = mountPresence({
+			records: [record],
+			fetchHandler(request) {
+				if (request.url.endsWith('/presence/layout')) return { ok: ++attempts > 1 };
+				return { ok: true };
+			},
+		});
+		harness.api.subscribeToCanvas('069000000000198AAA');
+		harness.sources[0].emit('presence-init', { you: { connectionId: 'owner', canEdit: true }, peers: [] });
+		harness.api.publishLayout([record]);
+		await new Promise((resolve) => setImmediate(resolve));
+		record.loadedFromId = '001000000000001';
+		record.x = 350;
+		harness.api.publishLayout([record]);
+		harness.advance(30000);
+		harness.tick();
+		await new Promise((resolve) => setImmediate(resolve));
+		const positions = harness.requests.filter((request) => request.url.endsWith('/presence/layout')).at(-1)
+			.body.positions;
+		assert.deepEqual(positions, [
+			{ refKind: 'loaded', ref: record.loadedFromId, collabRef: 'card-1', x: 350, y: 200 },
+		]);
+	});
+
+	test('discards pre-snapshot positions when the authoritative snapshot arrives', async () => {
+		const record = { id: 1, loadedFromId: '001000000000001', _canvasRecordId: 'card-1', x: 100, y: 200 };
+		const harness = mountPresence({ records: [record] });
+		harness.api.subscribeToCanvas('069000000000198AAA');
+		harness.api.publishLayout([record]);
+		harness.sources[0].emit('presence-init', {
+			you: { connectionId: 'owner', canEdit: true },
+			peers: [],
+			hasLiveSnapshot: true,
+		});
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/layout')).length, 0);
+		harness.sources[0].emit('presence', { type: 'live-snapshot', payload: {}, revision: 1, durableRevision: 1 });
+		await new Promise((resolve) => setImmediate(resolve));
+		harness.tick();
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(harness.requests.filter((request) => request.url.endsWith('/presence/layout')).length, 0);
+		record.x = 350;
+		harness.api.publishLayout([record]);
+		assert.equal(
+			harness.requests.filter((request) => request.url.endsWith('/presence/layout')).at(-1).body.positions[0].x,
+			350,
+		);
 	});
 
 	test('uses stable canvas-card identity when duplicate Salesforce records move', () => {
@@ -1893,14 +2490,14 @@ describe('presence client request gating', () => {
 			refKind: 'slot',
 			ref: 'slot-3',
 			sourceRefKind: 'draft',
-			sourceRef: '11111111-1111-4111-8111-111111111111',
+			sourceRef: 'slot-card',
 			collabRef: 'slot-card',
 		});
 		assert.deepEqual(linkRequests[2].body.fromRef, {
 			refKind: 'slot',
 			ref: 'slot-3',
 			sourceRefKind: 'draft',
-			sourceRef: '11111111-1111-4111-8111-111111111111',
+			sourceRef: 'slot-card',
 			collabRef: 'slot-card',
 		});
 		assert.deepEqual(linkRequests[2].body.toRef, {
@@ -2193,6 +2790,116 @@ describe('presence client request gating', () => {
 		await new Promise((resolve) => setImmediate(resolve));
 		assert.equal(receiver.canvasState.bulkRecords.length, 1);
 		assert.equal(receiver.canvasState.bulkRecords[0].loadedFromId, '001000000000013AAA');
+	});
+
+	test('reuses a saved card for an aliased draft announcement and ignores delayed events after upload', async () => {
+		const draft = {
+			id: 1,
+			objectName: 'Account',
+			_persistedTempId: 'saved-id',
+			_canvasRecordId: 'stable-card',
+			values: { Name: 'Before' },
+		};
+		const receiver = mountPresence({ records: [draft] });
+		receiver.api.subscribeToCanvas('069000000000013AAA');
+		receiver.sources[0].emit('presence-init', {
+			you: { connectionId: 'receiver', role: 'editor', canEdit: true },
+			peers: [],
+			revision: 0,
+			durableRevision: 0,
+		});
+		receiver.sources[0].emit('presence', {
+			type: 'draft-update',
+			kind: 'create',
+			tempId: 'live-id',
+			canvasRecordId: 'stable-card',
+			objectName: 'Account',
+			fields: { Name: 'Live' },
+			revision: 1,
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(receiver.canvasState.bulkRecords.length, 1);
+		assert.equal(draft.values.Name, 'Live');
+		receiver.sources[0].emit('presence', {
+			type: 'loaded-record',
+			kind: 'create',
+			sfId: '001000000000031AAA',
+			collabRef: 'stable-card',
+			objectName: 'Account',
+			fields: { Name: 'Saved' },
+			baseline: { Name: 'Saved' },
+			revision: 2,
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(receiver.canvasState.bulkRecords.length, 1);
+		assert.equal(draft.loadedFromId, '001000000000031AAA');
+		for (const kind of ['create', 'remove']) {
+			receiver.sources[0].emit('presence', {
+				type: 'draft-update',
+				kind,
+				tempId: 'live-id',
+				canvasRecordId: 'stable-card',
+				objectName: 'Account',
+				fields: { Name: 'Stale' },
+				revision: kind === 'create' ? 3 : 4,
+			});
+			await new Promise((resolve) => setImmediate(resolve));
+		}
+		assert.equal(receiver.canvasState.bulkRecords.length, 1);
+		assert.equal(draft.values.Name, 'Saved');
+	});
+
+	test('promotion retires an existing ghost draft but preserves unrelated drafts and their links', async () => {
+		const drafts = [
+			{
+				id: 1,
+				objectName: 'Account',
+				_persistedTempId: 'old',
+				_canvasRecordId: 'stable-card',
+				values: { Name: 'Same' },
+			},
+			{
+				id: 2,
+				objectName: 'Account',
+				_collabId: 'live',
+				_canvasRecordId: 'stable-card',
+				values: { Name: 'Same' },
+			},
+			{
+				id: 3,
+				objectName: 'Account',
+				_persistedTempId: 'real',
+				_canvasRecordId: 'other-card',
+				values: { Name: 'Same' },
+			},
+		];
+		const receiver = mountPresence({ records: drafts });
+		receiver.canvasState.bulkAssociations = [{ fromId: 3, toId: 1, fieldName: 'ParentId' }];
+		receiver.api.subscribeToCanvas('069000000000013AAA');
+		receiver.sources[0].emit('presence-init', {
+			you: { connectionId: 'receiver', role: 'viewer', canEdit: false },
+			peers: [],
+			revision: 0,
+			durableRevision: 0,
+		});
+		receiver.sources[0].emit('presence', {
+			type: 'loaded-record',
+			kind: 'create',
+			sfId: '001000000000031AAA',
+			collabRef: 'stable-card',
+			objectName: 'Account',
+			fields: { Name: 'Saved' },
+			baseline: { Name: 'Saved' },
+			promotedFrom: { refKind: 'draft', ref: 'live', collabRef: 'stable-card' },
+			revision: 1,
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.deepEqual(
+			receiver.canvasState.bulkRecords.map((record) => record.id),
+			[2, 3],
+		);
+		assert.equal(receiver.canvasState.bulkAssociations[0].toId, 2);
+		assert.equal(drafts[2].loadedFromId, undefined);
 	});
 
 	test('publishes a local draft upload as one atomic loaded-record transition', async () => {

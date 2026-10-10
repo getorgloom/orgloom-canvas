@@ -35,11 +35,11 @@
 				'<button class="modal-close" data-bs-close>&times;</button>' +
 				'</div>' +
 				'<div class="modal-content">' +
-				'<p class="bs-blurb">JavaScript that runs locally against the records on your canvas. Nothing is sent to Salesforce until you click <em>Upload to Salesforce</em>.</p>' +
 				'<textarea id="bs-source" class="bs-source" spellcheck="false" autocomplete="off" autocorrect="off"></textarea>' +
 				'<details class="bs-cheatsheet">' +
 				'<summary>Cheat sheet</summary>' +
 				'<div class="bs-cheatsheet-body">' +
+				'<p class="bs-blurb">JavaScript that runs locally against the records on your canvas. Nothing is sent to Salesforce until you click <em>Upload to Salesforce</em>.</p>' +
 				'<h4>Recipes</h4>' +
 				'<pre class="bs-recipe">// Bump every Opportunity Amount by 10%\n' +
 				'for (const r of records) {\n' +
@@ -84,15 +84,15 @@
 				'</details>' +
 				'<details class="bs-nested">' +
 				'<summary>Coming from Apex?</summary>' +
-				'<table class="bs-map">' +
-				'<tr><th>Apex</th><th>Script here</th></tr>' +
+				'<div class="bs-map-wrap" tabindex="0" role="region" aria-label="Apex and script comparison"><table class="bs-map">' +
+				'<thead><tr><th scope="col">Apex</th><th scope="col">Script here</th></tr></thead><tbody>' +
 				'<tr><td><code>for (Account a : records)</code></td><td><code>for (const a of records)</code></td></tr>' +
 				'<tr><td><code>String.isBlank(x)</code></td><td><code>isBlank(x)</code></td></tr>' +
 				'<tr><td><code>Date.today()</code></td><td><code>today()</code></td></tr>' +
 				'<tr><td><code>record.Field__c</code></td><td><code>r.values.Field__c</code></td></tr>' +
 				"<tr><td><code>String x = 'foo';</code></td><td><code>let x = 'foo';</code></td></tr>" +
 				'<tr><td><code>Math.max(a, b)</code></td><td><code>max(a, b)</code></td></tr>' +
-				'</table>' +
+				'</tbody></table></div>' +
 				'</details>' +
 				'<p class="bs-footnotes"><strong>Heads up:</strong> <code>Ctrl/Cmd+Enter</code> runs the script. Errors roll back every change. <code>r.id</code> and <code>r.loadedFromId</code> are read-only.</p>' +
 				'</div>' +

@@ -1,6 +1,6 @@
 (function () {
 	'use strict';
-	// Imports related CSV files while preserving row identity and cross-file lookup intent.
+	// Imports CSV record values while preserving Salesforce identity and field access rules.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -24,28 +24,6 @@
 		}
 	}
 	window.OrgLoom.exportedClearFields = exportedClearFields;
-
-	function unmappedCsvColumns(file, row, relationshipColumns) {
-		const encryptedNames = new Set(
-			(file.describe?.fields || [])
-				.filter((field) => field.type === 'encryptedstring')
-				.flatMap((field) => [field.name, field.label].map((name) => String(name || '').toLowerCase())),
-		);
-		return (file.headers || []).flatMap((name, index) => {
-			if (
-				name === '__OrgLoom_ClearFields' ||
-				file.mapping?.[index] ||
-				relationshipColumns.has(index) ||
-				row[index] == null ||
-				row[index] === '' ||
-				encryptedNames.has(String(name).toLowerCase())
-			) {
-				return [];
-			}
-			return [{ name: String(name), value: String(row[index]) }];
-		});
-	}
-	window.OrgLoom.unmappedCsvColumns = unmappedCsvColumns;
 
 	function csvFieldDisposition(field, operation) {
 		if (!field) {
@@ -109,29 +87,6 @@
 		);
 	}
 
-	function relationshipSemanticVariants(value) {
-		const raw = String(value || '')
-			.replace(/__(c|r|x)$/i, '')
-			.trim();
-		const normalized = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
-		const parts = raw.split(/_+/).filter(Boolean);
-		const finalPart = parts.length > 1 ? parts[parts.length - 1].toLowerCase().replace(/[^a-z0-9]/g, '') : '';
-		return Array.from(new Set([normalized, finalPart].filter((part) => part.length >= 3)));
-	}
-
-	function relationshipSemanticBonus(sourceHeader, field, targetObjectName, targetObjectLabel) {
-		const source = String(sourceHeader || '')
-			.toLowerCase()
-			.replace(/[^a-z0-9]/g, '');
-		const fieldSignals = [field && field.label, field && field.name, field && field.relationshipName]
-			.flatMap(relationshipSemanticVariants)
-			.some((signal) => source.includes(signal));
-		const targetSignals = [targetObjectName, targetObjectLabel]
-			.flatMap(relationshipSemanticVariants)
-			.some((signal) => source.includes(signal));
-		return (fieldSignals ? 4 : 0) + (targetSignals ? 2 : 0);
-	}
-
 	function csvImportCanceled(state, currentState) {
 		return !state || state.cancelRequested === true || currentState !== state;
 	}
@@ -141,21 +96,9 @@
 			return false;
 		}
 		if (
-			(state.links || []).some(
-				(link) =>
-					link.fromFileIdx == null ||
-					link.fromColumnIdx == null ||
-					!link.fromField ||
-					link.toFileIdx == null ||
-					link.toColumnIdx == null ||
-					Number(link.unmatched || 0) > 0 ||
-					Number(link.ambiguous || 0) > 0 ||
-					(Array.isArray(link.duplicateTargetKeys) && link.duplicateTargetKeys.length > 0),
-			) ||
 			state.files.some(
 				(file) =>
 					(file && Array.isArray(file.lookupErrors) && file.lookupErrors.length > 0) ||
-					(file && Array.isArray(file.relationshipErrors) && file.relationshipErrors.length > 0) ||
 					duplicateDirectFieldMappings(file).length > 0,
 			)
 		) {
@@ -248,134 +191,6 @@
 		});
 	}
 
-	function mixedRelationshipSources(state, fileIdx) {
-		const file = state && Array.isArray(state.files) ? state.files[fileIdx] : null;
-		if (!file) {
-			return [];
-		}
-		const seen = new Set();
-		return (state.links || []).reduce((sources, link) => {
-			if (link.fromFileIdx !== fileIdx || link.fromColumnIdx == null || !link.fromField) {
-				return sources;
-			}
-			const directColumnIdx = Object.keys(file.mapping || {}).find(
-				(columnIdx) => file.mapping[columnIdx] === link.fromField,
-			);
-			const key = link.fromField + ':' + directColumnIdx + ':' + link.fromColumnIdx;
-			if (directColumnIdx == null || seen.has(key)) {
-				return sources;
-			}
-			seen.add(key);
-			sources.push({
-				fieldName: link.fromField,
-				directHeader: file.headers[Number(directColumnIdx)] || link.fromField,
-				relationshipHeader: file.headers[link.fromColumnIdx] || '',
-			});
-			return sources;
-		}, []);
-	}
-
-	function resolveRelationshipRows(fromRows, fromColumnIdx, toRows, toColumnIdx, ignoredFromRowIdxs) {
-		const ignoredRows = ignoredFromRowIdxs instanceof Set ? ignoredFromRowIdxs : new Set();
-		const targetRowsByValue = new Map();
-		(toRows || []).forEach((row, rowIdx) => {
-			const value = String((row && row[toColumnIdx]) || '').trim();
-			if (!value) {
-				return;
-			}
-			if (!targetRowsByValue.has(value)) {
-				targetRowsByValue.set(value, []);
-			}
-			targetRowsByValue.get(value).push(rowIdx);
-		});
-
-		const matches = [];
-		const unmatchedRows = [];
-		const ambiguousRows = [];
-		const sourceRowsByValue = new Map();
-		(fromRows || []).forEach((row, rowIdx) => {
-			if (ignoredRows.has(rowIdx)) {
-				return;
-			}
-			const value = String((row && row[fromColumnIdx]) || '').trim();
-			if (!value) {
-				return;
-			}
-			if (!sourceRowsByValue.has(value)) {
-				sourceRowsByValue.set(value, []);
-			}
-			sourceRowsByValue.get(value).push(rowIdx);
-			const targets = targetRowsByValue.get(value) || [];
-			if (targets.length === 1) {
-				matches.push({ fromRowIdx: rowIdx, toRowIdx: targets[0], value });
-			} else if (targets.length === 0) {
-				unmatchedRows.push({ fromRowIdx: rowIdx, value });
-			} else {
-				ambiguousRows.push({ fromRowIdx: rowIdx, value, toRowIdxs: targets.slice() });
-			}
-		});
-
-		const duplicateTargetKeys = [];
-		targetRowsByValue.forEach((rowIdxs, value) => {
-			if (rowIdxs.length > 1) {
-				duplicateTargetKeys.push({
-					value,
-					toRowIdxs: rowIdxs.slice(),
-					fromRowIdxs: (sourceRowsByValue.get(value) || []).slice(),
-				});
-			}
-		});
-
-		return {
-			sourceRowCount: matches.length + unmatchedRows.length + ambiguousRows.length,
-			matches,
-			unmatchedRows,
-			ambiguousRows,
-			duplicateTargetKeys,
-		};
-	}
-
-	function shouldSelectRelationshipField(link, selectableFields) {
-		return !link || !link.fromField || (selectableFields || []).length > 1;
-	}
-
-	function relationshipFieldAvailableForLink(state, linkIndex, fromFileIdx, fieldName) {
-		return !(state && Array.isArray(state.links) ? state.links : []).some(
-			(otherLink, otherIndex) =>
-				otherIndex !== linkIndex && otherLink.fromFileIdx === fromFileIdx && otherLink.fromField === fieldName,
-		);
-	}
-
-	function compatibleTargetFileIndexes(files, relationshipFields) {
-		const fields = Array.isArray(relationshipFields) ? relationshipFields : [];
-		return (Array.isArray(files) ? files : []).reduce((indexes, file, fileIdx) => {
-			if (
-				file &&
-				fields.some((field) => Array.isArray(field.referenceTo) && field.referenceTo.includes(file.objectName))
-			) {
-				indexes.push(fileIdx);
-			}
-			return indexes;
-		}, []);
-	}
-
-	function relationshipMatchTargetColumn(file, columnIdx) {
-		if (!file || !Array.isArray(file.headers)) {
-			return false;
-		}
-		if (file.headers[columnIdx] === '__OrgLoom_ClearFields') return false;
-		if ((file.mapping || {})[columnIdx]) {
-			return true;
-		}
-		if ((file.relationshipChoices || {})[columnIdx] === 'relationship') {
-			return false;
-		}
-		const normalizedHeader = String(file.headers[columnIdx] || '')
-			.toLowerCase()
-			.replace(/[^a-z0-9]/g, '');
-		return !normalizedHeader.endsWith('key');
-	}
-
 	window.OrgLoom.linkedCsv = {
 		_test: {
 			csvDataColumns,
@@ -385,18 +200,11 @@
 			csvFieldOptionLabel,
 			isSalesforceId,
 			isExternalKeyReferenceField,
-			relationshipSemanticBonus,
 			csvImportCanceled,
 			linkedCsvReady,
 			duplicateDirectFieldMappings,
 			uniqueDirectFieldMapping,
 			syncDuplicateFileNameNotice,
-			mixedRelationshipSources,
-			resolveRelationshipRows,
-			shouldSelectRelationshipField,
-			relationshipFieldAvailableForLink,
-			compatibleTargetFileIndexes,
-			relationshipMatchTargetColumn,
 		},
 		mount: function mount(deps) {
 			if (
@@ -483,8 +291,7 @@
 				footer.innerHTML =
 					'<button class="button secondary" id="linked-csv-replace" disabled title="Drop everything currently on the canvas, then load this file onto a fresh canvas.">Replace canvas</button>' +
 					'<button class="button" id="linked-csv-confirm" disabled title="Load records onto the canvas alongside what is already there. Use Upload from the canvas toolbar to push them to Salesforce.">Add to canvas</button>';
-				footer.querySelector('#linked-csv-replace').onclick = () =>
-					runLinkedCsvAction('replace', () => linkedCsvConfirm({ replaceCanvas: true }));
+				footer.querySelector('#linked-csv-replace').onclick = confirmLinkedCsvReplace;
 				footer.querySelector('#linked-csv-confirm').onclick = () =>
 					runLinkedCsvAction('add', () => linkedCsvConfirm());
 				const header = linkedCsvModal.querySelector('.modal-header h3');
@@ -494,9 +301,6 @@
 
 				linkedCsvState = {
 					files: [],
-					relationships: [],
-					links: [],
-					nextRelationshipId: 1,
 					notices: [],
 					processingFiles: false,
 					hasRejectedFileErrors: false,
@@ -518,6 +322,35 @@
 				}
 				linkedCsvModal.classList.add('hidden');
 				linkedCsvState = null;
+			}
+
+			async function confirmLinkedCsvReplace() {
+				const state = linkedCsvState;
+				if (!state || state.importing || state.confirmingReplace) {
+					return;
+				}
+				state.confirmingReplace = true;
+				linkedCsvModal.classList.add('hidden');
+				let confirmed = false;
+				try {
+					confirmed = await showConfirmDialog({
+						title: 'Replace canvas?',
+						message:
+							'Replace all records on the current canvas with this import? Unsaved changes will be lost.',
+						confirmLabel: 'Replace canvas',
+						cancelLabel: 'Cancel',
+						danger: true,
+					});
+				} finally {
+					state.confirmingReplace = false;
+					if (linkedCsvState === state) {
+						linkedCsvModal.classList.remove('hidden');
+						linkedCsvModal.querySelector('#linked-csv-replace').focus();
+					}
+				}
+				if (confirmed && linkedCsvState === state) {
+					await runLinkedCsvAction('replace', () => linkedCsvConfirm({ replaceCanvas: true }));
+				}
 			}
 
 			async function runLinkedCsvAction(mode, action) {
@@ -597,220 +430,6 @@
 				return candidates[0] ? candidates[0].name : null;
 			}
 
-			function scoreLink(fromFile, fromColumnIdx, toFile, fromValuesSet, excludeColumnIdx) {
-				const candidates = [];
-				for (let i = 0; i < toFile.headers.length; i++) {
-					if (
-						(excludeColumnIdx != null && i === excludeColumnIdx) ||
-						!relationshipMatchTargetColumn(toFile, i)
-					) {
-						continue;
-					}
-					let hits = 0;
-					const seen = new Set();
-					for (const row of toFile.rows) {
-						const v = (row[i] || '').trim();
-						if (!v || seen.has(v)) {
-							continue;
-						}
-						seen.add(v);
-						if (fromValuesSet.has(v)) {
-							hits++;
-						}
-					}
-					if (hits === 0) {
-						continue;
-					}
-					const fromHeader = fromFile.headers[fromColumnIdx] || '';
-					const toHeader = toFile.headers[i] || '';
-					let bonus = 0;
-					const tk = csvNormalizeKey(toHeader);
-					const sourceKey = csvNormalizeKey(fromHeader);
-					if (tk === 'id' || tk === 'name') {
-						bonus += 1;
-					}
-					if (sourceKey.endsWith('id') && tk === sourceKey.slice(0, -2)) {
-						bonus += 1;
-					}
-					if (tk.length >= 3 && sourceKey.includes(tk)) {
-						bonus += 2;
-					}
-					const score = hits + bonus;
-					candidates.push({ score, hits, toColumnIdx: i, toHeader });
-				}
-				candidates.sort((a, b) => b.score - a.score || a.toColumnIdx - b.toColumnIdx);
-				if (candidates.length === 0) {
-					return { best: null, ambiguous: false };
-				}
-				const best = candidates[0];
-				return {
-					best,
-					ambiguous: candidates.length > 1 && candidates[1].score === best.score,
-				};
-			}
-
-			function refreshLinkStats(link) {
-				const state = linkedCsvState;
-				const fromFile = state && state.files[link.fromFileIdx];
-				const toFile = state && state.files[link.toFileIdx];
-				link.total = 0;
-				link.matched = 0;
-				link.unmatched = 0;
-				link.ambiguous = 0;
-				link.unmatchedRows = [];
-				link.ambiguousRows = [];
-				link.duplicateTargetKeys = [];
-				link.toHeader = null;
-				if (!fromFile || link.fromColumnIdx == null || !toFile || link.toColumnIdx == null) {
-					return;
-				}
-				link.toHeader = toFile.headers[link.toColumnIdx];
-				const resolution = resolveRelationshipRows(
-					fromFile.rows,
-					link.fromColumnIdx,
-					toFile.rows,
-					link.toColumnIdx,
-					new Set(link.conflictRowIdxs || []),
-				);
-				link.total = resolution.sourceRowCount;
-				link.matched = resolution.matches.length;
-				link.unmatched = resolution.unmatchedRows.length;
-				link.ambiguous = resolution.ambiguousRows.length;
-				link.unmatchedRows = resolution.unmatchedRows;
-				link.ambiguousRows = resolution.ambiguousRows;
-				link.duplicateTargetKeys = resolution.duplicateTargetKeys;
-			}
-
-			function relationshipFieldsFor(file) {
-				return file && file.describe && Array.isArray(file.describe.fields)
-					? file.describe.fields.filter(
-							(field) =>
-								field.type === 'reference' &&
-								!isExternalKeyReferenceField(field) &&
-								Array.isArray(field.referenceTo) &&
-								field.referenceTo.length > 0 &&
-								(field.createable === true || field.updateable === true),
-						)
-					: [];
-			}
-
-			function relationshipFieldLabel(field) {
-				const label = field && (field.label || field.name) ? field.label || field.name : '';
-				return field && field.label ? label.replace(/\s+ID$/i, '') : label;
-			}
-
-			function suggestRelationshipForColumn(state, fromFileIdx, fromColumnIdx) {
-				const fromFile = state.files[fromFileIdx];
-				if (!fromFile || !fromFile.objectName || !fromFile.describe) {
-					return null;
-				}
-				const fromValues = new Set(
-					fromFile.rows.map((row) => String(row[fromColumnIdx] || '').trim()).filter(Boolean),
-				);
-				if (fromValues.size === 0) {
-					return null;
-				}
-				const header = fromFile.headers[fromColumnIdx] || '';
-				const usedFields = new Set(
-					(state.relationships || [])
-						.filter((relationship) => relationship.fromFileIdx === fromFileIdx)
-						.map((relationship) => relationship.fromField)
-						.filter(Boolean),
-				);
-				const availableFields = relationshipFieldsFor(fromFile).filter((field) => !usedFields.has(field.name));
-				const candidates = [];
-				state.files.forEach((toFile, toFileIdx) => {
-					if (!toFile.objectName) {
-						return;
-					}
-					const compatibleFields = availableFields.filter((field) =>
-						field.referenceTo.includes(toFile.objectName),
-					);
-					if (compatibleFields.length === 0) {
-						return;
-					}
-					const scored = scoreLink(
-						fromFile,
-						fromColumnIdx,
-						toFile,
-						fromValues,
-						toFileIdx === fromFileIdx ? fromColumnIdx : -1,
-					);
-					if (!scored.best || scored.ambiguous) {
-						return;
-					}
-					const semanticBonus = Math.max(
-						...compatibleFields.map((field) =>
-							relationshipSemanticBonus(
-								header,
-								field,
-								toFile.objectName,
-								toFile.describe && toFile.describe.label,
-							),
-						),
-					);
-					candidates.push({
-						score: scored.best.score + semanticBonus,
-						hits: scored.best.hits,
-						semanticBonus,
-						field: compatibleFields.length === 1 ? compatibleFields[0] : null,
-						toFileIdx,
-						toColumnIdx: scored.best.toColumnIdx,
-					});
-				});
-				candidates.sort((left, right) => right.score - left.score);
-				const winner =
-					candidates.length > 0 &&
-					candidates[0].hits > 0 &&
-					candidates[0].semanticBonus > 0 &&
-					(!candidates[1] || candidates[1].score !== candidates[0].score)
-						? candidates[0]
-						: null;
-				if (!winner) {
-					return null;
-				}
-				return winner;
-			}
-
-			function addRelationshipForColumn(state, fromFileIdx, fromColumnIdx, suggestion) {
-				state.relationships.push({
-					id: state.nextRelationshipId++,
-					fromFileIdx,
-					fromColumnIdx,
-					fromField: suggestion && suggestion.field ? suggestion.field.name : null,
-					toFileIdx: suggestion ? suggestion.toFileIdx : null,
-					toColumnIdx: suggestion ? suggestion.toColumnIdx : null,
-				});
-			}
-
-			function autoSelectRelationshipColumns(state) {
-				const usedSources = new Set(
-					(state.relationships || []).map(
-						(relationship) => relationship.fromFileIdx + ':' + relationship.fromColumnIdx,
-					),
-				);
-				state.files.forEach((file, fromFileIdx) => {
-					file.relationshipChoices = file.relationshipChoices || {};
-					file.headers.forEach((header, fromColumnIdx) => {
-						if (
-							file.relationshipChoices[fromColumnIdx] === 'declined' ||
-							(file.mapping || {})[fromColumnIdx] ||
-							usedSources.has(fromFileIdx + ':' + fromColumnIdx) ||
-							!csvNormalizeKey(header).endsWith('key')
-						) {
-							return;
-						}
-						const suggestion = suggestRelationshipForColumn(state, fromFileIdx, fromColumnIdx);
-						if (!suggestion) {
-							return;
-						}
-						file.relationshipChoices[fromColumnIdx] = 'relationship';
-						addRelationshipForColumn(state, fromFileIdx, fromColumnIdx, suggestion);
-						usedSources.add(fromFileIdx + ':' + fromColumnIdx);
-					});
-				});
-			}
-
 			function analyzeLinkedCsvs() {
 				if (!linkedCsvState) {
 					return;
@@ -818,7 +437,6 @@
 				const state = linkedCsvState;
 				state.files.forEach((file) => {
 					file.lookupErrors = [];
-					file.relationshipErrors = [];
 					if (!file.objectName || !file.describe) {
 						return;
 					}
@@ -850,103 +468,6 @@
 						}
 					});
 				});
-
-				autoSelectRelationshipColumns(state);
-				const fieldUseByFile = new Map();
-				(state.relationships || []).forEach((relationship, relationshipIndex) => {
-					const fromFile = state.files[relationship.fromFileIdx];
-					const fields = relationshipFieldsFor(fromFile);
-					const field = fields.find((candidate) => candidate.name === relationship.fromField) || null;
-					const candidateFields = field
-						? [field]
-						: fields.filter((candidate) =>
-								relationshipFieldAvailableForLink(
-									state,
-									relationshipIndex,
-									relationship.fromFileIdx,
-									candidate.name,
-								),
-							);
-					relationship.fromHeader =
-						fromFile && relationship.fromColumnIdx != null
-							? fromFile.headers[relationship.fromColumnIdx]
-							: null;
-					relationship.fromFieldLabel = field ? relationshipFieldLabel(field) : null;
-					relationship.compatibleToFileIdxs = compatibleTargetFileIndexes(state.files, candidateFields);
-					if (!relationship.compatibleToFileIdxs.includes(relationship.toFileIdx)) {
-						relationship.toFileIdx =
-							relationship.compatibleToFileIdxs.length === 1
-								? relationship.compatibleToFileIdxs[0]
-								: null;
-						relationship.toColumnIdx = null;
-					}
-					if (
-						fromFile &&
-						relationship.fromColumnIdx != null &&
-						relationship.toFileIdx != null &&
-						relationship.toColumnIdx == null
-					) {
-						const fromValues = new Set(
-							fromFile.rows
-								.map((row) => String(row[relationship.fromColumnIdx] || '').trim())
-								.filter(Boolean),
-						);
-						const scored = scoreLink(
-							fromFile,
-							relationship.fromColumnIdx,
-							state.files[relationship.toFileIdx],
-							fromValues,
-							relationship.toFileIdx === relationship.fromFileIdx ? relationship.fromColumnIdx : -1,
-						);
-						if (scored.best && !scored.ambiguous) {
-							relationship.toColumnIdx = scored.best.toColumnIdx;
-						}
-					}
-					relationship.conflictRowIdxs = [];
-					if (fromFile && relationship.fromField) {
-						const fileFieldKey = relationship.fromFileIdx + ':' + relationship.fromField;
-						fieldUseByFile.set(fileFieldKey, (fieldUseByFile.get(fileFieldKey) || 0) + 1);
-						const directColumn = Object.keys(fromFile.mapping || {}).find(
-							(columnIdx) => fromFile.mapping[columnIdx] === relationship.fromField,
-						);
-						if (directColumn != null && relationship.fromColumnIdx != null) {
-							const conflictRowIdxs = fromFile.rows.reduce((rowIdxs, row, rowIdx) => {
-								if (
-									String(row[relationship.fromColumnIdx] || '').trim() &&
-									String(row[Number(directColumn)] || '').trim()
-								) {
-									rowIdxs.push(rowIdx);
-								}
-								return rowIdxs;
-							}, []);
-							relationship.conflictRowIdxs = conflictRowIdxs;
-							if (conflictRowIdxs.length > 0) {
-								fromFile.relationshipErrors.push({
-									fieldName: relationship.fromField,
-									directHeader: fromFile.headers[Number(directColumn)],
-									relationshipHeader: relationship.fromHeader,
-									count: conflictRowIdxs.length,
-									rowIdxs: conflictRowIdxs,
-								});
-							}
-						}
-					}
-					refreshLinkStats(relationship);
-				});
-				fieldUseByFile.forEach((count, key) => {
-					if (count < 2) {
-						return;
-					}
-					const [fileIdx, fieldName] = key.split(':');
-					const file = state.files[Number(fileIdx)];
-					if (file) {
-						file.relationshipErrors.push({
-							fieldName,
-							message: 'Only one relationship key can populate ' + fieldName + '.',
-						});
-					}
-				});
-				state.links = state.relationships;
 			}
 
 			function linkedCsvHandleFiles(fileList) {
@@ -1135,10 +656,6 @@
 					return;
 				}
 				const file = state.files[fileIdx];
-				state.relationships = (state.relationships || []).filter(
-					(relationship) => relationship.fromFileIdx !== fileIdx,
-				);
-				file.relationshipChoices = {};
 				file.objectName = objectName || null;
 				if (objectName) {
 					try {
@@ -1165,20 +682,6 @@
 				}
 				state.files.splice(fileIdx, 1);
 				syncDuplicateFileNameNotice(state);
-				state.relationships = (state.relationships || [])
-					.filter((relationship) => relationship.fromFileIdx !== fileIdx)
-					.map((relationship) => {
-						if (relationship.fromFileIdx > fileIdx) {
-							relationship.fromFileIdx--;
-						}
-						if (relationship.toFileIdx === fileIdx) {
-							relationship.toFileIdx = null;
-							relationship.toColumnIdx = null;
-						} else if (relationship.toFileIdx > fileIdx) {
-							relationship.toFileIdx--;
-						}
-						return relationship;
-					});
 				analyzeLinkedCsvs();
 				linkedCsvRender();
 			}
@@ -1193,9 +696,7 @@
 				if (!file.mapping) {
 					file.mapping = {};
 				}
-				file.relationshipChoices = file.relationshipChoices || {};
-				const relationshipValue = '__relationship_key__';
-				if (fieldName && fieldName !== relationshipValue) {
+				if (fieldName) {
 					const existingColumnIdx = Object.keys(file.mapping).find(
 						(otherColumnIdx) =>
 							Number(otherColumnIdx) !== columnIdx && file.mapping[otherColumnIdx] === fieldName,
@@ -1212,30 +713,9 @@
 						return;
 					}
 				}
-				const existingRelationship = (state.relationships || []).find(
-					(relationship) => relationship.fromFileIdx === fileIdx && relationship.fromColumnIdx === columnIdx,
-				);
-				if (fieldName === relationshipValue) {
-					file.relationshipChoices[columnIdx] = 'relationship';
-					delete file.mapping[columnIdx];
-					if (!existingRelationship) {
-						addRelationshipForColumn(
-							state,
-							fileIdx,
-							columnIdx,
-							suggestRelationshipForColumn(state, fileIdx, columnIdx),
-						);
-					}
-				} else {
-					file.relationshipChoices[columnIdx] = 'declined';
-					state.relationships = (state.relationships || []).filter(
-						(relationship) =>
-							relationship.fromFileIdx !== fileIdx || relationship.fromColumnIdx !== columnIdx,
-					);
-				}
-				if (fieldName && fieldName !== relationshipValue) {
+				if (fieldName) {
 					file.mapping[columnIdx] = fieldName;
-				} else if (fieldName !== relationshipValue) {
+				} else {
 					delete file.mapping[columnIdx];
 				}
 				analyzeLinkedCsvs();
@@ -1272,41 +752,6 @@
 					return;
 				}
 				state.files[fileIdx].externalIdFieldName = fieldName || null;
-				linkedCsvRender();
-			}
-
-			function linkedCsvUpdateLinkTarget(linkIdx, targetValue) {
-				const state = linkedCsvState;
-				if (!state || !state.links || !state.links[linkIdx]) {
-					return;
-				}
-				const link = state.links[linkIdx];
-				const parts = String(targetValue || '').split(':');
-				const nextFileIdx = parts.length === 2 ? Number(parts[0]) : null;
-				const nextColumnIdx = parts.length === 2 ? Number(parts[1]) : null;
-				link.toFileIdx = nextFileIdx;
-				link.toColumnIdx =
-					nextFileIdx === link.fromFileIdx && nextColumnIdx === link.fromColumnIdx ? null : nextColumnIdx;
-				analyzeLinkedCsvs();
-				linkedCsvRender();
-			}
-
-			function linkedCsvUpdateLinkField(linkIdx, fieldName) {
-				const state = linkedCsvState;
-				const link = state && state.links && state.links[linkIdx];
-				if (!link) {
-					return;
-				}
-				const fromFile = state.files[link.fromFileIdx];
-				const targetFile = state.files[link.toFileIdx];
-				const nextField = relationshipFieldsFor(fromFile).find((field) => field.name === fieldName);
-				const preserveTarget = nextField && targetFile && nextField.referenceTo.includes(targetFile.objectName);
-				link.fromField = fieldName || null;
-				if (!preserveTarget) {
-					link.toFileIdx = null;
-					link.toColumnIdx = null;
-				}
-				analyzeLinkedCsvs();
 				linkedCsvRender();
 			}
 
@@ -1347,40 +792,17 @@
 													'"' +
 													(o.name === file.objectName ? ' selected' : '') +
 													'>' +
-													escapeHtml(o.label) +
-													' (' +
-													escapeHtml(o.name) +
-													')' +
+													escapeHtml(o.label || o.name) +
+													(o.label && o.label !== o.name
+														? ' (' + escapeHtml(o.name) + ')'
+														: '') +
 													'</option>',
 											)
 											.join('');
 									const dataColumns = csvDataColumns(file);
-									const mappedCount = dataColumns.filter(({ index }) => file.mapping?.[index]).length;
-									const relationshipColumnIdxs = new Set(
-										(state.links || [])
-											.filter((link) => link.fromFileIdx === i && link.fromColumnIdx != null)
-											.map((link) => link.fromColumnIdx),
-									);
-									const relationshipCount = relationshipColumnIdxs.size;
 									const unmappedCount = dataColumns.filter(
-										({ index }) => !file.mapping?.[index] && !relationshipColumnIdxs.has(index),
+										({ index }) => !file.mapping?.[index],
 									).length;
-									const meta = file.objectName
-										? '<span class="tag' +
-											(unmappedCount > 0 ? ' warn' : '') +
-											'">' +
-											mappedCount +
-											' field' +
-											(mappedCount === 1 ? '' : 's') +
-											(relationshipCount > 0
-												? ' · ' +
-													relationshipCount +
-													' relationship key' +
-													(relationshipCount === 1 ? '' : 's')
-												: '') +
-											(unmappedCount > 0 ? ' · ' + unmappedCount + ' not uploaded' : '') +
-											'</span>'
-										: '<span class="tag warn">Pick an object</span>';
 									let permWarn = '';
 									if (file.objectName && file.describe) {
 										const hasIdCol = Object.values(file.mapping || {}).some((f) => f === 'Id');
@@ -1446,13 +868,9 @@
 										});
 										const rows = dataColumns
 											.map(({ name: h, index: ci }) => {
-												const usedByRelationship = relationshipColumnIdxs.has(ci);
 												const current = file.mapping[ci] || '';
 												const opts =
-													'<option value=""> - Keep separately; do not upload - </option>' +
-													'<option value="__relationship_key__"' +
-													(usedByRelationship ? ' selected' : '') +
-													'>Match to a related record in another CSV - not uploaded</option>' +
+													'<option value="">Skip column</option>' +
 													fieldOpts
 														.map((f) => {
 															const mappedFromColumnIdx = Object.keys(
@@ -1485,11 +903,9 @@
 															);
 														})
 														.join('');
-												const status = usedByRelationship
-													? '<span class="lcsv-col-status mapped" title="Used by relationship">↗</span>'
-													: current
-														? '<span class="lcsv-col-status mapped" title="Mapped">\u2713</span>'
-														: '<span class="lcsv-col-status unmapped" title="Kept separately; not uploaded as a Salesforce field">\u25CB</span>';
+												const status = current
+													? '<span class="lcsv-col-status mapped" title="Mapped">\u2713</span>'
+													: '<span class="lcsv-col-status unmapped" title="Skipped; not imported">\u25CB</span>';
 												return (
 													'<div class="lcsv-col-row">' +
 													status +
@@ -1520,7 +936,7 @@
 													' column' +
 													(unmappedCount === 1 ? '' : 's') +
 													' unmapped'
-												: 'all mapped') +
+												: 'All mapped') +
 											'</span>' +
 											'</summary>' +
 											'<div class="lcsv-col-list">' +
@@ -1608,341 +1024,25 @@
 										'" title="Remove this file">\u00D7</button>' +
 										'</div>' +
 										'<div class="lcsv-file-body">' +
-										'<select class="lcsv-obj" data-lcsv-obj="' +
+										'<label class="lcsv-object-label" for="lcsv-object-' +
+										i +
+										'">Object</label>' +
+										'<select id="lcsv-object-' +
+										i +
+										'" class="lcsv-obj" data-lcsv-obj="' +
 										i +
 										'">' +
 										opts +
 										'</select>' +
-										meta +
 										'</div>' +
 										permWarn +
 										mappingErrorsHtml +
 										(unmappedCount > 0
-											? '<p class="lcsv-perm-warn">Unmapped columns are kept separately in this browser and in JSON exports. They are not uploaded, saved to Salesforce, or shared. Map a column to an available field to use its values. Recognized encrypted-field values are not retained.</p>'
+											? '<p class="tag">Unmapped columns won&rsquo;t be imported.</p>'
 											: '') +
 										opPicker +
 										columnsHtml +
 										'</div>'
-									);
-								})
-								.join('');
-				const links = state.links || [];
-				const orderedLinks = links
-					.map((link, index) => ({ link, index }))
-					.sort((left, right) => {
-						const leftFileIdx =
-							left.link.fromFileIdx == null ? Number.MAX_SAFE_INTEGER : left.link.fromFileIdx;
-						const rightFileIdx =
-							right.link.fromFileIdx == null ? Number.MAX_SAFE_INTEGER : right.link.fromFileIdx;
-						return leftFileIdx - rightFileIdx || left.index - right.index;
-					});
-				const linksHtml =
-					links.length === 0
-						? ''
-						: orderedLinks
-								.map(({ link, index: i }, position) => {
-									const fromFile = link.fromFileIdx == null ? null : state.files[link.fromFileIdx];
-									const toFile = link.toFileIdx == null ? null : state.files[link.toFileIdx];
-									const availableRelationshipFields = relationshipFieldsFor(fromFile);
-									const compatibleRelationshipFields = toFile
-										? availableRelationshipFields.filter((field) =>
-												field.referenceTo.includes(toFile.objectName),
-											)
-										: availableRelationshipFields;
-									const selectableRelationshipFields = compatibleRelationshipFields.filter(
-										(field) =>
-											field.name === link.fromField ||
-											relationshipFieldAvailableForLink(state, i, link.fromFileIdx, field.name),
-									);
-									const lookupFieldOpts =
-										'<option value=""> - Pick relationship - </option>' +
-										selectableRelationshipFields
-											.map(
-												(field) =>
-													'<option value="' +
-													escapeHtml(field.name) +
-													'"' +
-													(field.name === link.fromField ? ' selected' : '') +
-													'>' +
-													escapeHtml(relationshipFieldLabel(field)) +
-													' (' +
-													escapeHtml(
-														(fromFile && fromFile.objectName
-															? fromFile.objectName + '.'
-															: '') + field.name,
-													) +
-													')</option>',
-											)
-											.join('');
-									const targetKeyOpts =
-										'<option value=""> - Pick matching CSV value - </option>' +
-										(link.compatibleToFileIdxs || [])
-											.map((toFileIdx) =>
-												state.files[toFileIdx].headers
-													.map((header, columnIdx) => ({ header, columnIdx }))
-													.filter(
-														(entry) =>
-															relationshipMatchTargetColumn(
-																state.files[toFileIdx],
-																entry.columnIdx,
-															) &&
-															(toFileIdx !== link.fromFileIdx ||
-																entry.columnIdx !== link.fromColumnIdx),
-													)
-													.map(
-														(entry) =>
-															'<option value="' +
-															toFileIdx +
-															':' +
-															entry.columnIdx +
-															'"' +
-															(toFileIdx === link.toFileIdx &&
-															entry.columnIdx === link.toColumnIdx
-																? ' selected'
-																: '') +
-															'>' +
-															escapeHtml(
-																(displayNames[toFileIdx] ||
-																	state.files[toFileIdx].name) +
-																	'.' +
-																	(entry.header || '(blank)'),
-															) +
-															'</option>',
-													)
-													.join(''),
-											)
-											.join('');
-									const complete =
-										link.fromFileIdx != null &&
-										link.fromColumnIdx != null &&
-										!!link.fromField &&
-										link.toFileIdx != null &&
-										link.toColumnIdx != null;
-									const sourceHeader =
-										fromFile && link.fromColumnIdx != null
-											? fromFile.headers[link.fromColumnIdx] || '(blank)'
-											: '(source not selected)';
-									const linkRelationshipErrors = fromFile
-										? (fromFile.relationshipErrors || []).filter(
-												(issue) =>
-													issue.fieldName === link.fromField &&
-													(!issue.relationshipHeader ||
-														issue.relationshipHeader === sourceHeader),
-											)
-										: [];
-									const hasLinkMappingErrors = linkRelationshipErrors.length > 0;
-									const hasResolutionErrors =
-										Number(link.unmatched || 0) > 0 ||
-										Number(link.ambiguous || 0) > 0 ||
-										(Array.isArray(link.duplicateTargetKeys) &&
-											link.duplicateTargetKeys.length > 0);
-									const stateClass =
-										!complete || hasLinkMappingErrors || hasResolutionErrors
-											? 'lcsv-link-empty'
-											: link.matched === link.total
-												? 'lcsv-link-full'
-												: link.matched > 0
-													? 'lcsv-link-partial'
-													: 'lcsv-link-empty';
-									const sourceKeyReference = fromFile
-										? (displayNames[link.fromFileIdx] || fromFile.name) + '.' + sourceHeader
-										: sourceHeader;
-									const relationshipControl = shouldSelectRelationshipField(
-										link,
-										compatibleRelationshipFields,
-									)
-										? '<select class="lcsv-link-inline-select" aria-label="Relationship to set" data-lcsv-link-field="' +
-											i +
-											'">' +
-											lookupFieldOpts +
-											'</select>'
-										: '<strong>' +
-											escapeHtml(link.fromFieldLabel || link.fromField) +
-											'</strong><code class="lcsv-link-reference">(' +
-											escapeHtml(fromFile.objectName + '.' + link.fromField) +
-											')</code>';
-									const mixedSource =
-										fromFile && link.fromField
-											? mixedRelationshipSources(state, link.fromFileIdx).find(
-													(source) =>
-														source.fieldName === link.fromField &&
-														source.relationshipHeader === sourceHeader,
-												) || null
-											: null;
-									const sourceConflictError = linkRelationshipErrors.find(
-										(issue) => !issue.message && Array.isArray(issue.rowIdxs),
-									);
-									const relationshipErrorsHtml = (
-										sourceConflictError ? [sourceConflictError] : linkRelationshipErrors
-									)
-										.map((issue) => {
-											if (issue.message) {
-												return (
-													'<div class="lcsv-perm-warn lcsv-map-error">' +
-													escapeHtml(issue.message) +
-													'</div>'
-												);
-											}
-											const rowNumbers = (issue.rowIdxs || []).map((rowIdx) => rowIdx + 2);
-											return (
-												'<div class="lcsv-perm-warn lcsv-map-error">' +
-												(rowNumbers.length === 1 ? 'Row ' : 'Rows ') +
-												rowNumbers.join(', ') +
-												(rowNumbers.length === 1 ? ' has both ' : ' have both ') +
-												escapeHtml(issue.directHeader) +
-												' and ' +
-												escapeHtml(issue.relationshipHeader) +
-												'. Edit the CSV so ' +
-												(rowNumbers.length === 1 ? 'this row uses' : 'these rows use') +
-												' only one, then re-import.</div>'
-											);
-										})
-										.join('');
-									const relationshipHelpText =
-										'Org Loom uses this CSV column as a reference: its value finds a related record and sets the selected Salesforce lookup. The column itself is not uploaded.' +
-										(mixedSource
-											? ' Use one method per row: provide an existing Salesforce ID in ' +
-												mixedSource.directHeader +
-												', or use ' +
-												mixedSource.relationshipHeader +
-												' to find the related record in another CSV. Leave the unused column blank.'
-											: '');
-									const targetKeyReference = toFile
-										? (displayNames[link.toFileIdx] || toFile.name) +
-											'.' +
-											(link.toHeader || '(target not selected)')
-										: '(target not selected)';
-									const resolutionErrorMessages = [];
-									if (
-										Array.isArray(link.duplicateTargetKeys) &&
-										link.duplicateTargetKeys.length > 0
-									) {
-										const duplicateExamples = link.duplicateTargetKeys
-											.slice(0, 3)
-											.map(
-												(item) =>
-													'“' +
-													escapeHtml(item.value) +
-													'” appears in rows ' +
-													item.toRowIdxs.map((rowIdx) => rowIdx + 2).join(', '),
-											)
-											.join('; ');
-										resolutionErrorMessages.push(
-											'<strong>' +
-												escapeHtml(targetKeyReference) +
-												' is not unique.</strong> ' +
-												duplicateExamples +
-												(link.duplicateTargetKeys.length > 3
-													? '; and ' +
-														(link.duplicateTargetKeys.length - 3) +
-														' more duplicate values'
-													: '') +
-												'. Choose a unique target column or correct the duplicate values.',
-										);
-									}
-									if (Array.isArray(link.unmatchedRows) && link.unmatchedRows.length > 0) {
-										const unmatchedExamples = link.unmatchedRows
-											.slice(0, 3)
-											.map(
-												(item) =>
-													'“' +
-													escapeHtml(item.value) +
-													'” (row ' +
-													(item.fromRowIdx + 2) +
-													')',
-											)
-											.join(', ');
-										resolutionErrorMessages.push(
-											'<strong>' +
-												link.unmatchedRows.length +
-												' source row' +
-												(link.unmatchedRows.length === 1 ? ' has' : 's have') +
-												' no matching target.</strong> ' +
-												unmatchedExamples +
-												(link.unmatchedRows.length > 3
-													? ', and ' + (link.unmatchedRows.length - 3) + ' more rows'
-													: '') +
-												'. Add the target row, correct the value, or leave the source key blank.',
-										);
-									}
-									const resolutionErrorsHtml = hasLinkMappingErrors
-										? ''
-										: resolutionErrorMessages
-												.map(
-													(message) =>
-														'<div class="lcsv-perm-warn lcsv-map-error">' +
-														message +
-														'</div>',
-												)
-												.join('');
-									const previousLink = position > 0 ? orderedLinks[position - 1].link : null;
-									const nextLink =
-										position < orderedLinks.length - 1 ? orderedLinks[position + 1].link : null;
-									const startsFileGroup =
-										!previousLink || previousLink.fromFileIdx !== link.fromFileIdx;
-									const endsFileGroup = !nextLink || nextLink.fromFileIdx !== link.fromFileIdx;
-									const fileGroupCount = orderedLinks.filter(
-										(entry) => entry.link.fromFileIdx === link.fromFileIdx,
-									).length;
-									const fileGroupName = fromFile
-										? displayNames[link.fromFileIdx] || fromFile.name
-										: 'Source file not selected';
-									const fileGroupObject = fromFile
-										? (fromFile.describe && fromFile.describe.label) || fromFile.objectName || 'CSV'
-										: 'Complete these mappings';
-									const fileGroupOpen = startsFileGroup
-										? '<section class="lcsv-link-group" data-lcsv-relationship-file="' +
-											(link.fromFileIdx == null ? '' : link.fromFileIdx) +
-											'"><div class="lcsv-link-group-head"><strong>' +
-											escapeHtml(fileGroupName) +
-											'</strong><span>' +
-											escapeHtml(fileGroupObject) +
-											' · ' +
-											fileGroupCount +
-											' relationship' +
-											(fileGroupCount === 1 ? '' : 's') +
-											'</span></div><div class="lcsv-link-group-body">'
-										: '';
-									const fileGroupClose = endsFileGroup ? '</div></section>' : '';
-									const cardOpen =
-										'<div class="lcsv-link ' +
-										stateClass +
-										'" data-lcsv-relationship-source="' +
-										(link.fromFileIdx == null || link.fromColumnIdx == null
-											? ''
-											: link.fromFileIdx + ':' + link.fromColumnIdx) +
-										'" data-lcsv-relationship-field="' +
-										escapeHtml(link.fromField || '') +
-										'" data-lcsv-target-column="' +
-										(link.toColumnIdx == null ? '' : link.toColumnIdx) +
-										'">';
-									return (
-										fileGroupOpen +
-										cardOpen +
-										'<div class="lcsv-link-key-head"><code>' +
-										escapeHtml(sourceKeyReference) +
-										'</code><button type="button" class="lcsv-link-key-help" aria-label="About this relationship column" title="' +
-										escapeHtml(relationshipHelpText) +
-										'">?</button></div>' +
-										'<div class="lcsv-link-summary"><div class="lcsv-link-sentence"><div class="lcsv-link-sentence-line"><span>Match against:</span><select class="lcsv-link-inline-select" aria-label="Matching target CSV value" data-lcsv-link-target="' +
-										i +
-										'">' +
-										targetKeyOpts +
-										'</select></div><span class="lcsv-link-flow-arrow" aria-hidden="true">→</span><div class="lcsv-link-sentence-line"><span>Populate:</span><div class="lcsv-link-set-control">' +
-										relationshipControl +
-										'</div></div></div></div>' +
-										relationshipErrorsHtml +
-										resolutionErrorsHtml +
-										(complete && !hasLinkMappingErrors && !hasResolutionErrors && link.total > 0
-											? '<div class="lcsv-link-stats"><strong>' +
-												link.matched +
-												'</strong> of <strong>' +
-												link.total +
-												'</strong> relationship values matched' +
-												'</div>'
-											: '') +
-										'</div>' +
-										fileGroupClose
 									);
 								})
 								.join('');
@@ -1972,9 +1072,12 @@
 							'<strong>Loading object catalog…</strong>' +
 							'<span class="tag">First load can take 30+ seconds in a fresh org.</span>' +
 							'</div>'
-						: '<div class="lcsv-dropzone" id="lcsv-dropzone" tabindex="0">' +
-							'<strong>Drop CSV files here</strong>' +
-							'<span class="tag">or click to select</span>' +
+						: '<div class="lcsv-dropzone' +
+							(state.files.length ? ' is-compact' : '') +
+							'" id="lcsv-dropzone" role="button" tabindex="0">' +
+							(state.files.length
+								? '<span>+ Add CSV files</span>'
+								: '<strong>Drop CSV files here</strong><span class="tag">or click to select</span>') +
 							'<input type="file" id="lcsv-file-input" accept=".csv,text/csv,text/plain" multiple style="display:none">' +
 							'</div>';
 				const _noticesHtml =
@@ -2006,19 +1109,19 @@
 							filesHtml +
 							'</div>' +
 							'</div>'
-						: '') +
-					(links.length > 0
-						? '<div class="lcsv-step"><strong>Cross-file matching</strong>' +
-							'<p class="tag">Match the selected columns to records in another CSV. These matching values create canvas links and are not uploaded as field values.</p>' +
-							'<div class="lcsv-links">' +
-							linksHtml +
-							'</div>' +
-							'</div>'
 						: '');
 				const dz = body.querySelector('#lcsv-dropzone');
 				const fileInput = body.querySelector('#lcsv-file-input');
 				if (dz && fileInput) {
-					dz.addEventListener('click', () => fileInput.click());
+					dz.addEventListener('click', (e) => {
+						if (e.target !== fileInput) fileInput.click();
+					});
+					dz.addEventListener('keydown', (e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							fileInput.click();
+						}
+					});
 					dz.addEventListener('dragover', (e) => {
 						e.preventDefault();
 						dz.classList.add('drag');
@@ -2038,16 +1141,6 @@
 				});
 				body.querySelectorAll('[data-lcsv-remove]').forEach((btn) => {
 					btn.addEventListener('click', () => linkedCsvRemoveFile(Number(btn.dataset.lcsvRemove)));
-				});
-				body.querySelectorAll('[data-lcsv-link-target]').forEach((sel) => {
-					sel.addEventListener('change', (e) =>
-						linkedCsvUpdateLinkTarget(Number(e.target.dataset.lcsvLinkTarget), e.target.value),
-					);
-				});
-				body.querySelectorAll('[data-lcsv-link-field]').forEach((sel) => {
-					sel.addEventListener('change', (e) =>
-						linkedCsvUpdateLinkField(Number(e.target.dataset.lcsvLinkField), e.target.value),
-					);
 				});
 				body.querySelectorAll('[data-lcsv-cols]').forEach((details) => {
 					details.addEventListener('toggle', () => {
@@ -2116,12 +1209,6 @@
 							const colIdx = Number(colIdxStr);
 							const fieldName = mapping[colIdx];
 							if (!fieldName || fieldName === 'Id') {
-								return;
-							}
-							const isLinkedFk = (state.links || []).some(
-								(link) => link.fromFileIdx === fromFileIdx && link.fromColumnIdx === colIdx,
-							);
-							if (isLinkedFk) {
 								return;
 							}
 							const field = fieldByName.get(fieldName);
@@ -2456,6 +1543,20 @@
 			}
 
 			async function linkedCsvConfirm(opts) {
+				if (!opts?.replaceCanvas) return applyLinkedCsv(opts);
+				const finish = deps.beginCanvasLoad?.();
+				let success = false;
+				try {
+					if (finish?.ready) await finish.ready;
+					const result = await applyLinkedCsv(opts);
+					success = true;
+					return result;
+				} finally {
+					finish?.(success);
+				}
+			}
+
+			async function applyLinkedCsv(opts) {
 				opts = opts || {};
 				const state = linkedCsvState;
 				if (!state) {
@@ -2583,15 +1684,9 @@
 					clearEmptyStarterCard();
 				}
 				let slot = canvasState.bulkRecords.length;
-				const tempIdByCell = new Map();
 				const newRecIds = new Set();
 				validFiles.forEach((file, vfi) => {
 					const fromFileIdx = state.files.indexOf(file);
-					const relationshipColumns = new Set(
-						(state.links || [])
-							.filter((link) => link.fromFileIdx === fromFileIdx)
-							.map((link) => link.fromColumnIdx),
-					);
 					const sel = selByName.get(file.objectName);
 					if (!sel) {
 						return;
@@ -2602,19 +1697,12 @@
 					file.rows.forEach((row, rowIdx) => {
 						const values = {};
 						const clearFields = exportedClearFields(file, row);
-						const unmapped = unmappedCsvColumns(file, row, relationshipColumns);
 						const omittedFields = fieldPlan.omittedByRow.get(cellKey(fromFileIdx, rowIdx));
 						mappedIdxs.forEach((iStr) => {
 							const i = Number(iStr);
 							const field = file.mapping[i];
 							if (file.headers[i] === '__OrgLoom_ClearFields') return;
 							if (omittedFields && omittedFields.has(field)) {
-								return;
-							}
-							const isLinkedFk = (state.links || []).some(
-								(l) => l.fromFileIdx === fromFileIdx && l.fromColumnIdx === i,
-							);
-							if (isLinkedFk) {
 								return;
 							}
 							if (i === idColIdx) {
@@ -2632,9 +1720,6 @@
 						if (sfId) {
 							const _hit = existingCanvasById.get(sel.name + '::' + sfId.slice(0, 15));
 							if (_hit) {
-								if (unmapped.length) {
-									_hit.unmappedCsvColumns = (_hit.unmappedCsvColumns || []).concat(unmapped);
-								}
 								const _vc = window.OrgLoom && window.OrgLoom.valueCompare;
 								const _d =
 									_vc && typeof _vc.computeRecordDiff === 'function'
@@ -2650,7 +1735,6 @@
 								} else {
 									unchangedCount++;
 								}
-								tempIdByCell.set(cellKey(fromFileIdx, rowIdx), _hit.id);
 								return;
 							}
 						}
@@ -2665,7 +1749,6 @@
 							x: startX + col * stepX,
 							y: startY + r * stepY,
 							values,
-							unmappedCsvColumns: unmapped,
 							fromSelectionId: sel.id,
 						};
 						if (sfId) {
@@ -2685,46 +1768,6 @@
 						}
 						canvasState.bulkRecords.push(rec);
 						newRecIds.add(id);
-						tempIdByCell.set(cellKey(fromFileIdx, rowIdx), id);
-					});
-				});
-				let linkedCount = 0;
-				let linksSkippedFk = 0;
-				const _admitAssociation = window.OrgLoom.importShared.admitAssociation;
-				const _usedFk = new Set();
-				canvasState.bulkAssociations.forEach((a) => {
-					_usedFk.add(a.fromId + '::' + a.fieldName);
-				});
-				(state.links || []).forEach((link) => {
-					const fromFile = state.files[link.fromFileIdx];
-					const toFile = state.files[link.toFileIdx];
-					if (!fromFile || !toFile || link.toColumnIdx == null) {
-						return;
-					}
-					const resolution = resolveRelationshipRows(
-						fromFile.rows,
-						link.fromColumnIdx,
-						toFile.rows,
-						link.toColumnIdx,
-					);
-					resolution.matches.forEach(({ fromRowIdx, toRowIdx }) => {
-						const fromTempId = tempIdByCell.get(cellKey(link.fromFileIdx, fromRowIdx));
-						const toTempId = tempIdByCell.get(cellKey(link.toFileIdx, toRowIdx));
-						if (fromTempId == null || toTempId == null) {
-							return;
-						}
-						if (!_admitAssociation(_usedFk, fromTempId, toTempId, link.fromField)) {
-							linksSkippedFk++;
-							return;
-						}
-						const aid = canvasState.bulkIdSeq++;
-						canvasState.bulkAssociations.push({
-							id: aid,
-							fromId: fromTempId,
-							toId: toTempId,
-							fieldName: link.fromField,
-						});
-						linkedCount++;
 					});
 				});
 				const totalRecords = validFiles.reduce((n, f) => n + f.rows.length, 0);
@@ -2747,14 +1790,6 @@
 						: '';
 				const _unchangedNote =
 					unchangedCount > 0 ? ' · ' + unchangedCount + ' already on the canvas, unchanged' : '';
-				const _fkNote =
-					linksSkippedFk > 0
-						? ' · ' +
-							linksSkippedFk +
-							' link' +
-							(linksSkippedFk === 1 ? '' : 's') +
-							' skipped (lookup already set)'
-						: '';
 				const _toastMsg =
 					'Imported ' +
 					totalRecords +
@@ -2764,15 +1799,13 @@
 					fileCount +
 					' file' +
 					(fileCount === 1 ? '' : 's') +
-					(linkedCount > 0 ? ' (' + linkedCount + ' link' + (linkedCount === 1 ? '' : 's') + ' wired)' : '') +
 					_mergeNote +
 					_unchangedNote +
-					_fkNote +
 					'.' +
 					(validFiles.some((file) =>
 						file.headers.some((name, index) => name !== '__OrgLoom_ClearFields' && !file.mapping[index]),
 					)
-						? ' Unmapped columns are kept separately with the records and in JSON exports, not uploaded as Salesforce fields. Recognized encrypted-field values are not retained.'
+						? ' Unmapped columns were skipped.'
 						: '');
 				if (_undoImport && showBulkToastWithAction) {
 					if (typeof _undoImport.arm === 'function') {
@@ -2785,10 +1818,8 @@
 				pingAuditEvent('csv_import', {
 					recordCount: totalRecords,
 					payload: {
-						mode: 'linked',
+						mode: 'records',
 						fileCount,
-						linksWired: linkedCount,
-						linksSkippedFk,
 						merged: mergeQueue.length,
 						unchanged: unchangedCount,
 					},

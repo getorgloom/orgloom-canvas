@@ -55,15 +55,59 @@
 				);
 			}
 
+			function recallHelpHtml() {
+				const icon = (paths, tone = 'muted') =>
+					'<svg class="uh-recall-icon--' +
+					tone +
+					'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+					paths +
+					'</svg>';
+				const created = icon(
+					'<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M12 8v8M8 12h8"/>',
+					'success',
+				);
+				const updated = icon('<path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/>', 'warn');
+				const deleted = icon('<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>', 'danger');
+				const reset = icon('<path d="M3 10a9 9 0 1 1 2 8M3 4v6h6M12 7v5l3 2"/>', 'info');
+				const unchanged = icon('<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>');
+				const arrow =
+					'<span class="uh-recall-help-arrow">' + icon('<path d="M4 12h16m-6-6 6 6-6 6"/>') + '</span>';
+				const row = (beforeIcon, before, afterIcon, after, detail) =>
+					'<span class="uh-recall-help-row"><span class="uh-recall-help-step">' +
+					beforeIcon +
+					'<span>' +
+					before +
+					'</span></span>' +
+					arrow +
+					'<span class="uh-recall-help-step">' +
+					afterIcon +
+					'<span>' +
+					after +
+					(detail ? '<small>' + detail + '</small>' : '') +
+					'</span></span></span>';
+				return (
+					'<span class="uh-info-tooltip uh-recall-help">' +
+					'<button type="button" class="uh-info-tooltip-trigger" aria-label="How does recall work?" aria-describedby="uh-recall-help">?</button>' +
+					'<span class="uh-info-tooltip-content uh-recall-help-panel" id="uh-recall-help" role="tooltip">' +
+					'<strong class="uh-recall-help-title">What recall does</strong>' +
+					row(created, 'Created', deleted, 'Deleted', '') +
+					row(updated, 'Updated', reset, 'Value reset', 'To before upload') +
+					row(deleted, 'Deleted', unchanged, 'No change', 'Stays deleted') +
+					'</span></span>'
+				);
+			}
+
 			function showUploadHistoryModal() {
 				document.querySelectorAll('.upload-history-modal').forEach((el) => el.remove());
 				const overlay = document.createElement('div');
 				overlay.className = 'modal upload-history-modal';
 				overlay.innerHTML =
 					'<div class="modal-overlay" data-uh-close></div>' +
-					'<div class="modal-body" style="max-width:720px">' +
+					'<div class="modal-body" style="max-width:900px">' +
 					'<div class="modal-header">' +
-					'<h3 id="uh-header-title">Recent uploads</h3>' +
+					'<div class="uh-heading"><h3 id="uh-header-title">Recent uploads</h3>' +
+					recallHelpHtml() +
+					'</div>' +
 					'<button class="modal-close" data-uh-close>&times;</button>' +
 					'</div>' +
 					'<div class="modal-content" id="uh-content">' +
@@ -178,24 +222,6 @@
 							d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 						);
 					};
-					const sourceLabel = (s) => {
-						if (s === 'canvas') {
-							return 'Canvas';
-						}
-						if (s === 'canvas-graph') {
-							return 'Canvas (graph)';
-						}
-						if (s === 'canvas-bulk') {
-							return 'Canvas (bulk)';
-						}
-						if (s === 'csv-direct') {
-							return 'Legacy upload';
-						}
-						if (s === 'csv-bulk') {
-							return 'Legacy bulk upload';
-						}
-						return s || 'Upload';
-					};
 					const statusBadge = (b) => {
 						if (b.status === 'pending') {
 							return '<span class="tag uh-status-partial">Outcome unknown</span>';
@@ -215,7 +241,7 @@
 						if (b.status === 'recalling') {
 							return '<span class="tag uh-status-busy">Recalling…</span>';
 						}
-						return '<span class="tag uh-status-uploaded">Uploaded</span>';
+						return '';
 					};
 					const detailLine = (b) => {
 						if (b.status === 'pending') {
@@ -235,7 +261,7 @@
 						if (ins === 0) {
 							return del + ' deleted';
 						}
-						return ins + ' synced + ' + del + ' deleted';
+						return ins + ' synced · ' + del + ' deleted';
 					};
 					const hasRecallableInserts = (b) => {
 						if (typeof b.insertedCount !== 'number') {
@@ -257,10 +283,6 @@
 									escapeHtml(fmtDate(b.createdAt)) +
 									'</span>' +
 									'<span class="uh-sep">·</span>' +
-									'<span class="uh-source">' +
-									escapeHtml(sourceLabel(b.source)) +
-									'</span>' +
-									'<span class="uh-sep">·</span>' +
 									'<span class="uh-count">' +
 									escapeHtml(detailLine(b)) +
 									'</span>' +
@@ -269,13 +291,6 @@
 									(b.note ? '<div class="uh-note">' + escapeHtml(b.note) + '</div>' : '') +
 									(b.status === 'pending'
 										? '<div class="uh-note">Salesforce may have saved some or all of these records. Check Salesforce before retrying the same drafts.</div>'
-										: '') +
-									(typeof b.deletedCount === 'number' && b.deletedCount > 0
-										? '<div class="uh-note uh-note-danger">' +
-											b.deletedCount +
-											' record' +
-											(b.deletedCount === 1 ? '' : 's') +
-											' deleted in Salesforce by this upload. Recall does not reverse those deletions.</div>'
 										: '') +
 									'</div>' +
 									'<div class="uh-row-actions">' +
@@ -340,7 +355,12 @@
 						};
 						const statusView = statusViews[updatedStatus];
 						if (row && statusView) {
-							const badge = row.querySelector('.uh-row-line1 .tag');
+							const line = row.querySelector('.uh-row-line1');
+							let badge = line && line.querySelector('.tag');
+							if (!badge && line) {
+								badge = document.createElement('span');
+								line.appendChild(badge);
+							}
 							if (badge) {
 								badge.className = 'tag ' + statusView.className;
 								badge.textContent = statusView.label;
@@ -414,49 +434,76 @@
 					const recordName = (record && (record.recordName || record.sfId)) || 'Unknown record';
 					const url = recordUrl(record);
 					return (
-						'<div class="upload-result-identity uh-record-identity">' +
-						'<strong class="upload-result-name">' +
-						escapeHtml(objectLabel + ' - ' + recordName) +
-						'</strong>' +
+						'<div class="upload-result-identity uh-record-identity"><strong class="upload-result-name">' +
+						escapeHtml(objectLabel) +
+						' - ' +
 						(url
-							? '<a class="upload-result-link" href="' +
+							? '<a href="' +
 								escapeHtml(url) +
-								'" target="_blank" rel="noopener">View in Salesforce</a>'
-							: '') +
-						'</div>'
+								'" target="_blank" rel="noopener" title="View in Salesforce">' +
+								escapeHtml(recordName) +
+								'</a>'
+							: escapeHtml(recordName)) +
+						'</strong></div>'
 					);
 				}
 				const cleanRecordRows = cleanList
-					.map((record) => '<li class="uh-record-item">' + recordIdentityHtml(record) + '</li>')
-					.join('');
-				const driftedRows = driftedList
-					.map((r) => {
-						const when = r.lastModifiedDate ? new Date(r.lastModifiedDate).toLocaleString() : 'unknown';
-						const reason =
-							r.driftReason === 'missing_upload_baseline'
-								? 'uploaded before exact change tracking was available'
-								: 'modified since this upload';
+					.map((record) => {
+						const name =
+							(record.objectLabel || record.objectName || 'Record') +
+							' - ' +
+							(record.recordName || record.sfId);
 						return (
-							'<li class="uh-record-item">' +
-							recordIdentityHtml(r) +
-							'<span class="tag">(' +
-							reason +
-							' on ' +
-							escapeHtml(when) +
-							')</span>' +
-							'</li>'
+							'<li class="uh-delete-choice">' +
+							'<input type="checkbox" data-uh-delete-record="' +
+							escapeHtml(record.sfId) +
+							'" checked aria-label="Delete ' +
+							escapeHtml(name) +
+							'">' +
+							'<div class="uh-delete-choice-copy">' +
+							recordIdentityHtml(record) +
+							'</div></li>'
 						);
 					})
 					.join('');
-
-				const alreadyDeletedNote =
-					alreadyDeletedList.length > 0
-						? '<p class="tag">' +
-							alreadyDeletedList.length +
-							' record' +
-							(alreadyDeletedList.length === 1 ? ' was' : 's were') +
-							' already removed from Salesforce; nothing to recall there.</p>'
-						: '';
+				const driftedRows = driftedList
+					.map((record) => {
+						const when = record.lastModifiedDate
+							? new Date(record.lastModifiedDate).toLocaleString()
+							: null;
+						const status =
+							record.driftReason === 'missing_upload_baseline'
+								? 'Change tracking unavailable'
+								: 'Changed since upload';
+						const tooltip =
+							record.driftReason === 'missing_upload_baseline'
+								? 'Uploaded before exact change tracking was available.'
+								: when
+									? 'Modified since upload on ' + when
+									: 'Modified since this upload.';
+						const name =
+							(record.objectLabel || record.objectName || 'Record') +
+							' - ' +
+							(record.recordName || record.sfId);
+						return (
+							'<li class="uh-delete-choice">' +
+							'<input type="checkbox" data-uh-delete-record="' +
+							escapeHtml(record.sfId) +
+							'" data-uh-force-delete-record="' +
+							escapeHtml(record.sfId) +
+							'" aria-label="Delete ' +
+							escapeHtml(name) +
+							'">' +
+							'<div class="uh-delete-choice-copy">' +
+							recordIdentityHtml(record) +
+							'<span class="uh-delete-change-status" tabindex="0" title="' +
+							escapeHtml(tooltip) +
+							'">' +
+							escapeHtml(status) +
+							'</span></div></li>'
+						);
+					})
+					.join('');
 
 				const valueDrift = (preflight && preflight.valueDrift) || { records: [], summary: {} };
 				const valueReviewRecords = (valueDrift.records || []).filter(
@@ -469,21 +516,19 @@
 					}
 					return '<code>' + escapeHtml(String(v)) + '</code>';
 				}
-				function valueFlowHtml(field, restoreInitially, mode) {
+				function valueCellsHtml(field, restoreInitially) {
 					return (
-						'<div class="uh-value-flow" data-uh-after-mode="' +
-						mode +
-						'">' +
-						'<div class="uh-value-step"><span class="uh-value-label">Original value</span>' +
+						'<td>' +
 						fmtVal(field.prior) +
-						'</div>' +
-						'<div class="uh-value-step"><span class="uh-value-label">Value uploaded by Org Loom</span>' +
+						'</td>' +
+						'<td>' +
 						fmtVal(field.uploaded) +
-						'</div>' +
-						'<div class="uh-value-step"><span class="uh-value-label">Current Salesforce value</span>' +
+						'</td>' +
+						'<td>' +
 						fmtVal(field.current) +
-						'</div>' +
-						'<div class="uh-value-step uh-value-step--after"><span class="uh-value-label">After recall</span>' +
+						(!restoreInitially ? '<span class="uh-revert-field-status">Changed since upload</span>' : '') +
+						'</td>' +
+						'<td class="uh-after-value" data-uh-after-mode="selected">' +
 						'<span data-uh-after-original' +
 						(restoreInitially ? '' : ' hidden') +
 						'>' +
@@ -493,60 +538,55 @@
 						(restoreInitially ? ' hidden' : '') +
 						'>' +
 						fmtVal(field.current) +
-						'</span>' +
-						'</div>' +
-						'</div>'
+						'</span></td>'
 					);
 				}
 				const valueRevertSections = valueReviewRecords
 					.map((rec) => {
 						const recIdAttr = escapeHtml(rec.sfId);
-						const cleanRows = (rec.clean || [])
-							.map(
-								(f) =>
-									'<li class="uh-revert-row uh-revert-row--clean" data-uh-field-row>' +
-									'<div class="uh-revert-field-head"><label>' +
-									'<input type="checkbox" data-uh-revert-record="' +
-									recIdAttr +
-									'" data-uh-revert-field="' +
-									escapeHtml(f.fieldName) +
-									'" checked>' +
-									'<code>' +
-									escapeHtml(f.fieldName) +
-									'</code></label></div>' +
-									valueFlowHtml(f, true, 'selected') +
-									'</li>',
-							)
-							.join('');
-						const driftRows = (rec.drifted || [])
-							.map(
-								(f) =>
-									'<li class="uh-revert-row uh-revert-row--drifted" data-uh-field-row>' +
-									'<div class="uh-revert-field-head"><label>' +
-									'<input type="checkbox" data-uh-force-revert-record="' +
-									recIdAttr +
-									'" data-uh-force-revert-field="' +
-									escapeHtml(f.fieldName) +
-									'">' +
-									'<code>' +
-									escapeHtml(f.fieldName) +
-									'</code></label>' +
-									'<span class="tag uh-revert-field-status">Changed since upload</span>' +
-									'</div>' +
-									valueFlowHtml(f, false, 'changed') +
-									'</li>',
-							)
-							.join('');
+						function fieldRowHtml(field, changed) {
+							const fieldName = escapeHtml(field.fieldName);
+							const recordAttr = changed ? 'data-uh-force-revert-record' : 'data-uh-revert-record';
+							const fieldAttr = changed ? 'data-uh-force-revert-field' : 'data-uh-revert-field';
+							return (
+								'<tr class="uh-revert-row ' +
+								(changed ? 'uh-revert-row--drifted' : 'uh-revert-row--clean') +
+								'" data-uh-field-row>' +
+								'<th scope="row"><label class="uh-revert-field-choice">' +
+								'<input type="checkbox" ' +
+								recordAttr +
+								'="' +
+								recIdAttr +
+								'" ' +
+								fieldAttr +
+								'="' +
+								fieldName +
+								'"' +
+								(changed ? '' : ' checked') +
+								'>' +
+								'<code>' +
+								fieldName +
+								'</code></label>' +
+								'</th>' +
+								valueCellsHtml(field, !changed) +
+								'</tr>'
+							);
+						}
 						return (
 							'<div class="uh-revert-record">' +
 							'<div class="uh-revert-record-title">' +
 							recordIdentityHtml(rec) +
 							'</div>' +
-							(cleanRows ? '<ul class="uh-revert-list">' + cleanRows + '</ul>' : '') +
-							(driftRows
-								? '<ul class="uh-revert-list uh-revert-list--drifted">' + driftRows + '</ul>'
-								: '') +
-							'</div>'
+							'<div class="uh-revert-table-wrap" tabindex="0" role="region" aria-label="Field changes for ' +
+							escapeHtml(rec.recordName || rec.sfId) +
+							'">' +
+							'<table class="uh-revert-table"><thead><tr>' +
+							'<th scope="col">Field</th><th scope="col">Original value</th>' +
+							'<th scope="col">Uploaded value</th><th scope="col">Current value</th>' +
+							'<th scope="col">After recall</th></tr></thead><tbody>' +
+							(rec.clean || []).map((field) => fieldRowHtml(field, false)).join('') +
+							(rec.drifted || []).map((field) => fieldRowHtml(field, true)).join('') +
+							'</tbody></table></div></div>'
 						);
 					})
 					.join('');
@@ -602,25 +642,6 @@
 							'<ul class="uh-drifted-list">' +
 							unverifiedRows +
 							'</ul>' +
-							'</div>'
-						: '';
-
-				const driftedSection =
-					driftedList.length > 0
-						? '<div class="uh-drifted-block">' +
-							'<h5 class="uh-drifted-title">' +
-							driftedList.length +
-							' record' +
-							(driftedList.length === 1 ? '' : 's') +
-							' changed since upload</h5>' +
-							'<p class="tag">Recalling these will permanently delete them, including changes made after this upload. Skipped by default.</p>' +
-							'<ul class="uh-drifted-list">' +
-							driftedRows +
-							'</ul>' +
-							'<label class="uh-drifted-toggle">' +
-							'<input type="checkbox" data-uh-include-drifted> ' +
-							'Delete changed records anyway' +
-							'</label>' +
 							'</div>'
 						: '';
 
@@ -680,39 +701,23 @@
 				);
 				const initialActionCount = cleanList.length + initiallySelectedRevertIds.size;
 				const hasPotentialRecallWork = cleanList.length > 0 || driftedList.length > 0 || hasAnyRevertCandidate;
-				const noCleanReason =
-					driftedList.length > 0 ? ': everything in this batch has been modified since upload.' : '.';
-				const batchDeletedCount = Math.max(0, Number(batch && batch.deletedCount) || 0);
-				const batchDeletesNote =
-					batchDeletedCount > 0
-						? '<p>Deletes (not recallable):</p>' +
-							'<ul><li>' +
-							batchDeletedCount +
-							' record' +
-							(batchDeletedCount === 1 ? '' : 's') +
-							' in this batch ' +
-							(batchDeletedCount === 1 ? 'was' : 'were') +
-							' deleted in Salesforce. Recall only reverses the inserts and updates shown above.</li></ul>'
-						: '';
+				const availableRecallCount = new Set(
+					[...cleanList, ...driftedList, ...valueReviewRecords].map((record) => record.sfId),
+				).size;
 				const createRecallSummary =
-					cleanList.length > 0
-						? '<div class="uh-operation-section uh-operation-section--delete">' +
+					cleanList.length > 0 || driftedList.length > 0
+						? '<div class="uh-operation-section uh-operation-section--delete uh-operation-section--selectable">' +
 							'<div class="uh-operation-title-row"><h5 class="uh-operation-title">Delete from Salesforce</h5></div>' +
 							'<ul class="uh-recall-record-list">' +
 							cleanRecordRows +
+							driftedRows +
 							'</ul>' +
 							'</div>'
-						: driftedList.length > 0
-							? '<p class="tag">No clean records to recall' + noCleanReason + '</p>'
-							: '';
-				const nothingToRecallNote =
-					!hasPotentialRecallWork && alreadyDeletedList.length === 0
-						? '<p class="tag">Nothing from this upload is available to recall.</p>'
 						: '';
+				const nothingToRecallNote = !hasPotentialRecallWork ? '<p class="tag">Nothing to recall here</p>' : '';
+				const initialLabelCount = initialActionCount || availableRecallCount;
 				const initialActionLabel =
-					initialActionCount > 0
-						? 'Recall ' + initialActionCount + ' record' + (initialActionCount === 1 ? '' : 's')
-						: 'Select changes to recall';
+					'Recall ' + initialLabelCount + ' record' + (initialLabelCount === 1 ? '' : 's');
 				const recallAction = hasPotentialRecallWork
 					? '<button type="button" class="button danger" data-uh-do-recall' +
 						(initialActionCount === 0 ? ' disabled' : '') +
@@ -726,11 +731,8 @@
 					'<div class="uh-confirm">' +
 					createRecallSummary +
 					nothingToRecallNote +
-					batchDeletesNote +
 					unverifiedSection +
-					alreadyDeletedNote +
 					valueRevertSection +
-					driftedSection +
 					cascadeSection +
 					'<div class="uh-confirm-actions">' +
 					'<button type="button" class="button secondary" data-uh-back>Back</button>' +
@@ -738,7 +740,13 @@
 					'</div>' +
 					'</div>';
 
-				const includeBox = content.querySelector('[data-uh-include-drifted]');
+				const deleteBoxes = Array.from(content.querySelectorAll('[data-uh-delete-record]'));
+				const selectedDeleteIds = () =>
+					new Set(
+						deleteBoxes
+							.filter((box) => box.checked)
+							.map((box) => box.getAttribute('data-uh-delete-record')),
+					);
 				const cascadeAckBox = content.querySelector('[data-uh-cascade-ack]');
 				const recallBtn = content.querySelector('[data-uh-do-recall]');
 				const recallLabel = content.querySelector('[data-uh-recall-label]');
@@ -762,7 +770,7 @@
 					});
 				}
 				function updateRecallCount() {
-					const include = includeBox && includeBox.checked;
+					const selectedDeletes = selectedDeleteIds();
 					const selectedFieldBoxes = Array.from(
 						content.querySelectorAll(
 							'input[data-uh-revert-field]:checked, input[data-uh-force-revert-field]:checked',
@@ -777,23 +785,22 @@
 							)
 							.filter(Boolean),
 					);
-					const total = cleanList.length + (include ? driftedList.length : 0) + checkedRevertRecordIds.size;
+					const total = new Set([...selectedDeletes, ...checkedRevertRecordIds]).size;
 					if (recallLabel) {
-						recallLabel.textContent =
-							total > 0
-								? 'Recall ' + total + ' record' + (total === 1 ? '' : 's')
-								: 'Select changes to recall';
+						const labelCount = total || availableRecallCount;
+						recallLabel.textContent = 'Recall ' + labelCount + ' record' + (labelCount === 1 ? '' : 's');
 					}
-					const cascadeAckRequired = cascadeConflicts.length > 0 && !include;
+					const cascadeAckRequired = cascadeConflicts.some(
+						(conflict) =>
+							selectedDeletes.has(conflict.parentSfId) && !selectedDeletes.has(conflict.childSfId),
+					);
 					const cascadeAckSatisfied = !cascadeAckRequired || (cascadeAckBox && cascadeAckBox.checked);
 					if (recallBtn) {
 						recallBtn.disabled = total === 0 || !cascadeAckSatisfied;
 					}
 					updateAfterRecallValues();
 				}
-				if (includeBox) {
-					includeBox.addEventListener('change', updateRecallCount);
-				}
+				deleteBoxes.forEach((box) => box.addEventListener('change', updateRecallCount));
 				if (cascadeAckBox) {
 					cascadeAckBox.addEventListener('change', updateRecallCount);
 				}
@@ -809,22 +816,19 @@
 					return;
 				}
 				recallBtn.addEventListener('click', () => {
-					const include = includeBox && includeBox.checked;
+					const selectedDeletes = selectedDeleteIds();
 					const skipSfIds = [];
 					const forceDeleteSfIds = [];
-					if (!include) {
-						driftedList.forEach((r) => {
-							if (r.sfId) {
-								skipSfIds.push(r.sfId);
-							}
-						});
-					} else {
-						driftedList.forEach((r) => {
-							if (r.sfId) {
-								forceDeleteSfIds.push(r.sfId);
-							}
-						});
-					}
+					cleanList.forEach((record) => {
+						if (record.sfId && !selectedDeletes.has(record.sfId)) {
+							skipSfIds.push(record.sfId);
+						}
+					});
+					driftedList.forEach((record) => {
+						if (record.sfId) {
+							(selectedDeletes.has(record.sfId) ? forceDeleteSfIds : skipSfIds).push(record.sfId);
+						}
+					});
 					alreadyDeletedList.forEach((r) => {
 						if (r.sfId) {
 							skipSfIds.push(r.sfId);

@@ -484,6 +484,35 @@ describe('core flows round-trip through the mock', () => {
 		assert.ok(del.status === 200 || del.status === 204);
 	});
 
+	test('all playground upload paths include post-upload record snapshots', async () => {
+		for (const route of ['/api/upload', '/api/upload/graph', '/api/upload/bulk']) {
+			const response = await call('POST', route, {
+				records: [{ tempId: 'snapshot-test', objectName: 'Account', values: { Name: 'Refresh test' } }],
+			});
+			const values = response.body.canonicalValues['snapshot-test'];
+			assert.equal(values.Id, response.body.results[0].id);
+			assert.equal(values.Name, 'Refresh test');
+			assert.ok(values.CreatedDate);
+			assert.equal(values.attributes, undefined);
+		}
+	});
+
+	test('post-upload playground snapshots retain newly uploaded relationships', async () => {
+		const response = await call('POST', '/api/upload/graph', {
+			records: [
+				{ tempId: 'refresh-parent', objectName: 'Account', values: { Name: 'Parent' } },
+				{ tempId: 'refresh-child', objectName: 'Contact', values: { LastName: 'Child' } },
+			],
+			associations: [{ fromId: 'refresh-child', toId: 'refresh-parent', fieldName: 'AccountId' }],
+		});
+		const values = response.body.canonicalValues;
+		assert.equal(values['refresh-child'].AccountId, values['refresh-parent'].Id);
+		const refreshed = await call('POST', '/api/records/refresh', {
+			records: [{ objectName: 'Contact', sfId: values['refresh-child'].Id }],
+		});
+		assert.deepEqual(refreshed.body.results[0].values, values['refresh-child']);
+	});
+
 	test('upload happy path returns production-shaped per-record results', async () => {
 		const r = await call('POST', '/api/upload', {
 			records: [{ tempId: 7, objectName: 'Account', values: { Name: 'Demo Upload Co' } }],

@@ -280,6 +280,42 @@ function _roleRank(role) {
 	return role === 'editor' ? 3 : role === 'contributor' ? 2 : role === 'viewer' ? 1 : 0;
 }
 
+const PRESENCE_REJECTION_MESSAGES = {
+	'presence-connection-stale':
+		'This live-sharing connection is no longer recognized for this account and canvas. Reconnect live sharing.',
+	'presence-access-revoked': 'Access to this shared canvas has been revoked.',
+	'presence-edit-not-permitted': 'This live-sharing connection does not have permission to edit the canvas.',
+	'presence-stale-sequence':
+		'This update arrived after a newer event in the same update stream, or was already processed.',
+	'presence-invalid-sequence': 'The update sequence must be a safe integer.',
+	'presence-invalid-record-reference': 'A canvas record reference is missing or malformed.',
+	'presence-record-not-in-snapshot': 'A referenced card could not be matched to the current shared-canvas snapshot.',
+	'presence-hidden-reference-unavailable':
+		'A hidden-card reference is invalid or no longer available to this connection.',
+	'presence-invalid-positions': 'A layout update must include between 1 and 500 positions.',
+	'presence-invalid-position': 'A card position is not a finite number or exceeds the supported coordinate range.',
+	'presence-invalid-fields': 'The fields object or a field name is invalid.',
+	'presence-too-many-fields': 'The update exceeds the limit of 100 fields per request.',
+	'presence-payload-too-large': 'The field payload exceeds the 64 KiB limit.',
+	'presence-invalid-field-payload':
+		'The field or baseline payload contains unsupported values, invalid names, or exceeds field-count or size limits.',
+	'presence-field-locked': 'One or more fields are locked by another collaborator.',
+	'presence-invalid-object': 'The Salesforce object name is missing or invalid.',
+	'presence-invalid-slot': 'The record-request configuration is invalid.',
+	'presence-invalid-record-operation': 'The record operation or Salesforce record ID is invalid.',
+	'presence-invalid-link-operation': 'The relationship operation must be add or remove.',
+	'presence-invalid-link-reference': 'A relationship endpoint or field name is missing or malformed.',
+};
+
+function _rejectPresence(onRejected, reason) {
+	// Preserve the boolean API. Request-local diagnostics contain no record data
+	// and do not distinguish a foreign account's connection from an unknown one.
+	if (typeof onRejected === 'function') {
+		onRejected({ error: 'presence-event-rejected', reason, message: PRESENCE_REJECTION_MESSAGES[reason] });
+	}
+	return false;
+}
+
 function _acceptSequence(entry, sequence, channel = 'mutation') {
 	// Cursor/focus traffic must not invalidate unrelated canvas mutations. Keep
 	// stale-event protection within each channel; the client serializes mutations.
@@ -392,7 +428,44 @@ function _spreadExactCardOverlaps(payload) {
 }
 
 export function normalizeSnapshotLayout(payload) {
-	return _spreadExactCardOverlaps(_cloneSnapshot(payload));
+	const snapshot = _cloneSnapshot(payload);
+	_retirePromotedDraftAliases(snapshot);
+	return _spreadExactCardOverlaps(snapshot);
+}
+
+// Repair only proven aliases of the same card, never records with similar field values.
+function _retirePromotedDraftAliases(payload) {
+	if (!payload || typeof payload !== 'object') return;
+	for (const draft of payload.drafts || []) {
+		if (!draft || draft.canvasRecordId == null) continue;
+		const matches = (payload.loadedRecords || []).filter(
+			(record) =>
+				record &&
+				record.loadedFromId &&
+				record.objectName === draft.objectName &&
+				record.canvasRecordId != null &&
+				String(record.canvasRecordId) === String(draft.canvasRecordId),
+		);
+		if (matches.length !== 1) continue;
+		const loaded = matches[0];
+		for (const association of payload.associations || []) {
+			for (const name of ['from', 'to']) {
+				const endpoint = association && association[name];
+				const matchesDraft =
+					endpoint && endpoint.kind === 'draft' && String(endpoint.ref) === String(draft.tempId);
+				const matchesSlot =
+					endpoint &&
+					endpoint.kind === 'slot' &&
+					draft.slot &&
+					!loaded.slot &&
+					String(endpoint.ref) === String(draft.slot.slotId);
+				if (matchesDraft || matchesSlot) {
+					association[name] = { kind: 'loaded', ref: loaded.loadedFromId };
+				}
+			}
+		}
+		payload.drafts = payload.drafts.filter((record) => record !== draft);
+	}
 }
 
 function _availableCreatePosition(payload, x, y) {
@@ -581,7 +654,13 @@ function _applySnapshotMutation(canvasId, event, revisionValue) {
 	}
 	const payload = live.payload;
 	if (event.type === 'draft-update') {
-		let record = _payloadRecordForRef(payload, { refKind: 'draft', ref: event.tempId });
+		let record = _payloadRecordForRef(payload, {
+			refKind: 'draft',
+			ref: event.tempId,
+			collabRef: event.canvasRecordId,
+		});
+		// A delayed draft event must never recreate or remove an already-promoted card.
+		if (record && record.loadedFromId) return;
 		if (event.kind === 'remove') {
 			_removeSnapshotRecord(payload, record);
 		} else {
@@ -677,6 +756,7 @@ function _applySnapshotMutation(canvasId, event, revisionValue) {
 				}
 			}
 		}
+		_retirePromotedDraftAliases(payload);
 	} else if (event.type === 'loaded-removed') {
 		_removeSnapshotRecord(
 			payload,
@@ -696,8 +776,16 @@ function _applySnapshotMutation(canvasId, event, revisionValue) {
 			}
 		}
 	} else if (event.type === 'draft-link') {
-		const from = _associationEndpoint(event.fromRef);
-		const to = _associationEndpoint(event.toRef);
+		const canonicalEndpoint = (reference) => {
+			const record = _payloadRecordForRef(payload, reference);
+			if (!record) return _associationEndpoint(reference);
+			if (reference.refKind === 'slot' && record.slot) return { kind: 'slot', ref: record.slot.slotId };
+			return record.loadedFromId
+				? { kind: 'loaded', ref: record.loadedFromId }
+				: { kind: 'draft', ref: record.tempId };
+		};
+		const from = canonicalEndpoint(event.fromRef);
+		const to = canonicalEndpoint(event.toRef);
 		if (from && to) {
 			payload.associations = Array.isArray(payload.associations) ? payload.associations : [];
 			const matches = (association) =>
@@ -1687,20 +1775,23 @@ export function unsubscribe({ canvasId, connectionId }) {
 	return true;
 }
 
-export function updateCursor({ canvasId, connectionId, x, y, world, sequence, requestingAccountId }) {
+export function updateCursor({ canvasId, connectionId, x, y, world, sequence, onRejected, requestingAccountId }) {
 	const scoped = _scopeForConnection(canvasId, connectionId);
 	if (!scoped) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	const { scopeId, entry } = scoped;
 	if (!_ownsConnection(entry, requestingAccountId)) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	if (entry.accessRevoked) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-access-revoked');
 	}
 	if (!_acceptSequence(entry, sequence, 'cursor')) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			Number.isSafeInteger(sequence) ? 'presence-stale-sequence' : 'presence-invalid-sequence',
+		);
 	}
 	const cx = typeof x === 'number' ? x : null;
 	const cy = typeof y === 'number' ? y : null;
@@ -1983,61 +2074,107 @@ export function updateDraft({
 	position,
 	slot,
 	sequence,
+	onRejected,
 	requestingAccountId,
 }) {
 	const scoped = _scopeForConnection(canvasId, connectionId);
 	if (!scoped) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	const { scopeId, entry } = scoped;
 	if (!_ownsConnection(entry, requestingAccountId)) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	if (!entry.canEdit) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			entry.accessRevoked ? 'presence-access-revoked' : 'presence-edit-not-permitted',
+		);
 	}
 	if (!_acceptSequence(entry, sequence)) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			Number.isSafeInteger(sequence) ? 'presence-stale-sequence' : 'presence-invalid-sequence',
+		);
 	}
 	if (tempId == null) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-record-reference');
+	}
+	if (canvasRecordId != null && (!String(canvasRecordId) || String(canvasRecordId).length > 128)) {
+		return _rejectPresence(onRejected, 'presence-invalid-record-reference');
+	}
+	const live = _liveSnapshotsByCanvas.get(scopeId);
+	const existingRecord = _payloadRecordForRef(live && live.payload, {
+		refKind: 'draft',
+		ref: tempId,
+		collabRef: canvasRecordId,
+	});
+	if (
+		existingRecord &&
+		canvasRecordId != null &&
+		existingRecord.canvasRecordId != null &&
+		String(canvasRecordId) !== String(existingRecord.canvasRecordId)
+	) {
+		return _rejectPresence(onRejected, 'presence-invalid-record-reference');
+	}
+	if (existingRecord && existingRecord.loadedFromId) return true;
+	if (existingRecord && objectName && existingRecord.objectName !== objectName) {
+		return _rejectPresence(onRejected, 'presence-invalid-object');
 	}
 	if (!fields || typeof fields !== 'object') {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-fields');
 	}
 	const keys = Object.keys(fields);
 	if (keys.length > MAX_PRESENCE_FIELDS || keys.some((key) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(key))) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			keys.length > MAX_PRESENCE_FIELDS ? 'presence-too-many-fields' : 'presence-invalid-fields',
+		);
 	}
 	if (Buffer.byteLength(JSON.stringify(fields), 'utf8') > MAX_PRESENCE_PAYLOAD_BYTES) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-payload-too-large');
 	}
-	if (kind !== 'create' && _hasForeignFieldLock(scopeId, connectionId, { refKind: 'draft', ref: tempId }, keys)) {
-		return false;
+	if (
+		(kind !== 'create' || existingRecord) &&
+		_hasForeignFieldLock(
+			scopeId,
+			connectionId,
+			{
+				refKind: 'draft',
+				ref: existingRecord ? existingRecord.tempId : tempId,
+				...(canvasRecordId != null ? { collabRef: String(canvasRecordId) } : {}),
+			},
+			keys,
+		)
+	) {
+		return _rejectPresence(onRejected, 'presence-field-locked');
 	}
 	entry.lastSeenAt = Date.now();
 	const payload = {
 		type: 'draft-update',
 		connectionId,
-		tempId,
+		tempId: existingRecord ? existingRecord.tempId : tempId,
+		...(canvasRecordId != null ? { canvasRecordId: String(canvasRecordId) } : {}),
 		fields,
 	};
 	if (kind === 'create') {
 		if (typeof objectName !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(objectName)) {
-			return false;
+			return _rejectPresence(onRejected, 'presence-invalid-object');
 		}
 		const live = _liveSnapshotsByCanvas.get(scopeId);
-		const createPosition = _availableCreatePosition(live && live.payload, x, y);
+		const createPosition = existingRecord
+			? { x: existingRecord.x, y: existingRecord.y }
+			: _availableCreatePosition(live && live.payload, x, y);
 		const cleanSlot = _cleanSlot(slot);
 		if (slot !== undefined && cleanSlot === undefined) {
-			return false;
+			return _rejectPresence(onRejected, 'presence-invalid-slot');
 		}
 		payload.kind = 'create';
 		payload.objectName = objectName;
 		if (canvasRecordId != null) {
 			const cleanCanvasRecordId = String(canvasRecordId);
 			if (!cleanCanvasRecordId || cleanCanvasRecordId.length > 128) {
-				return false;
+				return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 			}
 			payload.canvasRecordId = cleanCanvasRecordId;
 		}
@@ -2091,21 +2228,32 @@ export function updateLoadedRecord({
 	slot,
 	promotedFrom,
 	sequence,
+	onRejected,
 	requestingAccountId,
 }) {
 	const scoped = _scopeForConnection(canvasId, connectionId);
 	const entry = scoped && scoped.entry;
 	if (!entry || !_ownsConnection(entry, requestingAccountId) || !entry.canEdit) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			!entry || !_ownsConnection(entry, requestingAccountId)
+				? 'presence-connection-stale'
+				: entry.accessRevoked
+					? 'presence-access-revoked'
+					: 'presence-edit-not-permitted',
+		);
 	}
 	if (!_acceptSequence(entry, sequence)) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			Number.isSafeInteger(sequence) ? 'presence-stale-sequence' : 'presence-invalid-sequence',
+		);
 	}
 	if (!['create', 'update'].includes(kind) || !/^[A-Za-z0-9]{15,18}$/.test(String(sfId || ''))) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-record-operation');
 	}
 	if (!fields || typeof fields !== 'object') {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-fields');
 	}
 	const validFields = (candidate) => {
 		const keys = Object.keys(candidate || {});
@@ -2125,7 +2273,7 @@ export function updateLoadedRecord({
 		);
 	};
 	if (!validFields(fields) || (baseline && !validFields(baseline))) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-field-payload');
 	}
 	if (
 		kind === 'update' &&
@@ -2136,16 +2284,16 @@ export function updateLoadedRecord({
 			Object.keys(fields),
 		)
 	) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-field-locked');
 	}
 	if (kind === 'create' && (!objectName || objectName.length > 255 || !/^[A-Za-z][A-Za-z0-9_]*$/.test(objectName))) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-object');
 	}
 	if (
 		(kind === 'create' && Number.isFinite(x) && Math.abs(x) > 10_000_000) ||
 		(kind === 'create' && Number.isFinite(y) && Math.abs(y) > 10_000_000)
 	) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-position');
 	}
 	entry.lastSeenAt = Date.now();
 	const payload = {
@@ -2158,7 +2306,7 @@ export function updateLoadedRecord({
 	if (collabRef != null) {
 		const cleanCollabRef = String(collabRef);
 		if (!cleanCollabRef || cleanCollabRef.length > 128) {
-			return false;
+			return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 		}
 		payload.collabRef = cleanCollabRef;
 	}
@@ -2167,10 +2315,10 @@ export function updateLoadedRecord({
 		const cleanSlot = _cleanSlot(slot);
 		const cleanPromotedFrom = promotedFrom == null ? null : _cleanRecordReference(promotedFrom);
 		if (slot !== undefined && cleanSlot === undefined) {
-			return false;
+			return _rejectPresence(onRejected, 'presence-invalid-slot');
 		}
 		if (promotedFrom != null && !cleanPromotedFrom) {
-			return false;
+			return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 		}
 		const promotedRecord = cleanPromotedFrom ? _payloadRecordForRef(live && live.payload, cleanPromotedFrom) : null;
 		const createPosition = cleanPromotedFrom
@@ -2291,33 +2439,43 @@ function _cleanSlot(slot) {
 	return clean;
 }
 
-export function updateSlot({ canvasId, connectionId, targetRef, slot, sequence, requestingAccountId }) {
+export function updateSlot({ canvasId, connectionId, targetRef, slot, sequence, onRejected, requestingAccountId }) {
 	const scoped = _scopeForConnection(canvasId, connectionId);
 	const entry = scoped && scoped.entry;
 	if (!entry || !_ownsConnection(entry, requestingAccountId) || !entry.canEdit) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			!entry || !_ownsConnection(entry, requestingAccountId)
+				? 'presence-connection-stale'
+				: entry.accessRevoked
+					? 'presence-access-revoked'
+					: 'presence-edit-not-permitted',
+		);
 	}
 	if (!_acceptSequence(entry, sequence)) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			Number.isSafeInteger(sequence) ? 'presence-stale-sequence' : 'presence-invalid-sequence',
+		);
 	}
 	const refKind = targetRef && targetRef.refKind;
 	const ref = targetRef && targetRef.ref != null ? String(targetRef.ref) : '';
 	if (!['loaded', 'draft'].includes(refKind) || !ref || ref.length > 128) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 	}
 	if (refKind === 'loaded' && !/^[A-Za-z0-9]{15,18}$/.test(ref)) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 	}
 	let collabRef = null;
 	if (targetRef && targetRef.collabRef != null) {
 		collabRef = String(targetRef.collabRef);
 		if (!collabRef || collabRef.length > 128) {
-			return false;
+			return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 		}
 	}
 	const cleanSlot = _cleanSlot(slot);
 	if (cleanSlot === undefined) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-slot');
 	}
 	entry.lastSeenAt = Date.now();
 	_broadcastMutation(
@@ -2344,24 +2502,31 @@ export function updateDraftLink({
 	toSyncId,
 	fieldName,
 	sequence,
+	onRejected,
 	requestingAccountId,
 }) {
 	const scoped = _scopeForConnection(canvasId, connectionId);
 	if (!scoped) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	const { scopeId, entry } = scoped;
 	if (!_ownsConnection(entry, requestingAccountId)) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	if (!entry.canEdit) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			entry.accessRevoked ? 'presence-access-revoked' : 'presence-edit-not-permitted',
+		);
 	}
 	if (!_acceptSequence(entry, sequence)) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			Number.isSafeInteger(sequence) ? 'presence-stale-sequence' : 'presence-invalid-sequence',
+		);
 	}
 	if (kind !== 'add' && kind !== 'remove') {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-link-operation');
 	}
 	const cleanReference = (reference, legacyId) => {
 		const candidate =
@@ -2396,7 +2561,7 @@ export function updateDraftLink({
 		String(fieldName).length > 255 ||
 		!/^[A-Za-z][A-Za-z0-9_]*$/.test(String(fieldName))
 	) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-link-reference');
 	}
 	entry.lastSeenAt = Date.now();
 	_broadcastMutation(
@@ -2415,27 +2580,41 @@ export function updateDraftLink({
 	return true;
 }
 
-export function removeLoadedRecord({ canvasId, connectionId, sfId, collabRef, sequence, requestingAccountId }) {
+export function removeLoadedRecord({
+	canvasId,
+	connectionId,
+	sfId,
+	collabRef,
+	sequence,
+	onRejected,
+	requestingAccountId,
+}) {
 	const scoped = _scopeForConnection(canvasId, connectionId);
 	if (!scoped) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	const { scopeId, entry } = scoped;
 	if (!_ownsConnection(entry, requestingAccountId)) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	if (!entry.canEdit) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			entry.accessRevoked ? 'presence-access-revoked' : 'presence-edit-not-permitted',
+		);
 	}
 	if (!_acceptSequence(entry, sequence)) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			Number.isSafeInteger(sequence) ? 'presence-stale-sequence' : 'presence-invalid-sequence',
+		);
 	}
 	if (!sfId) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 	}
 	const cleanCollabRef = collabRef == null ? null : String(collabRef);
 	if (cleanCollabRef != null && (!cleanCollabRef || cleanCollabRef.length > 128)) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 	}
 	entry.lastSeenAt = Date.now();
 	_broadcastMutation(
@@ -2452,20 +2631,23 @@ export function removeLoadedRecord({ canvasId, connectionId, sfId, collabRef, se
 	return true;
 }
 
-export function updateFocus({ canvasId, connectionId, focus, sequence, requestingAccountId }) {
+export function updateFocus({ canvasId, connectionId, focus, sequence, onRejected, requestingAccountId }) {
 	const scoped = _scopeForConnection(canvasId, connectionId);
 	if (!scoped) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	const { scopeId, entry } = scoped;
 	if (!_ownsConnection(entry, requestingAccountId)) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-connection-stale');
 	}
 	if (entry.accessRevoked) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-access-revoked');
 	}
 	if (!_acceptSequence(entry, sequence, 'focus')) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			Number.isSafeInteger(sequence) ? 'presence-stale-sequence' : 'presence-invalid-sequence',
+		);
 	}
 	entry.focus = focus || null;
 	entry.lastSeenAt = Date.now();
@@ -2481,17 +2663,27 @@ export function updateFocus({ canvasId, connectionId, focus, sequence, requestin
 	return true;
 }
 
-export function updateLayout({ canvasId, connectionId, positions, sequence, requestingAccountId }) {
+export function updateLayout({ canvasId, connectionId, positions, sequence, onRejected, requestingAccountId }) {
 	const scoped = _scopeForConnection(canvasId, connectionId);
 	const entry = scoped && scoped.entry;
 	if (!entry || !_ownsConnection(entry, requestingAccountId) || !entry.canEdit) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			!entry || !_ownsConnection(entry, requestingAccountId)
+				? 'presence-connection-stale'
+				: entry.accessRevoked
+					? 'presence-access-revoked'
+					: 'presence-edit-not-permitted',
+		);
 	}
 	if (!_acceptSequence(entry, sequence)) {
-		return false;
+		return _rejectPresence(
+			onRejected,
+			Number.isSafeInteger(sequence) ? 'presence-stale-sequence' : 'presence-invalid-sequence',
+		);
 	}
 	if (!Array.isArray(positions) || positions.length === 0 || positions.length > MAX_LAYOUT_RECORDS) {
-		return false;
+		return _rejectPresence(onRejected, 'presence-invalid-positions');
 	}
 	const clean = [];
 	const live = _liveSnapshotsByCanvas.get(scoped.scopeId);
@@ -2499,27 +2691,27 @@ export function updateLayout({ canvasId, connectionId, positions, sequence, requ
 		const x = position && position.x;
 		const y = position && position.y;
 		if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 10_000_000 || Math.abs(y) > 10_000_000) {
-			return false;
+			return _rejectPresence(onRejected, 'presence-invalid-position');
 		}
 		let next;
 		if (position && position.hiddenId != null) {
 			const hiddenId = String(position.hiddenId);
 			const reference = entry.hiddenRecordReferences.get(hiddenId);
 			if (!hiddenId || hiddenId.length > 128 || !reference || _visibilityForRef(entry, reference).visible) {
-				return false;
+				return _rejectPresence(onRejected, 'presence-hidden-reference-unavailable');
 			}
 			next = { ...reference, x, y };
 		} else {
 			const refKind = position && position.refKind;
 			const ref = position && position.ref != null ? String(position.ref) : '';
 			if (!['loaded', 'draft', 'slot'].includes(refKind) || !ref || ref.length > 128) {
-				return false;
+				return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 			}
 			next = { refKind, ref, x, y };
 			if (position.collabRef != null) {
 				const collabRef = String(position.collabRef);
 				if (!collabRef || collabRef.length > 128) {
-					return false;
+					return _rejectPresence(onRejected, 'presence-invalid-record-reference');
 				}
 				next.collabRef = collabRef;
 			}
@@ -2528,7 +2720,7 @@ export function updateLayout({ canvasId, connectionId, positions, sequence, requ
 			const record = _payloadRecordForRef(live.payload, next);
 			const canonicalReference = _snapshotRecordReference(record);
 			if (!canonicalReference) {
-				return false;
+				return _rejectPresence(onRejected, 'presence-record-not-in-snapshot');
 			}
 			next = { ...canonicalReference, x, y };
 		}

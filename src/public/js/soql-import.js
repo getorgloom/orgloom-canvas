@@ -81,7 +81,7 @@
 				const headerCopy =
 					isPlayground && !presetSoql
 						? '<p class="tag">Demo query. Connect Salesforce to run your own.</p>'
-						: '<p class="tag">Include <code>Id</code> in your query. Up to 500 records per import.</p>';
+						: '';
 				const textareaAttrs =
 					isPlayground && !presetSoql
 						? ' readonly aria-readonly="true" style="width:100%;font-family:monospace;font-size:13px;background:var(--bg-elev);color:var(--ink-soft);cursor:not-allowed;"'
@@ -101,16 +101,8 @@
 					'>' +
 					escapeHtml(textareaValue) +
 					'</textarea>' +
-					'<label class="soql-full-fields-toggle" style="display:flex;align-items:center;gap:0.5em;margin-top:0.6em;font-size:0.88rem;color:var(--ink-soft)' +
-					(isPlayground ? ';opacity:0.7;cursor:not-allowed' : '') +
-					'">' +
-					'<input type="checkbox" id="soql-full-fields" checked' +
-					(isPlayground ? ' disabled aria-disabled="true"' : '') +
-					'>' +
-					'<span><strong>Load all fields</strong> &middot; Include fields not listed in your query.</span>' +
-					'</label>' +
 					'<details class="soql-query-help"><summary>Query help</summary>' +
-					'<p>Use a read-only SELECT query and include <code>Id</code>. You can import up to 500 records, including related records from child subqueries.</p>' +
+					'<p>Use a read-only SELECT query and include <code>Id</code>. You can import up to 500 records, including related records from child subqueries. All accessible fields are loaded, including fields not listed in your query.</p>' +
 					'<pre><code>SELECT Id, Name,\n  (SELECT Id, FirstName FROM Contacts)\nFROM Account\nLIMIT 5</code></pre>' +
 					'</details>' +
 					'<div id="soql-preview" class="soql-preview"></div>' +
@@ -138,7 +130,6 @@
 				const previewPane = modal.querySelector('#soql-preview');
 				const previewBtn = modal.querySelector('#soql-preview-btn');
 				const commitBtn = modal.querySelector('#soql-commit-btn');
-				const fullFieldsCb = modal.querySelector('#soql-full-fields');
 				let lastResult = null;
 				let showRecordIds = false;
 				previewPane.addEventListener('click', (event) => {
@@ -155,11 +146,10 @@
 				setTimeout(() => textarea.focus(), 0);
 
 				let lastResultSoql = null;
-				let lastResultFullFields = null;
 
 				async function runQuery(soql) {
 					// The server parses and enforces the read-only SOQL subset before querying Salesforce.
-					const fullFields = !!(fullFieldsCb && fullFieldsCb.checked);
+					const fullFields = true;
 					const r = await csrfFetch('/api/query', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
@@ -167,7 +157,7 @@
 						body: JSON.stringify({ soql, fullFields }),
 					});
 					const body = await r.json().catch(() => ({}));
-					return { ok: r.ok, status: r.status, body, fullFields };
+					return { ok: r.ok, status: r.status, body };
 				}
 
 				function renderPreview(body) {
@@ -328,9 +318,8 @@
 					previewPane.innerHTML = '<p class="tag center">Running query\u2026</p>';
 					lastResult = null;
 					lastResultSoql = null;
-					lastResultFullFields = null;
 					try {
-						const { ok, status, body, fullFields } = await runQuery(soql);
+						const { ok, status, body } = await runQuery(soql);
 						if (!ok) {
 							previewPane.innerHTML =
 								'<div class="banner error">' + formatQueryError(body, status) + '</div>';
@@ -338,7 +327,6 @@
 						}
 						lastResult = body;
 						lastResultSoql = soql;
-						lastResultFullFields = fullFields;
 						renderPreview(body);
 					} catch (err) {
 						previewPane.innerHTML =
@@ -362,12 +350,10 @@
 					let _undo = null;
 					try {
 						let result = lastResult;
-						const currentFullFields = !!(fullFieldsCb && fullFieldsCb.checked);
-						const cacheStale =
-							!result || lastResultSoql !== soql || lastResultFullFields !== currentFullFields;
+						const cacheStale = !result || lastResultSoql !== soql;
 						if (cacheStale) {
 							previewPane.innerHTML = '<p class="tag center">Running query\u2026</p>';
-							const { ok, status, body, fullFields } = await runQuery(soql);
+							const { ok, status, body } = await runQuery(soql);
 							if (!ok) {
 								_shared.captureImportFailure('soql', 'query');
 								previewPane.innerHTML =
@@ -377,7 +363,6 @@
 							result = body;
 							lastResult = body;
 							lastResultSoql = soql;
-							lastResultFullFields = fullFields;
 						}
 						if (!result.records || result.records.length === 0) {
 							previewPane.innerHTML =
@@ -439,13 +424,6 @@
 
 				previewBtn.addEventListener('click', runPreview);
 				commitBtn.addEventListener('click', commit);
-				if (fullFieldsCb) {
-					fullFieldsCb.addEventListener('change', () => {
-						lastResult = null;
-						lastResultSoql = null;
-						lastResultFullFields = null;
-					});
-				}
 				textarea.addEventListener('keydown', (e) => {
 					if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
 						e.preventDefault();
@@ -615,7 +593,7 @@
 
 			async function runAndCommitSoql(soql, opts) {
 				opts = opts || {};
-				const fullFields = opts.fullFields !== false;
+				const fullFields = true;
 				const r = await csrfFetch('/api/query', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },

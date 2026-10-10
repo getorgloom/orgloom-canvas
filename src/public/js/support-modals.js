@@ -73,9 +73,19 @@
 				}
 			});
 
-			function showPromptModal({ title, label, placeholder, defaultValue, submitText, helpText } = {}) {
+			function showPromptModal({
+				title,
+				label,
+				hideLabel = false,
+				placeholder,
+				defaultValue,
+				submitText,
+				helpText,
+			} = {}) {
 				promptModal.querySelector('#prompt-modal-title').textContent = title || 'Enter a value';
 				promptModal.querySelector('#prompt-modal-label').textContent = label || 'Value';
+				promptModal.querySelector('#prompt-modal-label').style.display = hideLabel ? 'none' : '';
+				promptModal.querySelector('#prompt-modal-input').setAttribute('aria-label', label || 'Value');
 				promptModal.querySelector('#prompt-modal-submit').textContent = submitText || 'Save';
 				const help = promptModal.querySelector('#prompt-modal-help');
 				if (helpText) {

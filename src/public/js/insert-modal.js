@@ -102,41 +102,21 @@
 		return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 	}
 
-	function unlinkRelationshipImpact(canvasState, targetRecord) {
-		const records = (canvasState && canvasState.bulkRecords) || [];
-		const associations = (canvasState && canvasState.bulkAssociations) || [];
-		const recordsById = new Map(records.map((record) => [record.id, record]));
-		const incoming = associations.filter(
-			(association) => association && targetRecord && association.toId === targetRecord.id,
-		);
-		const existingIncoming = incoming.filter((association) => {
+	function applyLoadedRecordUnlink(canvasState, targetRecord) {
+		if (!canvasState || !targetRecord || !targetRecord.loadedFromId) return;
+		const originalId = targetRecord.loadedFromId;
+		const recordsById = new Map((canvasState.bulkRecords || []).map((record) => [record.id, record]));
+		canvasState.bulkAssociations = (canvasState.bulkAssociations || []).filter((association) => {
+			if (!association || association.toId !== targetRecord.id) return true;
 			const holder = recordsById.get(association.fromId);
-			return !!(holder && holder.loadedFromId);
+			// Preserve the lookup after removing the canvas link, including association-only values.
+			if (holder && !holder.isTypeNode && !holder.isPending && association.fieldName) {
+				holder.values = holder.values || {};
+				holder.values[association.fieldName] = originalId;
+			}
+			return false;
 		});
-		const draftIncoming = incoming.filter((association) => {
-			const holder = recordsById.get(association.fromId);
-			return !!(holder && !holder.loadedFromId && !holder.isTypeNode && !holder.isPending);
-		});
-		return { incoming, existingIncoming, draftIncoming };
-	}
-
-	function applyLoadedRecordUnlink(canvasState, targetRecord, decision) {
-		if (!canvasState || !targetRecord) {
-			return { detachedExisting: 0, retainedDraft: 0 };
-		}
-		const impact = unlinkRelationshipImpact(canvasState, targetRecord);
-		// Detach existing children by default so converting a parent to a draft cannot reparent them.
-		if (decision !== 'move') {
-			const detachAssociations = new Set(impact.existingIncoming);
-			canvasState.bulkAssociations = (canvasState.bulkAssociations || []).filter(
-				(association) => !detachAssociations.has(association),
-			);
-		}
 		targetRecord.loadedFromId = null;
-		return {
-			detachedExisting: decision === 'move' ? 0 : impact.existingIncoming.length,
-			retainedDraft: impact.draftIncoming.length,
-		};
 	}
 
 	function formatCarryoverValue(value) {
@@ -860,6 +840,21 @@
 		return safeStepGrid ? bounds : { step: bounds.step };
 	}
 
+	function plainDecimalInputValue(value) {
+		const text = String(value == null ? '' : value);
+		const match = /^(-?)(\d+)(?:\.(\d*))?[eE]([+-]?\d+)$/.exec(text);
+		if (!match) return text;
+		const exponent = Number(match[4]);
+		// Native number inputs produce finite values. Bound expansion defensively.
+		if (!Number.isFinite(Number(text)) || Math.abs(exponent) > 1000) return text;
+		const digits = match[2] + (match[3] || '');
+		const decimalIndex = match[2].length + exponent;
+		// Shift the decimal point as text: no rounding or floating-point conversion.
+		if (decimalIndex <= 0) return match[1] + '0.' + '0'.repeat(-decimalIndex) + digits;
+		if (decimalIndex >= digits.length) return match[1] + digits + '0'.repeat(decimalIndex - digits.length);
+		return match[1] + digits.slice(0, decimalIndex) + '.' + digits.slice(decimalIndex);
+	}
+
 	function stepNumericInput(input, direction) {
 		if (!input || (direction !== 1 && direction !== -1)) {
 			return false;
@@ -874,6 +869,7 @@
 		} catch (_err) {
 			return false;
 		}
+		input.value = plainDecimalInputValue(input.value);
 		if (String(input.value == null ? '' : input.value) === previousValue) {
 			return false;
 		}
@@ -890,6 +886,7 @@
 			return;
 		}
 		root.querySelectorAll('input[type="number"]').forEach((input) => {
+			input.value = plainDecimalInputValue(input.value);
 			input.addEventListener('keydown', (event) => {
 				if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
 					return;
@@ -1113,6 +1110,13 @@
 				if (active) active.api.closeModal();
 			},
 			closeAll,
+			unlinkRecord(record) {
+				const entry = record && editors.get(record.id);
+				if (entry && entry.record === record) {
+					return entry.api.unlinkRecord(record);
+				}
+				return getHelper().unlinkRecord(record, deps.canvasState);
+			},
 			updateUploadFixFields(recordId, fields) {
 				for (const entry of editors.values()) {
 					if (entry.record && String(entry.record.id) === String(recordId))
@@ -1156,7 +1160,6 @@
 			mountMultiple,
 			scopeEditorIds,
 			linkedRecordControlHtml,
-			unlinkRelationshipImpact,
 			applyLoadedRecordUnlink,
 			formatCarryoverValue,
 			formatReadOnlyFieldValue,
@@ -1219,7 +1222,6 @@
 				!deps.ensureRules ||
 				!deps.showBulkToast ||
 				!deps.changedFieldNames ||
-				!deps.isRecordModified ||
 				!deps.deleteAssociation ||
 				!deps.renderChips ||
 				!deps.renderBulkView ||
@@ -1228,7 +1230,6 @@
 				!deps._slotProgressClass ||
 				!deps.recordOrdinal ||
 				!deps._slotAssignmentState ||
-				!deps.markPendingDelete ||
 				!deps.unmarkPendingDelete ||
 				!deps.showConfirmDialog ||
 				!deps.pushPresenceFocus ||
@@ -1252,7 +1253,6 @@
 			const ensureRules = deps.ensureRules;
 			const showBulkToast = deps.showBulkToast;
 			const changedFieldNames = deps.changedFieldNames;
-			const isRecordModified = deps.isRecordModified;
 			const deleteAssociation = deps.deleteAssociation;
 			const renderChips = deps.renderChips;
 			const renderBulkView = deps.renderBulkView;
@@ -1261,13 +1261,6 @@
 			const _slotProgressClass = deps._slotProgressClass;
 			const recordOrdinal = deps.recordOrdinal;
 			const _slotAssignmentState = deps._slotAssignmentState;
-			const markPendingDelete = deps.markPendingDelete;
-			const canDeleteRecord =
-				typeof deps.canDeleteRecord === 'function'
-					? deps.canDeleteRecord
-					: function () {
-							return false;
-						};
 			const unmarkPendingDelete = deps.unmarkPendingDelete;
 			const showConfirmDialog = deps.showConfirmDialog;
 			const pushPresenceFocus = deps.pushPresenceFocus;
@@ -1347,91 +1340,17 @@
 				return focus;
 			}
 
-			function chooseUnlinkRelationshipBehavior(record, impact) {
-				return new Promise((resolve) => {
-					document.querySelectorAll('.unlink-relationship-modal').forEach((el) => el.remove());
-					const choiceModal = document.createElement('div');
-					choiceModal.className = 'modal unlink-relationship-modal';
-					const existingCount = impact.existingIncoming.length;
-					const draftCount = impact.draftIncoming.length;
-					const objectLabel = record.objectLabel || record.objectName || 'record';
-					const existingNoun =
-						existingCount === 1 ? 'existing canvas record points' : 'existing canvas records point';
-					const draftNote =
-						draftCount > 0
-							? '<p>' +
-								escapeHtml(
-									draftCount +
-										' draft record' +
-										(draftCount === 1 ? '' : 's') +
-										' will stay connected to the new draft in either case.',
-								) +
-								'</p>'
-							: '';
-					choiceModal.innerHTML =
-						'<div class="modal-overlay" data-unlink-cancel></div>' +
-						'<div class="modal-body" style="max-width:520px">' +
-						'<div class="modal-header">' +
-						'<h3>' +
-						escapeHtml('Unlink this ' + objectLabel + '?') +
-						'</h3>' +
-						'<button class="modal-close" data-unlink-cancel>&times;</button>' +
-						'</div>' +
-						'<div class="modal-content">' +
-						'<p>' +
-						escapeHtml(
-							existingCount +
-								' ' +
-								existingNoun +
-								' to this ' +
-								objectLabel +
-								'. Choose whether those records stay with the original Salesforce record or move to the new draft when you upload.',
-						) +
-						'</p>' +
-						draftNote +
-						'</div>' +
-						'<div class="modal-footer">' +
-						'<button class="button secondary" data-unlink-cancel>Cancel</button>' +
-						'<button class="button secondary" data-unlink-move>Move to new draft</button>' +
-						'<button class="button" data-unlink-keep>Keep with original</button>' +
-						'</div>' +
-						'</div>';
-					document.body.appendChild(choiceModal);
-					let settled = false;
-					const finish = (value) => {
-						if (settled) {
-							return;
-						}
-						settled = true;
-						document.removeEventListener('keydown', onKey);
-						choiceModal.remove();
-						resolve(value);
-					};
-					const onKey = (event) => {
-						if (event.key === 'Escape') {
-							finish(null);
-						} else if (event.key === 'Enter') {
-							finish('keep');
-						}
-					};
-					document.addEventListener('keydown', onKey);
-					choiceModal
-						.querySelectorAll('[data-unlink-cancel]')
-						.forEach((el) => el.addEventListener('click', () => finish(null)));
-					choiceModal.querySelector('[data-unlink-move]').addEventListener('click', () => finish('move'));
-					choiceModal.querySelector('[data-unlink-keep]').addEventListener('click', () => finish('keep'));
-					setTimeout(() => choiceModal.querySelector('[data-unlink-keep]').focus(), 0);
-				});
-			}
-
 			const modal = document.createElement('div');
 			modal.className = 'modal record-editor-modal hidden';
 			modal.innerHTML =
 				'<div class="modal-overlay" data-close></div>' +
 				'<div class="modal-body">' +
 				'<div class="modal-header">' +
+				'<div class="record-editor-heading"><div class="record-editor-title-row">' +
 				'<h3 data-editor-element="modal-title">New record</h3>' +
+				'</div>' +
 				'<div class="modal-subtitle" data-editor-element="modal-subtitle"></div>' +
+				'<div class="record-editor-header-id" data-editor-element="record-id" hidden></div></div>' +
 				'<button class="modal-close" data-close title="Collapse to card" aria-label="Collapse to card">' +
 				'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">' +
 				'<path d="M2 6h4V2M12 8H8v4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -1441,7 +1360,6 @@
 				'<div class="modal-content" data-editor-element="modal-content"><p class="center">Loading…</p></div>' +
 				'<div class="modal-toast" data-editor-element="modal-toast" hidden></div>' +
 				'<div class="modal-footer">' +
-				'<button class="button danger" data-editor-element="modal-mark-delete" hidden style="margin-right:auto" title="Stages a Salesforce DELETE that ships with your next upload">Mark for delete</button>' +
 				'<button class="button secondary" data-editor-element="modal-configure-request" hidden>Configure request</button>' +
 				'<button class="button secondary" data-close>Cancel</button>' +
 				'<button class="button" data-editor-element="modal-submit" disabled>Save draft</button>' +
@@ -1457,7 +1375,6 @@
 			}
 			modal.addEventListener('mousedown', () => activate(), { signal: lifecycle.signal });
 			modal.addEventListener('focusin', () => activate(), { signal: lifecycle.signal });
-
 			function cancelEncryptedTooltipHide() {
 				if (encryptedTooltipHideTimer) {
 					clearTimeout(encryptedTooltipHideTimer);
@@ -1557,8 +1474,7 @@
 						e.key === 'Escape' &&
 						!e.defaultPrevented &&
 						editorActive &&
-						!modal.classList.contains('hidden') &&
-						!document.querySelector('.unlink-relationship-modal')
+						!modal.classList.contains('hidden')
 					) {
 						e.preventDefault();
 						closeEncryptedTooltip();
@@ -1608,76 +1524,6 @@
 					}
 					closeModal();
 					void configureRequest(record);
-				});
-			}
-
-			const _markDeleteBtn = modal.querySelector('[data-editor-element="modal-mark-delete"]');
-			function _updateMarkDeleteButton() {
-				if (!_markDeleteBtn) {
-					return;
-				}
-				const rec = canvasState.currentRecordRef;
-				const isLoaded = !!(rec && rec.loadedFromId);
-				const isTypeNode = !!(rec && rec.isTypeNode);
-				const isInaccessible = !!(rec && rec.isInaccessible);
-				const pending = !!(rec && rec.pendingDelete);
-				if (
-					!canEditCanvasStructure() ||
-					!rec ||
-					!isLoaded ||
-					isTypeNode ||
-					isInaccessible ||
-					(!pending && !canDeleteRecord(rec))
-				) {
-					_markDeleteBtn.hidden = true;
-					return;
-				}
-				_markDeleteBtn.hidden = false;
-				if (pending) {
-					_markDeleteBtn.textContent = 'Keep record';
-					_markDeleteBtn.classList.remove('danger');
-					_markDeleteBtn.classList.add('secondary');
-					_markDeleteBtn.title = 'Cancel the staged Salesforce DELETE for this record';
-				} else {
-					_markDeleteBtn.textContent = 'Mark for delete';
-					_markDeleteBtn.classList.remove('secondary');
-					_markDeleteBtn.classList.add('danger');
-					_markDeleteBtn.title = 'Stage a DELETE that ships with your next upload';
-				}
-			}
-			if (_markDeleteBtn) {
-				_markDeleteBtn.addEventListener('click', async () => {
-					if (!canEditCanvasStructure()) {
-						_markDeleteBtn.hidden = true;
-						showBulkToast('Only the canvas owner or an editor can mark records for deletion.', 'info');
-						return;
-					}
-					const rec = canvasState.currentRecordRef;
-					if (!rec || !rec.loadedFromId) {
-						return;
-					}
-					if (rec.pendingDelete) {
-						unmarkPendingDelete(rec.id);
-						closeModal();
-						return;
-					}
-					if (typeof isRecordModified === 'function' && isRecordModified(rec)) {
-						const ok = await showConfirmDialog({
-							title: 'Discard unsaved edits?',
-							message:
-								"This record has unsaved edits. Marking it for delete will discard those edits: the record will be DELETE'd in Salesforce on next upload regardless.",
-							confirmLabel: 'Discard edits and mark for delete',
-							cancelLabel: 'Cancel',
-							danger: true,
-						});
-						if (!ok) {
-							return;
-						}
-						markPendingDelete(rec.id, { discardEdits: true });
-					} else {
-						markPendingDelete(rec.id);
-					}
-					closeModal();
 				});
 			}
 
@@ -2676,6 +2522,7 @@
 				sectionCollapsed.optional = true;
 				modalEditMode =
 					canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId ? 'existing' : 'new';
+				updateRecordHeaderIdentity();
 				currentLayoutMode = sharedDraftLayoutMode(
 					getCanvasShareRole(),
 					canvasState.currentRecordRef,
@@ -2698,7 +2545,6 @@
 				_syncSubmitButtonAccess({ loading: true });
 				modal.querySelector('[data-editor-element="modal-content"]').innerHTML =
 					'<p class="center">Loading fields…</p>';
-				_updateMarkDeleteButton();
 
 				// Keep rules available for rule-aware sample autofill, but present object metadata in the schema builder.
 				const sharedDraft = !!(
@@ -2779,23 +2625,17 @@
 							const resolvedName = _resolveTitle();
 							titlePrefix =
 								resolvedName || describe.label + ' #' + recordOrdinal(canvasState.currentRecordRef);
-							const isExisting = !!canvasState.currentRecordRef.loadedFromId;
-							const isModified =
-								isExisting &&
-								typeof isRecordModified === 'function' &&
-								isRecordModified(canvasState.currentRecordRef);
-							const state = isModified ? 'modified' : isExisting ? 'existing' : 'draft';
-							subtitleText = describe.label + ' \u00b7 ' + state;
+							subtitleText = describe.label;
 						} else {
 							titlePrefix = 'New ' + describe.label;
-							subtitleText = describe.label + ' \u00b7 draft';
+							subtitleText = describe.label;
 						}
 						modal.querySelector('[data-editor-element="modal-title"]').textContent = titlePrefix;
+						updateRecordHeaderIdentity();
 						const subtitleEl = modal.querySelector('[data-editor-element="modal-subtitle"]');
 						if (subtitleEl) {
 							subtitleEl.textContent = subtitleText;
 						}
-						_updateMarkDeleteButton();
 						const recId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
 						return fetchEditLayout(currentObject, currentRecordTypeId, recId, currentLayoutMode)
 							.then(async (layout) => {
@@ -2922,6 +2762,60 @@
 					/* best-effort */
 				}
 				if (typeof deps.onClose === 'function') deps.onClose();
+			}
+
+			async function unlinkRecord(record, targetState = canvasState) {
+				if (!canEditCanvasStructure()) {
+					showBulkToast('Only the canvas owner or an editor can unlink records.', 'info');
+					return false;
+				}
+				if (!record || !record.loadedFromId || record._inaccessible || record.isTypeNode || record.isPending) {
+					return false;
+				}
+				if (!targetState.bulkRecords.includes(record)) return false;
+				if (record.pendingDelete) {
+					unmarkPendingDelete(record.id);
+				}
+				applyLoadedRecordUnlink(targetState, record);
+				if (canvasState.currentRecordRef === record) {
+					modalEditMode = 'new';
+					rerenderFormPreservingValues();
+				}
+				if (targetState.graphView === 'bulk') {
+					renderBulkView();
+				}
+				return true;
+			}
+
+			function updateRecordHeaderIdentity() {
+				const loadedId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
+				const existing = modalEditMode === 'existing' && !!loadedId;
+				const recordId = modal.querySelector('[data-editor-element="record-id"]');
+				recordId.textContent = existing ? loadedId : '';
+				recordId.hidden = !existing;
+				const title = modal.querySelector('[data-editor-element="modal-title"]');
+				const recordName = title.textContent;
+				title.textContent = recordName;
+				if (!existing) {
+					return;
+				}
+				const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
+				const recordUrl = sfBase
+					? sfBase +
+						'/lightning/r/' +
+						encodeURIComponent(currentObject) +
+						'/' +
+						encodeURIComponent(loadedId) +
+						'/view'
+					: null;
+				if (recordUrl) {
+					title.innerHTML =
+						'<a href="' +
+						escapeHtml(recordUrl) +
+						'" target="_blank" rel="noopener" title="View in Salesforce">' +
+						escapeHtml(recordName) +
+						'</a>';
+				}
 			}
 
 			function renderForm(banner) {
@@ -3068,7 +2962,7 @@
 						'.</strong> ' +
 						"This record was imported via SOQL with a focused SELECT: fields you didn't query aren't shown here. " +
 						"They're preserved on Salesforce; an Update only sends the fields below. " +
-						'To edit other fields, re-import via SOQL with <strong>Load all fields</strong> checked.' +
+						'To edit other fields, remove this record from the canvas and import it again.' +
 						'</div>';
 				}
 				if (!viewerReadOnly) {
@@ -3118,38 +3012,20 @@
 				}
 				html += '<form data-editor-element="insert-form" autocomplete="off">';
 
-				const loadedId = canvasState.currentRecordRef && canvasState.currentRecordRef.loadedFromId;
-				if (modalEditMode === 'existing' && loadedId) {
-					const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
-					const recordUrl = sfBase
-						? sfBase +
-							'/lightning/r/' +
-							encodeURIComponent(currentObject) +
-							'/' +
-							encodeURIComponent(loadedId) +
-							'/view'
-						: null;
-					const idHtml = recordUrl
-						? '<a href="' +
-							escapeHtml(recordUrl) +
-							'" target="_blank" rel="noopener"><code>' +
-							escapeHtml(loadedId) +
-							'</code></a>'
-						: '<code>' + escapeHtml(loadedId) + '</code>';
-					const existingRecordMessage = !recipientCanEdit
-						? ': Read-only on this shared canvas.</span>'
+				updateRecordHeaderIdentity();
+				if (
+					modalEditMode === 'existing' &&
+					canvasState.currentRecordRef &&
+					canvasState.currentRecordRef.loadedFromId
+				) {
+					const accessNotice = !recipientCanEdit
+						? 'Read-only on this shared canvas.'
 						: shareRole === 'contributor'
-							? ': Your changes will be submitted to the canvas owner for review.</span>'
-							: ': Upload will update it in Salesforce.</span>';
-					html +=
-						'<div class="edit-mode-existing-banner">' +
-						'<span>Editing existing record ' +
-						idHtml +
-						existingRecordMessage +
-						(canEditCanvasStructure()
-							? '<button type="button" class="link-button" data-unlink-existing>Unlink</button>'
-							: '') +
-						'</div>';
+							? 'Your changes will be submitted to the canvas owner for review.'
+							: '';
+					if (accessNotice) {
+						html += '<p class="record-editor-access-notice">' + accessNotice + '</p>';
+					}
 				}
 
 				if (showRecordTypeField) {
@@ -3602,37 +3478,6 @@
 					});
 				});
 				modal.querySelectorAll('.lookup-picker').forEach(_wireLookupPicker);
-				const unlinkBtn = modal.querySelector('[data-unlink-existing]');
-				if (unlinkBtn) {
-					unlinkBtn.addEventListener('click', async () => {
-						if (!canEditCanvasStructure()) {
-							unlinkBtn.remove();
-							showBulkToast('Only the canvas owner or an editor can unlink records.', 'info');
-							return;
-						}
-						const record = canvasState.currentRecordRef;
-						if (!record) {
-							return;
-						}
-						const impact = unlinkRelationshipImpact(canvasState, record);
-						let decision = 'keep';
-						if (impact.existingIncoming.length > 0) {
-							decision = await chooseUnlinkRelationshipBehavior(record, impact);
-							if (!decision) {
-								return;
-							}
-						}
-						if (record.pendingDelete) {
-							unmarkPendingDelete(record.id);
-						}
-						applyLoadedRecordUnlink(canvasState, record, decision);
-						modalEditMode = 'new';
-						rerenderFormPreservingValues();
-						if (canvasState.graphView === 'bulk') {
-							renderBulkView();
-						}
-					});
-				}
 				const rtSelect = modal.querySelector('[data-record-type-select]');
 				if (rtSelect) {
 					rtSelect.addEventListener('change', () => {
@@ -6223,6 +6068,7 @@
 					if (_modalToastTimer) clearTimeout(_modalToastTimer);
 					modal.remove();
 				},
+				unlinkRecord,
 				openInsertModal: openInsertModal,
 				closeModal: closeModal,
 				showModalToast: showModalToast,

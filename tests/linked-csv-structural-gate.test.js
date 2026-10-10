@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const source = fs.readFileSync(path.resolve(here, '../src/public/js/linked-csv.js'), 'utf8');
+const source = fs.readFileSync(path.resolve(here, '../src/public/js/linked-csv.js'), 'utf8').replace(/\r\n/g, '\n');
 const window = {};
 vm.runInNewContext(source, { window, Set, Map });
 const { linkedCsvReady } = window.OrgLoom.linkedCsv._test;
@@ -26,15 +26,14 @@ test('clear-field metadata is hidden from column mapping and unmapped counts wit
 			{ name: 'Notes', index: 3 },
 		]),
 	);
-	const start = source.indexOf('const mappedCount = dataColumns');
-	const end = source.indexOf('const meta =', start);
-	const counts = vm.runInNewContext(source.slice(start, end) + '\n({ mappedCount, unmappedCount })', {
+	const start = source.indexOf('const unmappedCount = dataColumns');
+	const end = source.indexOf('let permWarn', start);
+	const counts = vm.runInNewContext(source.slice(start, end) + '\n({ unmappedCount })', {
 		dataColumns,
 		file,
 		state: { links: [] },
 		i: 0,
 	});
-	assert.equal(counts.mappedCount, 2);
 	assert.equal(counts.unmappedCount, 1);
 	const rowStart = source.indexOf('const rows = dataColumns');
 	const rowEnd = source.indexOf('columnsHtml =', rowStart);
@@ -76,17 +75,4 @@ test('structurally broken files are rejected before entering the mapper collecti
 	assert.match(source, /reason: 'structure'/);
 	assert.match(source, /const valid = parsedFiles\.filter\(\(f\) => f && !f\.__rejected\)/);
 	assert.match(source, /state\.files = state\.files\.concat\(valid\)/);
-});
-
-test('cross-file matching is hidden until a custom relationship column is selected', () => {
-	const start = source.indexOf('(links.length > 0\n');
-	assert.ok(start !== -1, 'section visibility depends on selected links, not uploaded files');
-	const end = source.indexOf('const dz = body.querySelector', start);
-	const expression = source.slice(start, end).trim().replace(/;$/, '');
-	const render = (links) => vm.runInNewContext(expression, { links, linksHtml: '<div>Matching controls</div>' });
-	assert.equal(render([]), '', 'normal Salesforce lookup columns need no matching section');
-	assert.match(render([{ fromFileIdx: 0, fromColumnIdx: 2 }]), /Cross-file matching/);
-	assert.match(render([{ fromFileIdx: 0, fromColumnIdx: 2 }]), /Matching controls/);
-	assert.doesNotMatch(source, /No relationship columns selected/);
-	assert.match(source, /Match to a related record in another CSV - not uploaded/);
 });

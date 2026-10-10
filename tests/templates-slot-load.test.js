@@ -57,7 +57,22 @@ test('saved canvases with record slots load and advance the shared slot id count
 	let firstRenderRole = null;
 	let selectionCalls = 0;
 	let slotPreflightCalls = 0;
+	let loadActive = false;
+	const loadResults = [];
+	let releasePreviousSnapshot;
+	const previousSnapshot = new Promise((resolve) => {
+		releasePreviousSnapshot = resolve;
+	});
 	const api = window.OrgLoom.templates.mount({
+		beginCanvasLoad() {
+			loadActive = true;
+			const finish = (success) => {
+				loadActive = false;
+				loadResults.push(success);
+			};
+			finish.ready = previousSnapshot;
+			return finish;
+		},
 		canvasState,
 		showBulkToast() {},
 		escapeHtml: (value) => String(value),
@@ -74,6 +89,7 @@ test('saved canvases with record slots load and advance the shared slot id count
 		},
 		setGraphView() {},
 		renderAll() {
+			assert.equal(loadActive, true, 'stay suspended through the final render');
 			firstRenderRole ??= canvasState._renderCanvasShareRole;
 		},
 		showReplaceOrMergeDialog() {},
@@ -91,7 +107,9 @@ test('saved canvases with record slots load and advance the shared slot id count
 		},
 	});
 
-	await api.applyCanvasPayload(
+	const oldRecord = { id: 100, objectName: 'Account', values: { Name: 'Old canvas' } };
+	canvasState.bulkRecords = [oldRecord];
+	const loading = api.applyCanvasPayload(
 		{
 			schema: { objects: [{ name: 'Account' }, { name: 'Contact' }, { name: 'Opportunity' }] },
 			loadedRecords: [
@@ -132,8 +150,13 @@ test('saved canvases with record slots load and advance the shared slot id count
 		},
 		{ ownedByMe: false, recipientRole: 'viewer' },
 	);
+	assert.equal(canvasState.bulkRecords[0], oldRecord, 'wait for earlier snapshot before clearing the canvas');
+	releasePreviousSnapshot();
+	await loading;
 
 	assert.equal(slotIdSeq, 3);
+	assert.deepEqual(loadResults, [true]);
+	assert.equal(loadActive, false);
 	assert.equal(selectionCalls, 0);
 	assert.equal(slotPreflightCalls, 0);
 	assert.equal(firstRenderRole, 'viewer');
@@ -154,6 +177,27 @@ test('saved canvases with record slots load and advance the shared slot id count
 	assert.equal(restoredAccount.slot.assigneeName, 'Alex Chen');
 	assert.equal(restoredAccount.slot.assigneeEmail, 'alex@example.com');
 	assert.equal(api.buildCanvasPayload().loadedRecords[0].canvasRecordId, 'saved-account-card');
+	const fresh = { id: 999, objectName: 'Contact', values: { LastName: 'New' }, x: 200, y: 200 };
+	canvasState.bulkRecords.push(fresh);
+	canvasState.bulkAssociations.push({ fromId: fresh.id, toId: restoredAccount.id, fieldName: 'AccountId' });
+	const firstSave = api.buildCanvasPayload();
+	const savedDraft = firstSave.drafts.find((record) => record.tempId === fresh._persistedTempId);
+	assert.ok(savedDraft);
+	assert.equal(savedDraft.tempId, fresh._canvasRecordId);
+	assert.equal(savedDraft.canvasRecordId, fresh._canvasRecordId);
+	assert.equal(firstSave.associations.at(-1).from.ref, savedDraft.tempId);
+	assert.equal(
+		api.buildCanvasPayload().drafts.at(-1).tempId,
+		savedDraft.tempId,
+		'repeat saves retain draft identity',
+	);
+	await assert.rejects(api.applyTemplate(null), /Invalid template/);
+	assert.deepEqual(loadResults, [true, false], 'failed loads release their lifecycle with failure');
+	assert.equal(loadActive, false);
+	canvasState.currentCanvas = { id: '069000000000001AAA', ownedByMe: true };
+	await api.applyTemplate({ _meta: { app: 'Org Loom' }, schema: { objects: [] }, records: [], associations: [] });
+	assert.equal(canvasState.currentCanvas, null, 'file replacement must detach from the old shared canvas');
+	assert.deepEqual(loadResults, [true, false, true]);
 });
 
 test('shared payload permission placeholders do not require Salesforce object or record identifiers', () => {

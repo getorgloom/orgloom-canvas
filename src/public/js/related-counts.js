@@ -156,6 +156,9 @@
 			function fetchByRefCached(objectName, field, hostId, options) {
 				const key = _countCacheKey(objectName, field, hostId);
 				const forceRefresh = !!(options && options.forceRefresh);
+				// Explicit loads must match the amount offered by the confirmation dialog.
+				// Background prefetch keeps the server's smaller default batch size.
+				const limit = forceRefresh ? _RELATED_BULK_LOAD_CAP : 50;
 				if (!forceRefresh && _byRefCache.has(key)) {
 					return Promise.resolve(_byRefCache.get(key));
 				}
@@ -171,7 +174,9 @@
 					'/by-ref?field=' +
 					encodeURIComponent(field) +
 					'&id=' +
-					encodeURIComponent(hostId);
+					encodeURIComponent(hostId) +
+					'&limit=' +
+					limit;
 				const p = csrfFetch(url, { credentials: 'same-origin' })
 					.then(async (r) => {
 						if (!r.ok) {

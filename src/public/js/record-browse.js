@@ -567,12 +567,13 @@
 					_state.lastResult = body;
 					const loadable = typeof body.loadableCount === 'number' ? body.loadableCount : count;
 					const onCanvasInMatch = Math.max(0, count - loadable);
-					statusEl.textContent =
-						count +
-						' record' +
-						(count === 1 ? '' : 's') +
-						' match' +
-						(onCanvasInMatch > 0 ? ' · ' + onCanvasInMatch + ' already on canvas' : '');
+					statusEl.textContent = count + ' record' + (count === 1 ? '' : 's') + ' match';
+					if (onCanvasInMatch > 0) {
+						const onCanvasNote = document.createElement('span');
+						onCanvasNote.className = 'rb-count-secondary';
+						onCanvasNote.textContent = ' · ' + onCanvasInMatch + ' already on canvas';
+						statusEl.appendChild(onCanvasNote);
+					}
 					content.querySelector('.rb-preview').innerHTML = _renderPreviewTable(body);
 					_renderSelectionSummary(content);
 					_updateLoadButton(content);
@@ -724,10 +725,7 @@
 				searchInput.disabled = !_state.objectName;
 				searchInput.value = _state.search;
 				searchInput.placeholder =
-					_state.objectName === 'Case'
-						? 'Search by case number, subject, or record ID'
-						: 'Search by name or record ID';
-				searchInput.setAttribute('aria-label', searchInput.placeholder);
+					_state.objectName === 'Case' ? 'Case number, subject, or record ID' : 'Name or record ID';
 				const filterArea = content.querySelector('.rb-filters');
 				if (!objectPicker.dataset.populated) {
 					_loadObjects()
@@ -741,12 +739,15 @@
 										(_state.objectName === o.name ? ' selected' : '') +
 										'>' +
 										escapeHtml(o.label || o.name) +
-										' (' +
-										escapeHtml(o.name) +
-										')</option>',
+										(o.label && o.label !== o.name ? ' (' + escapeHtml(o.name) + ')' : '') +
+										'</option>',
 								)
 								.join('');
-							objectPicker.innerHTML = '<option value="">(pick an object)</option>' + opts;
+							objectPicker.innerHTML =
+								'<option value="" disabled' +
+								(!_state.objectName ? ' selected' : '') +
+								'>Select an object</option>' +
+								opts;
 							objectPicker.dataset.populated = '1';
 						})
 						.catch((e) => {
@@ -758,11 +759,10 @@
 							objectPicker.innerHTML = '<option value="">' + escapeHtml('Error: ' + msg) + '</option>';
 						});
 				}
-				filterArea.innerHTML =
-					_state.filters.map(_renderFilterChip).join('') +
-					(_state.objectName
-						? '<button type="button" class="rb-add-filter" data-rb-add-filter>+ Add filter</button>'
-						: '<p class="tag">Pick an object above to start filtering.</p>');
+				filterArea.innerHTML = _state.objectName
+					? _state.filters.map(_renderFilterChip).join('') +
+						'<button type="button" class="rb-add-filter" data-rb-add-filter>+ Add filter</button>'
+					: '';
 				const resultsHead = content.querySelector('.rb-results-head');
 				if (resultsHead) {
 					resultsHead.style.display = _state.objectName ? '' : 'none';
@@ -1168,13 +1168,14 @@
 					'<button class="modal-close" data-rb-close>&times;</button>' +
 					'</div>' +
 					'<div class="modal-content rb-content">' +
-					'<p class="tag">Search records and narrow the results with field filters. Load matching records onto the canvas when you’re ready.</p>' +
 					'<div class="rb-toolbar">' +
-					'<label class="rb-label">Object</label>' +
-					'<select class="rb-object-picker"><option value="">Loading objects…</option></select>' +
+					'<label class="rb-label" for="rb-object-picker">Object</label>' +
+					'<select id="rb-object-picker" class="rb-object-picker"><option value="">Loading objects…</option></select>' +
 					'</div>' +
-					'<input type="search" class="rb-search" aria-label="Search by name or record ID" placeholder="Search by name or record ID" maxlength="200" autocomplete="off" disabled>' +
-					'<div class="rb-section-head">Filters</div>' +
+					'<div class="rb-toolbar">' +
+					'<label class="rb-label" for="rb-search">Search</label>' +
+					'<input id="rb-search" type="search" class="rb-search" placeholder="Name or record ID" maxlength="200" autocomplete="off" disabled>' +
+					'</div>' +
 					'<div class="rb-filters"></div>' +
 					'<div class="rb-results-head">' +
 					'<span class="rb-count"></span>' +

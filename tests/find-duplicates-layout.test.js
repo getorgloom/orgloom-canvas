@@ -8,12 +8,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const script = fs.readFileSync(path.resolve(here, '../src/public/js/find-duplicates-modal.js'), 'utf8');
 const css = fs.readFileSync(path.resolve(here, '../src/public/css/app.css'), 'utf8');
 
-test('Find Duplicates uses one modal scroll surface', () => {
-	assert.match(css, /\.fdm-overlay \.fdm-body\s*\{[^}]*overflow:\s*visible/s);
-	assert.doesNotMatch(css, /\.fdm-overlay \.fdm-fields\s*\{[^}]*(?:overflow-y|max-height):/s);
+test('Find Duplicates confines long match-field lists to their own scroll area', () => {
+	assert.match(css, /\.fdm-overlay \.fdm-fields\s*\{[^}]*max-height:/s);
+	assert.match(css, /\.fdm-overlay \.fdm-fields\s*\{[^}]*overflow-y:\s*auto/s);
+	assert.match(css, /\.fdm-overlay \.fdm-field-row\s*\{[^}]*flex-shrink:\s*0/s);
 });
 
-test('Match when choices use the constrained mode layout', () => {
-	assert.match(script, /fdm-config-row--mode/);
-	assert.match(css, /\.fdm-overlay \.fdm-config-row--mode \.fdm-mode\s*\{[^}]*width:\s*min\(100%, 520px\)/s);
+test('Match when uses a select without explanations or option cards', () => {
+	assert.match(script, /<select id="fdm-op"/);
+	assert.match(script, /All selected fields match/);
+	assert.match(script, /Any selected field matches/);
+	assert.doesNotMatch(script, /fdm-mode-opt|AND &middot; strict|OR &middot; transitive/);
+	assert.doesNotMatch(script, /fdm-mode-note|Matches can connect through different fields/);
+	assert.match(css, /\.fdm-overlay #fdm-object,\s*\.fdm-overlay #fdm-op\s*\{/);
 });

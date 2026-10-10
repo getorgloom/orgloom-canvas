@@ -15,6 +15,7 @@ import {
 } from './connection-session.js';
 import * as mcpRelay from './mcp/relay.js';
 import * as canvasPresence from './canvas-presence.js';
+import { retrieveRecordValues } from './record-refresh.js';
 import { PLANS, planById } from './capabilities.js';
 import { getActiveSfConnection } from './sf-connection.js';
 import { hasAssignedOrgloomPermissionSet } from './sf-permset.js';
@@ -1335,92 +1336,27 @@ export function _resolveLookupTargetForTests(referenceTargets, requestedTarget) 
 
 export async function _fetchCanonicalValuesForUpload({ conn, results, recordsById }) {
 	const out = new Map();
-	if (!conn || !Array.isArray(results) || results.length === 0) {
-		return out;
-	}
-	const byObject = new Map();
-	for (const r of results) {
-		if (!r || !r.success || !r.id || !r.objectName) {
-			continue;
-		}
-		if (r.mode === 'unchanged') {
-			continue;
-		}
-		const rec = recordsById.get(r.tempId);
-		if (!rec) {
-			continue;
-		}
-		const objName = r.objectName;
-		if (!_SF_NAME_RE.test(objName)) {
-			continue;
-		}
-		if (!byObject.has(objName)) {
-			byObject.set(objName, { rows: [], fields: new Set(['Id', 'LastModifiedDate']) });
-		}
-		const entry = byObject.get(objName);
-		entry.rows.push({ tempId: r.tempId, sfId: r.id });
-		if (rec.values && typeof rec.values === 'object') {
-			for (const k of Object.keys(rec.values)) {
-				if (k && !k.startsWith('_') && _SF_NAME_RE.test(k)) {
-					entry.fields.add(k);
-				}
-			}
-		}
-		if (rec.loadedValues && typeof rec.loadedValues === 'object') {
-			for (const k of Object.keys(rec.loadedValues)) {
-				if (k && !k.startsWith('_') && _SF_NAME_RE.test(k)) {
-					entry.fields.add(k);
-				}
-			}
-		}
-		if (Array.isArray(rec.canonicalFields)) {
-			for (const k of rec.canonicalFields) {
-				if (typeof k === 'string' && _SF_NAME_RE.test(k)) {
-					entry.fields.add(k);
-				}
-			}
-		}
-	}
-	for (const [objName, entry] of byObject) {
-		const fieldList = Array.from(entry.fields).join(', ');
-		const ids = entry.rows.map((r) => r.sfId);
-		for (let i = 0; i < ids.length; i += 200) {
-			const slice = ids.slice(i, i + 200);
-			const inList = slice.map((id) => "'" + escapeSoqlLiteral(id) + "'").join(',');
-			const soql = 'SELECT ' + fieldList + ' FROM ' + objName + ' WHERE Id IN (' + inList + ')';
-			try {
-				const result = await conn.query(soql);
-				const records = result.records || [];
-				const sfById = new Map();
-				for (const sfRec of records) {
-					if (!sfRec || !sfRec.Id) {
-						continue;
-					}
-					sfById.set(String(sfRec.Id).slice(0, 15), sfRec);
-					sfById.set(sfRec.Id, sfRec);
-				}
-				for (const row of entry.rows.slice(i, i + 200)) {
-					const sfRec = sfById.get(row.sfId) || sfById.get(String(row.sfId).slice(0, 15));
-					if (!sfRec) {
-						continue;
-					}
-					const canonical = {};
-					for (const k of Object.keys(sfRec)) {
-						if (k === 'attributes' || k === 'Id' || k === 'LastModifiedDate') {
-							continue;
-						}
-						canonical[k] = sfRec[k];
-					}
-					out.set(row.tempId, {
-						sfId: row.sfId,
-						objectName: objName,
-						values: canonical,
-						uploadLastModifiedDate: sfRec.LastModifiedDate || null,
-					});
-				}
-			} catch (e) {}
-		}
-	}
+	if (!conn || !Array.isArray(results)) return out;
+	const successful = results.filter(
+		(row) =>
+			row && row.success && row.id && row.objectName && row.mode !== 'unchanged' && recordsById.has(row.tempId),
+	);
+	const refreshed = await retrieveRecordValues(
+		conn,
+		successful.map((row) => ({
+			objectName: row.objectName,
+			sfId: row.id,
+		})),
+	);
+	refreshed.forEach((row, index) => {
+		if (!row.ok) return;
+		out.set(successful[index].tempId, {
+			sfId: row.sfId,
+			objectName: row.objectName,
+			values: row.values,
+			uploadLastModifiedDate: row.values.LastModifiedDate || null,
+		});
+	});
 	return out;
 }
 
@@ -6451,7 +6387,6 @@ export function mountCanvasRoutes(app, options = {}) {
 					max: MAX_RECORDS,
 				});
 			}
-			const byObject = new Map();
 			const inputIndex = []; // preserves original input order for the response
 			for (let i = 0; i < input.length; i++) {
 				const r = input[i];
@@ -6465,46 +6400,14 @@ export function mountCanvasRoutes(app, options = {}) {
 					inputIndex.push({ objectName, sfId, error: 'invalid-id' });
 					continue;
 				}
-				if (!byObject.has(objectName)) {
-					byObject.set(objectName, []);
-				}
-				byObject.get(objectName).push(sfId);
 				inputIndex.push({ objectName, sfId });
 			}
 			const conn = req.sf.conn;
-			const byKey = new Map(); // "Obj::Id" -> record values
-			const objectErrors = new Map(); // objectName -> error code for whole-object failures
-			for (const [objectName, ids] of byObject) {
-				try {
-					const got = await conn.sobject(objectName).retrieve(ids);
-					const arr = Array.isArray(got) ? got : [got];
-					arr.forEach((rec, idx) => {
-						const id = ids[idx];
-						if (!rec) {
-							return;
-						}
-						const values = {};
-						for (const k of Object.keys(rec)) {
-							if (k === 'attributes') {
-								continue;
-							}
-							values[k] = rec[k];
-						}
-						byKey.set(objectName + '::' + id, values);
-					});
-				} catch (err) {
-					console.warn('[refresh] retrieve failed for', objectName, ':', err && err.message);
-					const code = err && err.errorCode;
-					objectErrors.set(
-						objectName,
-						code === 'INVALID_TYPE'
-							? 'invalid-object'
-							: code === 'INSUFFICIENT_ACCESS'
-								? 'no-access'
-								: 'retrieve-failed',
-					);
-				}
-			}
+			const refreshed = await retrieveRecordValues(
+				conn,
+				inputIndex.filter((entry) => !entry.error),
+			);
+			const byKey = new Map(refreshed.map((entry) => [entry.objectName + '::' + entry.sfId, entry]));
 			const objectCounts = {};
 			let okCount = 0;
 			let failCount = 0;
@@ -6513,19 +6416,19 @@ export function mountCanvasRoutes(app, options = {}) {
 					failCount++;
 					return { objectName: entry.objectName, sfId: entry.sfId, ok: false, error: entry.error };
 				}
-				const objErr = objectErrors.get(entry.objectName);
-				if (objErr) {
+				const refreshedRecord = byKey.get(entry.objectName + '::' + entry.sfId);
+				if (!refreshedRecord || !refreshedRecord.ok) {
 					failCount++;
-					return { objectName: entry.objectName, sfId: entry.sfId, ok: false, error: objErr };
-				}
-				const values = byKey.get(entry.objectName + '::' + entry.sfId);
-				if (!values) {
-					failCount++;
-					return { objectName: entry.objectName, sfId: entry.sfId, ok: false, error: 'not-found' };
+					return {
+						objectName: entry.objectName,
+						sfId: entry.sfId,
+						ok: false,
+						error: refreshedRecord?.error || 'not-found',
+					};
 				}
 				okCount++;
 				objectCounts[entry.objectName] = (objectCounts[entry.objectName] || 0) + 1;
-				return { objectName: entry.objectName, sfId: entry.sfId, ok: true, values };
+				return { objectName: entry.objectName, sfId: entry.sfId, ok: true, values: refreshedRecord.values };
 			});
 			try {
 				await ext.auditWrite({
@@ -8768,6 +8671,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!connectionId) {
 				return res.status(400).json({ error: 'missing-connectionId' });
 			}
+			let rejection;
 			const accepted = canvasPresence.updateCursor({
 				canvasId,
 				connectionId,
@@ -8776,9 +8680,12 @@ export function mountCanvasRoutes(app, options = {}) {
 				world,
 				sequence,
 				requestingAccountId: req.account.id,
+				onRejected: (detail) => {
+					rejection = detail;
+				},
 			});
 			if (!accepted) {
-				return res.status(409).json({ error: 'presence-event-rejected' });
+				return res.status(409).json(rejection || { error: 'presence-event-rejected' });
 			}
 			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
 		} catch (err) {
@@ -8795,15 +8702,19 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!connectionId) {
 				return res.status(400).json({ error: 'missing-connectionId' });
 			}
+			let rejection;
 			const accepted = canvasPresence.updateFocus({
 				canvasId,
 				connectionId,
 				focus,
 				sequence,
 				requestingAccountId: req.account.id,
+				onRejected: (detail) => {
+					rejection = detail;
+				},
 			});
 			if (!accepted) {
-				return res.status(409).json({ error: 'presence-event-rejected' });
+				return res.status(409).json(rejection || { error: 'presence-event-rejected' });
 			}
 			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
 		} catch (err) {
@@ -8958,15 +8869,19 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!body.connectionId) {
 				return res.status(400).json({ error: 'missing-connectionId' });
 			}
+			let rejection;
 			const accepted = canvasPresence.updateLayout({
 				canvasId,
 				connectionId: body.connectionId,
 				positions: body.positions,
 				sequence: body.sequence,
 				requestingAccountId: req.account.id,
+				onRejected: (detail) => {
+					rejection = detail;
+				},
 			});
 			if (!accepted) {
-				return res.status(409).json({ error: 'presence-event-rejected' });
+				return res.status(409).json(rejection || { error: 'presence-event-rejected' });
 			}
 			res.json({
 				ok: true,
@@ -8984,6 +8899,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!body.connectionId) {
 				return res.status(400).json({ error: 'missing-connectionId' });
 			}
+			let rejection;
 			const accepted = canvasPresence.updateSlot({
 				canvasId,
 				connectionId: body.connectionId,
@@ -8991,9 +8907,12 @@ export function mountCanvasRoutes(app, options = {}) {
 				slot: body.slot === null ? null : body.slot,
 				sequence: body.sequence,
 				requestingAccountId: req.account.id,
+				onRejected: (detail) => {
+					rejection = detail;
+				},
 			});
 			if (!accepted) {
-				return res.status(409).json({ error: 'presence-event-rejected' });
+				return res.status(409).json(rejection || { error: 'presence-event-rejected' });
 			}
 			res.json({
 				ok: true,
@@ -9024,6 +8943,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			if ((!fromRef && !fromSyncId) || (!toRef && !toSyncId) || !fieldName) {
 				return res.status(400).json({ error: 'missing-endpoint-or-field' });
 			}
+			let rejection;
 			const accepted = canvasPresence.updateDraftLink({
 				canvasId,
 				connectionId,
@@ -9035,9 +8955,12 @@ export function mountCanvasRoutes(app, options = {}) {
 				fieldName,
 				sequence: body.sequence,
 				requestingAccountId: req.account.id,
+				onRejected: (detail) => {
+					rejection = detail;
+				},
 			});
 			if (!accepted) {
-				return res.status(409).json({ error: 'presence-event-rejected' });
+				return res.status(409).json(rejection || { error: 'presence-event-rejected' });
 			}
 			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
 		} catch (err) {
@@ -9057,6 +8980,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			if (!sfId) {
 				return res.status(400).json({ error: 'missing-sfId' });
 			}
+			let rejection;
 			const accepted = canvasPresence.removeLoadedRecord({
 				canvasId,
 				connectionId,
@@ -9064,9 +8988,12 @@ export function mountCanvasRoutes(app, options = {}) {
 				collabRef: body.collabRef,
 				sequence: body.sequence,
 				requestingAccountId: req.account.id,
+				onRejected: (detail) => {
+					rejection = detail;
+				},
 			});
 			if (!accepted) {
-				return res.status(409).json({ error: 'presence-event-rejected' });
+				return res.status(409).json(rejection || { error: 'presence-event-rejected' });
 			}
 			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
 		} catch (err) {
@@ -9108,6 +9035,7 @@ export function mountCanvasRoutes(app, options = {}) {
 					});
 				}
 			}
+			let rejection;
 			const accepted = canvasPresence.updateLoadedRecord({
 				canvasId,
 				connectionId: body.connectionId,
@@ -9124,9 +9052,12 @@ export function mountCanvasRoutes(app, options = {}) {
 				promotedFrom: body.promotedFrom,
 				sequence: body.sequence,
 				requestingAccountId: req.account.id,
+				onRejected: (detail) => {
+					rejection = detail;
+				},
 			});
 			if (!accepted) {
-				return res.status(409).json({ error: 'presence-event-rejected' });
+				return res.status(409).json(rejection || { error: 'presence-event-rejected' });
 			}
 			res.json({
 				ok: true,
@@ -9161,6 +9092,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				typeof body.position.y === 'number'
 					? body.position
 					: undefined;
+			let rejection;
 			const accepted = canvasPresence.updateDraft({
 				canvasId,
 				connectionId,
@@ -9175,9 +9107,12 @@ export function mountCanvasRoutes(app, options = {}) {
 				y: typeof body.y === 'number' ? body.y : undefined,
 				slot: body.slot,
 				requestingAccountId: req.account.id,
+				onRejected: (detail) => {
+					rejection = detail;
+				},
 			});
 			if (!accepted) {
-				return res.status(409).json({ error: 'presence-event-rejected' });
+				return res.status(409).json(rejection || { error: 'presence-event-rejected' });
 			}
 			res.json({ ok: true, revision: canvasPresence.revision({ canvasId, connectionId }) });
 		} catch (err) {

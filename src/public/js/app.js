@@ -711,7 +711,9 @@ function csrfFetch(url, options) {
 	}
 
 	let _canvasReplacementLoads = 0;
+	let _beginPresenceCanvasLoad = () => () => {};
 	function beginCanvasReplacementLoad(message) {
+		const finishPresenceLoad = _beginPresenceCanvasLoad();
 		_canvasReplacementLoads += 1;
 		let mask = document.getElementById('canvas-replacement-loading');
 		if (!mask) {
@@ -738,6 +740,7 @@ function csrfFetch(url, options) {
 				return;
 			}
 			finished = true;
+			finishPresenceLoad();
 			_canvasReplacementLoads = Math.max(0, _canvasReplacementLoads - 1);
 			if (_canvasReplacementLoads > 0) {
 				return;
@@ -1643,7 +1646,7 @@ function csrfFetch(url, options) {
 			e.stopPropagation();
 			showFindObjectPopover(blankBtn, {
 				header: 'Create new record',
-				sub: 'Pick the object type for this blank draft.',
+				sub: '',
 				objectFilter: (object) => object && object.createable === true,
 				emptyText: 'This Salesforce user cannot create any available record types.',
 				isAdded: () => false,
@@ -1660,7 +1663,7 @@ function csrfFetch(url, options) {
 			}
 			showFindObjectPopover(loadBtn, {
 				header: 'Load existing record',
-				sub: 'Pick the object type, then search by name or paste a record ID.',
+				sub: '',
 				isAdded: () => false,
 				onPick: (name) => resolvePendingRecordToLoad(recId, name),
 			});
@@ -3946,7 +3949,6 @@ function csrfFetch(url, options) {
 			'<strong>Drop a saved-canvas JSON file here</strong>' +
 			'<span class="tag">or click to select</span>' +
 			'</div>' +
-			'<p class="tag center" style="padding-top:0.8em">Accepts a canvas exported from Org Loom (<code>.orgloom.json</code> file).</p>' +
 			'</div>' +
 			'</div>';
 		const input = document.createElement('input');
@@ -4784,11 +4786,11 @@ function csrfFetch(url, options) {
 		}
 		const prevValues = rec.values;
 		const discardingEdits = isRecordModified(rec) && opts && opts.discardEdits;
-		if (isRecordModified(rec) && !(opts && opts.discardEdits)) {
+		if (isRecordModified(rec) && !(opts && (opts.discardEdits || opts.allowModified))) {
 			console.warn(
 				'markPendingDelete: refusing - record',
 				id,
-				'has unsaved edits; pass {discardEdits:true} after user confirms',
+				'has unsaved edits; explicitly preserve or discard them when marking for delete',
 			);
 			return false;
 		}
@@ -5246,6 +5248,9 @@ function csrfFetch(url, options) {
 	});
 
 	const _cm = window.OrgLoom.canvasCardMenu.mount({
+		promptCanvasSave: function (opts) {
+			return promptCanvasSave(opts);
+		},
 		ensureDescribe: ensureDescribe,
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
@@ -5258,9 +5263,6 @@ function csrfFetch(url, options) {
 		},
 		showBulkToast: showBulkToast,
 		showConfirmDialog: showConfirmDialog,
-		isRecordModified: function (r) {
-			return isRecordModified(r);
-		},
 		canEditCanvasStructure: _canEditCanvasStructure,
 		_canAuthorSlots: function () {
 			return _canAuthorSlots();
@@ -5292,6 +5294,9 @@ function csrfFetch(url, options) {
 		},
 		convertSlotBackToRecord: function () {
 			return convertSlotBackToRecord.apply(null, arguments);
+		},
+		unlinkRecord: function (record) {
+			return _ins.unlinkRecord(record);
 		},
 		refreshRecordFromSf: function () {
 			return refreshRecordFromSf.apply(null, arguments);
@@ -5528,6 +5533,14 @@ function csrfFetch(url, options) {
 		return toRemove.length;
 	}
 
+	async function _saveNewRequestCanvas(config) {
+		if (!config.savedCanvasForRequest) return true;
+		if (!canvasState.currentCanvas || canvasState.currentCanvas.id !== config.savedCanvasForRequest) return false;
+		if (await saveExistingCanvas()) return true;
+		showBulkToast('The request is on your canvas but could not be saved. Save the canvas to publish it.', 'error');
+		return false;
+	}
+
 	async function convertRecordToFieldSlot(rec) {
 		if (!rec || rec.isTypeNode || rec.isPending) {
 			return;
@@ -5572,6 +5585,7 @@ function csrfFetch(url, options) {
 			assigneeEmail: config.assigneeEmail || null,
 		};
 		renderBulkView();
+		if (!(await _saveNewRequestCanvas(config))) return;
 		const _assigneeBit = config.assigneeName
 			? ' (assigned to ' + config.assigneeName + ')'
 			: ' (open to any recipient)';
@@ -5665,6 +5679,7 @@ function csrfFetch(url, options) {
 			);
 			renderBulkView();
 		});
+		if (!(await _saveNewRequestCanvas(config))) return false;
 		const _slotAssigneeBit = config.assigneeName
 			? ' (assigned to ' + config.assigneeName + ')'
 			: ' (open to any recipient)';
@@ -5788,6 +5803,7 @@ function csrfFetch(url, options) {
 		}
 		renderBulkView();
 		_publishPresenceChanges();
+		if (!(await _saveNewRequestCanvas(config))) return;
 		showBulkToast(
 			(kind === 'fields' ? 'Field request' : 'Record request') + ' updated for everyone viewing this canvas.',
 		);
@@ -7199,6 +7215,7 @@ function csrfFetch(url, options) {
 	const relayoutNewRecords = _treeLayout.relayoutNewRecords;
 
 	const _lcsv = window.OrgLoom.linkedCsv.mount({
+		beginCanvasLoad: () => _beginPresenceCanvasLoad(),
 		onCanvasReplace: () => {
 			clearUndoHistory();
 			_clearUploadFixes();
@@ -7279,6 +7296,7 @@ function csrfFetch(url, options) {
 	const openBrowseModal = _rb.openBrowseModal;
 
 	const _tpl = window.OrgLoom.templates.mount({
+		beginCanvasLoad: () => _beginPresenceCanvasLoad(),
 		onCanvasReplace: () => {
 			clearUndoHistory();
 			_clearUploadFixes();
@@ -7395,6 +7413,7 @@ function csrfFetch(url, options) {
 		if (!cur || !cur.id) {
 			return false;
 		}
+		const finishCanvasLoad = beginCanvasReplacementLoad('Reloading canvas\u2026');
 		try {
 			const r = await csrfFetch('/api/canvas/' + encodeURIComponent(cur.id), { credentials: 'same-origin' });
 			if (!r.ok) {
@@ -7446,6 +7465,8 @@ function csrfFetch(url, options) {
 		} catch (e) {
 			console.warn('[presence] live-sync reload failed:', e && e.message);
 			return false;
+		} finally {
+			finishCanvasLoad();
 		}
 	}
 	const _presence = window.OrgLoom.presence.mount({
@@ -7477,6 +7498,7 @@ function csrfFetch(url, options) {
 			const current = canvasState.currentCanvas ? Object.assign({}, canvasState.currentCanvas) : null;
 			canvasState._suppressNextViewTransition = true;
 			await applyCanvasPayload(payload || {}, {
+				presenceSnapshot: true,
 				merge: false,
 				ownedByMe: current ? !!current.ownedByMe : true,
 				recipientRole: current ? current.recipientRole || null : null,
@@ -7535,6 +7557,7 @@ function csrfFetch(url, options) {
 		},
 	});
 	_publishPresenceLayout = _presence.publishLayout;
+	_beginPresenceCanvasLoad = _presence.beginCanvasLoad;
 	_publishPresenceChanges = _presence.publishChanges;
 	const pushPresenceFocus = _presence.pushFocus;
 

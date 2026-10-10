@@ -11,6 +11,7 @@ const confirmSource = csv.slice(
 	csv.indexOf('async function linkedCsvConfirm(opts)'),
 	csv.indexOf('\n\t\t\treturn {\n\t\t\t\topenModal:'),
 );
+const mountConfirm = (env) => vm.runInNewContext('(() => {' + confirmSource + '; return linkedCsvConfirm; })()', env);
 
 test('CSV re-import clears only explicitly marked fields and rehydrates unchanged values', async () => {
 	const window = {};
@@ -19,11 +20,11 @@ test('CSV re-import clears only explicitly marked fields and rehydrates unchange
 	const ids = ['001000000000001AAA', '001000000000002AAA'];
 	const file = {
 		objectName: 'Account',
-		headers: ['Id', 'Name', 'Phone', '__OrgLoom_ClearFields'],
+		headers: ['Id', 'Name', 'Phone', 'Ignored', '__OrgLoom_ClearFields'],
 		mapping: { 0: 'Id', 1: 'Name', 2: 'Phone' },
 		rows: [
-			[ids[0], '', '', '["Phone"]'],
-			[ids[1], 'Edited name', '', ''],
+			[ids[0], '', '', 'discard me', '["Phone"]'],
+			[ids[1], 'Edited name', '', 'discard me too', ''],
 		],
 	};
 	const canvasState = {
@@ -50,7 +51,6 @@ test('CSV re-import clears only explicitly marked fields and rehydrates unchange
 		canvasCapCheck: () => ({ cap: 500 }),
 		captureUndoSnapshot: null,
 		clearEmptyStarterCard: noop,
-		unmappedCsvColumns: window.OrgLoom.unmappedCsvColumns,
 		exportedClearFields: window.OrgLoom.exportedClearFields,
 		closeLinkedCsvModal: noop,
 		setSkipNextCyAutoPan: noop,
@@ -59,12 +59,14 @@ test('CSV re-import clears only explicitly marked fields and rehydrates unchange
 		showBulkToast: noop,
 		pingAuditEvent: noop,
 	};
-	await vm.runInNewContext('(' + confirmSource.trim() + ')', env)({ replaceCanvas: false });
+	await mountConfirm(env)({ replaceCanvas: false });
 	assert.equal(canvasState.bulkRecords[0].values.Name, 'Live name');
 	assert.equal(canvasState.bulkRecords[0].values.Phone, null);
 	assert.equal(canvasState.bulkRecords[1].values.Name, 'Edited name');
 	assert.equal(canvasState.bulkRecords[1].values.Phone, 'Live phone');
-	assert.equal(canvasState.bulkRecords[0].unmappedCsvColumns.length, 0);
+	assert.equal('unmappedCsvColumns' in canvasState.bulkRecords[0], false);
+	assert.equal('Ignored' in canvasState.bulkRecords[0].values, false);
+	assert.doesNotMatch(JSON.stringify(canvasState.bulkRecords), /discard me/);
 });
 
 for (const scenario of ['replace', 'add', 'canceled', 'blocked', 'invalid']) {
@@ -98,6 +100,8 @@ for (const scenario of ['replace', 'add', 'canceled', 'blocked', 'invalid']) {
 		fixes.present([issue], 'local', [1]);
 		fixes.start(1);
 		let replacements = 0;
+		let loadActive = false;
+		const loadResults = [];
 		const noop = () => {};
 		const env = {
 			window,
@@ -106,7 +110,15 @@ for (const scenario of ['replace', 'add', 'canceled', 'blocked', 'invalid']) {
 				files: [{ objectName: 'Account', headers: ['Name'], mapping: { 0: 'Name' }, rows: [['New']] }],
 			},
 			deps: {
+				beginCanvasLoad: () => {
+					loadActive = true;
+					return (success) => {
+						loadActive = false;
+						loadResults.push(success);
+					};
+				},
 				onCanvasReplace: () => {
+					assert.equal(loadActive, true, 'replacement is suspended before clearing records');
 					replacements++;
 					fixes.clear();
 				},
@@ -123,7 +135,6 @@ for (const scenario of ['replace', 'add', 'canceled', 'blocked', 'invalid']) {
 			}),
 			captureUndoSnapshot: null,
 			clearEmptyStarterCard: noop,
-			unmappedCsvColumns: () => [],
 			exportedClearFields: () => new Set(),
 			closeLinkedCsvModal: noop,
 			setSkipNextCyAutoPan: noop,
@@ -132,8 +143,10 @@ for (const scenario of ['replace', 'add', 'canceled', 'blocked', 'invalid']) {
 			showBulkToast: noop,
 			pingAuditEvent: noop,
 		};
-		const confirm = vm.runInNewContext('(' + confirmSource.trim() + ')', env);
+		const confirm = mountConfirm(env);
 		await confirm({ replaceCanvas: scenario !== 'add' });
+		assert.equal(loadActive, false);
+		assert.deepEqual(loadResults, scenario === 'add' ? [] : [true]);
 		assert.equal(replacements, scenario === 'replace' ? 1 : 0);
 		assert.equal(host.hidden, scenario === 'replace');
 		assert.equal(fixes.refresh().length, scenario === 'replace' ? 0 : 1);

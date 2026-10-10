@@ -202,12 +202,62 @@
 				);
 			};
 
+			function handleRecordContextMenu(event, container) {
+				if (!canArrangeCanvas()) {
+					return;
+				}
+				const target = event.target;
+				if (
+					target &&
+					target.closest &&
+					target.closest('input, textarea, select, [contenteditable="true"], .modal')
+				) {
+					return;
+				}
+				let card = target && target.closest && target.closest('.record-card[data-rec-id]');
+				if (!card) {
+					// HTML labels can pass pointer events through to Cytoscape's drawing layer.
+					const cards = Array.from(container.querySelectorAll('.record-card[data-rec-id]'));
+					card = cards.reverse().find((candidate) => {
+						const rect = candidate.getBoundingClientRect();
+						return (
+							rect.width > 0 &&
+							rect.height > 0 &&
+							event.clientX >= rect.left &&
+							event.clientX <= rect.right &&
+							event.clientY >= rect.top &&
+							event.clientY <= rect.bottom
+						);
+					});
+				}
+				const trigger = card && card.querySelector('[data-card-more]');
+				if (!trigger) {
+					return;
+				}
+				const recordId = Number(card.getAttribute('data-rec-id'));
+				const record = canvasState.bulkRecords.find((candidate) => candidate.id === recordId);
+				if (!record) {
+					return;
+				}
+				event.preventDefault();
+				event.stopPropagation();
+				showCardMoreMenu(trigger, record);
+			}
+
 			function renderBulkCanvasCy() {
 				const container = getGraph().querySelector('#bulk-canvas-cy');
 				if (!container) {
 					return;
 				}
 				container.removeAttribute('title');
+				if (!container._recordContextMenuInstalled) {
+					container._recordContextMenuInstalled = true;
+					container.addEventListener(
+						'contextmenu',
+						(event) => handleRecordContextMenu(event, container),
+						true,
+					);
+				}
 				if (typeof cytoscape !== 'function') {
 					container.innerHTML =
 						'<div class="bulk-empty" style="padding:1em">Cytoscape failed to load (check /vendor/cytoscape route).</div>';
@@ -230,7 +280,6 @@
 								? '<button type="button" class="record-delete" data-record-delete title="Cancel adding a record" aria-label="Cancel adding a record">\u00D7</button>'
 								: '') +
 							'<div class="record-pending-title">Add a record</div>' +
-							'<div class="record-pending-desc">Choose how you want to start.</div>' +
 							(canArrangeCanvas()
 								? '<div class="record-pending-ctas">' +
 									'<button type="button" class="record-pending-cta record-pending-cta-blank" data-pending-pick-blank>Create new record</button>' +
@@ -405,7 +454,7 @@
 					let badge;
 					if (isPendingDelete) {
 						badge =
-							'<span class="record-pending-delete-badge" title="Staged for SF DELETE on next upload. Click Keep to unmark.">delete on upload</span>';
+							'<span class="record-pending-delete-badge" title="Staged for deletion on next upload. Click Cancel deletion to undo.">delete on upload</span>';
 					} else if (isModified) {
 						badge =
 							'<span class="record-modified-badge" title="Unsaved changes since load: Upload to Salesforce will push them">modified</span>';
@@ -431,16 +480,6 @@
 							(warning.objectUnavailable ? 'object unavailable' : 'fields unavailable') +
 							'</span>';
 					}
-					if (rec.unmappedCsvColumns?.length) {
-						badge +=
-							'<span class="record-partial-badge" title="' +
-							escapeHtml(
-								'Unmapped CSV columns kept separately, not uploaded: ' +
-									rec.unmappedCsvColumns.map((column) => column.name).join(', ') +
-									'. Export the canvas as JSON to retrieve their values.',
-							) +
-							'">unmapped CSV data</span>';
-					}
 					if (_isRecordStale(rec)) {
 						badge +=
 							'<span class="record-stale-badge" title="This record is unavailable in Salesforce. It may have been deleted, or your access may have changed.">unavailable in SF</span>';
@@ -458,7 +497,7 @@
 							n +
 							' field' +
 							(n === 1 ? '' : 's') +
-							' only; the rest are preserved on Salesforce, not editable here. Re-import via SOQL with Load all fields checked to see them.">partial</span>';
+							' only; the rest are preserved on Salesforce, not editable here. Remove this record from the canvas and import it again to load all accessible fields.">partial</span>';
 					}
 					if (salesforceReadOnly) {
 						badge +=
@@ -500,7 +539,7 @@
 						: '';
 					const keepBtn =
 						isPendingDelete && canArrangeCanvas()
-							? '<button class="record-keep" data-card-keep title="Unmark: cancels the delete">Keep</button>'
+							? '<button class="record-keep" data-card-keep title="Cancel the planned Salesforce deletion">Cancel deletion</button>'
 							: '';
 					return (
 						'<div class="cy-card-shell"><div class="' +
@@ -943,7 +982,7 @@
 							if (hitInRect(blankBtn)) {
 								showFindObjectPopover(blankBtn, {
 									header: 'Create new record',
-									sub: 'Pick the object type for this blank draft.',
+									sub: '',
 									objectFilter: (object) => object && object.createable === true,
 									emptyText: 'This Salesforce user cannot create any available record types.',
 									isAdded: () => false,
@@ -961,7 +1000,7 @@
 								}
 								showFindObjectPopover(loadBtn, {
 									header: 'Load existing record',
-									sub: 'Pick the object type, then search by name or paste a record ID.',
+									sub: '',
 									isAdded: () => false,
 									onPick: (name) => resolvePendingRecordToLoad(rec.id, name),
 								});
@@ -1242,7 +1281,7 @@
 							if (cta.matches('[data-pending-pick-blank]')) {
 								showFindObjectPopover(cta, {
 									header: 'Create new record',
-									sub: 'Pick the object type for this blank draft.',
+									sub: '',
 									objectFilter: (object) => object && object.createable === true,
 									emptyText: 'This Salesforce user cannot create any available record types.',
 									isAdded: () => false,
@@ -1260,7 +1299,7 @@
 								}
 								showFindObjectPopover(cta, {
 									header: 'Load existing record',
-									sub: 'Pick the object type, then search by name or paste a record ID.',
+									sub: '',
 									isAdded: () => false,
 									onPick: (name) => resolvePendingRecordToLoad(rec.id, name),
 								});

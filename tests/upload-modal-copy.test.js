@@ -7,13 +7,198 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.resolve(here, '../src/public/js/upload-modal.js'), 'utf8');
-const historySource = fs.readFileSync(path.resolve(here, '../src/public/js/upload-history.js'), 'utf8');
+const historySource = fs
+	.readFileSync(path.resolve(here, '../src/public/js/upload-history.js'), 'utf8')
+	.replaceAll('\r\n', '\n');
 const appSource = fs.readFileSync(path.resolve(here, '../src/public/js/app.js'), 'utf8');
 const routesSource = fs.readFileSync(path.resolve(here, '../src/canvas-routes.js'), 'utf8');
 const batchStoreSource = fs.readFileSync(path.resolve(here, '../src/storage/upload-batches-store.js'), 'utf8');
 const context = { window: { OrgLoom: {} } };
 vm.runInNewContext(source, context);
 const uploadModal = context.window.OrgLoom.uploadModal;
+
+test('lost-response recovery refreshes saved records in bounded batches and survives read failures', async () => {
+	for (const failRefresh of [false, true]) {
+		const records = Array.from({ length: 201 }, (_, id) => ({
+			id,
+			objectName: 'Case',
+			values: { Subject: 'Submitted' },
+		}));
+		const attempted = records.map((record) => ({
+			tempId: record.id,
+			objectName: record.objectName,
+			values: { ...record.values },
+		}));
+		const snapshots = uploadModal.snapshotUploadRecords(attempted, records, []);
+		records[0].values.Subject = 'New edit';
+		const inserted = records.map((record) => ({
+			tempId: record.id,
+			objectName: 'Case',
+			sfId: '500' + String(record.id).padStart(12, '0'),
+		}));
+		const reads = [];
+		const warnings = [];
+		const state = {
+			_uploadAttemptId: 'attempt',
+			canvasState: { bulkRecords: records, bulkAssociations: [] },
+			reconcileSyncedRecords: uploadModal.reconcileSyncedRecords,
+			postUploadRefreshWarning: uploadModal.postUploadRefreshWarning,
+			_clearSubmittedEncryptedValues: () => {},
+			_clearCommittedMigrationMatch: () => {},
+			encryptedFields: { clearSubmitted: () => {}, intentNames: () => [] },
+			renderBulkView: () => {},
+			publishPresenceChanges: () => {},
+			showBulkToast: (message) => warnings.push(message),
+			csrfFetch: async (url, options) => {
+				if (url === '/api/upload-batches?limit=5')
+					return { ok: true, json: async () => ({ batches: [{ id: 'batch', attemptId: 'attempt' }] }) };
+				if (url === '/api/upload-batches/batch')
+					return { ok: true, json: async () => ({ batch: { insertedIds: inserted } }) };
+				assert.equal(url, '/api/records/refresh');
+				assert.equal(options.method, 'POST');
+				const input = JSON.parse(options.body).records;
+				reads.push(input.length);
+				if (failRefresh) throw new Error('Network unavailable');
+				return {
+					ok: true,
+					json: async () => ({
+						results: input.map((row) => ({
+							...row,
+							ok: true,
+							values: { Id: row.sfId, Subject: 'Submitted', AccountId: '001000000000001AAA' },
+						})),
+					}),
+				};
+			},
+		};
+		const start = source.indexOf('function _applyRecoveredIds(');
+		const end = source.indexOf('function renderAttemptIncomplete(', start);
+		vm.runInNewContext(source.slice(start, end), state);
+		assert.equal(await state.reconcileLostUpload(attempted, snapshots), 201);
+		assert.deepEqual(reads, [200, 1]);
+		assert.equal(records[0].loadedFromId, inserted[0].sfId);
+		assert.equal(records[0].values.Subject, 'New edit');
+		assert.equal(records[0].loadedValues.Subject, 'Submitted');
+		assert.equal(warnings.length, failRefresh ? 1 : 0);
+		if (!failRefresh) assert.equal(records[0].values.AccountId, '001000000000001AAA');
+	}
+});
+
+test('full refresh adds Salesforce-generated fields and replaces the baseline while preserving newer edits', () => {
+	const record = {
+		id: 1,
+		objectName: 'Case',
+		loadedFromId: '500000000000001AAA',
+		values: { Subject: 'Submitted', Description: 'Before', Stale__c: 'Old' },
+		loadedValues: { Subject: 'Original', Description: 'Before', Stale__c: 'Old' },
+	};
+	const snapshots = uploadModal.snapshotUploadRecords([{ tempId: 1, ...record }], [record], []);
+	record.values.Subject = 'Edited during upload';
+	record.values.Description = null;
+	record.values.NewLocal__c = 'Keep';
+	const refreshed = {
+		Id: record.loadedFromId,
+		Subject: 'Server',
+		Description: 'Before',
+		AccountId: '001000000000001AAA',
+		LastModifiedDate: '2026-10-07T12:00:00Z',
+		Formula__c: 42,
+		Secret__c: '****',
+	};
+	uploadModal.reconcileSyncedRecords(
+		[record],
+		[{ tempId: 1, id: record.loadedFromId }],
+		{ 1: refreshed },
+		snapshots,
+		[],
+	);
+	assert.deepEqual({ ...record.loadedValues }, refreshed);
+	assert.equal(record.values.AccountId, refreshed.AccountId);
+	assert.equal(record.values.Subject, 'Edited during upload');
+	assert.equal(record.values.Description, null);
+	assert.equal(record.values.NewLocal__c, 'Keep');
+	assert.equal(record.values.Stale__c, undefined);
+	assert.equal(record.values.Secret__c, '****');
+});
+
+test('draft Account, Contact and Case receive generated relationships without manual refresh', () => {
+	const records = [
+		{ id: 'a', objectName: 'Account', values: { Name: 'Acme' } },
+		{ id: 'c', objectName: 'Contact', values: { LastName: 'Person' } },
+		{ id: 's', objectName: 'Case', values: { Subject: 'Help' } },
+	];
+	const links = [
+		{ fromId: 'c', toId: 'a', fieldName: 'AccountId' },
+		{ fromId: 's', toId: 'c', fieldName: 'ContactId' },
+	];
+	const snapshots = uploadModal.snapshotUploadRecords(
+		records.map((record) => ({ tempId: record.id, ...record })),
+		records,
+		links,
+	);
+	const canonical = {
+		a: { Id: '001000000000001AAA', Name: 'Acme' },
+		c: { Id: '003000000000001AAA', LastName: 'Person', AccountId: '001000000000001AAA' },
+		s: {
+			Id: '500000000000001AAA',
+			Subject: 'Help',
+			ContactId: '003000000000001AAA',
+			AccountId: '001000000000001AAA',
+		},
+	};
+	uploadModal.reconcileSyncedRecords(
+		records,
+		records.map((record) => ({ tempId: record.id, id: canonical[record.id].Id })),
+		canonical,
+		snapshots,
+		links,
+	);
+	for (const record of records) {
+		assert.deepEqual({ ...record.values }, canonical[record.id]);
+		assert.deepEqual({ ...record.loadedValues }, canonical[record.id]);
+	}
+	assert.equal(links.length, 2);
+});
+
+test('server-replaced lookups remove stale explicit links, but newer local links survive', () => {
+	for (const relinkDuringUpload of [false, true]) {
+		const parent = { id: 'a', loadedFromId: '001000000000001AAA', values: {} };
+		const other = { id: 'b', loadedFromId: '001000000000002AAA', values: {} };
+		const child = { id: 'c', values: { LastName: 'Person' } };
+		const links = [{ fromId: 'c', toId: 'a', fieldName: 'AccountId' }];
+		const snapshots = uploadModal.snapshotUploadRecords([{ tempId: 'c', values: child.values }], [child], links);
+		if (relinkDuringUpload) {
+			links[0].toId = 'b';
+			child.values.AccountId = other.loadedFromId;
+		}
+		const canonical = { Id: '003000000000001AAA', LastName: 'Person', AccountId: null };
+		uploadModal.reconcileSyncedRecords(
+			[parent, other, child],
+			[{ tempId: 'c', id: canonical.Id }],
+			{ c: canonical },
+			snapshots,
+			links,
+		);
+		assert.equal(child.loadedValues.AccountId, null);
+		assert.equal(child.values.AccountId, relinkDuringUpload ? other.loadedFromId : null);
+		assert.equal(links.length, relinkDuringUpload ? 1 : 0);
+	}
+});
+
+test('a refresh failure promotes saved drafts but does not mark newer edits as uploaded', () => {
+	const record = { id: 'd', values: { Name: 'Submitted' } };
+	const snapshots = uploadModal.snapshotUploadRecords([{ tempId: 'd', values: record.values }], [record], []);
+	record.values.Name = 'New edit';
+	uploadModal.reconcileSyncedRecords([record], [{ tempId: 'd', id: '001000000000001AAA' }], {}, snapshots, []);
+	assert.equal(record.loadedFromId, '001000000000001AAA');
+	assert.equal(record.loadedValues.Name, 'Submitted');
+	assert.equal(record.values.Name, 'New edit');
+	const rendered = renderResults([{ tempId: 'd', id: record.loadedFromId, objectName: 'Account', success: true }]);
+	assert.match(rendered.html, /saved, but could not be refreshed/);
+	assert.match(rendered.html, /do not upload again just to refresh/);
+	assert.equal(rendered.confirm.textContent, 'Close');
+	assert.equal(uploadModal.postUploadRefreshWarning([{ tempId: 'd' }], { d: { Id: record.loadedFromId } }), '');
+});
 
 test('post-upload record opening pans to the card without changing zoom or blocking the editor', () => {
 	const mountStart = appSource.indexOf('window.OrgLoom.uploadModal.mount({');
@@ -91,6 +276,7 @@ function renderResults(results, deletes = []) {
 				})[selector],
 		},
 		isRolledBackUploadResult: uploadModal.isRolledBackUploadResult,
+		postUploadRefreshWarning: uploadModal.postUploadRefreshWarning,
 		uploadResultIdentity: uploadModal.uploadResultIdentity,
 		recordOrdinal: () => 1,
 		uploadResultIdentityHtml: (result) => result.objectName + ' ' + result.tempId,
@@ -694,16 +880,6 @@ test('successful draft uploads refresh visible fields omitted from the write pay
 			OwnerId: '005-before-upload',
 		},
 	};
-	const describeCache = {
-		Contact: {
-			fields: [{ name: 'FirstName' }, { name: 'LastName' }, { name: 'OwnerId', createable: false }],
-		},
-	};
-	assert.deepEqual(Array.from(uploadModal.canonicalFieldNamesForRecord(record, describeCache)), [
-		'FirstName',
-		'LastName',
-		'OwnerId',
-	]);
 
 	const snapshots = uploadModal.snapshotUploadRecords(
 		[
@@ -739,19 +915,6 @@ test('successful draft uploads refresh a Salesforce-generated record name', () =
 		objectName: 'OLQA_Project__c',
 		values: { Status__c: 'New' },
 	};
-	const describeCache = {
-		OLQA_Project__c: {
-			fields: [
-				{ name: 'Name', nameField: true, createable: false, accessible: true },
-				{ name: 'Status__c', accessible: true },
-			],
-		},
-	};
-
-	assert.deepEqual(Array.from(uploadModal.canonicalFieldNamesForRecord(record, describeCache)), [
-		'Status__c',
-		'Name',
-	]);
 
 	const snapshots = uploadModal.snapshotUploadRecords(
 		[{ tempId: record.id, objectName: record.objectName, values: { Status__c: 'New' } }],
@@ -1143,7 +1306,7 @@ test('recall review restores the cached history list and never renders a zero-re
 		/querySelector\(\s*'\[data-uh-list\]'\s*\)\s*\.addEventListener\(\s*'click',\s*(?:\(\) =>\s*)?_renderUploadHistoryList/,
 	);
 	assert.match(historySource, /const recallAction = hasPotentialRecallWork/);
-	assert.match(historySource, /Nothing from this upload is available to recall/);
+	assert.match(historySource, /Nothing to recall here/);
 	assert.doesNotMatch(historySource, /Recall <span data-uh-recall-count>/);
 });
 
@@ -1164,11 +1327,11 @@ test('recall preserves later field edits and reports retryable field outcomes', 
 });
 
 test('recall review identifies linked records and previews each field after recall', () => {
-	assert.match(historySource, /objectLabel \+ ' - ' \+ recordName/);
+	assert.match(historySource, /escapeHtml\(objectLabel\) \+[\s\S]*?' - '/);
 	assert.match(historySource, /View in Salesforce/);
 	assert.match(historySource, /Original value/);
-	assert.match(historySource, /Value uploaded by Org Loom/);
-	assert.match(historySource, /Current Salesforce value/);
+	assert.match(historySource, /Uploaded value/);
+	assert.match(historySource, /Current value/);
 	assert.match(historySource, /After recall/);
 	assert.match(historySource, /data-uh-after-original/);
 	assert.match(historySource, /data-uh-after-current/);
@@ -1176,7 +1339,7 @@ test('recall review identifies linked records and previews each field after reca
 	assert.doesNotMatch(historySource, /Choose which uploaded field changes to undo/);
 	assert.match(historySource, /class="uh-info-tooltip-trigger"/);
 	assert.match(historySource, /role="tooltip"/);
-	assert.equal((historySource.match(/class="uh-info-tooltip-trigger"/g) || []).length, 1);
+	assert.equal((historySource.match(/class="uh-info-tooltip-trigger"/g) || []).length, 2);
 	assert.match(historySource, /How does field recall work/);
 	assert.doesNotMatch(historySource, /updated record(?:s)? (?:has|have) field changes from this upload/);
 	assert.doesNotMatch(historySource, /data-uh-after-status/);
@@ -1234,4 +1397,81 @@ test('recall history uses paginated ledgers and a consolidated parallel prefligh
 	assert.match(routesSource, /Promise\.all\(\[cascadePromise, valueDriftPromise\]\)/);
 	assert.match(routesSource, /preUploadCapturedAt:/);
 	assert.match(routesSource, /deletedCount:/);
+});
+
+test('recall deletion checkboxes default to unchanged records only', () => {
+	const start = historySource.indexOf('const cleanRecordRows =');
+	const end = historySource.indexOf('const valueDrift =', start);
+	const result = vm.runInNewContext(historySource.slice(start, end) + '\n({ cleanRecordRows, driftedRows })', {
+		cleanList: [{ sfId: 'clean', objectName: 'Account', recordName: 'Unchanged' }],
+		driftedList: [{ sfId: 'changed', objectName: 'Account', recordName: 'Changed' }],
+		escapeHtml: String,
+		recordIdentityHtml: (record) => record.recordName,
+	});
+	assert.match(result.cleanRecordRows, /data-uh-delete-record="clean" checked/);
+	assert.match(result.driftedRows, /data-uh-delete-record="changed"/);
+	assert.doesNotMatch(result.driftedRows, /\bchecked\b/);
+});
+
+test('recall respects every deletion checkbox in counts and submitted selections', () => {
+	const start = historySource.indexOf('const deleteBoxes =');
+	const end = historySource.indexOf('\n\t\t\t}\n\n\t\t\tasync function _executeRecall', start);
+	assert.ok(start > 0 && end > start);
+	const boxes = ['clean-a', 'clean-b', 'changed'].map((id, index) => ({
+		checked: index < 2,
+		getAttribute: () => id,
+		addEventListener(event, handler) {
+			this[event] = handler;
+		},
+	}));
+	const button = {
+		addEventListener(event, handler) {
+			this[event] = handler;
+		},
+	};
+	const label = {};
+	let payload;
+	const content = {
+		querySelectorAll: (selector) => (selector === '[data-uh-delete-record]' ? boxes : []),
+		querySelector: (selector) =>
+			({
+				'[data-uh-do-recall]': button,
+				'[data-uh-recall-label]': label,
+				'[data-uh-back]': { addEventListener() {} },
+			})[selector] || null,
+	};
+	vm.runInNewContext('(function () {' + historySource.slice(start, end) + '\n})()', {
+		content,
+		cleanList: [{ sfId: 'clean-a' }, { sfId: 'clean-b' }],
+		driftedList: [{ sfId: 'changed' }],
+		alreadyDeletedList: [{ sfId: 'gone' }],
+		valueReviewRecords: [],
+		cascadeConflicts: [{ parentSfId: 'clean-a', childSfId: 'changed' }],
+		availableRecallCount: 3,
+		batchId: 'batch',
+		overlay: {},
+		restoreHistoryList() {},
+		_executeRecall: (...args) => {
+			payload = args;
+		},
+	});
+	assert.equal(label.textContent, 'Recall 2 records');
+	assert.equal(button.disabled, true, 'selected parent still requires cascade acknowledgement');
+	boxes[0].checked = false;
+	boxes[0].change();
+	assert.equal(label.textContent, 'Recall 1 record');
+	assert.equal(button.disabled, false, 'unselected parent no longer requires acknowledgement');
+	button.click();
+	assert.deepEqual(Array.from(payload[2]), ['clean-a', 'changed', 'gone']);
+	assert.deepEqual(Array.from(payload[3]), [], 'clean selections never force-delete changed records');
+	boxes[1].checked = false;
+	boxes[1].change();
+	assert.equal(button.disabled, true, 'no selected records disables recall');
+	boxes[2].checked = true;
+	boxes[2].change();
+	assert.equal(button.disabled, false);
+	assert.equal(label.textContent, 'Recall 1 record');
+	button.click();
+	assert.deepEqual(Array.from(payload[2]), ['clean-a', 'clean-b', 'gone']);
+	assert.deepEqual(Array.from(payload[3]), ['changed']);
 });

@@ -45,21 +45,27 @@ test('clearing a selected teammate keeps the default suggestions available', () 
 	assert.match(shareSource, /ev\.composedPath[\s\S]*eventPath\.includes\(hostEl\)/);
 });
 
-test('share modal is role-specific and says Salesforce record permissions do not change', () => {
-	assert.match(shareSource, /viewer: 'can open and explore the canvas, but cannot change it\.'/);
-	assert.match(shareSource, /This shares the canvas only\. Salesforce record access stays unchanged\./);
+test('share modal keeps role-specific controls without the introductory explanation', () => {
+	assert.match(shareSource, /<strong>Viewer<\/strong> — Can view the canvas\./);
+	assert.match(shareSource, /<select id="cs-role"/);
+	assert.doesNotMatch(shareSource, /type="radio" name="cs-role"/);
+	assert.doesNotMatch(shareSource, /<h4>Review access<|cs-share-review-summary/);
+	assert.match(shareSource, /confirmLabel: 'Grant access and continue'/);
+	assert.match(shareSource, /cancelLabel: 'Back'/);
+	assert.doesNotMatch(shareSource, /This shares the canvas only\. Salesforce record access stays unchanged\./);
 	assert.doesNotMatch(shareSource, /recipient will get Read\/Edit access/);
 	assert.doesNotMatch(shareSource, /data\.recordAccess/);
-	assert.match(shareSource, /nextStep = 'Shared with ' \+ who \+ '\.';/);
-	assert.match(shareSource, /We emailed connection instructions/);
-	assert.match(shareSource, /We emailed setup instructions/);
+	assert.match(shareSource, /picker\.clear\(\{ focus: false \}\)/);
+	assert.match(shareSource, /emailDeliverFailed/);
+	assert.match(shareSource, /failed\. Use Copy canvas link to share it/);
+	assert.doesNotMatch(shareSource, /Or send the link yourself|id="cs-share-url-input"/);
 	assert.doesNotMatch(shareSource, /has Org Loom \+ this Salesforce org connected/);
 });
 
 test('one Share modal handles invitations and existing access', () => {
 	assert.doesNotMatch(shareSource, /openCanvasShareManagementModal/);
 	assert.match(shareSource, /class="cs-access-section"/);
-	assert.match(shareSource, /<h4>People with access<\/h4>/);
+	assert.doesNotMatch(shareSource, /<h4>People with access<\/h4>/);
 	assert.match(shareSource, /id="cs-manage-list"/);
 	assert.doesNotMatch(shareSource, /data-cs-manage/);
 	assert.doesNotMatch(toolbarSource, /data-bulk-manage-access/);

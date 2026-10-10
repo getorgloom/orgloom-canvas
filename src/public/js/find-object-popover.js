@@ -36,7 +36,7 @@
 				const emptyText = opts.emptyText || 'No matching objects.';
 				const headerText = opts.header || 'Find an object';
 				const subText =
-					opts.sub ||
+					opts.sub ??
 					'Adds any object to the schema, related or not. Use this to pick standalone objects alongside selections based on relationships.';
 				if (_activeCleanup) {
 					try {
@@ -60,9 +60,7 @@
 					'<div class="fop-header">' +
 					escapeHtml(headerText) +
 					'</div>' +
-					'<div class="fop-sub">' +
-					escapeHtml(subText) +
-					'</div>' +
+					(subText ? '<div class="fop-sub">' + escapeHtml(subText) + '</div>' : '') +
 					'<input type="search" class="fop-search" id="fop-search" placeholder="Filter by label or API name\u2026" autocomplete="off">' +
 					'<div class="fop-filter-row">' +
 					'<div class="segmented fop-types" id="fop-types">' +
@@ -152,7 +150,6 @@
 							.map((o) => {
 								const already = isAdded(o.name);
 								const onCanvas = canvasState.selectedObjects.some((s) => s.name === o.name);
-								const marked = already || onCanvas;
 								const tag =
 									(o.custom ? 'Custom' : 'Standard') + (o.queryable ? '' : ' \u00b7 not queryable');
 								return (
@@ -175,7 +172,6 @@
 									'</span>' +
 									'<span class="fop-tag">' +
 									tag +
-									(marked ? ' \u00b7 added' : '') +
 									'</span>' +
 									'</button>'
 								);

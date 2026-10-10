@@ -157,73 +157,64 @@ function fixture() {
 	return { state, target, existingChild, draftChild };
 }
 
-test('unlink impact separates existing incoming relationships from draft incoming relationships', () => {
-	const { unlinkRelationshipImpact } = api();
-	const { state, target } = fixture();
-	const impact = unlinkRelationshipImpact(state, target);
-
-	assert.deepEqual(
-		Array.from(impact.incoming, (association) => association.id),
-		[10, 11],
-	);
-	assert.deepEqual(
-		Array.from(impact.existingIncoming, (association) => association.id),
-		[10],
-	);
-	assert.deepEqual(
-		Array.from(impact.draftIncoming, (association) => association.id),
-		[11],
-	);
-});
-
-test('safe unlink detaches existing children without clearing their original Salesforce lookup', () => {
+test('unlink detaches all incoming links while preserving the original Salesforce lookup', () => {
 	const { applyLoadedRecordUnlink } = api();
-	const { state, target, existingChild } = fixture();
-
-	const result = applyLoadedRecordUnlink(state, target, 'keep');
-
+	const { state, target, existingChild, draftChild } = fixture();
+	applyLoadedRecordUnlink(state, target);
 	assert.equal(target.loadedFromId, null);
 	assert.deepEqual(
-		Array.from(state.bulkAssociations, (association) => association.id),
-		[11, 12, 13],
+		Array.from(state.bulkAssociations, (a) => a.id),
+		[12, 13],
 	);
 	assert.equal(existingChild.values.AccountId, '001ORIGINAL');
-	assert.deepEqual({ ...result }, { detachedExisting: 1, retainedDraft: 1 });
+	assert.equal(draftChild.values.AccountId, '001ORIGINAL');
+	assert.equal(target.values.Name, 'Original account');
 });
 
-test('explicit move keeps existing and draft children connected to the new draft', () => {
+test('unlink preserves association-only lookups and does not reset unrelated child edits', () => {
 	const { applyLoadedRecordUnlink } = api();
 	const { state, target, existingChild } = fixture();
-
-	const result = applyLoadedRecordUnlink(state, target, 'move');
-
-	assert.equal(target.loadedFromId, null);
-	assert.deepEqual(
-		Array.from(state.bulkAssociations, (association) => association.id),
-		[10, 11, 12, 13],
-	);
+	delete existingChild.values.AccountId;
+	existingChild.values.LastName = 'Edited';
+	existingChild.loadedValues = { LastName: 'Existing', AccountId: '001ORIGINAL' };
+	applyLoadedRecordUnlink(state, target);
 	assert.equal(existingChild.values.AccountId, '001ORIGINAL');
-	assert.deepEqual({ ...result }, { detachedExisting: 0, retainedDraft: 1 });
+	assert.equal(existingChild.values.LastName, 'Edited');
+	assert.equal(existingChild.loadedValues.LastName, 'Existing');
 });
 
-test('safe unlink does not remove unrelated legacy associations that have no id', () => {
+test('unlink preserves the effective association target even when the raw lookup is stale', () => {
+	const { applyLoadedRecordUnlink } = api();
+	const { state, target, existingChild } = fixture();
+	existingChild.values.AccountId = '001PREVIOUS';
+	applyLoadedRecordUnlink(state, target);
+	assert.equal(existingChild.values.AccountId, '001ORIGINAL');
+});
+
+test('unlink does not remove unrelated legacy associations that have no id', () => {
 	const { applyLoadedRecordUnlink } = api();
 	const { state, target, existingChild } = fixture();
 	const incoming = { fromId: existingChild.id, toId: target.id, fieldName: 'AccountId' };
 	const unrelated = { fromId: target.id, toId: 4, fieldName: 'OwnerId' };
 	state.bulkAssociations = [incoming, unrelated];
-
-	applyLoadedRecordUnlink(state, target, 'keep');
-
+	applyLoadedRecordUnlink(state, target);
 	assert.equal(state.bulkAssociations.length, 1);
 	assert.equal(state.bulkAssociations[0], unrelated);
 });
 
-test('relationship-aware unlink UI offers keep, move, and cancel with safe keep as the default', () => {
-	assert.match(source, /data-unlink-move>Move to new draft/);
-	assert.match(source, /data-unlink-keep>Keep with original/);
-	assert.match(source, /data-unlink-cancel>Cancel/);
-	assert.match(source, /event\.key === 'Enter'[\s\S]*finish\('keep'\)/);
+test('unlink ignores records already converted to drafts', () => {
+	const { applyLoadedRecordUnlink } = api();
+	const { state, target } = fixture();
+	target.loadedFromId = null;
+	applyLoadedRecordUnlink(state, target);
+	assert.equal(state.bulkAssociations.length, 4);
+});
+
+test('unlink no longer offers a relationship choice dialog', () => {
+	assert.doesNotMatch(
+		source,
+		/chooseUnlinkRelationshipBehavior|unlink-relationship-modal|data-unlink-move|Keep with original/,
+	);
 });
 
 test('carry-over values render structured data as readable JSON', () => {
@@ -241,4 +232,57 @@ test('carry-over value formatter never falls back to object Object', () => {
 	const circular = {};
 	circular.self = circular;
 	assert.equal(formatCarryoverValue(circular), '(structured value)');
+});
+
+test('shared unlink acts immediately on the correct canvas and rejects unavailable records', async () => {
+	const start = source.indexOf('async function unlinkRecord(record, targetState = canvasState)');
+	const end = source.indexOf('function updateRecordHeaderIdentity()', start);
+	assert.ok(start > 0 && end > start);
+	for (const mode of ['allowed', 'denied', 'removed', 'inaccessible', 'draft', 'open-editor']) {
+		const { state, target, existingChild } = fixture();
+		state.graphView = 'bulk';
+		target.pendingDelete = true;
+		if (mode === 'removed') state.bulkRecords = state.bulkRecords.filter((r) => r !== target);
+		if (mode === 'inaccessible') target._inaccessible = true;
+		if (mode === 'draft') target.loadedFromId = null;
+		let renders = 0,
+			editorRenders = 0;
+		const unmarked = [];
+		const context = {
+			...api(),
+			canvasState: { currentRecordRef: mode === 'open-editor' ? target : null },
+			modalEditMode: 'existing',
+			canEditCanvasStructure: () => mode !== 'denied',
+			showBulkToast() {},
+			unmarkPendingDelete: (id) => {
+				unmarked.push(id);
+				target.pendingDelete = false;
+			},
+			renderBulkView: () => renders++,
+			rerenderFormPreservingValues: () => editorRenders++,
+		};
+		const unlink = vm.runInNewContext('(' + source.slice(start, end) + ')', context);
+		const result = await unlink(target, state);
+		if (mode === 'allowed' || mode === 'open-editor') {
+			assert.equal(result, true);
+			assert.equal(target.loadedFromId, null);
+			assert.deepEqual(
+				Array.from(state.bulkAssociations, (a) => a.id),
+				[12, 13],
+			);
+			assert.equal(existingChild.values.AccountId, '001ORIGINAL');
+			assert.deepEqual(unmarked, [target.id]);
+			assert.equal(renders, 1);
+			assert.equal(editorRenders, mode === 'open-editor' ? 1 : 0);
+			if (mode === 'open-editor') assert.equal(context.modalEditMode, 'new');
+		} else {
+			assert.equal(result, false);
+			assert.equal(target.loadedFromId, mode === 'draft' ? null : '001ORIGINAL');
+			assert.equal(state.bulkAssociations.length, 4);
+			assert.equal(target.pendingDelete, true);
+			assert.deepEqual(unmarked, []);
+			assert.equal(renders, 0);
+			assert.equal(editorRenders, 0);
+		}
+	}
 });

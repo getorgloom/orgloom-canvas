@@ -113,11 +113,6 @@
 				return null;
 			}
 
-			function _formatFieldSet(fields, op) {
-				const joiner = op === 'or' ? ' or ' : ' + ';
-				return fields.join(joiner);
-			}
-
 			function _displayName(rec) {
 				const v = rec.values || {};
 				const guess =
@@ -127,7 +122,7 @@
 					v.CaseNumber ||
 					v.Email ||
 					'';
-				return guess || '(no name)';
+				return String(guess).trim() || rec.objectName + ' #' + recordOrdinal(rec);
 			}
 
 			function _matchExcerpt(rec, fields) {
@@ -190,7 +185,7 @@
 							continue;
 						}
 						_sortGroupRecords(bucket);
-						groups.push({ fields, records: bucket, winnerId: bucket[0].id });
+						groups.push({ fields, records: bucket });
 					}
 					if (groups.length === 0) {
 						return null;
@@ -249,7 +244,7 @@
 						continue;
 					}
 					_sortGroupRecords(component);
-					groups.push({ fields, records: component, winnerId: component[0].id });
+					groups.push({ fields, records: component });
 				}
 				if (groups.length === 0) {
 					return null;
@@ -323,28 +318,24 @@
 					.sort((a, b) => a.objectName.localeCompare(b.objectName));
 			}
 
-			function _duplicateLosers(sections) {
-				const groups = sections.flatMap((section) => section.groups);
-				const winners = new Set(groups.map((group) => group.winnerId));
-				return Array.from(
-					new Map(
-						groups
-							.flatMap((group) => group.records)
-							.filter((record) => !winners.has(record.id))
-							.map((record) => [record.id, record]),
-					).values(),
-				);
+			function _selectedActions(sections) {
+				const selected = new Map();
+				sections.forEach((section) => {
+					section.groups.forEach((group) => {
+						group.records.forEach((record) => {
+							const action = section.actions && section.actions.get(record.id);
+							if (action === 'remove' || (action === 'delete' && record.loadedFromId)) {
+								selected.set(record.id, { record, action });
+							}
+						});
+					});
+				});
+				return Array.from(selected.values());
 			}
 
 			function _applyLabel(sections) {
-				const losers = _duplicateLosers(sections);
-				const existing = losers.filter((record) => record.loadedFromId).length;
-				const drafts = losers.length - existing;
-				if (!losers.length) return 'No duplicates selected';
-				if (existing && drafts) return 'Apply changes';
-				return existing
-					? 'Mark ' + existing + ' for delete'
-					: 'Remove ' + drafts + ' draft' + (drafts === 1 ? '' : 's');
+				const count = _selectedActions(sections).length;
+				return count ? 'Apply changes (' + count + ')' : 'Apply changes';
 			}
 
 			function _renderBody(overlay, sections) {
@@ -352,29 +343,38 @@
 				if (!body) {
 					return;
 				}
-				let html =
-					'<p class="tag">Choose one record to keep in each group. Existing duplicates stay on the canvas, marked for deletion on your next upload. Draft duplicates are removed from the canvas only.</p>';
-				let losersTotal = 0;
+				const expandedGroups = new Set(
+					Array.from(
+						body.querySelectorAll('[data-fdm-details][aria-expanded="true"]'),
+						(toggle) => toggle.dataset.groupKey,
+					),
+				);
+				let html = '';
 				sections.forEach((section) => {
 					html +=
 						'<div class="fdm-section">' +
 						'<div class="fdm-section-head">' +
 						escapeHtml(section.objectName) +
-						' <span class="fdm-section-fields">matching on ' +
-						escapeHtml(_formatFieldSet(section.defaultFields, section.op)) +
-						'</span>' +
 						'</div>';
 					section.groups.forEach((group, gi) => {
 						const groupKey = section.objectName + ':' + gi;
+						const showDetails = expandedGroups.has(groupKey);
 						html +=
 							'<div class="fdm-group">' +
-							'<div class="fdm-group-head">' +
+							'<div class="fdm-group-head"><span>' +
 							group.records.length +
-							' records match</div>' +
+							' records match</span>' +
+							'<button type="button" class="fdm-details-toggle" data-fdm-details data-group-key="' +
+							escapeHtml(groupKey) +
+							'" aria-expanded="' +
+							showDetails +
+							'">' +
+							(showDetails ? 'Hide details' : 'Show details') +
+							'</button></div>' +
 							'<ul class="fdm-rows">';
 						group.records.forEach((rec) => {
-							const isWinner = group.winnerId === rec.id;
-							const rowClass = 'fdm-row' + (isWinner ? ' fdm-row--keep' : ' fdm-row--remove');
+							const action = (section.actions && section.actions.get(rec.id)) || '';
+							const rowClass = 'fdm-row' + (action ? ' fdm-row--remove' : '');
 							const badge = rec.loadedFromId
 								? '<span class="fdm-badge fdm-badge--loaded" title="Existing Salesforce record">existing</span>'
 								: '<span class="fdm-badge fdm-badge--draft" title="Draft record, not yet in Salesforce">draft</span>';
@@ -388,61 +388,74 @@
 								'<li class="' +
 								rowClass +
 								'">' +
-								'<label class="fdm-row-label">' +
-								'<input type="radio" name="fdm-group-' +
-								escapeHtml(groupKey) +
-								'" value="' +
-								rec.id +
-								'"' +
-								(isWinner ? ' checked' : '') +
-								' data-fdm-winner data-group-key="' +
-								escapeHtml(groupKey) +
-								'">' +
-								'<span class="fdm-row-keep-tag">' +
-								(isWinner ? 'KEEP' : rec.loadedFromId ? 'MARK FOR DELETE' : 'REMOVE DRAFT') +
-								'</span>' +
-								'<span class="fdm-row-ord">' +
-								escapeHtml(section.objectName) +
-								' #' +
-								recordOrdinal(rec) +
-								'</span>' +
-								'<span class="fdm-row-name">' +
+								'<div class="fdm-row-label">' +
+								'<span class="fdm-row-identity"><span class="fdm-row-name">' +
 								escapeHtml(_displayName(rec)) +
 								'</span>' +
 								badge +
-								'</label>' +
+								'</span>' +
+								'<select class="fdm-row-action" data-fdm-action="' +
+								rec.id +
+								'" data-object="' +
+								escapeHtml(section.objectName) +
+								'" aria-label="Action for ' +
+								escapeHtml(_displayName(rec)) +
+								'">' +
+								'<option value=""' +
+								(!action ? ' selected' : '') +
+								'>No change</option>' +
+								(rec.loadedFromId
+									? '<option value="delete"' +
+										(action === 'delete' ? ' selected' : '') +
+										'>Mark for delete</option>'
+									: '') +
+								'<option value="remove"' +
+								(action === 'remove' ? ' selected' : '') +
+								'>Remove from canvas</option>' +
+								'</select></div>' +
 								gotoBtn +
-								'<div class="fdm-row-excerpt">' +
+								'<div class="fdm-row-excerpt"' +
+								(showDetails ? '' : ' hidden') +
+								'>' +
 								escapeHtml(_matchExcerpt(rec, group.fields)) +
 								'</div>' +
 								'</li>';
-							if (!isWinner) {
-								losersTotal++;
-							}
 						});
 						html += '</ul></div>';
 					});
 					html += '</div>';
 				});
 				body.innerHTML = html;
+				body.querySelectorAll('[data-fdm-details]').forEach((toggle) => {
+					toggle.addEventListener('click', () => {
+						const expanded = toggle.getAttribute('aria-expanded') !== 'true';
+						toggle.setAttribute('aria-expanded', String(expanded));
+						toggle.textContent = expanded ? 'Hide details' : 'Show details';
+						toggle
+							.closest('.fdm-group')
+							.querySelectorAll('.fdm-row-excerpt')
+							.forEach((excerpt) => {
+								excerpt.hidden = !expanded;
+							});
+					});
+				});
 				const applyBtn = overlay.querySelector('.fdm-apply');
 				if (applyBtn) {
-					applyBtn.disabled = losersTotal === 0;
+					applyBtn.disabled = _selectedActions(sections).length === 0;
 					applyBtn.textContent = _applyLabel(sections);
 				}
-				body.querySelectorAll('[data-fdm-winner]').forEach((input) => {
-					input.addEventListener('change', () => {
-						const [obj, gi] = input.dataset.groupKey.split(':');
-						const section = sections.find((s) => s.objectName === obj);
-						if (!section) {
-							return;
+				body.querySelectorAll('[data-fdm-action]').forEach((select) => {
+					select.addEventListener('change', () => {
+						const section = sections.find((entry) => entry.objectName === select.dataset.object);
+						if (!section) return;
+						if (!section.actions) section.actions = new Map();
+						section.actions.set(Number(select.dataset.fdmAction), select.value);
+						select.closest('.fdm-row').classList.toggle('fdm-row--remove', !!select.value);
+						const applyBtn = overlay.querySelector('.fdm-apply');
+						if (applyBtn) {
+							applyBtn.disabled = _selectedActions(sections).length === 0;
+							applyBtn.textContent = _applyLabel(sections);
 						}
-						const group = section.groups[parseInt(gi, 10)];
-						if (!group) {
-							return;
-						}
-						group.winnerId = parseInt(input.value, 10);
-						_renderBody(overlay, sections);
 					});
 				});
 				body.querySelectorAll('[data-fdm-goto]').forEach((btn) => {
@@ -457,30 +470,11 @@
 				});
 			}
 
-			function _renderEmpty(overlay, objectName, fields, op) {
+			function _renderEmpty(overlay) {
 				const body = overlay.querySelector('.fdm-body');
 				if (body) {
-					const joiner = op === 'or' ? ' / ' : ' + ';
-					const fieldList = (fields || []).join(joiner);
-					const phrase =
-						op === 'or'
-							? 'share a normalized value on any of'
-							: 'share the same normalized value across all of';
 					body.innerHTML =
-						'<div class="fdm-empty">' +
-						'<div class="fdm-empty-title">No duplicates found</div>' +
-						'<div class="fdm-empty-hint">' +
-						'No two <code>' +
-						escapeHtml(objectName || '') +
-						'</code> records ' +
-						phrase +
-						' ' +
-						'<code>' +
-						escapeHtml(fieldList) +
-						'</code>' +
-						'. Try a different field set or switch operator if you expected matches.' +
-						'</div>' +
-						'</div>';
+						'<div class="fdm-empty">' + '<div class="fdm-empty-title">No duplicates found</div>' + '</div>';
 				}
 				const applyBtn = overlay.querySelector('.fdm-apply');
 				if (applyBtn) {
@@ -490,32 +484,32 @@
 			}
 
 			function _apply(sections) {
-				// Draft losers are removed locally; existing losers are only staged for a later upload.
-				const losers = _duplicateLosers(sections).filter(
-					(rec) => canvasState.bulkRecords.includes(rec) && !isRecordPendingDelete(rec),
+				// Only explicit row actions are applied; Salesforce deletions remain staged until upload.
+				const actions = _selectedActions(sections).filter(
+					({ record }) => canvasState.bulkRecords.includes(record) && !isRecordPendingDelete(record),
 				);
 				const _snapBulk = canvasState.bulkRecords.slice();
 				const _snapAssoc = canvasState.bulkAssociations.slice();
 				const _snapSelected = new Set(canvasState.bulkSelectedIds);
 				const _undoSizeBefore = undoStackSize ? undoStackSize() : 0;
-				const _markedLoserIds = [];
-				let drafts = 0,
+				const _markedRecordIds = [];
+				let removed = 0,
 					marked = 0,
 					skipped = 0;
-				losers.forEach((rec) => {
-					if (rec.loadedFromId) {
-						if (markPendingDelete(rec.id)) {
+				actions.forEach(({ record: rec, action }) => {
+					if (action === 'delete') {
+						if (markPendingDelete(rec.id, { allowModified: true })) {
 							marked++;
-							_markedLoserIds.push(rec.id);
+							_markedRecordIds.push(rec.id);
 						} else {
 							skipped++;
 						}
 					}
 				});
-				losers.forEach((rec) => {
-					if (!rec.loadedFromId) {
+				actions.forEach(({ record: rec, action }) => {
+					if (action === 'remove') {
 						deleteRecord(rec.id);
-						if (!canvasState.bulkRecords.includes(rec)) drafts++;
+						if (!canvasState.bulkRecords.includes(rec)) removed++;
 						else skipped++;
 					}
 				});
@@ -524,8 +518,8 @@
 				}
 				renderBulkView();
 				const parts = [];
-				if (drafts > 0) {
-					parts.push(drafts + ' draft' + (drafts === 1 ? '' : 's') + ' removed');
+				if (removed > 0) {
+					parts.push(removed + ' record' + (removed === 1 ? '' : 's') + ' removed from canvas');
 				}
 				if (marked > 0) {
 					parts.push(
@@ -535,7 +529,7 @@
 							' marked for delete on the next upload',
 					);
 				}
-				if (skipped) parts.push(skipped + ' skipped; resolve pending edits or check delete access');
+				if (skipped) parts.push(skipped + ' skipped; check delete access');
 				const msg = parts.length === 0 ? 'No duplicates changed.' : parts.join(' · ');
 				const _postBulk = canvasState.bulkRecords;
 				const _postAssoc = canvasState.bulkAssociations;
@@ -563,7 +557,7 @@
 					canvasState.bulkRecords = _snapBulk;
 					canvasState.bulkAssociations = _snapAssoc;
 					canvasState.bulkSelectedIds = _snapSelected;
-					_markedLoserIds.forEach((id) => {
+					_markedRecordIds.forEach((id) => {
 						const r = canvasState.bulkRecords.find((x) => x.id === id);
 						if (r) {
 							r.pendingDelete = false;
@@ -572,7 +566,7 @@
 					renderBulkView();
 					showBulkToast('Undid duplicate changes.');
 				};
-				if (drafts + marked > 0 && showBulkToastWithAction) {
+				if (removed + marked > 0 && showBulkToastWithAction) {
 					showBulkToastWithAction(msg, 'Undo', _undo);
 				} else {
 					showBulkToast(msg);
@@ -591,7 +585,6 @@
 					'<button class="modal-close" data-fdm-close>&times;</button>' +
 					'</div>' +
 					'<div class="modal-content fdm-content">' +
-					'<div class="fdm-intro-wrap"></div>' +
 					'<div class="fdm-body"></div>' +
 					'</div>' +
 					'<div class="modal-footer fdm-footer"></div>' +
@@ -620,12 +613,8 @@
 			}
 
 			function _renderNoEligible(overlay) {
-				const intro = overlay.querySelector('.fdm-intro-wrap');
 				const body = overlay.querySelector('.fdm-body');
 				const footer = overlay.querySelector('.fdm-footer');
-				if (intro) {
-					intro.innerHTML = '';
-				}
 				if (body) {
 					body.innerHTML =
 						'<div class="fdm-empty">' +
@@ -642,7 +631,6 @@
 			}
 
 			function _renderConfig(overlay, objectName, eligible, fieldMemory, modeRef, cleanup) {
-				const intro = overlay.querySelector('.fdm-intro-wrap');
 				const body = overlay.querySelector('.fdm-body');
 				const footer = overlay.querySelector('.fdm-footer');
 
@@ -705,13 +693,9 @@
 								})
 								.join('');
 
-				if (intro) {
-					intro.innerHTML =
-						'<p class="fdm-intro">Pick the object, the fields that identify a duplicate, and how strictly to match. Values are compared after case + whitespace normalization.</p>';
-				}
 				if (body) {
-					const andChecked = modeRef.op === 'and' ? ' checked' : '';
-					const orChecked = modeRef.op === 'or' ? ' checked' : '';
+					const andSelected = modeRef.op === 'and' ? ' selected' : '';
+					const orSelected = modeRef.op === 'or' ? ' selected' : '';
 					body.innerHTML =
 						'<div class="fdm-config">' +
 						'<label class="fdm-config-row">' +
@@ -720,29 +704,21 @@
 						objectOptions +
 						'</select>' +
 						'</label>' +
-						'<div class="fdm-config-row fdm-config-row--block fdm-config-row--mode">' +
+						'<div class="fdm-config-row fdm-config-row--match">' +
+						'<label class="fdm-config-label" for="fdm-op">Match when</label>' +
+						'<select id="fdm-op">' +
+						'<option value="and"' +
+						andSelected +
+						'>All selected fields match</option>' +
+						'<option value="or"' +
+						orSelected +
+						'>Any selected field matches</option>' +
+						'</select>' +
+						'</div>' +
+						'<div class="fdm-config-row fdm-config-row--block">' +
 						'<span class="fdm-config-label">Match fields</span>' +
 						'<div class="fdm-fields">' +
 						fieldRows +
-						'</div>' +
-						'</div>' +
-						'<div class="fdm-config-row fdm-config-row--block">' +
-						'<span class="fdm-config-label">Match when…</span>' +
-						'<div class="fdm-mode">' +
-						'<label class="fdm-mode-opt">' +
-						'<input type="radio" name="fdm-op" value="and"' +
-						andChecked +
-						'>' +
-						'<span class="fdm-mode-label">All selected fields agree <span class="fdm-mode-tag">AND &middot; strict</span></span>' +
-						'<span class="fdm-mode-sub">Two records match only when every checked field has the same value. Fewer false positives; misses records that disagree on one field.</span>' +
-						'</label>' +
-						'<label class="fdm-mode-opt">' +
-						'<input type="radio" name="fdm-op" value="or"' +
-						orChecked +
-						'>' +
-						'<span class="fdm-mode-label">Any selected field agrees <span class="fdm-mode-tag">OR &middot; transitive</span></span>' +
-						'<span class="fdm-mode-sub">Records group whenever they share a value on any checked field. Catches "same person, different contact methods": A↔B by Email and B↔C by Phone groups {A, B, C}.</span>' +
-						'</label>' +
 						'</div>' +
 						'</div>' +
 						'</div>';
@@ -780,13 +756,12 @@
 							updateScanEnabled();
 						});
 					});
-					body.querySelectorAll('input[name="fdm-op"]').forEach((rb) => {
-						rb.addEventListener('change', () => {
-							if (rb.checked) {
-								modeRef.op = rb.value === 'or' ? 'or' : 'and';
-							}
+					const modeSelect = body.querySelector('#fdm-op');
+					if (modeSelect) {
+						modeSelect.addEventListener('change', () => {
+							modeRef.op = modeSelect.value === 'or' ? 'or' : 'and';
 						});
-					});
+					}
 				}
 				const scanBtn = footer && footer.querySelector('#fdm-scan');
 				if (scanBtn) {
@@ -798,7 +773,7 @@
 						fieldMemory.set(objectName, fields);
 						const section = _scanForObject(objectName, fields, modeRef.op);
 						if (!section) {
-							_renderEmpty(overlay, objectName, fields, modeRef.op);
+							_renderEmpty(overlay);
 							_renderResultsFooter(overlay, [], objectName, eligible, fieldMemory, modeRef, cleanup);
 							return;
 						}
@@ -813,14 +788,12 @@
 				if (!footer) {
 					return;
 				}
-				const losersTotal = sections.reduce((acc, sec) => {
-					return acc + sec.groups.reduce((a, g) => a + (g.records.length - 1), 0);
-				}, 0);
+				const selectedCount = _selectedActions(sections).length;
 				footer.innerHTML =
 					'<button class="button secondary" id="fdm-back">&larr; Back</button>' +
 					'<button class="button secondary" data-fdm-close>Cancel</button>' +
 					'<button class="button fdm-apply"' +
-					(losersTotal === 0 ? ' disabled' : '') +
+					(selectedCount === 0 ? ' disabled' : '') +
 					'>' +
 					_applyLabel(sections) +
 					'</button>';

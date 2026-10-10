@@ -409,17 +409,21 @@
 				const _selectedReal = canvasState.bulkRecords.filter(
 					(r) => !r.isTypeNode && !r.isPending && canvasState.bulkSelectedIds.has(r.id),
 				);
-				const diffEnabled = _selectedReal.length === 2;
+				const differentObjects =
+					_selectedReal.length === 2 && _selectedReal[0].objectName !== _selectedReal[1].objectName;
+				const diffEnabled = _selectedReal.length === 2 && !differentObjects;
 				const diffStateHint = diffEnabled
 					? ''
-					: _selectedReal.length === 0
-						? '<span class="fm-hint">select 2 records</span>'
-						: _selectedReal.length === 1
-							? '<span class="fm-hint">select 1 more record</span>'
-							: '<span class="fm-hint">select only 2 (' + _selectedReal.length + ' selected)</span>';
+					: differentObjects
+						? '<span class="fm-hint">different object types</span>'
+						: _selectedReal.length === 0
+							? '<span class="fm-hint">select 2 records</span>'
+							: _selectedReal.length === 1
+								? '<span class="fm-hint">select 1 more record</span>'
+								: '<span class="fm-hint">select only 2 (' + _selectedReal.length + ' selected)</span>';
 				const diffTitle = diffEnabled
 					? 'Compare the two selected records field-by-field'
-					: 'Diff compares exactly two records; select 2 on the canvas to enable.';
+					: 'Select two records of the same object type to compare.';
 				const diffLabel = 'Diff records' + (diffStateHint ? ' ' + diffStateHint : '');
 				const diffItem = diffEnabled
 					? '<button type="button" data-bulk-op="diff" title="' + diffTitle + '">' + diffLabel + '</button>'
@@ -694,7 +698,7 @@
 			};
 
 			function _openAutoFillModal() {
-				// Freeze the scope when the modal opens so preview counts match the eventual action.
+				// Freeze the scope when the modal opens so scope counts match the eventual action.
 				const _realFilter = (r) => !r.isTypeNode && !r.isPending;
 				const allRealRecords = canvasState.bulkRecords.filter(_realFilter);
 				const allDrafts = allRealRecords.filter((r) => !r.loadedFromId);
@@ -716,7 +720,7 @@
 							: scopeExistingCount > 0
 								? 'existing'
 								: null;
-				const initialMode = 'required';
+				const initialMode = 'all';
 
 				function recordsForScope(scope) {
 					if (scope === 'drafts') {
@@ -734,111 +738,62 @@
 					return recordsForScope(scope).some((record) => !!record.loadedFromId);
 				}
 
-				function renderCountLine(mode, scope) {
-					const records = recordsForScope(scope);
-					if (records.length === 0) {
-						const altHint =
-							scope === 'drafts'
-								? 'No drafts on the canvas.'
-								: scope === 'existing'
-									? 'No loaded Salesforce records on the canvas.'
-									: 'No records selected.';
-						return '<em>' + altHint + '</em>';
-					}
-					const affectedRecords =
-						'the <strong>' +
-						records.length +
-						'</strong> affected ' +
-						(records.length === 1 ? 'record' : 'records');
-					if (mode === 'clear') {
-						return 'All field values across ' + affectedRecords + ' will be cleared.';
-					}
-					return (
-						'All empty ' +
-						(mode === 'required' ? 'required ' : '') +
-						'fields across ' +
-						affectedRecords +
-						' will be populated with generated data.'
-					);
-				}
-
 				overlay.innerHTML =
 					'<div class="modal-overlay" data-af-cancel></div>' +
-					'<div class="modal-body" style="max-width:520px">' +
+					'<div class="modal-body" role="dialog" aria-modal="true" aria-labelledby="af-title" style="max-width:460px">' +
 					'<div class="modal-header">' +
-					'<h3>Fill or clear fields</h3>' +
-					'<button class="modal-close" data-af-cancel>&times;</button>' +
+					'<h3 id="af-title">Fill or clear fields</h3>' +
+					'<button class="modal-close" data-af-cancel aria-label="Close">&times;</button>' +
 					'</div>' +
 					'<div class="modal-content">' +
-					'<div class="af-scope">' +
-					'<div class="af-label">Records</div>' +
-					'<div class="af-scope-options">' +
-					'<label class="af-scope-opt' +
-					(initialScope === 'drafts' ? ' af-scope-opt--active' : '') +
-					(scopeDraftCount === 0 ? ' af-scope-opt--disabled' : '') +
-					'">' +
-					'<input type="radio" name="af-scope" value="drafts"' +
-					(initialScope === 'drafts' ? ' checked' : '') +
-					(scopeDraftCount === 0 ? ' disabled' : '') +
-					'>' +
-					'<span>Drafts</span>' +
-					'<span class="tag">' +
-					scopeDraftCount +
-					'</span>' +
-					'</label>' +
-					'<label class="af-scope-opt' +
-					(initialScope === 'existing' ? ' af-scope-opt--active' : '') +
-					(scopeExistingCount === 0 ? ' af-scope-opt--disabled' : '') +
-					'">' +
-					'<input type="radio" name="af-scope" value="existing"' +
-					(initialScope === 'existing' ? ' checked' : '') +
-					(scopeExistingCount === 0 ? ' disabled' : '') +
-					'>' +
-					'<span>Existing</span>' +
-					'<span class="tag">' +
-					scopeExistingCount +
-					'</span>' +
-					'</label>' +
-					'<label class="af-scope-opt' +
-					(initialScope === 'selected' ? ' af-scope-opt--active' : '') +
-					(scopeSelCount === 0 ? ' af-scope-opt--disabled' : '') +
-					'">' +
-					'<input type="radio" name="af-scope" value="selected"' +
-					(initialScope === 'selected' ? ' checked' : '') +
-					(scopeSelCount === 0 ? ' disabled' : '') +
-					'>' +
-					'<span>Selected</span>' +
-					'<span class="tag">' +
-					scopeSelCount +
-					'</span>' +
-					'</label>' +
-					'</div>' +
-					'</div>' +
 					'<div class="af-action-group">' +
-					'<div class="af-label">Action</div>' +
-					'<div class="af-actions" role="radiogroup" aria-label="Action">' +
-					'<button type="button" class="af-action-option af-action-option--selected" data-af-mode="required" aria-pressed="true">Fill required</button>' +
-					'<button type="button" class="af-action-option" data-af-mode="all" aria-pressed="false">Fill empty fields</button>' +
-					'<button type="button" class="af-action-option af-action-option--clear" data-af-mode="clear" aria-pressed="false">Clear fields</button>' +
+					'<label class="af-label" for="af-action">Action</label>' +
+					'<select id="af-action" class="af-select">' +
+					'<option value="all" selected>Fill all empty fields</option>' +
+					'<option value="required">Fill empty required fields</option>' +
+					'<option value="clear">Clear fields</option>' +
+					'</select>' +
 					'</div>' +
-					'</div>' +
-					'<div class="af-preview" data-af-preview>' +
-					renderCountLine(initialMode, initialScope) +
+					'<div class="af-scope">' +
+					'<label class="af-label" for="af-scope">Apply to</label>' +
+					'<select id="af-scope" class="af-select"' +
+					(initialScope ? '' : ' disabled') +
+					'>' +
+					(initialScope ? '' : '<option value="">No records available</option>') +
+					[
+						['selected', 'Selected records', scopeSelCount],
+						['drafts', 'All drafts', scopeDraftCount],
+						['existing', 'All existing records', scopeExistingCount],
+					]
+						.map(
+							([value, label, count]) =>
+								'<option value="' +
+								value +
+								'"' +
+								(initialScope === value ? ' selected' : '') +
+								(count === 0 ? ' disabled' : '') +
+								'>' +
+								label +
+								' (' +
+								count +
+								')</option>',
+						)
+						.join('') +
+					'</select>' +
 					'</div>' +
 					'</div>' +
 					'<div class="modal-footer">' +
 					'<button class="button secondary" data-af-cancel>Cancel</button>' +
-					'<button class="button" data-af-run>Fill required fields</button>' +
+					'<button class="button" data-af-run>Fill empty fields</button>' +
 					'</div>' +
 					'</div>';
 				document.body.appendChild(overlay);
 
 				let _mode = initialMode;
 				let _scope = initialScope;
-				const previewEl = overlay.querySelector('[data-af-preview]');
 				const runBtn = overlay.querySelector('[data-af-run]');
-				function refreshPreview() {
-					previewEl.innerHTML = renderCountLine(_mode, _scope);
+				const previousFocus = document.activeElement;
+				function refreshControls() {
 					runBtn.textContent =
 						_mode === 'required'
 							? 'Fill required fields'
@@ -852,12 +807,11 @@
 				function cleanup() {
 					overlay.remove();
 					document.removeEventListener('keydown', onKey, true);
+					if (previousFocus && previousFocus.isConnected) previousFocus.focus();
 				}
 				function onKey(e) {
 					if (e.key === 'Escape') {
 						cleanup();
-					} else if (e.key === 'Enter') {
-						run();
 					}
 				}
 				document.addEventListener('keydown', onKey, true);
@@ -866,27 +820,15 @@
 					el.addEventListener('click', cleanup);
 				});
 
-				overlay.querySelectorAll('input[name="af-scope"]').forEach((input) => {
-					input.addEventListener('change', () => {
-						_scope = input.value;
-						overlay.querySelectorAll('.af-scope-opt').forEach((opt) => {
-							const child = opt.querySelector('input');
-							opt.classList.toggle('af-scope-opt--active', !!(child && child.checked));
-						});
-						refreshPreview();
-					});
+				const scopeSelect = overlay.querySelector('#af-scope');
+				scopeSelect.addEventListener('change', () => {
+					_scope = scopeSelect.value;
+					refreshControls();
 				});
-
-				overlay.querySelectorAll('[data-af-mode]').forEach((btn) => {
-					btn.addEventListener('click', () => {
-						_mode = btn.getAttribute('data-af-mode');
-						overlay.querySelectorAll('[data-af-mode]').forEach((b) => {
-							const active = b === btn;
-							b.classList.toggle('af-action-option--selected', active);
-							b.setAttribute('aria-pressed', active ? 'true' : 'false');
-						});
-						refreshPreview();
-					});
+				const actionSelect = overlay.querySelector('#af-action');
+				actionSelect.addEventListener('change', () => {
+					_mode = actionSelect.value;
+					refreshControls();
 				});
 
 				function run() {
@@ -910,7 +852,8 @@
 					}
 				}
 				overlay.querySelector('[data-af-run]').addEventListener('click', run);
-				refreshPreview();
+				refreshControls();
+				actionSelect.focus();
 			}
 
 			return {

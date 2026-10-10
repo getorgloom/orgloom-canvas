@@ -162,14 +162,20 @@
 					}
 				}
 
-				function clear() {
+				function clear(options) {
 					_picked = null;
 					selected.hidden = true;
 					selected.innerHTML = '';
 					input.hidden = false;
 					input.value = '';
-					input.focus();
-					runSearch('');
+					if (options && options.focus === false) {
+						_seq += 1;
+						clearTimeout(_debounce);
+						results.hidden = true;
+					} else {
+						input.focus();
+						runSearch('');
+					}
 					if (typeof onPick === 'function') {
 						onPick(null);
 					}
@@ -233,43 +239,33 @@
 					'<button class="modal-close" data-cs-close>&times;</button>' +
 					'</div>' +
 					'<div class="modal-content">' +
-					'<p class="tag" id="cs-intro">This shares the canvas only. Salesforce record access stays unchanged.</p>' +
-					'<div class="cs-field-label">Pick a teammate</div>' +
-					'<div id="cs-link-picker"></div>' +
-					'<div class="cs-field-label">Choose their canvas role</div>' +
-					'<div class="cs-role-picker" role="radiogroup" aria-label="Recipient role">' +
-					'<label class="cs-role-option">' +
-					'<input type="radio" name="cs-role" value="viewer">' +
-					'<span class="cs-role-name">Viewer</span>' +
-					'<span class="cs-role-desc">Can open and explore the canvas, but cannot change anything.</span>' +
-					'</label>' +
-					'<label class="cs-role-option" id="cs-role-contributor-opt">' +
-					'<input type="radio" name="cs-role" value="contributor">' +
-					'<span class="cs-role-name">Contributor</span>' +
-					'<span class="cs-role-desc">Fills assigned slots and submits changes back. Cannot edit the canvas itself.</span>' +
-					'</label>' +
-					'<label class="cs-role-option">' +
-					'<input type="radio" name="cs-role" value="editor">' +
-					'<span class="cs-role-name">Editor</span>' +
-					'<span class="cs-role-desc">Co-authors the canvas. Can add records, mark slots, and save changes. Only the owner manages sharing.</span>' +
-					'</label>' +
-					'</div>' +
-					'<section class="cs-share-review" id="cs-share-review" hidden>' +
-					'<h4>Review access</h4>' +
-					'<p class="cs-share-review-summary" id="cs-share-review-summary"></p>' +
-					'<div class="cs-share-actions">' +
-					'<button type="button" class="button" id="cs-link-send" disabled>Share with teammate</button>' +
-					'<span class="tag" id="cs-link-msg" aria-live="polite"></span>' +
-					'</div>' +
-					'</section>' +
-					'<div id="cs-share-result" style="display:none;margin-top:0.9em;padding:0.7em 0.85em;border:1px solid var(--border);border-radius:4px;background:var(--bg-elev)"></div>' +
-					'<section class="cs-access-section">' +
-					'<h4>People with access</h4>' +
+					'<div class="cs-form-row"><div class="cs-field-label" id="cs-teammate-label">Teammate</div>' +
+					'<div id="cs-link-picker"></div></div>' +
+					'<div class="cs-form-row cs-role-picker" hidden>' +
+					'<div class="cs-role-label"><label class="cs-field-label" for="cs-role">Role</label>' +
+					'<span class="cs-role-help"><button type="button" class="cs-role-help-trigger" aria-label="About canvas roles" aria-describedby="cs-role-description">?</button>' +
+					'<span class="cs-role-tooltip" id="cs-role-description" role="tooltip">' +
+					'<span><strong>Viewer</strong> — Can view the canvas.</span>' +
+					'<span><strong>Contributor</strong> — Can complete requests and submit changes.</span>' +
+					'<span><strong>Editor</strong> — Can edit and save the canvas.</span>' +
+					'</span></span></div>' +
+					'<div class="cs-role-controls">' +
+					'<select id="cs-role" class="cs-access-role" aria-describedby="cs-role-description">' +
+					'<option value="">Choose a role</option><option value="viewer">Viewer</option>' +
+					'<option value="contributor">Contributor</option><option value="editor">Editor</option></select>' +
+					'<span id="cs-share-review" hidden>' +
+					'<button type="button" class="button" id="cs-link-send" disabled>Share</button>' +
+					'</span></div></div>' +
+					'<p class="cs-share-message" id="cs-link-msg" aria-live="polite"></p>' +
+					'<section class="cs-access-section" aria-label="Existing canvas access">' +
 					'<div id="cs-manage-list"><div class="tag">Loading...</div></div>' +
 					'<div id="cs-access-msg" class="banner error cs-access-message" aria-live="polite" hidden></div>' +
 					'</section>' +
 					'</div>' +
 					'<div class="modal-footer">' +
+					'<button type="button" class="button secondary cs-copy-link" id="cs-share-url-copy">' +
+					'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7 .5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>' +
+					'<span class="cs-copy-label">Copy canvas link</span></button>' +
 					'<button class="button secondary" data-cs-close>Close</button>' +
 					'</div>' +
 					'</div>';
@@ -281,62 +277,50 @@
 					_invalidateShareCountForCanvas(canvasId);
 				};
 				const onKey = (e) => {
-					if (e.key === 'Escape') {
+					if (e.key === 'Escape' && !sharing) {
 						cleanup();
 					}
 				};
 				document.addEventListener('keydown', onKey);
-				modal.querySelectorAll('[data-cs-close]').forEach((el) => el.addEventListener('click', cleanup));
+				modal.querySelectorAll('[data-cs-close]').forEach((el) =>
+					el.addEventListener('click', () => {
+						if (!sharing) cleanup();
+					}),
+				);
 
 				const sendBtnEl = modal.querySelector('#cs-link-send');
-				const shareResultEl = modal.querySelector('#cs-share-result');
 				const reviewEl = modal.querySelector('#cs-share-review');
-				const reviewSummaryEl = modal.querySelector('#cs-share-review-summary');
 				const accessMsgEl = modal.querySelector('#cs-access-msg');
-				const roleInputs = Array.from(modal.querySelectorAll('input[name="cs-role"]'));
-				let shareComplete = false;
+				const roleSelect = modal.querySelector('#cs-role');
+				const rolePicker = modal.querySelector('.cs-role-picker');
+				let sharing = false;
 				let shareAccessBlocked = false;
-				const selectedRole = () => {
-					const checked = modal.querySelector('input[name="cs-role"]:checked');
-					return checked ? checked.value : null;
-				};
-				const roleSummary = {
-					viewer: 'can open and explore the canvas, but cannot change it.',
-					contributor:
-						'can fill assigned fields and submit those values, but cannot otherwise edit the canvas.',
-					editor: 'can add, edit, and remove canvas records and relationships, then save canvas changes.',
-				};
+				const selectedRole = () => roleSelect.value || null;
 				function updateShareReview() {
 					const picked = picker.getPicked();
 					const role = selectedRole();
 					const ready = !!(picked && role);
+					rolePicker.hidden = !picked;
 					reviewEl.hidden = !ready;
-					if (ready) {
-						const who = picked.name || picked.email || 'This teammate';
-						reviewSummaryEl.textContent = who + ' will be a ' + role + ' and ' + roleSummary[role];
-					}
-					sendBtnEl.disabled = !ready || shareComplete || shareAccessBlocked || !!window.ORGLOOM_MOCK;
+					sendBtnEl.disabled = !ready || sharing || shareAccessBlocked || !!window.ORGLOOM_MOCK;
 				}
 				const picker = attachSfUserPicker(modal.querySelector('#cs-link-picker'), {
 					placeholder: 'Pick a teammate by name, email, or username…',
 					excludeCurrentUser: true,
 					onPick() {
-						shareComplete = false;
-						sendBtnEl.textContent = 'Share with teammate';
-						shareResultEl.style.display = 'none';
-						shareResultEl.innerHTML = '';
+						const picked = picker.getPicked();
+						const nameEl = modal.querySelector('.sf-user-picker-selected-name');
+						if (nameEl && picked) nameEl.title = picked.email || '';
+						msgEl.textContent = '';
+						sendBtnEl.textContent = 'Share';
 						updateShareReview();
 					},
 				});
-				roleInputs.forEach((input) =>
-					input.addEventListener('change', () => {
-						shareComplete = false;
-						sendBtnEl.textContent = 'Share with teammate';
-						shareResultEl.style.display = 'none';
-						shareResultEl.innerHTML = '';
-						updateShareReview();
-					}),
-				);
+				modal.querySelector('#cs-link-picker input').setAttribute('aria-labelledby', 'cs-teammate-label');
+				roleSelect.addEventListener('change', () => {
+					msgEl.textContent = '';
+					updateShareReview();
+				});
 				if (window.ORGLOOM_MOCK) {
 					const demoBanner = document.createElement('div');
 					demoBanner.className = 'banner warn';
@@ -344,10 +328,7 @@
 					demoBanner.innerHTML =
 						'<strong>Demo mode.</strong> Sharing is disabled here: you can see what the share surface looks like, but no canvases or teammates are reachable. ' +
 						'<a href="/signup?from=playground">Join the open beta</a> to share canvases with your real Salesforce teammates.';
-					const intro = modal.querySelector('#cs-intro');
-					if (intro && intro.parentNode) {
-						intro.parentNode.insertBefore(demoBanner, intro);
-					}
+					modal.querySelector('.modal-content').prepend(demoBanner);
 					const pickerInput = modal.querySelector('#cs-link-picker .sf-user-picker-input');
 					if (pickerInput) {
 						pickerInput.disabled = true;
@@ -379,7 +360,7 @@
 					accessMsgEl.hidden = false;
 					modal
 						.querySelectorAll(
-							'.cs-access-role, .cs-access-save, #cs-link-send, input[name="cs-role"], #cs-link-picker input, #cs-link-picker button',
+							'.cs-access-role, .cs-access-save, #cs-link-send, #cs-role, #cs-link-picker input, #cs-link-picker button',
 						)
 						.forEach((control) => {
 							control.disabled = true;
@@ -541,7 +522,7 @@
 				}
 
 				async function sendLink() {
-					if (window.ORGLOOM_MOCK) {
+					if (sharing || shareAccessBlocked || window.ORGLOOM_MOCK) {
 						return;
 					}
 					const picked = picker.getPicked();
@@ -551,10 +532,29 @@
 						msgEl.style.color = 'var(--danger)';
 						return;
 					}
+					sharing = true;
 					sendBtnEl.disabled = true;
-					msgEl.textContent = 'Sending…';
-					msgEl.style.color = '';
 					try {
+						modal.classList.add('hidden');
+						let confirmed;
+						try {
+							confirmed = await showConfirmDialog({
+								title: 'Grant ' + role + ' access?',
+								message:
+									'Give ' +
+									(picked.name || picked.email || 'this teammate') +
+									' ' +
+									role +
+									' access to this canvas.',
+								confirmLabel: 'Grant access and continue',
+								cancelLabel: 'Back',
+							});
+						} finally {
+							modal.classList.remove('hidden');
+						}
+						if (!confirmed) return;
+						msgEl.textContent = 'Sending…';
+						msgEl.style.color = '';
 						// The recipient is an existing workspace teammate identified by Salesforce user ID.
 						const r = await csrfFetch('/api/canvas/' + encodeURIComponent(canvasId) + '/direct-share', {
 							method: 'POST',
@@ -590,77 +590,57 @@
 						}
 						const r2 = data.recipient || {};
 						const who = r2.name || r2.email || picked.email || picked.name || 'the recipient';
-						let nextStep;
-						if (data.emailDeliverFailed) {
-							nextStep =
-								"Canvas shared, but we couldn't send the notification email. Copy the link below and send it to " +
-								who +
-								'.';
-						} else if (data.updated) {
-							nextStep = who + ' now has ' + (data.role || 'updated') + ' access.';
-						} else if (r2.hasAccount && r2.hasConnection) {
-							nextStep = 'Shared with ' + who + '.';
-						} else if (r2.hasAccount) {
-							nextStep = 'Shared with ' + who + '. We emailed connection instructions.';
-						} else {
-							nextStep = 'Shared with ' + who + '. We emailed setup instructions.';
-						}
-						msgEl.textContent = nextStep;
-						msgEl.style.color = 'var(--success)';
-						shareComplete = true;
-						sendBtnEl.textContent = 'Shared';
+						roleSelect.value = '';
+						picker.clear({ focus: false });
+						msgEl.textContent = data.emailDeliverFailed
+							? 'Access granted, but the email to ' + who + ' failed. Use Copy canvas link to share it.'
+							: '';
+						msgEl.style.color = data.emailDeliverFailed ? 'var(--warn)' : '';
 						await refreshAccessList();
-						if (shareResultEl) {
-							const canvasUrl =
-								window.location.origin +
-								(window.ORGLOOM_CANVAS_PATH || '/') +
-								'?openCanvas=' +
-								encodeURIComponent(canvasId);
-							shareResultEl.style.display = '';
-							shareResultEl.innerHTML =
-								'<div style="font-size:0.85rem;color:var(--ink);margin-bottom:0.35em">' +
-								'<strong>Or send the link yourself</strong>' +
-								'</div>' +
-								'<div style="font-size:0.78rem;color:var(--ink-soft);margin-bottom:0.45em">' +
-								escapeHtml(who) +
-								' will sign in with their Salesforce user to open it.' +
-								'</div>' +
-								'<div style="display:flex;gap:0.4em;align-items:center">' +
-								'<input type="text" readonly value="' +
-								escapeHtml(canvasUrl) +
-								'" id="cs-share-url-input" style="flex:1;padding:0.4em;font-family:var(--font-mono);font-size:0.78rem;border:1px solid var(--border);border-radius:3px;background:var(--bg-inset);color:var(--ink)">' +
-								'<button type="button" class="button" id="cs-share-url-copy">Copy</button>' +
-								'</div>';
-							const urlInput = shareResultEl.querySelector('#cs-share-url-input');
-							const copyBtn = shareResultEl.querySelector('#cs-share-url-copy');
-							urlInput.addEventListener('focus', () => urlInput.select());
-							copyBtn.addEventListener('click', async () => {
-								try {
-									if (navigator.clipboard && navigator.clipboard.writeText) {
-										await navigator.clipboard.writeText(canvasUrl);
-									} else {
-										urlInput.select();
-										document.execCommand('copy');
-									}
-									copyBtn.textContent = 'Copied ✓';
-									setTimeout(() => {
-										copyBtn.textContent = 'Copy';
-									}, 1500);
-								} catch (e) {
-									copyBtn.textContent = 'Copy failed';
-									console.warn('[canvas-share] clipboard write failed:', e);
-								}
-							});
-						}
+						modal.querySelector('#cs-share-url-copy').focus();
 					} catch (err) {
-						shareComplete = false;
 						msgEl.textContent = err.message || String(err);
 						msgEl.style.color = 'var(--danger)';
 					} finally {
+						sharing = false;
 						updateShareReview();
+						if (modal.isConnected && !sendBtnEl.disabled) sendBtnEl.focus();
 					}
 				}
 				sendBtnEl.addEventListener('click', sendLink);
+				const copyBtn = modal.querySelector('#cs-share-url-copy');
+				const copyLabel = copyBtn.querySelector('.cs-copy-label');
+				copyBtn.disabled = !!window.ORGLOOM_MOCK;
+				copyBtn.addEventListener('click', async () => {
+					const canvasUrl =
+						window.location.origin +
+						(window.ORGLOOM_CANVAS_PATH || '/') +
+						'?openCanvas=' +
+						encodeURIComponent(canvasId);
+					try {
+						if (navigator.clipboard && navigator.clipboard.writeText) {
+							await navigator.clipboard.writeText(canvasUrl);
+						} else {
+							const input = document.createElement('textarea');
+							input.value = canvasUrl;
+							input.style.cssText = 'position:fixed;left:-9999px';
+							document.body.appendChild(input);
+							try {
+								input.select();
+								if (!document.execCommand('copy')) throw new Error('Copy failed');
+							} finally {
+								input.remove();
+								copyBtn.focus();
+							}
+						}
+						copyLabel.textContent = 'Copied';
+						setTimeout(() => {
+							copyLabel.textContent = 'Copy canvas link';
+						}, 1500);
+					} catch (_) {
+						copyLabel.textContent = 'Copy failed';
+					}
+				});
 
 				if (!_hasCap('share-canvas')) {
 					const contentEl = modal.querySelector('.modal-content');

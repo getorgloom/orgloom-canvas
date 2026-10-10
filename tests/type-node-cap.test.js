@@ -58,7 +58,7 @@ function harness(records, capResult, overrides = {}) {
 		inferAssociationsForRecord: () => 0,
 		purgeRedundantTypeNodes: () => {},
 		renderBulkView: () => events.push('render'),
-		showLargeRelatedConfirm: async () => true,
+		showLargeRelatedConfirm: overrides.showLargeRelatedConfirm || (async () => 'load'),
 		showRelatedSearchModal: () => {},
 		seedEditModeTypeNodes: async () => {},
 		fetchRelatedCount: overrides.fetchRelatedCount || (async () => 0),
@@ -67,7 +67,7 @@ function harness(records, capResult, overrides = {}) {
 		_sfIdMatch: (a, b) => a === b,
 		_relatedCountCache: new Map(),
 		_byRefCache: new Map(),
-		_RELATED_BULK_LOAD_CAP: 50,
+		_RELATED_BULK_LOAD_CAP: 200,
 		_RELATED_SOFT_THRESHOLD: 50,
 		getGraph: () => ({ querySelector: () => null }),
 		getBulkRenderShiftX: () => 0,
@@ -91,6 +91,67 @@ function relatedFixture({ chip = true } = {}) {
 	};
 	return { base, loader };
 }
+
+test('Load all imports all 132 related contacts after a 50-row prefetch and preserves their links', async () => {
+	const { base, loader } = relatedFixture();
+	const records = Array.from({ length: 132 }, (_, i) => ({
+		Id: '003' + String(i).padStart(12, '0'),
+		LastName: 'Contact ' + i,
+		AccountId: base.loadedFromId,
+	}));
+	const requests = [];
+	const confirmations = [];
+	const window = {};
+	vm.runInNewContext(fs.readFileSync(path.resolve(here, '../src/public/js/related-counts.js'), 'utf8'), { window });
+	const related = window.OrgLoom.relatedCounts.mount({
+		canvasState: {},
+		fetchGraphData: async () => ({}),
+		csrfFetch: async (url) => {
+			const params = new URL(url, 'https://example.test').searchParams;
+			const limit = Math.min(Number(params.get('limit') || 50), 200);
+			requests.push({ field: params.get('field'), id: params.get('id'), limit });
+			return { ok: true, json: async () => ({ records: records.slice(0, limit) }) };
+		},
+	});
+	const prefetched = await related.fetchByRefCached('Contact', 'AccountId', base.loadedFromId);
+	assert.equal(prefetched.length, 50);
+	const { api, state } = harness(
+		[base, loader],
+		{ ok: true, blocked: false },
+		{
+			fetchRelatedCount: async () => records.length,
+			fetchByRefCached: related.fetchByRefCached,
+			showLargeRelatedConfirm: async (details) => {
+				confirmations.push(details.count);
+				return 'load';
+			},
+		},
+	);
+	await api.openTypeNode(loader);
+	const contacts = state.bulkRecords.filter((r) => !r.isTypeNode && r.objectName === 'Contact');
+	assert.deepEqual(confirmations, [132]);
+	assert.equal(contacts.length, 132);
+	assert.equal(new Set(contacts.map((r) => r.loadedFromId)).size, 132);
+	assert(contacts.every((r) => r.values.AccountId === base.loadedFromId));
+	assert.equal(state.bulkAssociations.length, 132);
+	assert(
+		contacts.every((r) =>
+			state.bulkAssociations.some(
+				(link) => link.fromId === r.id && link.toId === base.id && link.fieldName === 'AccountId',
+			),
+		),
+	);
+	assert.deepEqual(
+		requests.map((r) => r.limit),
+		[50, 200],
+	);
+	assert(requests.every((r) => r.field === 'AccountId' && r.id === base.loadedFromId));
+	// Reopening the relationship reuses the cards and links, including the later rows.
+	state.bulkRecords.push(loader);
+	await api.openTypeNode(loader);
+	assert.equal(state.bulkRecords.filter((r) => !r.isTypeNode && r.objectName === 'Contact').length, 132);
+	assert.equal(state.bulkAssociations.length, 132);
+});
 
 test('a related load is one undo step that removes only new records and links', async () => {
 	const { base, loader } = relatedFixture();

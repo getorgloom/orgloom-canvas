@@ -27,14 +27,7 @@
 	window.OrgLoom.recordDiffModal = {
 		filterComparableDiff: _filterComparableDiff,
 		mount: function mount(deps) {
-			const required = [
-				'canvasState',
-				'escapeHtml',
-				'computeRecordDiff',
-				'recordOrdinal',
-				'renderBulkView',
-				'isRecordPendingDelete',
-			];
+			const required = ['canvasState', 'escapeHtml', 'computeRecordDiff', 'recordOrdinal', 'renderBulkView'];
 			if (!deps) {
 				throw new Error('record-diff-modal.mount: missing deps object');
 			}
@@ -48,7 +41,6 @@
 			const computeRecordDiff = deps.computeRecordDiff;
 			const recordOrdinal = deps.recordOrdinal;
 			const renderBulkView = deps.renderBulkView;
-			const isRecordPendingDelete = deps.isRecordPendingDelete;
 			const pushUndo = typeof deps.pushUndo === 'function' ? deps.pushUndo : null;
 			const showBulkToast = typeof deps.showBulkToast === 'function' ? deps.showBulkToast : function () {};
 
@@ -176,6 +168,14 @@
 				return field.createable !== false;
 			}
 
+			function _isEmptyValue(value) {
+				return value == null || (typeof value === 'string' && value.trim() === '');
+			}
+
+			function _canClearField(field) {
+				return !field || (field.nillable !== false && field.required !== true);
+			}
+
 			function _buildFkResolver() {
 				const m = new Map();
 				for (const r of canvasState.bulkRecords) {
@@ -276,37 +276,47 @@
 				};
 
 				let leftBtn = ''; // ◀ copies B → A
-				if (variant === 'diff' || variant === 'b-only') {
+				if (isResolvable) {
 					if (!ctx.aIsTargetable) {
 						leftBtn =
-							'<button type="button" class="rdm-copy-btn rdm-copy-btn-left" disabled aria-disabled="true" title="A is marked for delete, so copy is disabled">◀</button>';
+							'<button type="button" class="rdm-copy-btn rdm-copy-btn-left" disabled aria-disabled="true" title="The left record cannot receive values">◀</button>';
 					} else if (!aIsWritable) {
 						leftBtn =
 							'<button type="button" class="rdm-copy-btn rdm-copy-btn-left" disabled aria-disabled="true" title="Field is ' +
 							readOnlyReason(fieldDefForA) +
-							' on A, so Salesforce won’t accept the write">◀</button>';
+							' on the left record, so Salesforce won’t accept the write">◀</button>';
+					} else if (_isEmptyValue(b) && !_canClearField(fieldDefForA)) {
+						leftBtn =
+							'<button type="button" class="rdm-copy-btn rdm-copy-btn-left" disabled aria-disabled="true" aria-label="Cannot clear a required field on the left record">◀</button>';
 					} else {
 						leftBtn =
 							'<button type="button" class="rdm-copy-btn rdm-copy-btn-left" data-rdm-copy="b-to-a" data-rdm-field="' +
 							escapeHtml(fieldName) +
-							'" title="Copy B’s value to A">◀</button>';
+							'" aria-label="Copy this value to the left record"' +
+							(_isEmptyValue(b) ? '' : ' title="Copy this value to the left record"') +
+							'>◀</button>';
 					}
 				}
 				let rightBtn = ''; // ▶ copies A → B
-				if (!ctx.incoming && (variant === 'diff' || variant === 'a-only')) {
+				if (!ctx.incoming && isResolvable) {
 					if (!ctx.bIsTargetable) {
 						rightBtn =
-							'<button type="button" class="rdm-copy-btn rdm-copy-btn-right" disabled aria-disabled="true" title="B is marked for delete, so copy is disabled">▶</button>';
+							'<button type="button" class="rdm-copy-btn rdm-copy-btn-right" disabled aria-disabled="true" title="The right record cannot receive values">▶</button>';
 					} else if (!bIsWritable) {
 						rightBtn =
 							'<button type="button" class="rdm-copy-btn rdm-copy-btn-right" disabled aria-disabled="true" title="Field is ' +
 							readOnlyReason(fieldDefForB) +
-							' on B, so Salesforce won’t accept the write">▶</button>';
+							' on the right record, so Salesforce won’t accept the write">▶</button>';
+					} else if (_isEmptyValue(a) && !_canClearField(fieldDefForB)) {
+						rightBtn =
+							'<button type="button" class="rdm-copy-btn rdm-copy-btn-right" disabled aria-disabled="true" aria-label="Cannot clear a required field on the right record">▶</button>';
 					} else {
 						rightBtn =
 							'<button type="button" class="rdm-copy-btn rdm-copy-btn-right" data-rdm-copy="a-to-b" data-rdm-field="' +
 							escapeHtml(fieldName) +
-							'" title="Copy A’s value to B">▶</button>';
+							'" aria-label="Copy this value to the right record"' +
+							(_isEmptyValue(a) ? '' : ' title="Copy this value to the right record"') +
+							'>▶</button>';
 					}
 				}
 				const midActionsContent =
@@ -332,7 +342,11 @@
 				let readOnlyBadge = '';
 				if (isResolvable && (!aIsWritable || !bIsWritable)) {
 					const tag =
-						!aIsWritable && !bIsWritable ? 'read-only' : !aIsWritable ? 'read-only on A' : 'read-only on B';
+						!aIsWritable && !bIsWritable
+							? 'read-only'
+							: !aIsWritable
+								? 'read-only on left'
+								: 'read-only on right';
 					readOnlyBadge =
 						'<span class="rdm-readonly-badge" title="Salesforce won’t accept writes to this field on the marked side(s)">' +
 						escapeHtml(tag) +
@@ -351,13 +365,12 @@
 					'">' +
 					'<div class="rdm-field">' +
 					'<div class="rdm-field-text">' +
-					'<div class="rdm-field-label">' +
+					'<div class="rdm-field-label" title="API name: ' +
+					escapeHtml(fieldName) +
+					'">' +
 					escapeHtml(label) +
 					readOnlyBadge +
 					'</div>' +
-					'<div class="rdm-field-name"><code>' +
-					escapeHtml(fieldName) +
-					'</code></div>' +
 					'</div>' +
 					'</div>' +
 					'<div class="rdm-value rdm-value-a">' +
@@ -377,7 +390,8 @@
 			}
 
 			function _renderBody(content, recA, recB) {
-				const scroll = content ? content.scrollTop : 0;
+				const previousTable = content && content.querySelector('.rdm-table');
+				const scroll = previousTable ? previousTable.scrollTop : 0;
 				const overlay = content && content.closest('.record-diff-modal');
 				const incoming = !!(overlay && overlay.dataset.rdmIncoming === '1');
 				const labelB = (overlay && overlay.dataset.rdmLabelB) || 'Imported';
@@ -417,8 +431,8 @@
 				const bOnlyCount = bOnly.length;
 				const sharedCount = diff.shared.length;
 				const suppressedCount = suppressed.length;
-				const aIsTargetable = !isRecordPendingDelete(recA) && !recA._inaccessible;
-				const bIsTargetable = !isRecordPendingDelete(recB) && !recB._inaccessible;
+				const aIsTargetable = !recA._inaccessible;
+				const bIsTargetable = !recB._inaccessible;
 				const rowCtx = {
 					fieldDefForA,
 					fieldDefForB,
@@ -427,30 +441,6 @@
 					bIsTargetable,
 					incoming,
 				};
-
-				const crossObjectBanner = !diff.sameObject
-					? '<div class="rdm-banner">' +
-						'<strong>Different object types.</strong> ' +
-						'Field-level diff assumes the same object. ' +
-						escapeHtml(diff.objectA || '?') +
-						' vs ' +
-						escapeHtml(diff.objectB || '?') +
-						'; comparison shows shared field names but values may not be semantically comparable.' +
-						'</div>'
-					: '';
-				const pendingDeleteBanner =
-					!aIsTargetable || !bIsTargetable
-						? '<div class="rdm-banner rdm-banner-warn">' +
-							'<strong>' +
-							(!aIsTargetable && !bIsTargetable
-								? 'Both records are'
-								: !aIsTargetable
-									? 'Record A is'
-									: 'Record B is') +
-							' marked for delete.</strong> ' +
-							'Copy actions are disabled, since value edits would be discarded when the upload commits the DELETE.' +
-							'</div>'
-						: '';
 
 				const filterChips =
 					'<div class="rdm-filter-chips">' +
@@ -466,14 +456,6 @@
 					(diffCount + aOnlyCount + bOnlyCount + sharedCount + suppressedCount) +
 					'</span>' +
 					'</button>' +
-					(aOnlyCount + bOnlyCount > 0
-						? '<button type="button" class="rdm-filter-chip" data-rdm-filter="gaps">' +
-							'Gaps only ' +
-							'<span class="rdm-chip-count">' +
-							(aOnlyCount + bOnlyCount) +
-							'</span>' +
-							'</button>'
-						: '') +
 					(suppressedCount > 0
 						? '<button type="button" class="rdm-filter-chip" data-rdm-filter="suppressed">' +
 							'Ignored ' +
@@ -492,56 +474,45 @@
 				const bToACount =
 					differing.filter((f) => _isWritableTo(f, recA, fieldDefForA)).length +
 					bOnly.filter((f) => _isWritableTo(f, recA, fieldDefForA)).length;
-				const hasAnyBulk = incoming ? bToACount > 0 : aToBCount > 0 || bToACount > 0;
 				const aToBDisabled = aToBCount === 0 || !bIsTargetable;
 				const bToADisabled = bToACount === 0 || !aIsTargetable;
 				const aToBTitle = !bIsTargetable
-					? 'B is marked for delete, so bulk copy is disabled'
+					? 'The right record cannot receive values'
 					: aToBCount === 0
-						? 'No fields to copy from A → B'
-						: 'Push A’s values into B for ' +
+						? 'No values to copy to the right record'
+						: 'Copy all ' +
 							aToBCount +
-							' field' +
-							(aToBCount === 1 ? '' : 's') +
-							' (overwrites where they differ, fills where B is empty)';
+							' values to the right record: ' +
+							titleB +
+							'. Replaces differing values and fills blanks.';
 				const bToATitle = !aIsTargetable
-					? 'A is marked for delete, so bulk copy is disabled'
+					? 'The left record cannot receive values'
 					: bToACount === 0
-						? 'No fields to copy from B → A'
-						: 'Push B’s values into A for ' +
+						? 'No values to copy to the left record'
+						: 'Copy all ' +
 							bToACount +
-							' field' +
-							(bToACount === 1 ? '' : 's') +
-							' (overwrites where they differ, fills where A is empty)';
-				const bulkActions = hasAnyBulk
-					? '<div class="rdm-bulk-actions">' +
-						'<span class="rdm-bulk-label">' +
-						(incoming ? 'Apply all imported:' : 'Apply all:') +
-						'</span>' +
-						(incoming
-							? ''
-							: '<button type="button" class="rdm-bulk-btn" data-rdm-bulk="a-to-b"' +
-								(aToBDisabled ? ' disabled aria-disabled="true"' : '') +
-								' title="' +
-								escapeHtml(aToBTitle) +
-								'">' +
-								'A → B ' +
-								'<span class="rdm-bulk-count">' +
-								aToBCount +
-								'</span>' +
-								'</button>') +
-						'<button type="button" class="rdm-bulk-btn" data-rdm-bulk="b-to-a"' +
-						(bToADisabled ? ' disabled aria-disabled="true"' : '') +
-						' title="' +
-						escapeHtml(bToATitle) +
-						'">' +
-						(incoming ? 'Apply ' : 'B → A ') +
-						'<span class="rdm-bulk-count">' +
-						bToACount +
-						'</span>' +
-						'</button>' +
-						'</div>'
-					: '';
+							' values to the left record: ' +
+							titleA +
+							'. Replaces differing values and fills blanks.';
+				const bulkActions =
+					'<div class="rdm-header-copy">' +
+					'<button type="button" class="rdm-bulk-btn" data-rdm-bulk="b-to-a"' +
+					(bToADisabled ? ' disabled aria-disabled="true"' : '') +
+					' title="' +
+					escapeHtml(bToATitle) +
+					'" aria-label="' +
+					escapeHtml(bToATitle) +
+					'">◀</button>' +
+					(incoming
+						? ''
+						: '<button type="button" class="rdm-bulk-btn" data-rdm-bulk="a-to-b"' +
+							(aToBDisabled ? ' disabled aria-disabled="true"' : '') +
+							' title="' +
+							escapeHtml(aToBTitle) +
+							'" aria-label="' +
+							escapeHtml(aToBTitle) +
+							'">▶</button>') +
+					'</div>';
 
 				const rowsHtml =
 					differing.map((f) => _renderRow(f, recA, recB, 'diff', rowCtx)).join('') +
@@ -564,44 +535,24 @@
 								: '<p class="rdm-empty-state">These records are identical on every field they share.</p>'
 							: '';
 
-				const countsBreakdownParts = [];
-				countsBreakdownParts.push('<span class="rdm-count rdm-count-diff">' + diffCount + '</span> differ');
-				if (aOnlyCount > 0) {
-					countsBreakdownParts.push(
-						'<span class="rdm-count rdm-count-a-only">' + aOnlyCount + '</span> A-only',
-					);
-				}
-				if (bOnlyCount > 0) {
-					countsBreakdownParts.push(
-						'<span class="rdm-count rdm-count-b-only">' + bOnlyCount + '</span> B-only',
-					);
-				}
-				if (suppressedCount > 0) {
-					countsBreakdownParts.push(
-						'<span class="rdm-count rdm-count-suppressed">' + suppressedCount + '</span> ignored',
-					);
-				}
-				const countsBreakdown = countsBreakdownParts.join(' · ');
-
 				const tableHead =
 					'<div class="rdm-table-head">' +
 					'<div class="rdm-th rdm-th-field">' +
 					'<div class="rdm-th-title">Field</div>' +
-					'<div class="rdm-th-counts">' +
-					countsBreakdown +
-					'</div>' +
 					'</div>' +
 					'<div class="rdm-th rdm-th-a">' +
-					'<div class="rdm-th-title"><span class="rdm-th-prefix">A:</span> ' +
+					'<div class="rdm-th-title">' +
 					escapeHtml(titleA) +
 					'</div>' +
 					'<div class="rdm-th-sub">' +
 					escapeHtml(subtitleA) +
 					'</div>' +
 					'</div>' +
-					'<div class="rdm-th rdm-th-mid"></div>' +
+					'<div class="rdm-th rdm-th-mid">' +
+					bulkActions +
+					'</div>' +
 					'<div class="rdm-th rdm-th-b">' +
-					'<div class="rdm-th-title"><span class="rdm-th-prefix">B:</span> ' +
+					'<div class="rdm-th-title">' +
 					escapeHtml(titleB) +
 					'</div>' +
 					'<div class="rdm-th-sub">' +
@@ -614,27 +565,31 @@
 				const incomingBanner = incoming
 					? '<div class="rdm-banner">' +
 						'<strong>This imported row matches a record already on the canvas.</strong> ' +
-						'The B column is the imported CSV values; the A column is the record on the canvas. ' +
-						'Use ◀ (or &ldquo;Apply all imported&rdquo;) to copy values onto the canvas record, then close. ' +
+						'Imported CSV values are on the right; the canvas record is on the left. ' +
+						'Use a row’s ◀ to copy one value, or the header’s ◀ to copy all eligible values onto the canvas record. ' +
 						'Closing without copying keeps the canvas record unchanged.' +
 						'</div>'
 					: '';
 				content.innerHTML =
 					incomingBanner +
-					crossObjectBanner +
-					pendingDeleteBanner +
 					'<div class="rdm-toolbar">' +
 					filterChips +
 					'<input type="search" class="rdm-search" placeholder="Search fields…" autocomplete="off" spellcheck="false" value="' +
 					escapeHtml(searchQuery || '') +
 					'">' +
 					'</div>' +
-					bulkActions +
-					(emptyState ? emptyState : tableHead + '<div class="rdm-rows">' + rowsHtml + '</div>') +
+					(emptyState
+						? emptyState
+						: '<div class="rdm-table">' +
+							tableHead +
+							'<div class="rdm-rows">' +
+							rowsHtml +
+							'</div></div>') +
 					'<p class="rdm-search-empty" style="display:none">No fields match your search.</p>';
 
-				if (content) {
-					content.scrollTop = scroll;
+				const table = content.querySelector('.rdm-table');
+				if (table) {
+					table.scrollTop = scroll;
 				}
 			}
 
@@ -644,15 +599,22 @@
 				if (!source || !target) {
 					return;
 				}
-				if (isRecordPendingDelete(target) || target._inaccessible) {
+				if (target._inaccessible) {
 					return;
 				}
 				if (!target.values) {
 					target.values = {};
 				}
-				const _snap = pushUndo ? _snapField(target, fieldName) : null;
 				const newValue = source.values ? source.values[fieldName] : undefined;
-				_writeField(target, fieldName, newValue == null ? '' : newValue);
+				const targetField = _fieldDef(target.objectName, fieldName);
+				if (
+					!_isFieldWritable(targetField, target) ||
+					(_isEmptyValue(newValue) && !_canClearField(targetField))
+				) {
+					return;
+				}
+				const _snap = pushUndo ? _snapField(target, fieldName) : null;
+				_writeField(target, fieldName, _isEmptyValue(newValue) ? '' : newValue);
 				if (pushUndo && _snap) {
 					const _tgt = target,
 						_fn = fieldName,
@@ -687,7 +649,7 @@
 				if (!source || !target) {
 					return;
 				}
-				if (isRecordPendingDelete(target) || target._inaccessible) {
+				if (target._inaccessible) {
 					return;
 				}
 				const diff = _filterComparableDiff(
@@ -870,6 +832,10 @@
 
 			function openRecordDiffModal(recA, recB, opts) {
 				if (!recA || !recB) {
+					return;
+				}
+				if (recA.objectName !== recB.objectName) {
+					showBulkToast('Choose two records of the same object type.');
 					return;
 				}
 				opts = opts || {};

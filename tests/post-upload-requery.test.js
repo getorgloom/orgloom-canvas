@@ -275,196 +275,94 @@ describe('_capturePreUploadState', () => {
 });
 
 describe('_fetchCanonicalValuesForUpload', () => {
-	test('returns empty map for empty results array', async () => {
-		const conn = makeQueryConn({});
-		const out = await _fetchCanonicalValuesForUpload({
-			conn,
-			results: [],
-			recordsById: new Map(),
-		});
-		assert.equal(out.size, 0);
-		assert.equal(conn.calls.queries.length, 0);
-	});
-
-	test('returns post-trigger values keyed by tempId', async () => {
-		const conn = makeQueryConn({
-			'001abc': {
-				Id: '001abc',
-				Industry: 'Technology',
-				Phone: '555-1234',
-				LastModifiedDate: '2026-08-08T12:00:00.000Z',
-			},
-		});
-		const results = [{ tempId: 1, id: '001abc', objectName: 'Account', mode: 'update', success: true }];
-		const recordsById = new Map([
-			[
-				1,
-				{
-					values: { Industry: 'Tech', Phone: '555-1234' },
-					loadedValues: { Industry: 'Old', Phone: '555-0000' },
-				},
-			],
-		]);
-		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		assert.equal(out.size, 1);
-		assert.deepEqual(out.get(1).values, {
-			Industry: 'Technology',
-			Phone: '555-1234',
-		});
-		assert.equal(out.get(1).sfId, '001abc');
-		assert.equal(out.get(1).objectName, 'Account');
-		assert.equal(out.get(1).uploadLastModifiedDate, '2026-08-08T12:00:00.000Z');
-		assert.match(conn.calls.queries[0], /LastModifiedDate/);
-	});
-
-	test('re-queries all visible fields so the canvas reflects the resulting Salesforce record', async () => {
-		const conn = makeQueryConn({
-			'001abc': {
-				Id: '001abc',
-				Name: 'Unrelated current value',
-				Phone: '555-2222',
-				LastModifiedDate: '2026-08-08T12:00:00.000Z',
-			},
-		});
-		const results = [{ tempId: 1, id: '001abc', objectName: 'Account', mode: 'update', success: true }];
-		const recordsById = new Map([
-			[
-				1,
-				{
-					values: { Name: 'Old name', Phone: '555-2222' },
-					loadedValues: { Name: 'Old name', Phone: '555-1111' },
-				},
-			],
-		]);
-		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		assert.deepEqual(out.get(1).values, {
-			Name: 'Unrelated current value',
-			Phone: '555-2222',
-		});
-		assert.match(conn.calls.queries[0], /\bName\b/);
-	});
-
-	test('multiple records of the same object batched into one SOQL', async () => {
-		const conn = makeQueryConn({
-			'001a': { Id: '001a', Industry: 'A' },
-			'001b': { Id: '001b', Industry: 'B' },
-		});
-		const results = [
-			{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true },
-			{ tempId: 2, id: '001b', objectName: 'Account', mode: 'update', success: true },
-		];
-		const recordsById = new Map([
-			[1, { values: { Industry: 'a' }, loadedValues: { Industry: 'x' } }],
-			[2, { values: { Industry: 'b' }, loadedValues: { Industry: 'x' } }],
-		]);
-		await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		assert.equal(conn.calls.queries.length, 1, 'records of the same object should hit SF in one SOQL, not N');
-	});
-
-	test('skipped: failed results, unchanged results, and results without recordsById entry', async () => {
-		const conn = makeQueryConn({
-			'001a': { Id: '001a', Industry: 'A' },
-		});
-		const results = [
-			{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true },
-			{ tempId: 2, id: '001b', objectName: 'Account', mode: 'update', success: false }, // failed
-			{ tempId: 3, id: '001c', objectName: 'Account', mode: 'unchanged', success: true }, // unchanged
-			{ tempId: 4, id: '001d', objectName: 'Account', mode: 'update', success: true }, // not in recordsById
-		];
-		const recordsById = new Map([
-			[1, { values: { Industry: 'a' } }],
-			[2, { values: { Industry: 'b' } }],
-			[3, { values: { Industry: 'c' } }],
-		]);
-		await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		const soql = conn.calls.queries[0] || '';
-		assert.match(soql, /'001a'/);
-		assert.doesNotMatch(soql, /'001b'/, 'failed result must not be queried');
-		assert.doesNotMatch(soql, /'001c'/, 'unchanged result must not be queried');
-		assert.doesNotMatch(soql, /'001d'/, 'result missing from recordsById must not be queried');
-	});
-
-	test('field names with bad shape are dropped from the SELECT (SOQL injection defense)', async () => {
-		const conn = makeQueryConn({
-			'001a': { Id: '001a', Industry: 'Banking' },
-		});
-		const results = [{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true }];
-		const recordsById = new Map([
-			[
-				1,
-				{
-					values: { Industry: 'a', 'BadField; DROP TABLE': 'x' },
-					loadedValues: { Industry: 'x' },
-				},
-			],
-		]);
-		await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		const soql = conn.calls.queries[0] || '';
-		assert.doesNotMatch(soql, /DROP TABLE/, 'malformed field names must not reach the SOQL');
-	});
-
-	test('SOQL failure leaves the tempId missing from the returned map (graceful fallback)', async () => {
-		const conn = {
-			calls: { queries: [] },
-			async query(soql) {
-				this.calls.queries.push(soql);
-				throw new Error('INSUFFICIENT_ACCESS');
+	function connection(stateById, calls = []) {
+		return {
+			sobject(objectName) {
+				return {
+					async retrieve(ids) {
+						calls.push({ objectName, ids });
+						return ids.map((id) => stateById[id]).filter(Boolean);
+					},
+				};
 			},
 		};
-		const results = [{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true }];
-		const recordsById = new Map([[1, { values: { Industry: 'a' }, loadedValues: { Industry: 'x' } }]]);
-		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		assert.equal(out.size, 0);
-	});
-
-	test('field names from both rec.values AND rec.loadedValues are included in the SELECT', async () => {
-		const conn = makeQueryConn({
-			'001a': { Id: '001a' },
+	}
+	test('retrieves the complete accessible record, including server-generated lookups and audit fields', async () => {
+		const values = {
+			Id: '500abc',
+			ContactId: '003abc',
+			AccountId: '001abc',
+			LastModifiedDate: '2026-10-07T12:00:00Z',
+			Formula__c: 42,
+			Description: null,
+		};
+		const record = { values: { ContactId: '003abc' }, canonicalFields: ['ContactId'] };
+		const calls = [];
+		const out = await _fetchCanonicalValuesForUpload({
+			conn: connection({ '500abc': { ...values, attributes: { type: 'Case' } } }, calls),
+			results: [{ tempId: 1, id: '500abc', objectName: 'Case', mode: 'create', success: true }],
+			recordsById: new Map([[1, record]]),
 		});
-		const results = [{ tempId: 1, id: '001a', objectName: 'Account', mode: 'update', success: true }];
-		const recordsById = new Map([
-			[
-				1,
-				{
-					values: { Industry: 'a' },
-					loadedValues: { Industry: 'x', Phone: '555-0000' },
-				},
-			],
-		]);
-		await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		const soql = conn.calls.queries[0] || '';
-		assert.match(soql, /Industry/, 'Industry must be in SELECT');
-		assert.match(soql, /Phone/, 'Phone (loaded but not written) must also be in SELECT');
+		assert.deepEqual(out.get(1).values, values);
+		assert.equal(out.get(1).uploadLastModifiedDate, values.LastModifiedDate);
+		assert.deepEqual(calls, [{ objectName: 'Case', ids: ['500abc'] }]);
+		assert.deepEqual(record.values, { ContactId: '003abc' }, 'reads do not broaden submitted writes');
 	});
-
-	test('canonical-only fields are re-queried without adding them to the write values', async () => {
-		const conn = makeQueryConn({
-			'003a': { Id: '003a', LastName: 'User', OwnerId: '005a' },
+	test('only successfully written records are refreshed, grouped by object', async () => {
+		const calls = [];
+		const results = [
+			{ tempId: 1, id: '001a', objectName: 'Account', success: true },
+			{ tempId: 2, id: '001b', objectName: 'Account', success: false },
+			{ tempId: 3, id: '001c', objectName: 'Account', success: true, mode: 'unchanged' },
+			{ tempId: 4, id: '001d', objectName: 'Account', success: true },
+			{ tempId: 5, id: '001e', objectName: 'Account', success: true },
+		];
+		const out = await _fetchCanonicalValuesForUpload({
+			conn: connection({ '001a': { Id: '001a' }, '001e': { Id: '001e' } }, calls),
+			results,
+			recordsById: new Map([
+				[1, {}],
+				[2, {}],
+				[3, {}],
+				[5, {}],
+			]),
 		});
-		const results = [{ tempId: 1, id: '003a', objectName: 'Contact', mode: 'create', success: true }];
-		const recordsById = new Map([
-			[
-				1,
-				{
-					values: { LastName: 'User' },
-					canonicalFields: ['LastName', 'OwnerId', 'Bad Field'],
-				},
-			],
-		]);
-		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
-		const soql = conn.calls.queries[0] || '';
-		assert.match(soql, /OwnerId/);
-		assert.doesNotMatch(soql, /Bad Field/);
-		assert.equal(out.get(1).values.OwnerId, '005a');
+		assert.deepEqual(calls, [{ objectName: 'Account', ids: ['001a', '001e'] }]);
+		assert.deepEqual([...out.keys()], [1, 5]);
 	});
-
-	test('object name with bad shape is silently skipped (defense in depth)', async () => {
-		const conn = makeQueryConn({});
-		const results = [{ tempId: 1, id: '001a', objectName: 'Bad; DROP TABLE', mode: 'update', success: true }];
-		const recordsById = new Map([[1, { values: { Industry: 'a' } }]]);
-		const out = await _fetchCanonicalValuesForUpload({ conn, results, recordsById });
+	test('empty or invalid input does not issue reads', async () => {
+		const calls = [];
+		const conn = connection({}, calls);
+		assert.equal((await _fetchCanonicalValuesForUpload({ conn, results: [], recordsById: new Map() })).size, 0);
+		assert.equal(
+			(
+				await _fetchCanonicalValuesForUpload({
+					conn,
+					results: [{ tempId: 1, id: '001abc', objectName: 'Bad; DROP TABLE', success: true }],
+					recordsById: new Map([[1, {}]]),
+				})
+			).size,
+			0,
+		);
+		assert.deepEqual(calls, []);
+	});
+	test('read failures leave successful writes intact and signal missing refresh values', async () => {
+		const result = { tempId: 1, id: '001abc', objectName: 'Account', success: true, mode: 'update' };
+		const out = await _fetchCanonicalValuesForUpload({
+			conn: {
+				sobject() {
+					return {
+						retrieve: async () => {
+							throw new Error('read failed');
+						},
+					};
+				},
+			},
+			results: [result],
+			recordsById: new Map([[1, { values: { Name: 'Saved' } }]]),
+		});
 		assert.equal(out.size, 0);
-		assert.equal(conn.calls.queries.length, 0);
+		assert.equal(result.success, true);
 	});
 });
 

@@ -75,23 +75,30 @@ function harness({ playground = false, records = [], capped = false, truncated =
 	});
 	api.openModal();
 	element('#soql-query').value = 'SELECT Id, Name FROM Account';
-	return { modal, element, requests, preview: () => element('#soql-preview-btn').listeners.click() };
+	return {
+		modal,
+		element,
+		requests,
+		api,
+		commit: () => element('#soql-commit-btn').listeners.click(),
+		preview: () => element('#soql-preview-btn').listeners.click(),
+	};
 }
 
 test('SOQL modal keeps concise instructions and collapsed query help', () => {
 	const { modal } = harness();
-	assert.match(modal.innerHTML, /Include <code>Id<\/code> in your query\. Up to 500 records per import\./);
+	assert.doesNotMatch(modal.innerHTML, /Include <code>Id<\/code> in your query\. Up to 500 records per import\./);
 	assert.match(modal.innerHTML, /<details class="soql-query-help"><summary>Query help<\/summary>/);
-	assert.match(modal.innerHTML, /id="soql-full-fields" checked/);
-	assert.match(modal.innerHTML, /Include fields not listed in your query\./);
+	assert.doesNotMatch(modal.innerHTML, /soql-full-fields/);
+	assert.match(modal.innerHTML, /All accessible fields are loaded, including fields not listed in your query\./);
 	assert.match(modal.innerHTML, /id="soql-preview-btn">Preview<\/button>/);
 });
 
-test('playground keeps its read-only preset and disabled full-fields option', () => {
+test('playground keeps its read-only preset without a field-selection option', () => {
 	const { modal } = harness({ playground: true });
 	assert.match(modal.innerHTML, /Demo query\. Connect Salesforce to run your own\./);
 	assert.match(modal.innerHTML, /readonly aria-readonly="true"/);
-	assert.match(modal.innerHTML, /id="soql-full-fields" checked disabled/);
+	assert.doesNotMatch(modal.innerHTML, /soql-full-fields/);
 	assert.match(modal.innerHTML, /WHERE Industry = 'Technology'/);
 });
 
@@ -118,9 +125,8 @@ test('preview hides IDs by default, toggles without querying, and retains the ch
 	assert.match(preview.innerHTML, /soql-preview-tablewrap soql-show-ids/);
 	preview.listeners.click({ target: { closest: () => toggle } });
 	assert.equal(toggle.attributes['aria-pressed'], 'false');
-	h.element('#soql-full-fields').checked = false;
 	await h.preview();
-	assert.equal(h.requests.at(-1).fullFields, false);
+	assert.equal(h.requests.at(-1).fullFields, true);
 });
 
 test('limit notices remain conditional and empty results have no ID toggle', async () => {
@@ -133,4 +139,27 @@ test('limit notices remain conditional and empty results have no ID toggle', asy
 	await h.preview();
 	assert.match(h.element('#soql-preview').innerHTML, /0 records/);
 	assert.doesNotMatch(h.element('#soql-preview').innerHTML, /data-soql-toggle-ids|class="banner"/);
+});
+
+for (const playground of [false, true]) {
+	test('preview and direct import always load all fields (playground=' + playground + ')', async () => {
+		const h = harness({ playground });
+		await h.commit();
+		assert.equal(h.requests.length, 1);
+		assert.equal(h.requests[0].fullFields, true);
+		await h.preview();
+		assert.equal(h.requests[1].fullFields, true);
+		await h.commit();
+		assert.equal(h.requests.length, 2, 'unchanged query reuses the preview');
+		h.element('#soql-query').value = 'SELECT Id FROM Contact';
+		await h.commit();
+		assert.equal(h.requests.length, 3, 'changed query is fetched again');
+		assert.deepEqual(h.requests[2], { soql: 'SELECT Id FROM Contact', fullFields: true });
+	});
+}
+
+test('programmatic SOQL import always loads all fields', async () => {
+	const h = harness();
+	await h.api.runAndCommitSoql('SELECT Id FROM Account', { fullFields: false });
+	assert.equal(h.requests[0].fullFields, true);
 });

@@ -24,14 +24,20 @@ function declarationsFor(selector) {
 	return declarations;
 }
 
-test('record diff content shrinks inside the viewport and owns vertical scrolling', () => {
+test('record diff table owns scrolling while controls and column headers stay visible', () => {
 	const body = declarationsFor('.record-diff-modal .modal-body');
 	const content = declarationsFor('.record-diff-modal .rdm-content');
 	const rows = declarationsFor('.record-diff-modal .rdm-rows');
+	const table = declarationsFor('.record-diff-modal .rdm-table');
+	const head = declarationsFor('.record-diff-modal .rdm-table-head');
 
 	assert.equal(body.get('overflow'), 'hidden');
 	assert.equal(content.get('min-height'), '0');
-	assert.equal(content.get('overflow-y'), 'auto');
-	assert.equal(content.get('overscroll-behavior'), 'contain');
+	assert.equal(content.get('overflow'), 'hidden');
+	assert.equal(table.get('min-height'), '0');
+	assert.equal(table.get('overflow-y'), 'auto');
+	assert.equal(table.get('overscroll-behavior'), 'contain');
+	assert.equal(head.get('position'), 'sticky');
+	assert.equal(head.get('top'), '0');
 	assert.equal(rows.get('flex-shrink'), '0');
 });

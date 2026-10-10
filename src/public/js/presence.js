@@ -72,6 +72,12 @@
 			const _acknowledgedContributionIds = new Set();
 			let _acknowledgedContributionCanvasId = null;
 			let _snapshotApplyPromise = null;
+			let _applyingSnapshot = false;
+			let _subscriptionGeneration = 0;
+			let _canvasLoadDepth = 0;
+			let _canvasLoadFailed = false;
+			let _canvasLoadReady = null;
+			let _awaitingLayoutSnapshot = false;
 			const _queuedSnapshotEvents = [];
 			// Monotonic per-connection sequence numbers let the server reject stale collaboration events.
 			function _nextSequence() {
@@ -186,6 +192,7 @@
 			const MUTATION_RETRY_MAX_MS = 30_000;
 
 			function _mutationCanSend(key) {
+				if (_canvasLoadDepth || _canvasLoadFailed || _applyingSnapshot || _awaitingLayoutSnapshot) return false;
 				if (_mutationInFlight.has(key)) {
 					return false;
 				}
@@ -219,6 +226,16 @@
 				if (_syncWarningShown) {
 					_syncWarningShown = false;
 					showBulkToast('Previously delayed changes have synced.', 'info');
+				}
+			}
+
+			function _forgetObsoleteMutation(key) {
+				_mutationRetry.delete(key);
+				_failedMutationKeys.delete(key);
+				if (_failedMutationKeys.size === 0) {
+					_mutationFailureCount = 0;
+					// Obsolete work was discarded, not successfully synchronized.
+					_syncWarningShown = false;
 				}
 			}
 
@@ -261,12 +278,20 @@
 						_activeMutation = null;
 						_drainMutationQueue();
 					}
+					if (key !== 'layout' && token.generation === _mutationGeneration) {
+						_flushPendingLayouts();
+					}
 				}
 				let request;
 				try {
 					request = requestFactory();
 				} catch (_error) {
 					_mutationFailure(key);
+					finished();
+					return;
+				}
+				// A queued desired state can become obsolete before dispatch.
+				if (request === null) {
 					finished();
 					return;
 				}
@@ -304,7 +329,9 @@
 
 			let _lastCursorPostAt = 0;
 			const CURSOR_THROTTLE_MS = 100;
-			let _pendingCursorAbort = null;
+			let _cursorRequest = null;
+			let _pendingCursorPosition = null;
+			let _cursorSendTimer = null;
 			let _cursorPublished = false;
 			let _hasLocalFocus = false;
 			let _lastLocalFocus = null;
@@ -486,6 +513,7 @@
 			}
 
 			function _onPresenceInit(data) {
+				_resetCursorPublishing();
 				const nextServerInstanceId =
 					typeof data.serverInstanceId === 'string' && data.serverInstanceId ? data.serverInstanceId : null;
 				const serverRestarted = !!(
@@ -507,6 +535,7 @@
 				_latestAppliedRevision = _durableRevision;
 				_serverRevision = Number.isSafeInteger(data.revision) ? data.revision : _durableRevision;
 				_hasRevisionGap = _serverRevision > _durableRevision;
+				_awaitingLayoutSnapshot = !!data.hasLiveSnapshot;
 				_seedLoadedRecordBaselines();
 				_clearPeerVisuals();
 				_peers.clear();
@@ -531,6 +560,10 @@
 			}
 
 			async function _applyLiveSnapshotEvent(data) {
+				const generation = _subscriptionGeneration;
+				// Discard queued intentions based on the old snapshot before rebuilding records.
+				_resetMutationTracking();
+				_applyingSnapshot = true;
 				try {
 					const serverPayload = data.payload || {};
 					const recoverOwnerState = _recoverOwnerStateAfterSnapshot && _localRole === 'owner';
@@ -563,6 +596,8 @@
 						revision: data.revision,
 						durableRevision: data.durableRevision,
 					});
+					if (generation !== _subscriptionGeneration) return;
+					_applyingSnapshot = false;
 					_recoverOwnerStateAfterSnapshot = false;
 					_durableRevision = Number.isSafeInteger(data.durableRevision)
 						? data.durableRevision
@@ -576,17 +611,23 @@
 					_resumeCanvasWasDirty = false;
 					canvasState._presenceCanvasId = _currentCanvasId;
 					canvasState._presenceRevision = _latestAppliedRevision;
+					_awaitingLayoutSnapshot = false;
 					if (resumeLocalState && nextPayload !== serverPayload) {
 						_seedMutationTrackingFromSnapshot(serverPayload);
 						_broadcastDraftDeltas();
 						publishLayout(canvasState.bulkRecords);
 					} else {
+						// The authoritative snapshot replaces local layout intentions.
+						_pendingLayoutPositions.clear();
+						_forgetObsoleteMutation('layout');
 						_seedLoadedRecordBaselines();
 					}
 					_flushPendingDraftLinks();
 					_reapplyAllFocus();
 				} catch (error) {
+					if (generation !== _subscriptionGeneration) return;
 					_hasRevisionGap = true;
+					_awaitingLayoutSnapshot = true;
 					window.ORGLOOM_capture && window.ORGLOOM_capture(error, { where: 'presence.js/applyLiveSnapshot' });
 					try {
 						showBulkToast(
@@ -595,11 +636,15 @@
 						);
 					} catch (_) {}
 				} finally {
-					_snapshotApplyPromise = null;
-					const queued = _queuedSnapshotEvents.splice(0);
-					queued.sort((left, right) => (left.revision || 0) - (right.revision || 0));
-					for (const event of queued) {
-						await _onPresenceEvent(event);
+					if (generation === _subscriptionGeneration) {
+						_applyingSnapshot = false;
+						_snapshotApplyPromise = null;
+						const queued = _queuedSnapshotEvents.splice(0);
+						queued.sort((left, right) => (left.revision || 0) - (right.revision || 0));
+						for (const event of queued) {
+							await _onPresenceEvent(event);
+						}
+						_flushPendingLayouts();
 					}
 				}
 			}
@@ -1410,6 +1455,26 @@
 					}
 				}
 				if (data.kind === 'create') {
+					target.loadedFromId = sfId;
+					delete target._persistedTempId;
+					delete target._collabId;
+					// Retire old draft aliases of this same card, preserving their links.
+					for (const alias of canvasState.bulkRecords.slice()) {
+						if (
+							alias === target ||
+							alias.loadedFromId ||
+							alias.objectName !== target.objectName ||
+							!target._canvasRecordId ||
+							alias._canvasRecordId !== target._canvasRecordId
+						)
+							continue;
+						for (const link of canvasState.bulkAssociations || []) {
+							if (link.fromId === alias.id) link.fromId = target.id;
+							if (link.toId === alias.id) link.toId = target.id;
+						}
+						canvasState.bulkRecords = canvasState.bulkRecords.filter((record) => record !== alias);
+						canvasState.bulkSelectedIds?.delete(alias.id);
+					}
 					target.loadedValues = preserveRedacted(data.baseline || data.fields, target.loadedValues);
 					target.values = preserveRedacted(data.fields, target.values);
 					if (Number.isFinite(data.x)) {
@@ -1509,6 +1574,9 @@
 				);
 			}
 			function _broadcastDraftDeltas() {
+				if (_canvasLoadDepth || _canvasLoadFailed || _applyingSnapshot || _awaitingLayoutSnapshot) return;
+				// Never compare a newly selected canvas against the previous subscription's baselines.
+				if (canvasState.currentCanvas && canvasState.currentCanvas.id !== _currentCanvasId) return;
 				if (!_localCanEdit || !_currentCanvasId || !_myConnectionId) {
 					return;
 				}
@@ -1530,7 +1598,7 @@
 					}
 					let syncId = _syncIdOf(r);
 					if (syncId == null) {
-						r._collabId = _mintCollabId();
+						r._collabId = _ensureCanvasRecordId(r);
 						syncId = r._collabId;
 					}
 					const isFirstBroadcast = !_lastBroadcastDraftValues.has(syncId);
@@ -1588,6 +1656,7 @@
 					const payload = {
 						connectionId: _myConnectionId,
 						tempId: syncId,
+						canvasRecordId: _ensureCanvasRecordId(r),
 						fields: hasFieldsDiff ? diff : {},
 					};
 					const sentEntry = {
@@ -1625,6 +1694,7 @@
 						{
 							connectionId: _myConnectionId,
 							tempId: k,
+							canvasRecordId: previousDraft && previousDraft.canvasRecordId,
 							kind: 'remove',
 							fields: {},
 						},
@@ -2075,10 +2145,19 @@
 					return;
 				}
 				const syncId = String(data.tempId);
-				let target = _findDraftBySyncId(syncId);
+				let target = _recordForRef({ refKind: 'draft', ref: syncId, collabRef: data.canvasRecordId });
+				if (
+					target &&
+					data.canvasRecordId != null &&
+					target._canvasRecordId != null &&
+					String(data.canvasRecordId) !== String(target._canvasRecordId)
+				)
+					return;
+				if (target && target.loadedFromId) return;
 				let created = false;
 				if (data.kind === 'remove') {
 					if (target) {
+						_lastBroadcastDraftValues.delete(_syncIdOf(target));
 						const beforeLen = canvasState.bulkRecords.length;
 						canvasState.bulkRecords = canvasState.bulkRecords.filter((r) => r !== target);
 						if (canvasState.bulkRecords.length !== beforeLen) {
@@ -2165,7 +2244,7 @@
 						}
 					}
 				}
-				_lastBroadcastDraftValues.set(syncId, {
+				_lastBroadcastDraftValues.set(_syncIdOf(target) || syncId, {
 					values: _safeValueCopy(target.values, target.objectName),
 					x: typeof target.x === 'number' ? target.x : null,
 					y: typeof target.y === 'number' ? target.y : null,
@@ -2278,6 +2357,7 @@
 					_localCanEdit = false;
 					_resetMutationTracking();
 				}
+				if (revoked) _resetCursorPublishing();
 				onAccessChanged({
 					role: data.role || null,
 					previousRole: data.previousRole || null,
@@ -2457,15 +2537,67 @@
 				};
 			}
 
+			function _resetCursorPublishing() {
+				if (_cursorSendTimer !== null) clearTimeout(_cursorSendTimer);
+				_cursorSendTimer = null;
+				_pendingCursorPosition = null;
+				const previous = _cursorRequest;
+				_cursorRequest = null;
+				// Cancel only when leaving a connection, never for ordinary movement.
+				if (previous) previous.abort();
+				_lastCursorPostAt = 0;
+				_cursorPublished = false;
+			}
+
+			function _flushPendingCursor() {
+				if (_localAccessRevoked || !_currentCanvasId || !_myConnectionId) return;
+				if (!_pendingCursorPosition || _cursorRequest || _cursorSendTimer !== null) return;
+				if (_peers.size === 0 && _pendingCursorPosition.x !== null) {
+					_pendingCursorPosition = null;
+					return;
+				}
+				const delay = CURSOR_THROTTLE_MS - (Date.now() - _lastCursorPostAt);
+				if (delay > 0) {
+					_cursorSendTimer = setTimeout(() => {
+						_cursorSendTimer = null;
+						_flushPendingCursor();
+					}, delay);
+					return;
+				}
+				const position = _pendingCursorPosition;
+				_pendingCursorPosition = null;
+				const controller = new AbortController();
+				_cursorRequest = controller;
+				_lastCursorPostAt = Date.now();
+				async function send() {
+					try {
+						await csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/cursor', {
+							method: 'POST',
+							credentials: 'same-origin',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({
+								connectionId: _myConnectionId,
+								sequence: _nextSequence(),
+								...position,
+							}),
+							signal: controller.signal,
+						});
+					} catch (_) {
+						// Cursor positions are ephemeral; send newer movement, not retries.
+					} finally {
+						if (_cursorRequest === controller) {
+							_cursorRequest = null;
+							_flushPendingCursor();
+						}
+					}
+				}
+				void send();
+			}
+
 			function _onMouseMove(ev) {
 				if (_localAccessRevoked || !_currentCanvasId || !_myConnectionId || _peers.size === 0) {
 					return;
 				}
-				const now = Date.now();
-				if (now - _lastCursorPostAt < CURSOR_THROTTLE_MS) {
-					return;
-				}
-				_lastCursorPostAt = now;
 				const graph = getGraph();
 				const host =
 					graph && graph.querySelector
@@ -2494,51 +2626,13 @@
 					y = ev.clientY;
 					isWorld = false;
 				}
-				if (_pendingCursorAbort) {
-					_pendingCursorAbort.abort();
-				}
-				const ctl = new AbortController();
-				_pendingCursorAbort = ctl;
 				_cursorPublished = true;
-				csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/cursor', {
-					method: 'POST',
-					credentials: 'same-origin',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						connectionId: _myConnectionId,
-						sequence: _nextSequence(),
-						x,
-						y,
-						world: isWorld,
-					}),
-					signal: ctl.signal,
-				}).catch(() => {
-					/* abort/network, silent */
-				});
+				_pendingCursorPosition = { x, y, world: isWorld };
+				_flushPendingCursor();
 			}
 
 			function _onMouseLeave() {
-				if (
-					_localAccessRevoked ||
-					!_currentCanvasId ||
-					!_myConnectionId ||
-					_peers.size === 0 ||
-					!_cursorPublished
-				) {
-					return;
-				}
-				_cursorPublished = false;
-				csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/cursor', {
-					method: 'POST',
-					credentials: 'same-origin',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						connectionId: _myConnectionId,
-						sequence: _nextSequence(),
-						x: null,
-						y: null,
-					}),
-				}).catch(() => {});
+				_clearPublishedCursor();
 			}
 
 			function _clearPublishedCursor() {
@@ -2546,17 +2640,8 @@
 					return;
 				}
 				_cursorPublished = false;
-				csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/cursor', {
-					method: 'POST',
-					credentials: 'same-origin',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						connectionId: _myConnectionId,
-						sequence: _nextSequence(),
-						x: null,
-						y: null,
-					}),
-				}).catch(() => {});
+				_pendingCursorPosition = { x: null, y: null };
+				_flushPendingCursor();
 			}
 
 			function _attachMouseTracking() {
@@ -2576,7 +2661,40 @@
 				_mouseTrackingHost = host;
 			}
 
+			// Loading is a read operation, not a sequence of shared record removals/additions.
+			// Nesting covers the menu's fetch and the payload's asynchronous reconstruction.
+			function beginCanvasLoad() {
+				if (_canvasLoadDepth === 0) {
+					_canvasLoadReady = _snapshotApplyPromise;
+					_canvasLoadFailed = false;
+					unsubscribe();
+				}
+				_canvasLoadDepth += 1;
+				let finished = false;
+				const finish = (success = true) => {
+					if (finished) return;
+					finished = true;
+					if (!success) _canvasLoadFailed = true;
+					_canvasLoadDepth -= 1;
+					if (_canvasLoadDepth) return;
+					if (_canvasLoadFailed) {
+						showBulkToast(
+							'Live sharing is paused because the canvas did not finish loading. Reload the canvas before editing.',
+							'error',
+						);
+						return;
+					}
+					_canvasLoadReady = null;
+					const id = _resolveCanvasId();
+					if (id) subscribeToCanvas(id);
+				};
+				// Let an already-running snapshot finish before a replacement mutates local state.
+				finish.ready = _canvasLoadReady;
+				return finish;
+			}
+
 			function subscribeToCanvas(canvasId) {
+				if (_canvasLoadDepth || _canvasLoadFailed) return;
 				if (!canvasId) {
 					return;
 				}
@@ -2690,6 +2808,8 @@
 			}
 
 			function unsubscribe() {
+				_subscriptionGeneration += 1;
+				_resetCursorPublishing();
 				if (_eventSource) {
 					try {
 						_eventSource.close();
@@ -2714,7 +2834,9 @@
 				_resumeCanvasRevision = null;
 				_resumeCanvasWasDirty = false;
 				_snapshotApplyPromise = null;
+				_applyingSnapshot = false;
 				_queuedSnapshotEvents.length = 0;
+				_awaitingLayoutSnapshot = false;
 				_fieldLocks.clear();
 				_ownedFieldLeases.clear();
 				_lastBroadcastDraftValues.clear();
@@ -3003,6 +3125,9 @@
 				if (position.hiddenId != null) {
 					return 'hidden:' + String(position.hiddenId);
 				}
+				if (position.collabRef != null) {
+					return 'card:' + String(position.collabRef);
+				}
 				return JSON.stringify([
 					position.refKind,
 					position.ref,
@@ -3010,25 +3135,62 @@
 				]);
 			}
 
+			function _currentPendingLayouts() {
+				const records = new Map();
+				for (const record of canvasState.bulkRecords || []) {
+					const reference = _recordReference(record);
+					if (reference) records.set(_layoutPositionKey(reference), { record, reference });
+				}
+				const ready = [];
+				for (const [key, position] of _pendingLayoutPositions) {
+					const current = records.get(key);
+					if (!current) {
+						_pendingLayoutPositions.delete(key);
+						continue;
+					}
+					const { record, reference } = current;
+					// Keep stable card identity, but refresh natural refs after save,
+					// promotion or slot changes. Never fall back to a different card
+					// displaying the same Salesforce record.
+					const next = Object.assign({}, reference, { x: position.x, y: position.y });
+					_pendingLayoutPositions.set(key, next);
+					const known =
+						reference.hiddenId != null ||
+						(record.loadedFromId
+							? _lastBroadcastLoadedRefs.get(reference.collabRef) === String(record.loadedFromId)
+							: _lastBroadcastDraftValues.has(_syncIdOf(record)));
+					if (known && ready.length < 500) ready.push([key, next]);
+				}
+				if (_pendingLayoutPositions.size === 0) _forgetObsoleteMutation('layout');
+				return ready;
+			}
+
 			function _flushPendingLayouts() {
+				if (_awaitingLayoutSnapshot || _snapshotApplyPromise) return;
 				if (!_localCanEdit || !_currentCanvasId || !_myConnectionId || _pendingLayoutPositions.size === 0) {
 					return;
 				}
-				const sent = Array.from(_pendingLayoutPositions.entries()).slice(0, 500);
-				const positions = sent.map((entry) => entry[1]);
+				if (_currentPendingLayouts().length === 0) return;
+				let sent = [];
 				_sendDesiredMutation(
 					'layout',
-					() =>
-						csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/layout', {
+					() => {
+						// Recheck at dispatch as well as enqueue: earlier mutations may
+						// have removed or replaced a card while this request waited.
+						if (_awaitingLayoutSnapshot || _snapshotApplyPromise) return null;
+						sent = _currentPendingLayouts();
+						if (sent.length === 0) return null;
+						return csrfFetch('/api/canvas/' + encodeURIComponent(_currentCanvasId) + '/presence/layout', {
 							method: 'POST',
 							credentials: 'same-origin',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
 								connectionId: _myConnectionId,
 								sequence: _nextSequence(),
-								positions,
+								positions: sent.map((entry) => entry[1]),
 							}),
-						}),
+						});
+					},
 					() => {
 						for (const [key, position] of sent) {
 							const pending = _pendingLayoutPositions.get(key);
@@ -3048,13 +3210,14 @@
 			}
 
 			function publishLayout(records) {
+				if (_canvasLoadDepth || _canvasLoadFailed || _applyingSnapshot || _awaitingLayoutSnapshot) return;
 				if (!_localCanEdit || !_currentCanvasId || !Array.isArray(records)) {
 					return;
 				}
 				records
 					.map((record) => {
 						const reference = _recordReference(record);
-						if (!reference || typeof record.x !== 'number' || typeof record.y !== 'number') {
+						if (!reference || !Number.isFinite(record.x) || !Number.isFinite(record.y)) {
 							return null;
 						}
 						return Object.assign(reference, { x: record.x, y: record.y });
@@ -3068,6 +3231,7 @@
 
 			let _lastSeenId = null;
 			setInterval(() => {
+				if (_canvasLoadDepth || _canvasLoadFailed) return;
 				const id = _resolveCanvasId();
 				const sourceClosed = _eventSource && _eventSource.readyState === 2;
 				if (id && (id !== _lastSeenId || sourceClosed)) {
@@ -3135,6 +3299,7 @@
 			});
 
 			return {
+				beginCanvasLoad: beginCanvasLoad,
 				subscribeToCanvas: subscribeToCanvas,
 				unsubscribe: unsubscribe,
 				pushFocus: pushFocus,

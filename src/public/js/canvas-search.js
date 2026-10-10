@@ -50,7 +50,6 @@
 				'<div class="csr-results" id="csr-results"></div>' +
 				'</div>' +
 				'<div class="modal-footer">' +
-				'<span class="tag csr-hint">Click a result to jump to the card. <kbd>Esc</kbd> to close.</span>' +
 				'<button class="button secondary" data-csr-close>Close</button>' +
 				'</div>' +
 				'</div>';
@@ -211,8 +210,7 @@
 				const { matches, recordsScanned } = search(query);
 				if (!query.trim()) {
 					statsEl.textContent = '';
-					resultsEl.innerHTML =
-						'<div class="csr-empty">Start typing to find records by field value or name.</div>';
+					resultsEl.innerHTML = '';
 					return;
 				}
 				if (matches.length === 0) {
@@ -221,18 +219,10 @@
 					resultsEl.innerHTML = '<div class="csr-empty">No field values or record names contain that.</div>';
 					return;
 				}
-				const cap =
-					matches.length >= MAX_RESULTS ? ' (showing first ' + MAX_RESULTS + ' - refine to narrow)' : '';
 				statsEl.textContent =
-					matches.length +
-					' match' +
-					(matches.length === 1 ? '' : 'es') +
-					' across ' +
-					recordsScanned +
-					' record' +
-					(recordsScanned === 1 ? '' : 's') +
-					cap +
-					'.';
+					matches.length >= MAX_RESULTS
+						? 'Showing first ' + MAX_RESULTS + ' results - refine to narrow.'
+						: '';
 				resultsEl.innerHTML = matches
 					.map((m, i) => {
 						const valueHtml = renderMatchedValue(m.value, m.matchStart, m.matchLen);

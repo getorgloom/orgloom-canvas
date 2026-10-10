@@ -14,7 +14,6 @@
 				'recordOrdinal',
 				'showBulkToast',
 				'showConfirmDialog',
-				'isRecordModified',
 				'canEditCanvasStructure',
 				'_canAuthorSlots',
 				'_hasCap',
@@ -44,7 +43,7 @@
 			const recordOrdinal = deps.recordOrdinal;
 			const showBulkToast = deps.showBulkToast;
 			const showConfirmDialog = deps.showConfirmDialog;
-			const isRecordModified = deps.isRecordModified;
+			const promptCanvasSave = deps.promptCanvasSave;
 			const canEditCanvasStructure = deps.canEditCanvasStructure;
 			const _canAuthorSlots = deps._canAuthorSlots;
 			const canDeleteRecord =
@@ -155,7 +154,6 @@
 					editItem =
 						'<button type="button" class="fop-item" data-card-action="edit">' +
 						'<span class="fop-label">Edit</span>' +
-						'<span class="fop-name">Open the record editor (or double-click the card)</span>' +
 						'</button>';
 				}
 				let refreshItem = '';
@@ -171,61 +169,37 @@
 					refreshItem =
 						'<button type="button" class="fop-item" data-card-action="refresh-sf">' +
 						'<span class="fop-label">Refresh from Salesforce</span>' +
-						'<span class="fop-name">Replace this card&rsquo;s values with the current Salesforce state</span>' +
 						'</button>';
 				}
-				let slotItems;
+				const unlinkItem =
+					isLoaded && !isTypeNode && !isPending && !isInaccessible && typeof deps.unlinkRecord === 'function'
+						? '<button type="button" class="fop-item" data-card-action="unlink"><span class="fop-label">Unlink</span></button>'
+						: '';
+				let slotItems = '';
 				if (isSlot) {
 					if (canConfigureSlot) {
 						slotItems =
 							'<button type="button" class="fop-item" data-card-action="configure-slot">' +
-							'<span class="fop-label">Configure ' +
-							(slotKind === 'fields' ? 'field request' : 'record request') +
-							'&hellip;</span>' +
-							'<span class="fop-name">' +
-							(slotKind === 'fields'
-								? 'Change the requested fields, instructions, or assigned teammate'
-								: 'Change the request instructions or assigned teammate') +
-							'</span></button>' +
+							'<span class="fop-label">Edit request&hellip;</span></button>' +
 							'<button type="button" class="fop-item" data-card-action="unslot">' +
 							'<span class="fop-label">' +
 							(slotKind === 'whole-record' ? 'Convert to draft' : 'Remove request') +
-							'</span>' +
-							'<span class="fop-name">' +
-							(slotKind === 'whole-record'
-								? 'End the request and turn this placeholder into a draft you can edit'
-								: 'Keep the record but stop asking a teammate to complete it') +
 							'</span></button>';
 					} else {
 						slotItems =
-							'<button type="button" class="fop-item is-disabled" disabled aria-disabled="true">' +
-							'<span class="fop-label">Request configuration</span>' +
-							'<span class="fop-name">Only the canvas owner or an editor can change this request</span></button>';
+							'<button type="button" class="fop-item is-disabled" disabled aria-disabled="true" title="Only the canvas owner or an editor can change this request">' +
+							'<span class="fop-label">Edit request&hellip;</span></button>';
 					}
-				} else {
-					const slotsAllowed = _canAuthorSlots();
-					if (slotsAllowed) {
-						slotItems =
-							'<button type="button" class="fop-item" data-card-action="to-field-slot">' +
-							'<span class="fop-label">Request fields on this ' +
-							(isLoaded ? 'record' : 'draft') +
-							'&hellip;</span>' +
-							'<span class="fop-name">Ask a teammate to complete only the fields you choose</span>' +
-							'</button>';
-					} else {
-						slotItems =
-							'<button type="button" class="fop-item is-disabled" disabled aria-disabled="true" ' +
-							'title="Slot canvases require Pro or higher.">' +
-							'<span class="fop-label">Request fields on this record&hellip; <span class="tag">Pro</span></span>' +
-							'<span class="fop-name">Upgrade to Pro to add contributor requests</span>' +
-							'</button>';
-					}
+				} else if (_canAuthorSlots()) {
+					slotItems =
+						'<button type="button" class="fop-item" data-card-action="to-field-slot">' +
+						'<span class="fop-label">Request fields&hellip;</span></button>';
 				}
 				let dangerItems = '';
 				const markDeleteHtml =
 					'<button type="button" class="fop-item fop-item-danger" data-card-action="mark-delete">' +
-					'<span class="fop-label">Mark for delete in Salesforce</span>' +
-					'<span class="fop-name">Stages a DELETE that ships with your next upload</span></button>';
+					'<span class="fop-label">Mark for delete</span>' +
+					'<span class="fop-name">Deletes from Salesforce on upload</span></button>';
 				const describe = canvasState.describeCache && canvasState.describeCache[rec.objectName];
 				const needsDeletePermissions =
 					isLoaded &&
@@ -239,18 +213,12 @@
 					dangerItems +=
 						'<button type="button" class="fop-item" data-card-action="remove-from-canvas">' +
 						'<span class="fop-label">Remove from canvas</span>' +
-						'<span class="fop-name">' +
-						(isLoaded
-							? 'Take this card off the canvas; the Salesforce record stays intact'
-							: 'Delete this draft; it only exists in your browser') +
-						'</span>' +
 						'</button>';
 					if (isLoaded && !isInaccessible) {
 						if (isPendingDelete) {
 							dangerItems +=
 								'<button type="button" class="fop-item fop-item-warn" data-card-action="unmark-delete">' +
-								'<span class="fop-label">Keep this record</span>' +
-								'<span class="fop-name">Unmark: Salesforce DELETE on next upload is cancelled</span>' +
+								'<span class="fop-label">Cancel deletion</span>' +
 								'</button>';
 						} else if (needsDeletePermissions) {
 							dangerItems +=
@@ -263,7 +231,8 @@
 				pop.innerHTML =
 					editItem +
 					refreshItem +
-					((editItem || refreshItem) && slotItems ? '<div class="fop-divider"></div>' : '') +
+					unlinkItem +
+					((editItem || refreshItem || unlinkItem) && slotItems ? '<div class="fop-divider"></div>' : '') +
 					slotItems +
 					dangerItems;
 				document.body.appendChild(pop);
@@ -358,27 +327,16 @@
 						if (ok) {
 							convertSlotBackToRecord(rec, { convertedToDraft: convertingRecordRequest });
 						}
+					} else if (action === 'unlink') {
+						if (typeof deps.unlinkRecord === 'function') {
+							await deps.unlinkRecord(rec);
+						}
 					} else if (action === 'refresh-sf') {
 						await refreshRecordFromSf(rec);
 					} else if (action === 'remove-from-canvas') {
 						deleteRecord(rec.id);
 					} else if (action === 'mark-delete') {
-						if (isRecordModified(rec)) {
-							const ok = await showConfirmDialog({
-								title: 'Discard unsaved edits?',
-								message:
-									"This record has unsaved edits. Marking it for delete will discard those edits: the record will be DELETE'd in Salesforce on next upload regardless.",
-								confirmLabel: 'Discard edits and mark for delete',
-								cancelLabel: 'Cancel',
-								danger: true,
-							});
-							if (!ok) {
-								return;
-							}
-							markPendingDelete(rec.id, { discardEdits: true });
-						} else {
-							markPendingDelete(rec.id);
-						}
+						markPendingDelete(rec.id, { allowModified: true });
 					} else if (action === 'unmark-delete') {
 						unmarkPendingDelete(rec.id);
 					}
@@ -564,7 +522,7 @@
 					? ''
 					: '<label class="slot-assignment-option"><input type="radio" name="slot-assignment-mode" value="specific"' +
 						(initialAssignmentMode === 'specific' ? ' checked' : '') +
-						'><span><strong>Specific teammate</strong><small>Only the selected teammate can submit this request.</small></span></label>';
+						'><span><strong>Specific teammate</strong></span></label>';
 				return new Promise((resolve) => {
 					document.querySelectorAll('.slot-config-modal').forEach((el) => el.remove());
 					const overlay = document.createElement('div');
@@ -617,23 +575,23 @@
 						'</h3></div><button class="modal-close" data-slot-config-close>&times;</button></div>' +
 						'<div class="modal-content slot-config-content">' +
 						fieldSection +
-						'<div class="field slot-config-instructions"><label for="slot-config-description">Instructions for the contributor <span class="meta">optional</span></label>' +
-						'<textarea id="slot-config-description" rows="3" placeholder="Add context only if the request needs it.">' +
-						escapeHtml(initial.description || '') +
-						'</textarea></div>' +
-						'<div class="slot-config-section"><div class="slot-config-section-heading"><div><strong>Who should complete this?</strong><div class="help">' +
+						'<div class="slot-config-section"><div class="slot-config-section-heading"><div><strong>Who should complete this?</strong>' +
 						(playgroundRecordRequest
-							? 'Demo record requests are available to any contributor.'
-							: 'Choose a teammate or make the request available to every contributor.') +
-						'</div></div></div>' +
+							? '<div class="help">Demo record requests are available to any contributor.</div>'
+							: '') +
+						'</div></div>' +
 						'<div class="slot-assignment-options" role="radiogroup" aria-label="Who should complete this request?">' +
 						specificAssignmentOption +
 						'<label class="slot-assignment-option"><input type="radio" name="slot-assignment-mode" value="any"' +
 						(initialAssignmentMode === 'any' ? ' checked' : '') +
-						'><span><strong>Any contributor</strong><small>Any contributor with canvas access can submit it.</small></span></label>' +
+						'><span><strong>Any contributor</strong></span></label>' +
 						'</div><div class="field slot-specific-assignee" data-slot-specific-assignee hidden><label>Teammate</label>' +
 						'<div data-slot-assignee-picker></div>' +
 						'<div class="slot-assignee-access" data-slot-assignee-access aria-live="polite" hidden></div></div></div>' +
+						'<div class="field slot-config-instructions"><label for="slot-config-description">Instructions for the contributor <span class="meta">optional</span></label>' +
+						'<textarea id="slot-config-description" rows="3" placeholder="Add context only if the request needs it.">' +
+						escapeHtml(initial.description || '') +
+						'</textarea></div>' +
 						'<div class="slot-config-error" data-slot-config-error hidden></div>' +
 						'</div><div class="modal-footer"><button class="button secondary" data-slot-config-close>Cancel</button>' +
 						'<button class="button" data-slot-config-save>Save ' +
@@ -702,10 +660,8 @@
 						}
 						const canvasId = currentCanvasId();
 						if (!canvasId) {
-							showAccessState(
-								'warning',
-								'Save this canvas before sharing it with the assigned teammate.',
-							);
+							accessEl.hidden = true;
+							accessEl.textContent = '';
 							return { ok: true, role: null, unsavedCanvas: true };
 						}
 						if (window.SF_USER_ID && sameSfUser(window.SF_USER_ID, assignee.id)) {
@@ -850,17 +806,20 @@
 						resolve(result);
 					};
 					const onKey = (event) => {
-						if (event.key === 'Escape') {
+						if (event.key === 'Escape' && !saving) {
 							cleanup(null);
 						}
 					};
 					document.addEventListener('keydown', onKey);
 					overlay.querySelectorAll('[data-slot-config-close]').forEach((button) => {
-						button.addEventListener('click', () => cleanup(null));
+						button.addEventListener('click', () => {
+							if (!saving) cleanup(null);
+						});
 					});
 					const saveButton = overlay.querySelector('[data-slot-config-save]');
 					const saveButtonLabel = saveButton.textContent;
 					let saving = false;
+					let savedCanvasForRequest = null;
 					saveButton.addEventListener('click', async () => {
 						if (saving) {
 							return;
@@ -900,6 +859,25 @@
 						saveButton.disabled = true;
 						saveButton.textContent = 'Checking access...';
 						try {
+							if (!window.ORGLOOM_MOCK && !(canvasState.currentCanvas && canvasState.currentCanvas.id)) {
+								if (typeof promptCanvasSave !== 'function') {
+									throw new Error('The canvas save dialog is unavailable. Refresh and try again.');
+								}
+								saveButton.textContent = 'Saving canvas...';
+								overlay.classList.add('hidden');
+								let saved;
+								try {
+									saved = await promptCanvasSave({
+										title: 'Save canvas to continue',
+										submitText: 'Save and continue',
+									});
+								} finally {
+									overlay.classList.remove('hidden');
+								}
+								if (!saved || !currentCanvasId()) return;
+								savedCanvasForRequest = currentCanvasId();
+							}
+							saveButton.textContent = 'Checking access...';
 							if (
 								assignee &&
 								currentCanvasId() &&
@@ -941,6 +919,7 @@
 								}
 							}
 							cleanup({
+								savedCanvasForRequest,
 								kind: fieldMode ? 'fields' : 'whole-record',
 								fields,
 								label: automaticLabel,
@@ -949,10 +928,14 @@
 								assigneeName: assignee ? assignee.name : null,
 								assigneeEmail: assignee ? assignee.email : null,
 							});
+						} catch (error) {
+							errorEl.hidden = false;
+							errorEl.textContent = error.message || 'Could not save the request. Try again.';
 						} finally {
 							saving = false;
 							saveButton.disabled = false;
 							saveButton.textContent = saveButtonLabel;
+							if (overlay.isConnected) saveButton.focus();
 						}
 					});
 					setTimeout(() => (fieldMode && search ? search : descriptionInput).focus(), 0);

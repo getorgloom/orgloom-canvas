@@ -987,7 +987,7 @@
 		};
 	}
 
-	function processUploadRecords(records, skipTempIds) {
+	function processUploadRecords(records, skipTempIds, associations) {
 		const skipped = new Set(Array.isArray(skipTempIds) ? skipTempIds : []);
 		const idMap = {};
 		for (const rec of records) {
@@ -995,7 +995,7 @@
 				idMap[rec.tempId] = rec.loadedFromId;
 			}
 		}
-		return records.map((rec) => {
+		const results = records.map((rec) => {
 			if (rec && rec.loadedFromId && skipped.has(rec.tempId)) {
 				return {
 					tempId: rec.tempId,
@@ -1007,6 +1007,18 @@
 			}
 			return processUploadedRecord(rec, idMap);
 		});
+		// Persist links before producing a refresh snapshot, just as the upload APIs do.
+		for (const link of associations || []) {
+			const child = results.find((row) => row.tempId === link.fromId && row.success && row.mode !== 'unchanged');
+			const parentId = idMap[link.toId];
+			if (!child || !parentId || !link.fieldName) continue;
+			const record = findRecord(child.objectName, child.id);
+			if (!record) continue;
+			const updated = { ...record, [link.fieldName]: parentId };
+			removeUserRecord(child.objectName, child.id);
+			appendRecord(child.objectName, updated);
+		}
+		return results;
 	}
 
 	function processDelete(del) {
@@ -1073,16 +1085,30 @@
 		return batchId;
 	}
 
+	function refreshedUploadValues(results) {
+		const values = {};
+		for (const result of results) {
+			if (!result.success || result.mode === 'unchanged') continue;
+			const record = findRecord(result.objectName, result.id);
+			if (record)
+				values[result.tempId] = Object.fromEntries(
+					Object.entries(record).filter(([key]) => key !== 'attributes'),
+				);
+		}
+		return values;
+	}
+
 	async function handleUpload(req) {
 		const body = await req.json().catch(() => ({}));
 		const records = Array.isArray(body.records) ? body.records : [];
 		const associations = Array.isArray(body.associations) ? body.associations : [];
 		const deletes = Array.isArray(body.deletes) ? body.deletes : [];
-		const results = processUploadRecords(records, body.skipTempIds);
+		const results = processUploadRecords(records, body.skipTempIds, associations);
 		const deleteResults = deletes.map(processDelete);
 		const batchId = recordBatch(results, associations, 'canvas', body.note, deleteResults);
 		return jsonResponse({
 			results,
+			canonicalValues: refreshedUploadValues(results),
 			deletes: deleteResults,
 			instanceUrl: MOCK.instanceUrl,
 			batchId,
@@ -1094,11 +1120,12 @@
 		const records = Array.isArray(body.records) ? body.records : [];
 		const associations = Array.isArray(body.associations) ? body.associations : [];
 		const deletes = Array.isArray(body.deletes) ? body.deletes : [];
-		const results = processUploadRecords(records, body.skipTempIds);
+		const results = processUploadRecords(records, body.skipTempIds, associations);
 		const deleteResults = deletes.map(processDelete);
 		const batchId = recordBatch(results, associations, 'canvas-graph', body.note, deleteResults);
 		return jsonResponse({
 			results,
+			canonicalValues: refreshedUploadValues(results),
 			deletes: deleteResults,
 			instanceUrl: MOCK.instanceUrl,
 			mode: 'graph',
@@ -1112,13 +1139,14 @@
 		const body = await req.json().catch(() => ({}));
 		const records = Array.isArray(body.records) ? body.records : [];
 		const deletes = Array.isArray(body.deletes) ? body.deletes : [];
-		const results = processUploadRecords(records, body.skipTempIds);
+		const results = processUploadRecords(records, body.skipTempIds, body.associations);
 		const deleteResults = deletes.map(processDelete);
 		return jsonResponse({
 			results,
 			deletes: deleteResults,
 			instanceUrl: MOCK.instanceUrl,
 			mode: 'bulk',
+			canonicalValues: refreshedUploadValues(results),
 			batchId: recordBatch(results, body.associations || [], 'canvas-bulk', body.note, deleteResults),
 		});
 	}

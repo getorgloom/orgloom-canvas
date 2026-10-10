@@ -74,7 +74,7 @@
 			}
 
 			const bulkEditModal = document.createElement('div');
-			bulkEditModal.className = 'modal hidden';
+			bulkEditModal.className = 'modal bulk-edit-modal hidden';
 			bulkEditModal.innerHTML =
 				'<div class="modal-overlay" data-be-close></div>' +
 				'<div class="modal-body" style="max-width:560px">' +
@@ -85,6 +85,7 @@
 				'<div class="modal-content" id="bulk-edit-content"></div>' +
 				'<div class="bulk-edit-access-error" id="bulk-edit-access-error" role="alert" hidden></div>' +
 				'<div class="modal-footer">' +
+				'<span class="be-count" id="be-preview" role="status" aria-live="polite"></span>' +
 				'<button class="button secondary" data-be-close>Cancel</button>' +
 				'<button class="button" id="bulk-edit-apply">Apply</button>' +
 				'</div>' +
@@ -376,74 +377,67 @@
 					(r) => canvasState.bulkSelectedIds.has(r.id) && r.objectName === _beState.objectName,
 				).length;
 				const allScopeCount = objCounts.get(_beState.objectName) || 0;
-				const scopeRadios =
-					'<label class="be-scope"><input type="radio" name="be-scope" value="all"' +
-					(_beState.scope === 'all' ? ' checked' : '') +
-					'> All ' +
-					escapeHtml(
-						(canvasState.selectedObjects.find((s) => s.name === _beState.objectName) || {}).label ||
-							_beState.objectName,
-					) +
-					' records (' +
+				const scopeOptions =
+					'<option value="all"' +
+					(_beState.scope === 'all' ? ' selected' : '') +
+					'>All records (' +
 					allScopeCount +
-					')</label>' +
-					'<label class="be-scope"><input type="radio" name="be-scope" value="selected"' +
-					(_beState.scope === 'selected' ? ' checked' : '') +
+					')</option>' +
+					'<option value="selected"' +
+					(_beState.scope === 'selected' ? ' selected' : '') +
 					(selectedScopeCount === 0 ? ' disabled' : '') +
-					'> Selected only (' +
+					'>Selected records (' +
 					selectedScopeCount +
-					')</label>';
+					')</option>';
 
-				const replaceDisabledAttr = stringLike
-					? ''
-					: ' disabled title="Find & replace works on text-like fields only"';
-				const actionTabs =
-					'<div class="be-tabs">' +
-					'<button type="button" class="be-tab' +
-					(_beState.action === 'replace' ? ' active' : '') +
-					'" data-be-action="replace"' +
-					replaceDisabledAttr +
-					'>Find &amp; replace</button>' +
-					'<button type="button" class="be-tab' +
-					(_beState.action === 'set' ? ' active' : '') +
-					'" data-be-action="set">Set value</button>' +
-					'</div>';
+				const actionOptions =
+					'<option value="replace"' +
+					(_beState.action === 'replace' ? ' selected' : '') +
+					(stringLike ? '' : ' disabled') +
+					'>Find &amp; replace</option>' +
+					'<option value="set"' +
+					(_beState.action === 'set' ? ' selected' : '') +
+					'>Set value</option>';
 
 				const actionPanel =
 					_beState.action === 'replace'
 						? '<div class="be-panel">' +
-							'<div class="field"><label>Find</label><input type="text" id="be-find" value="' +
-							escapeHtml(_beState.find) +
-							'" placeholder="Text to search for"></div>' +
-							'<div class="field"><label>Replace with</label><input type="text" id="be-replace" value="' +
-							escapeHtml(_beState.replace) +
-							'" placeholder="Replacement text"></div>' +
+							'<div class="field"><div class="be-find-heading"><label for="be-find">Find</label>' +
+							'<div class="be-match-options">' +
 							'<label class="be-opt"><input type="checkbox" id="be-cs"' +
 							(_beState.caseSensitive ? ' checked' : '') +
 							'> Case sensitive</label>' +
 							'<label class="be-opt"><input type="checkbox" id="be-whole"' +
 							(_beState.wholeField ? ' checked' : '') +
-							'> Match whole field only</label>' +
+							'> Match entire field</label>' +
+							'</div>' +
+							'</div><input type="text" id="be-find" value="' +
+							escapeHtml(_beState.find) +
+							'" placeholder="Text to search for"></div>' +
+							'<div class="field"><label for="be-replace">Replace with</label><input type="text" id="be-replace" value="' +
+							escapeHtml(_beState.replace) +
+							'" placeholder="Replacement text"></div>' +
 							'</div>'
 						: '<div class="be-panel">' +
-							'<div class="field"><label>New value</label>' +
+							'<div class="field"><label for="be-value">New value</label>' +
 							_renderSetValueInput(currentField, _beState.value) +
 							'</div>' +
 							'</div>';
 
 				content.innerHTML =
-					'<div class="be-row"><label>Object</label><select id="be-object">' +
+					'<div class="be-row"><label for="be-object">Object</label><select id="be-object">' +
 					objOptions +
 					'</select></div>' +
-					'<div class="be-row"><label>Field</label><select id="be-field">' +
+					'<div class="be-row"><label for="be-field">Field</label><select id="be-field">' +
 					fieldOptions +
 					'</select></div>' +
-					'<div class="be-row be-row--scope"><label>Scope</label><div class="be-scopes">' +
-					scopeRadios +
-					'</div></div>' +
-					actionTabs +
-					actionPanel +
-					'<div class="be-preview" id="be-preview"></div>';
+					'<div class="be-row"><label for="be-scope">Apply to</label><select id="be-scope">' +
+					scopeOptions +
+					'</select></div>' +
+					'<div class="be-row"><label for="be-action">Action</label><select id="be-action">' +
+					actionOptions +
+					'</select></div>' +
+					actionPanel;
 
 				const objSel = content.querySelector('#be-object');
 				objSel.addEventListener('change', () => {
@@ -458,22 +452,16 @@
 						renderBulkEditModal();
 					});
 				}
-				content.querySelectorAll('input[name="be-scope"]').forEach((r) => {
-					r.addEventListener('change', () => {
-						if (r.checked) {
-							_beState.scope = r.value;
-							updateBulkEditPreview();
-						}
-					});
+				const scopeSelect = content.querySelector('#be-scope');
+				scopeSelect.addEventListener('change', () => {
+					_beState.scope = scopeSelect.value;
+					updateBulkEditPreview();
 				});
-				content.querySelectorAll('[data-be-action]').forEach((b) => {
-					b.addEventListener('click', () => {
-						if (b.disabled) {
-							return;
-						}
-						_beState.action = b.dataset.beAction;
-						renderBulkEditModal();
-					});
+				const actionSelect = content.querySelector('#be-action');
+				actionSelect.addEventListener('change', () => {
+					_beState.action = actionSelect.value;
+					renderBulkEditModal();
+					content.querySelector('#be-action').focus();
 				});
 				const findEl = content.querySelector('#be-find');
 				if (findEl) {
@@ -527,10 +515,6 @@
 				return recs;
 			}
 
-			function bulkEditLoadedInScope() {
-				return bulkEditAffectedRecords().filter((r) => r.loadedFromId).length;
-			}
-
 			function bulkEditMatchCount() {
 				if (!_beState) {
 					return 0;
@@ -572,42 +556,20 @@
 					return;
 				}
 				if (!_beState.fieldName) {
-					el.textContent = 'Pick a field to continue.';
+					el.textContent = '';
 					if (apply) {
 						apply.disabled = true;
 					}
 					return;
 				}
-				const _loaded = bulkEditLoadedInScope();
-				const sfHint =
-					_loaded > 0
-						? ' Includes ' +
-							_loaded +
-							' Salesforce-loaded record' +
-							(_loaded === 1 ? '' : 's') +
-							'; the next upload writes these changes to Salesforce.'
-						: '';
-				if (_beState.action === 'replace') {
-					const n = bulkEditMatchCount();
-					const total = bulkEditAffectedRecords().length;
-					el.textContent =
-						_beState.find === ''
-							? 'Type something to find. (' +
-								total +
-								' record' +
-								(total === 1 ? '' : 's') +
-								' in scope.)' +
-								sfHint
-							: n + ' of ' + total + ' record' + (total === 1 ? '' : 's') + ' will be updated.' + sfHint;
-					if (apply) {
-						apply.disabled = _beState.find === '' || n === 0;
-					}
-				} else {
-					const n = bulkEditAffectedRecords().length;
-					el.textContent = n + ' record' + (n === 1 ? '' : 's') + ' will be updated.' + sfHint;
-					if (apply) {
-						apply.disabled = n === 0;
-					}
+				const replacing = _beState.action === 'replace';
+				const n = replacing ? bulkEditMatchCount() : bulkEditAffectedRecords().length;
+				el.textContent =
+					replacing && _beState.find === ''
+						? ''
+						: n + (replacing ? ' matching record' : ' record') + (n === 1 ? '' : 's');
+				if (apply) {
+					apply.disabled = (replacing && _beState.find === '') || n === 0;
 				}
 			}
 

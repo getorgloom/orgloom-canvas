@@ -368,15 +368,8 @@
 				};
 				const parentRows = parents.map((p) => rowFor(p, 'parent')).join('');
 				const childRows = children.map((c) => rowFor(c, 'child')).join('');
-				const subText =
-					'For ' +
-					(hostRec.label || hostRec.objectName) +
-					". Pick a relationship to load; we'll fetch the records when you click.";
 				pop.innerHTML =
 					'<div class="fop-header">Load related records</div>' +
-					'<div class="fop-sub">' +
-					escapeHtml(subText) +
-					'</div>' +
 					'<div class="fop-list">' +
 					(parentRows || '') +
 					(childRows || '') +

@@ -55,6 +55,230 @@ function events(res) {
 }
 
 describe('canvas presence security and ordering', () => {
+	test('draft aliases cannot bypass field locks or collide with another stable card', () => {
+		const canvasId = 'draft-alias-locks';
+		const first = response();
+		const second = response();
+		const connectionId = subscribe({
+			canvasId,
+			workspaceId: 'w',
+			accountId: 'one',
+			role: 'owner',
+			canEdit: true,
+			sseRes: first,
+		});
+		const peer = subscribe({
+			canvasId,
+			workspaceId: 'w',
+			accountId: 'two',
+			role: 'editor',
+			canEdit: true,
+			sseRes: second,
+		});
+		seedLiveSnapshot({
+			canvasId,
+			payload: {
+				schema: { objects: [{ name: 'Account' }] },
+				loadedRecords: [],
+				drafts: [
+					{ tempId: 'saved', canvasRecordId: 'card', objectName: 'Account', values: { Name: 'Before' } },
+				],
+				associations: [],
+			},
+		});
+		const lock = acquireFieldLock({
+			canvasId,
+			connectionId: peer,
+			requestingAccountId: 'two',
+			targetRef: { refKind: 'draft', ref: 'saved', collabRef: 'card' },
+			fieldName: 'Name',
+		});
+		assert.equal(lock.ok, true);
+		let rejection;
+		assert.equal(
+			updateDraft({
+				canvasId,
+				connectionId,
+				requestingAccountId: 'one',
+				kind: 'create',
+				tempId: 'new-alias',
+				canvasRecordId: 'card',
+				objectName: 'Account',
+				fields: { Name: 'Overwrite' },
+				sequence: 1,
+				onRejected: (value) => {
+					rejection = value;
+				},
+			}),
+			false,
+		);
+		assert.equal(rejection.reason, 'presence-field-locked');
+		assert.equal(
+			updateDraft({
+				canvasId,
+				connectionId,
+				requestingAccountId: 'one',
+				kind: 'create',
+				tempId: 'saved',
+				canvasRecordId: 'different-card',
+				objectName: 'Account',
+				fields: { Name: 'Overwrite' },
+				sequence: 2,
+				onRejected: (value) => {
+					rejection = value;
+				},
+			}),
+			false,
+		);
+		assert.equal(rejection.reason, 'presence-invalid-record-reference');
+		assert.equal(liveSnapshot({ canvasId }).payload.drafts[0].values.Name, 'Before');
+		first.fire('close');
+		second.fire('close');
+	});
+	test('saved drafts announced with different live IDs are reused and promoted without ghost drafts', () => {
+		const canvasId = 'identity-regression';
+		const owner = response();
+		const connectionId = subscribe({
+			canvasId,
+			workspaceId: 'w',
+			accountId: 'owner',
+			role: 'owner',
+			canEdit: true,
+			sseRes: owner,
+		});
+		const objects = ['Account', 'Contact', 'Case'];
+		const ids = ['001000000000031AAA', '003000000000031AAA', '500000000000031AAA'];
+		seedLiveSnapshot({
+			canvasId,
+			payload: {
+				schema: { objects: objects.map((name) => ({ name })) },
+				loadedRecords: [],
+				drafts: objects.map((objectName, index) => ({
+					tempId: index + 1,
+					canvasRecordId: 'card-' + index,
+					objectName,
+					x: index * 300,
+					y: 0,
+					values: { Name: 'Draft' },
+				})),
+				associations: [
+					{ from: { kind: 'draft', ref: 2 }, to: { kind: 'draft', ref: 1 }, fieldName: 'AccountId' },
+				],
+			},
+		});
+		let sequence = 0;
+		for (let index = 0; index < objects.length; index++) {
+			assert.equal(
+				updateDraft({
+					canvasId,
+					connectionId,
+					requestingAccountId: 'owner',
+					kind: 'create',
+					tempId: 'live-' + index,
+					canvasRecordId: 'card-' + index,
+					objectName: objects[index],
+					fields: { Name: 'Live' },
+					x: index * 300,
+					y: 0,
+					sequence: ++sequence,
+				}),
+				true,
+			);
+		}
+		let snapshot = liveSnapshot({ canvasId }).payload;
+		assert.equal(snapshot.drafts.length, 3);
+		assert.deepEqual(
+			snapshot.drafts.map((record) => record.tempId),
+			[1, 2, 3],
+		);
+		assert.deepEqual(
+			snapshot.drafts.map((record) => record.x),
+			[0, 300, 600],
+		);
+		updateDraftLink({
+			canvasId,
+			connectionId,
+			requestingAccountId: 'owner',
+			kind: 'add',
+			fromRef: { refKind: 'draft', ref: 'live-2', collabRef: 'card-2' },
+			toRef: { refKind: 'draft', ref: 'live-1', collabRef: 'card-1' },
+			fieldName: 'ContactId',
+			sequence: ++sequence,
+		});
+		for (let index = 0; index < objects.length; index++) {
+			assert.equal(
+				updateLoadedRecord({
+					canvasId,
+					connectionId,
+					requestingAccountId: 'owner',
+					kind: 'create',
+					sfId: ids[index],
+					collabRef: 'card-' + index,
+					objectName: objects[index],
+					fields: {},
+					baseline: {},
+					promotedFrom: { refKind: 'draft', ref: 'live-' + index, collabRef: 'card-' + index },
+					sequence: ++sequence,
+				}),
+				true,
+			);
+		}
+		snapshot = liveSnapshot({ canvasId }).payload;
+		assert.equal(snapshot.drafts.length, 0);
+		assert.equal(snapshot.loadedRecords.length, 3);
+		assert.deepEqual(snapshot.associations, [
+			{ from: { kind: 'loaded', ref: ids[1] }, to: { kind: 'loaded', ref: ids[0] }, fieldName: 'AccountId' },
+			{ from: { kind: 'loaded', ref: ids[2] }, to: { kind: 'loaded', ref: ids[1] }, fieldName: 'ContactId' },
+		]);
+		updateDraft({
+			canvasId,
+			connectionId,
+			requestingAccountId: 'owner',
+			kind: 'create',
+			tempId: 'live-0',
+			canvasRecordId: 'card-0',
+			objectName: 'Account',
+			fields: { Name: 'Stale' },
+			sequence: ++sequence,
+		});
+		updateDraft({
+			canvasId,
+			connectionId,
+			requestingAccountId: 'owner',
+			kind: 'remove',
+			tempId: 'live-0',
+			canvasRecordId: 'card-0',
+			fields: {},
+			sequence: ++sequence,
+		});
+		assert.equal(liveSnapshot({ canvasId }).payload.drafts.length, 0);
+		assert.equal(liveSnapshot({ canvasId }).payload.loadedRecords.length, 3);
+		owner.fire('close');
+	});
+
+	test('opening an older snapshot retires only draft aliases of an unambiguous saved card', () => {
+		const payload = {
+			loadedRecords: [{ loadedFromId: '001000000000031AAA', objectName: 'Account', canvasRecordId: 'same-card' }],
+			drafts: [
+				{ tempId: 'ghost', objectName: 'Account', canvasRecordId: 'same-card', values: { Name: 'Same' } },
+				{ tempId: 'real', objectName: 'Account', canvasRecordId: 'other-card', values: { Name: 'Same' } },
+				{ tempId: 'legacy', objectName: 'Account', values: { Name: 'Same' } },
+			],
+			associations: [
+				{ from: { kind: 'draft', ref: 'real' }, to: { kind: 'draft', ref: 'ghost' }, fieldName: 'ParentId' },
+			],
+		};
+		const snapshot = normalizeSnapshotLayout(payload);
+		assert.deepEqual(
+			snapshot.drafts.map((record) => record.tempId),
+			['real', 'legacy'],
+		);
+		assert.equal(payload.drafts.length, 3, 'does not mutate the durable source');
+		assert.deepEqual(snapshot.associations[0].to, { kind: 'loaded', ref: '001000000000031AAA' });
+		const ambiguous = structuredClone(payload);
+		ambiguous.loadedRecords.push({ ...ambiguous.loadedRecords[0], loadedFromId: '001000000000032AAA' });
+		assert.equal(normalizeSnapshotLayout(ambiguous).drafts.length, 3);
+	});
 	test('cursor and focus cannot overtake mutations, while stale events remain rejected', () => {
 		const canvasId = 'diagnostic-independent-sequences';
 		const res = response();

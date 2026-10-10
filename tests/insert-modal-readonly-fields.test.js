@@ -210,6 +210,67 @@ test('numeric step controls change the value through the native number API', () 
 	assert.equal(input.value, '99');
 });
 
+test('numeric stepping displays exponent values as decimals without rounding or changing the step', () => {
+	for (const [value, expected] of [
+		['1e-4', '0.0001'],
+		['-1e-7', '-0.0000001'],
+		['1.23456789012345e-8', '0.0000000123456789012345'],
+		['1.25E+2', '125'],
+		['1.25e+1', '12.5'],
+		['1e+21', '1000000000000000000000'],
+		['0', '0'],
+		['33.448376', '33.448376'],
+	]) {
+		for (const direction of [1, -1]) {
+			const events = [];
+			const input = {
+				value: '1',
+				step: '0.0000001',
+				min: '-90',
+				max: '90',
+				stepUp() {
+					assert.equal(direction, 1);
+					this.value = value;
+				},
+				stepDown() {
+					assert.equal(direction, -1);
+					this.value = value;
+				},
+				ownerDocument: {
+					defaultView: {
+						Event: class {
+							constructor(type) {
+								this.type = type;
+							}
+						},
+					},
+				},
+				dispatchEvent(event) {
+					events.push({ type: event.type, value: this.value });
+				},
+			};
+			assert.equal(stepNumericInput(input, direction), true);
+			assert.equal(input.value, expected);
+			assert.equal(input.step, '0.0000001');
+			assert.equal(input.min, '-90');
+			assert.equal(input.max, '90');
+			assert.deepEqual(events, [{ type: 'input', value: expected }]);
+		}
+	}
+});
+
+test('numeric control initialization expands existing exponent values without marking them edited', () => {
+	const input = {
+		value: '-1e-7',
+		addEventListener() {},
+		dispatchEvent() {
+			assert.fail('initial formatting must not emit an edit');
+		},
+	};
+	wireNumericInputSteppers({ querySelectorAll: () => [input] });
+	assert.equal(input.value, '-0.0000001');
+});
+
 test('numeric controls wire both spinner clicks and arrow keys', () => {
 	const handlers = {};
 	const input = {

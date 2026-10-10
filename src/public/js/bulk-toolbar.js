@@ -462,15 +462,18 @@
 					(r) => !r.isTypeNode && !r.isPending && canvasState.bulkSelectedIds.has(r.id),
 				);
 				let diffBtn = '';
-				if (selectedReal.length === 2) {
+				const differentObjects =
+					selectedReal.length === 2 && selectedReal[0].objectName !== selectedReal[1].objectName;
+				if (selectedReal.length === 2 && !differentObjects) {
 					diffBtn =
 						'<button type="button" class="bsc-diff" data-sel-diff title="Compare these two records field-by-field">Diff</button>';
 				} else if (selectedReal.length >= 1) {
-					const diffHint =
-						selectedReal.length === 1
+					const diffHint = differentObjects
+						? 'different object types'
+						: selectedReal.length === 1
 							? 'need 1 more'
 							: 'select only 2 (' + selectedReal.length + ' selected)';
-					const diffTitle = 'Diff compares exactly two records -' + diffHint + '.';
+					const diffTitle = 'Select two records of the same object type to compare.';
 					diffBtn =
 						'<button type="button" class="bsc-diff" data-sel-diff title="' +
 						diffTitle +

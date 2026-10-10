@@ -370,22 +370,21 @@
 				const scopeSummary = scope.objects.map((o) => o.name).join(', ');
 				const prevText = aiGenState.text || '';
 				body.innerHTML =
-					'<p class="tag">Describe what you want. The AI will generate matching records for ONLY the objects you picked.</p>' +
 					'<div class="field">' +
 					'<label for="ai-gen-prompt">Description</label>' +
 					'<textarea id="ai-gen-prompt" rows="5" placeholder="e.g. 5 retail customers in California, each with 2-3 contacts and a pending Opportunity">' +
 					escapeHtml(prevText) +
 					'</textarea>' +
 					'</div>' +
-					'<div class="tag">Scope: <code>' +
+					'<div class="tag">Scope: <span class="workspace-info-tooltip ai-scope-help">' +
+					'<button type="button" class="workspace-info-tooltip-trigger" aria-label="About scope" aria-describedby="ai-scope-help-text">?</button>' +
+					'<span class="workspace-info-tooltip-content" id="ai-scope-help-text" role="tooltip">The AI generates records only for the objects you picked.</span>' +
+					'</span> <code>' +
 					escapeHtml(scopeSummary) +
 					'</code></div>';
 				footer.innerHTML =
 					'<button class="button secondary" data-ai-close>Cancel</button>' +
 					'<button class="button secondary" id="ai-prompt-back">Back</button>' +
-					'<label style="display:inline-flex;align-items:center;gap:0.45em;font-size:0.85rem;color:var(--muted);margin-right:auto">' +
-					'<input type="checkbox" id="ai-gen-clear"> Clear canvas first' +
-					'</label>' +
 					'<button class="button" id="ai-gen-submit">Generate</button>';
 				footer
 					.querySelectorAll('[data-ai-close]')
@@ -414,7 +413,6 @@
 					return;
 				}
 				aiGenState.text = text;
-				const clearCanvas = !!aiGenModal.querySelector('#ai-gen-clear').checked;
 				const scope = aiGenState.scope || { objects: [] };
 				const uniqNames = scope.objects.map((o) => o.name);
 
@@ -509,7 +507,6 @@
 					aiGenState = Object.assign({}, aiGenState, {
 						text,
 						plan: data,
-						clearCanvas,
 					});
 					renderAiGenStep2();
 				} finally {
@@ -524,7 +521,7 @@
 				if (!aiGenState) {
 					return;
 				}
-				const { plan, clearCanvas } = aiGenState;
+				const { plan } = aiGenState;
 				const body = aiGenModal.querySelector('#ai-gen-content');
 				const footer = aiGenModal.querySelector('#ai-gen-footer');
 				const records = plan.records || [];
@@ -591,11 +588,6 @@
 
 				footer.innerHTML =
 					'<button class="button secondary" data-ai-close>Cancel</button>' +
-					'<label style="display:inline-flex;align-items:center;gap:0.45em;font-size:0.85rem;color:var(--muted);margin-right:auto">' +
-					'<input type="checkbox" id="ai-gen-clear-confirm"' +
-					(clearCanvas ? ' checked' : '') +
-					'> Clear canvas first' +
-					'</label>' +
 					'<button class="button ghost" id="ai-gen-regen">Regenerate</button>' +
 					'<button class="button" id="ai-gen-apply"' +
 					(records.length === 0 ? ' disabled' : '') +
@@ -616,26 +608,16 @@
 				const applyBtn = footer.querySelector('#ai-gen-apply');
 				if (applyBtn) {
 					applyBtn.addEventListener('click', () => {
-						const shouldClear = !!aiGenModal.querySelector('#ai-gen-clear-confirm').checked;
-						applyAiPlan(plan, shouldClear);
+						applyAiPlan(plan);
 					});
 				}
 			}
 
-			function applyAiPlan(plan, clearFirst) {
+			function applyAiPlan(plan) {
 				// AI output is staged as new drafts. It never updates Salesforce or existing canvas records.
 				const records = plan.records || [];
 				const associations = plan.associations || [];
-				let _aiCap;
-				if (clearFirst) {
-					const _probe = canvasCapCheck(records.length);
-					_aiCap =
-						records.length > _probe.cap
-							? { blocked: true, reason: _probe.reason }
-							: { blocked: false, reason: null };
-				} else {
-					_aiCap = canvasCapCheck(records.length);
-				}
+				const _aiCap = canvasCapCheck(records.length);
 				if (_aiCap.blocked) {
 					showBulkToast(_aiCap.reason);
 					return;
@@ -648,12 +630,6 @@
 					bulkSelectedEdgeId: canvasState.bulkSelectedEdgeId,
 					bulkInitialized: canvasState.bulkInitialized,
 				};
-				if (clearFirst) {
-					canvasState.bulkRecords = [];
-					canvasState.bulkAssociations = [];
-					canvasState.bulkSelectedIds = new Set();
-					canvasState.bulkSelectedEdgeId = null;
-				}
 				const adj = new Map();
 				records.forEach((r) => adj.set(r.tempId, new Set()));
 				associations.forEach((a) => {
@@ -840,7 +816,7 @@
 				const canvasEl = graph && graph.querySelector ? graph.querySelector('#bulk-canvas') : null;
 				if (canvasEl) {
 					canvasEl.scrollLeft = 0;
-					if (clearFirst || maxBottom === 0) {
+					if (maxBottom === 0) {
 						canvasEl.scrollTop = 0;
 					} else {
 						canvasEl.scrollTop = Math.max(0, startCurY - CLUSTER_GAP_Y);

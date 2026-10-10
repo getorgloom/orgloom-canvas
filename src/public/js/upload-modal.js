@@ -156,7 +156,7 @@
 		return false;
 	}
 
-	function snapshotUploadRecords(records, canvasRecords) {
+	function snapshotUploadRecords(records, canvasRecords, associations) {
 		const snapshots = new Map();
 		const canvasRecordById = new Map(
 			(canvasRecords || []).filter((record) => record && record.id != null).map((record) => [record.id, record]),
@@ -171,6 +171,11 @@
 				values: cloneUploadValues(record.values),
 				canvasValues: cloneUploadValues((canvasRecord && canvasRecord.values) || record.values),
 				loadedValues: cloneUploadValues(record.loadedValues),
+				associations:
+					associations &&
+					(associations || [])
+						.filter((link) => link.fromId === record.tempId)
+						.map((link) => ({ fieldName: link.fieldName, toId: link.toId })),
 			});
 		}
 		return snapshots;
@@ -190,6 +195,23 @@
 			}
 		}
 		const canonicalMap = canonicalValues && typeof canonicalValues === 'object' ? canonicalValues : {};
+		// Resolve the current canvas links, including links on children not included in this upload.
+		for (const link of associations || []) {
+			const child = (records || []).find((record) => record.id === link.fromId);
+			const parentId = salesforceIdByCanvasRef.get(String(link.toId));
+			if (child && link.fieldName && parentId) {
+				child.values = child.values || {};
+				const current = child.values[link.fieldName];
+				const submitted =
+					submittedSnapshots &&
+					(typeof submittedSnapshots.get === 'function'
+						? submittedSnapshots.get(child.id)
+						: submittedSnapshots[child.id]);
+				const original = submitted && (submitted.canvasValues || submitted.values || {})[link.fieldName];
+				if ((current == null && original == null) || String(current) === String(link.toId))
+					child.values[link.fieldName] = parentId;
+			}
+		}
 		for (const record of records || []) {
 			if (!record || !realIdByTempId.has(record.id)) {
 				continue;
@@ -241,7 +263,9 @@
 			const submittedValues = snapshot.values || {};
 			const submittedCanvasValues = snapshot.canvasValues || submittedValues;
 			const submittedLoadedValues = snapshot.loadedValues || {};
-			const nextLoadedValues = wasDraft ? {} : cloneUploadValues(submittedLoadedValues);
+			// New responses contain a complete retrieve snapshot; tolerate older in-flight responses too.
+			const fullRefresh = canonical && Object.prototype.hasOwnProperty.call(canonical, 'Id');
+			const nextLoadedValues = fullRefresh || wasDraft ? {} : cloneUploadValues(submittedLoadedValues);
 			for (const fieldName of Object.keys(submittedValues)) {
 				if (wasDraft || !uploadValuesEquivalent(submittedValues[fieldName], submittedLoadedValues[fieldName])) {
 					const submittedValue = submittedValues[fieldName];
@@ -254,28 +278,89 @@
 				}
 			}
 			if (canonical && typeof canonical === 'object') {
+				const unchangedSinceSubmit = (fieldName) => {
+					const original = submittedCanvasValues[fieldName];
+					const association = (associations || []).find(
+						(link) => link.fromId === record.id && link.fieldName === fieldName,
+					);
+					const submittedAssociation =
+						snapshot.associations && snapshot.associations.find((link) => link.fieldName === fieldName);
+					if (snapshot.associations && submittedAssociation?.toId !== association?.toId) return false;
+					const resolved =
+						association &&
+						(original == null || String(original) === String(association.toId)) &&
+						salesforceIdByCanvasRef.get(String(association.toId));
+					return (
+						uploadValuesEquivalent(record.values[fieldName], original) ||
+						(resolved && uploadValuesEquivalent(record.values[fieldName], resolved))
+					);
+				};
+				if (fullRefresh) {
+					for (const fieldName of Object.keys(nextLoadedValues)) delete nextLoadedValues[fieldName];
+					for (const fieldName of Object.keys(record.values)) {
+						if (
+							!fieldName.startsWith('_') &&
+							!Object.prototype.hasOwnProperty.call(canonical, fieldName) &&
+							unchangedSinceSubmit(fieldName)
+						) {
+							delete record.values[fieldName];
+						}
+					}
+				}
 				for (const fieldName of Object.keys(canonical)) {
 					if (fieldName && !fieldName.startsWith('_')) {
 						nextLoadedValues[fieldName] = canonical[fieldName];
-						if (uploadValuesEquivalent(record.values[fieldName], submittedCanvasValues[fieldName])) {
+						if (fieldName === 'Id' || unchangedSinceSubmit(fieldName)) {
 							record.values[fieldName] = canonical[fieldName];
 						}
 					}
 				}
 			}
-			for (const association of associations || []) {
-				if (!association || association.fromId !== record.id || !association.fieldName) {
+			for (const association of fullRefresh ? [] : snapshot.associations || associations || []) {
+				if (
+					!association ||
+					(!snapshot.associations && association.fromId !== record.id) ||
+					!association.fieldName
+				) {
 					continue;
 				}
 				const parentSfId = salesforceIdByCanvasRef.get(String(association.toId));
-				if (parentSfId && uploadValuesEquivalent(record.values[association.fieldName], parentSfId)) {
+				if (
+					parentSfId &&
+					(snapshot.associations || uploadValuesEquivalent(record.values[association.fieldName], parentSfId))
+				) {
 					nextLoadedValues[association.fieldName] = parentSfId;
 				}
 			}
 			nextLoadedValues.Id = record.loadedFromId;
 			record.loadedValues = nextLoadedValues;
 		}
+		// A server-side lookup change invalidates the old explicit link. The renderer derives
+		// the replacement edge from the refreshed value if its target is on the canvas.
+		for (let index = (associations || []).length - 1; index >= 0; index--) {
+			const link = associations[index];
+			const canonical = canonicalMap[link.fromId];
+			if (!canonical || !Object.prototype.hasOwnProperty.call(canonical, 'Id')) continue;
+			const child = (records || []).find((record) => record.id === link.fromId);
+			const parentId = salesforceIdByCanvasRef.get(String(link.toId));
+			const value = child && child.values && child.values[link.fieldName];
+			if (
+				parentId &&
+				String(value) !== String(link.toId) &&
+				String(value || '').slice(0, 15) !== String(parentId).slice(0, 15)
+			)
+				associations.splice(index, 1);
+		}
 		return realIdByTempId;
+	}
+
+	function postUploadRefreshWarning(synced, canonicalValues) {
+		const missing = (synced || []).filter((row) => !canonicalValues || !canonicalValues[row.tempId]).length;
+		return missing
+			? missing +
+					(missing === 1 ? ' record was' : ' records were') +
+					' saved, but could not be refreshed from Salesforce. Use Refresh from Salesforce to see the latest values; do not upload again just to refresh.'
+			: '';
 	}
 
 	function scopeUploadExclusions(records, selectedIds, selectedOnly) {
@@ -404,36 +489,6 @@
 			}
 		});
 		return scopedValues;
-	}
-
-	function canonicalFieldNamesForRecord(record, describeCache) {
-		if (!record || !record.objectName) {
-			return [];
-		}
-		const describe = describeCache && describeCache[record.objectName];
-		const describedFields = describe && Array.isArray(describe.fields) ? describe.fields : [];
-		const readableFields = describedFields.filter((field) => field && field.name && field.accessible !== false);
-		const readableFieldNames = new Set(readableFields.map((field) => field.name));
-		const canonicalFields = Object.keys(record.values || {}).filter(
-			(fieldName) =>
-				fieldName !== 'Id' &&
-				fieldName !== 'attributes' &&
-				!fieldName.startsWith('_') &&
-				/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) &&
-				readableFieldNames.has(fieldName),
-		);
-		const nameField = readableFields.find((field) => field.nameField === true);
-		if (
-			nameField &&
-			nameField.name !== 'Id' &&
-			/^[A-Za-z][A-Za-z0-9_]*$/.test(nameField.name) &&
-			!canonicalFields.includes(nameField.name)
-		) {
-			// Salesforce can generate a record's display name (for example, an auto-number Name).
-			// Re-query it after creation even when the draft did not contain that field.
-			canonicalFields.push(nameField.name);
-		}
-		return canonicalFields;
 	}
 
 	function formatUploadProgress(records, describeCache) {
@@ -583,7 +638,7 @@
 		scopeUploadAssociations: scopeUploadAssociations,
 		requiredExcludedDraftParentLinks: requiredExcludedDraftParentLinks,
 		scopeUploadValues: scopeUploadValues,
-		canonicalFieldNamesForRecord: canonicalFieldNamesForRecord,
+		postUploadRefreshWarning: postUploadRefreshWarning,
 		formatUploadProgress: formatUploadProgress,
 		describeLoadFailureSummary: describeLoadFailureSummary,
 		approvalRequiredMessage: approvalRequiredMessage,
@@ -1454,7 +1509,7 @@
 								.filter((group) => group.deletes)
 								.map((group) => group.deletes + ' ' + escapeHtml(group.label))
 								.join(', ') +
-							'.<span class="upload-delete-note">Cannot be undone in Org Loom.</span></div><span class="upload-delete-badge">Irreversible</span></div>'
+							'.<span class="upload-delete-note">Deleted records cannot be restored through Recall.</span></div><span class="upload-delete-badge">Irreversible</span></div>'
 						: '';
 				const systemBlocked = !!(_migActive || describeFailure || _recordAccessLoadFailure);
 				uploadModal.querySelector('#upload-modal-title').textContent = systemBlocked
@@ -1806,13 +1861,6 @@
 							encryptedFields.uploadValues(r, canvasState, r.values),
 							excludedDraftLinksForPayload,
 						),
-						canonicalFields: Array.from(
-							new Set(
-								canonicalFieldNamesForRecord(r, canvasState.describeCache).concat(
-									encryptedFields.intentNames(r, canvasState),
-								),
-							),
-						),
 						explicitFields: encryptedFields.intentNames(r, canvasState),
 						loadedFromId: r.loadedFromId || null,
 						loadedValues:
@@ -1943,7 +1991,11 @@
 					);
 				}
 
-				const submittedSnapshots = snapshotUploadRecords(payload.records, recordsForPayload);
+				const submittedSnapshots = snapshotUploadRecords(
+					payload.records,
+					recordsForPayload,
+					canvasState.bulkAssociations,
+				);
 				const payloadJson = JSON.stringify(payload);
 				const hasUpsert = realRecords.some((r) => r._csvOperation === 'upsert');
 				const fitsGraph =
@@ -2105,7 +2157,7 @@
 					} catch (err) {
 						console.warn('[graph upload] failed, falling back:', err);
 						try {
-							await reconcileLostUpload(payload.records);
+							await reconcileLostUpload(payload.records, submittedSnapshots);
 						} catch (_e) {
 							/* best-effort */
 						}
@@ -2163,7 +2215,7 @@
 					} catch (err) {
 						let recovered = 0;
 						try {
-							recovered = await reconcileLostUpload(payload.records);
+							recovered = await reconcileLostUpload(payload.records, submittedSnapshots);
 						} catch (_e) {
 							recovered = 0;
 						}
@@ -2272,7 +2324,7 @@
 					stopElapsed();
 					let recovered = 0;
 					try {
-						recovered = await reconcileLostUpload(payload.records);
+						recovered = await reconcileLostUpload(payload.records, submittedSnapshots);
 					} catch (_e) {
 						recovered = 0;
 					}
@@ -2834,18 +2886,22 @@
 				}
 			}
 
-			function _applyRecoveredIds(realIdByTempId) {
+			function _applyRecoveredIds(realIdByTempId, canonicalValues, submittedSnapshots) {
 				reconcileSyncedRecords(
 					canvasState.bulkRecords,
 					Array.from(realIdByTempId, ([tempId, id]) => ({ tempId, id })),
-					null,
-					null,
+					canonicalValues,
+					submittedSnapshots,
 					canvasState.bulkAssociations,
+				);
+				_clearSubmittedEncryptedValues(
+					Array.from(realIdByTempId, ([tempId, id]) => ({ tempId, id })),
+					submittedSnapshots,
+					canonicalValues,
 				);
 				canvasState.bulkRecords.forEach((rec) => {
 					if (realIdByTempId.has(rec.id)) {
 						_clearCommittedMigrationMatch(rec);
-						encryptedFields.clearSubmitted(rec, encryptedFields.intentNames(rec, canvasState));
 					}
 				});
 				if (typeof renderBulkView === 'function') {
@@ -2854,7 +2910,7 @@
 				publishPresenceChanges();
 			}
 
-			async function reconcileLostUpload(attemptedRecords) {
+			async function reconcileLostUpload(attemptedRecords, submittedSnapshots) {
 				// Recover a committed response lost to navigation or transport failure without re-uploading.
 				try {
 					const wantObjByTempId = new Map();
@@ -2912,7 +2968,39 @@
 					if (realIdByTempId.size === 0) {
 						return 0;
 					}
-					_applyRecoveredIds(realIdByTempId);
+					const canonicalValues = {};
+					const recoveredRecords = Array.from(realIdByTempId, ([tempId, sfId]) => ({
+						tempId,
+						sfId,
+						objectName: wantObjByTempId.get(tempId),
+					}));
+					for (let offset = 0; offset < recoveredRecords.length; offset += 200) {
+						const chunk = recoveredRecords.slice(offset, offset + 200);
+						try {
+							const response = await csrfFetch('/api/records/refresh', {
+								method: 'POST',
+								credentials: 'same-origin',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({
+									records: chunk.map(({ objectName, sfId }) => ({ objectName, sfId })),
+								}),
+							});
+							if (!response.ok) continue;
+							const body = await response.json();
+							for (const row of body.results || []) {
+								const record = chunk.find(
+									(candidate) =>
+										candidate.objectName === row.objectName && candidate.sfId === row.sfId,
+								);
+								if (record && row.ok && row.values) canonicalValues[record.tempId] = row.values;
+							}
+						} catch (_) {
+							// Recovery of a committed write must not depend on a successful follow-up read.
+						}
+					}
+					_applyRecoveredIds(realIdByTempId, canonicalValues, submittedSnapshots);
+					const warning = postUploadRefreshWarning(recoveredRecords, canonicalValues);
+					if (warning) showBulkToast(warning, 'warning');
 					(attemptedRecords || []).forEach((r) => {
 						if (r && r.tempId != null && !r.loadedFromId && realIdByTempId.has(r.tempId)) {
 							r.loadedFromId = realIdByTempId.get(r.tempId);
@@ -3017,6 +3105,8 @@
 						html += '<div class="banner">No records needed updating in Salesforce.</div>';
 					}
 				}
+				const refreshWarning = postUploadRefreshWarning(synced, canonicalValues);
+				if (refreshWarning) html += '<div class="banner warning">' + escapeHtml(refreshWarning) + '</div>';
 				const summaryHtml = html;
 				html = '';
 				if (accessExcluded.length > 0) {
@@ -3194,26 +3284,6 @@
 				}
 
 				const realIdByTempId = new Map(synced.map((r) => [r.tempId, r.id]));
-				const realIdByRuntimeId = new Map(realIdByTempId);
-				canvasState.bulkRecords.forEach((rec) => {
-					if (!realIdByRuntimeId.has(rec.id) && rec.loadedFromId) {
-						realIdByRuntimeId.set(rec.id, rec.loadedFromId);
-					}
-				});
-				(canvasState.bulkAssociations || []).forEach((a) => {
-					if (!a || !a.fieldName) {
-						return;
-					}
-					const child = canvasState.bulkRecords.find((r) => r.id === a.fromId);
-					if (!child || !child.values) {
-						return;
-					}
-					const parentRealId = realIdByRuntimeId.get(a.toId);
-					if (!parentRealId) {
-						return;
-					}
-					child.values[a.fieldName] = parentRealId;
-				});
 				// Salesforce canonical values win over submitted values after a successful write.
 				reconcileSyncedRecords(
 					canvasState.bulkRecords,

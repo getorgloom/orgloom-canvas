@@ -59,20 +59,6 @@ test('unavailable included objects and an entirely excluded plan cannot be appli
 	assert.throws(() => engine.applyMigrationPlan([record], [], {}, {}), /at least one/);
 });
 
-test('CSV unmapped values stay separate from Salesforce fields; relationship keys and encrypted values are not copied', () => {
-	const file = {
-		headers: ['Name', 'Missing__c', 'RelationshipKey', 'Secret__c'],
-		mapping: { 0: 'Name' },
-		describe: { fields: [{ name: 'Secret__c', type: 'encryptedstring' }] },
-	};
-	const notes = globals.window.OrgLoom.unmappedCsvColumns(
-		file,
-		['Draft', 'Keep me', 'match-key', 'secret'],
-		new Set([2]),
-	);
-	assert.deepEqual(json(notes), [{ name: 'Missing__c', value: 'Keep me' }]);
-});
-
 function templateHarness() {
 	const window = { OrgLoom: { importShared: { admitAssociation: () => true, skipSuffix: () => '' } } };
 	const context = { window, console, localStorage: { removeItem() {} } };
@@ -167,7 +153,8 @@ for (const format of ['template', 'saved']) {
 		assert.match(warnings.at(-1), /field value/);
 		const exported = api.buildTemplate({});
 		assert.equal(exported.records[0].values.Missing_Field__c, 'Keep value');
-		assert.equal(exported.records[0].unmappedCsvColumns[0].value, 'Keep CSV too');
+		assert.equal('unmappedCsvColumns' in state.bulkRecords[0], false);
+		assert.equal('unmappedCsvColumns' in exported.records[0], false);
 		assert.equal('unmappedCsvColumns' in api.buildCanvasPayload().drafts[0], false);
 		makeAvailable();
 		await api.checkImportedRecords(state.bulkRecords);

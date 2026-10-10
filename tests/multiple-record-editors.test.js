@@ -39,6 +39,10 @@ function setup() {
 			refreshCurrentRecordAccess(record) {
 				entry.refreshes.push(record);
 			},
+			unlinkRecord(record, targetState) {
+				entry.unlink = { record, targetState };
+				return true;
+			},
 			refreshCurrentFieldLocks() {},
 			updateUploadFixFields(fields) {
 				entry.fixFields = fields;
@@ -141,4 +145,18 @@ test('field IDs and associated labels, datalists and ARIA references are namespa
 	assert.equal(attributes.for, 'editor-1-f_Name');
 	assert.equal(attributes.list, 'editor-1-options');
 	assert.equal(attributes['aria-describedby'], 'editor-1-help external-help');
+});
+
+test('menu unlink targets an existing editor or passes shared canvas state to the hidden helper', () => {
+	const { manager, instances, state, first, second } = setup();
+	manager.openInsertModal('Account', { record: first });
+	manager.unlinkRecord(first);
+	assert.equal(instances[0].unlink.record, first);
+	assert.equal(instances[0].unlink.targetState, undefined);
+	manager.unlinkRecord(second);
+	assert.equal(instances[1].deps.helperOnly, true);
+	assert.equal(instances[1].opens, 0);
+	assert.equal(instances[1].unlink.record, second);
+	assert.equal(instances[1].unlink.targetState, state);
+	assert.equal(state.currentRecordRef, first);
 });

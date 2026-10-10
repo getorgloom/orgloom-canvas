@@ -40,10 +40,10 @@ test('preflight blocks a staged delete when Salesforce marks the object non-dele
 	assert.equal(validatePendingDelete(true).issues.length, 0);
 });
 
-test('both delete controls and the central mutation guard require object delete permission', () => {
+test('card deletion and central mutation guards require object delete permission', () => {
 	assert.match(appSource, /describe\.deletable !== true/);
 	assert.match(cardMenuSource, /else if \(canDeleteRecord\(rec\)\)/);
-	assert.match(insertModalSource, /!pending && !canDeleteRecord\(rec\)/);
+	assert.doesNotMatch(insertModalSource, /modal-mark-delete/);
 	assert.match(routesSource, /body\.pendingDelete === true/);
 	assert.match(routesSource, /describe\.deletable !== true/);
 	assert.match(routesSource, /delete-not-permitted/);

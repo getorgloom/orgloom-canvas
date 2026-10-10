@@ -391,7 +391,7 @@ test('JSON exports self-contained current values with only changed-field baselin
 	}
 	assert.deepEqual(file.records[0].originalValues, {});
 	assert.equal(file.records[0].values.Name, 'Account A');
-	assert.equal(file.records[0].unmappedCsvColumns[0].value, 'keep imported data');
+	assert.equal('unmappedCsvColumns' in file.records[0], false);
 	assert.equal(file.records[3].values.Phone, 'Draft phone');
 	h.fresh.get(h.a.loadedFromId).Name = 'Latest Salesforce value';
 	h.fresh.get(h.child.loadedFromId).LastName = 'New baseline';

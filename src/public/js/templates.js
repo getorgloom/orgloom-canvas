@@ -126,25 +126,6 @@
 				return out;
 			}
 
-			function cleanUnmappedColumns(columns, objectName) {
-				const fields =
-					(canvasState.describeCache?.[objectName] || canvasState.draftDescribeCache?.[objectName] || {})
-						.fields || [];
-				return (Array.isArray(columns) ? columns : [])
-					.filter((column) => column && typeof column.name === 'string' && typeof column.value === 'string')
-					.filter(
-						(column) =>
-							!fields.some(
-								(field) =>
-									field.type === 'encryptedstring' &&
-									[field.name, field.label].some(
-										(name) => String(name || '').toLowerCase() === column.name.toLowerCase(),
-									),
-							),
-					)
-					.map((column) => ({ name: column.name, value: column.value }));
-			}
-
 			async function checkImportedRecords(records) {
 				const real = records.filter((record) => record && !record.isTypeNode && !record._permissionHidden);
 				const descriptions = new Map();
@@ -419,11 +400,6 @@
 								}
 							}
 						}
-						// Unmapped CSV data stays local and in downloads, outside Salesforce-backed/shared payloads.
-						const unmapped = cleanUnmappedColumns(r.unmappedCsvColumns, r.objectName);
-						if (unmapped.length) {
-							rec.unmappedCsvColumns = unmapped;
-						}
 						return rec;
 					});
 					if (records.length > TEMPLATE_RECORD_CAP) {
@@ -479,8 +455,13 @@
 				const real = canvasState.bulkRecords.filter(
 					(r) => !r.isTypeNode && !r.isPending && !r._permissionHidden,
 				);
-				const stableDraftRef = (record) =>
-					record._persistedTempId != null ? record._persistedTempId : record._collabId || record.id;
+				const stableDraftRef = (record) => {
+					// Saving and live sharing must use the same draft identity from the first save.
+					if (record._persistedTempId == null) {
+						record._persistedTempId = record._collabId || _ensureCanvasRecordId(record);
+					}
+					return record._persistedTempId;
+				};
 				const loadedRecords = real
 					.filter((r) => !!r.loadedFromId)
 					.map((r) => {
@@ -961,6 +942,8 @@
 				clearEmptyStarterCard();
 				if (!merge) {
 					deps.onCanvasReplace?.();
+					// Replacing from a file creates a local canvas, not edits to the previous shared canvas.
+					canvasState.currentCanvas = null;
 					canvasState.selectedObjects = [];
 					canvasState.selectedIdSeq = 1;
 					canvasState.activeIndex = 0;
@@ -1026,7 +1009,6 @@
 							x: _savedCoordinate(r.x, 200),
 							y: _savedCoordinate(r.y, 200) + _offY,
 							values: JSON.parse(JSON.stringify(_cleanValues(r.values))),
-							unmappedCsvColumns: cleanUnmappedColumns(r.unmappedCsvColumns, r.objectName),
 						};
 						encryptedFields.hydrateIntents(rec, r.encryptedFieldIntents, canvasState);
 						if (r.loadedFromId) {
@@ -1448,9 +1430,6 @@
 						y: _savedCoordinate(ref.y, 200) + _offY,
 						_canvasRecordId: canvasRecordIds.get(ref),
 						loadedValues: Object.assign({}, _fresh),
-						unmappedCsvColumns: opts.importFileName
-							? cleanUnmappedColumns(ref.unmappedCsvColumns, ref.objectName)
-							: [],
 						values:
 							ref.changes && typeof ref.changes === 'object'
 								? Object.assign({}, _fresh, ref.changes)
@@ -1490,7 +1469,6 @@
 						x: _savedCoordinate(d.x, 200),
 						y: _savedCoordinate(d.y, 200) + _offY,
 						values: _cleanValues(d.values),
-						unmappedCsvColumns: cleanUnmappedColumns(d.unmappedCsvColumns, d.objectName),
 						_persistedTempId: d.tempId,
 						_canvasRecordId: canvasRecordIds.get(d),
 					};
@@ -1646,6 +1624,23 @@
 				}
 			}
 
+			function withCanvasLoad(apply) {
+				return async function (payload, opts) {
+					// Merges are intentional edits. Live snapshots have their own synchronization gate.
+					if (opts && (opts.merge || opts.presenceSnapshot)) return apply(payload, opts);
+					const finish = deps.beginCanvasLoad?.();
+					let success = false;
+					try {
+						if (finish?.ready) await finish.ready;
+						const result = await apply(payload, opts);
+						success = true;
+						return result;
+					} finally {
+						finish?.(success);
+					}
+				};
+			}
+
 			return {
 				checkImportedRecords: checkImportedRecords,
 				buildTemplate: buildTemplate,
@@ -1656,8 +1651,8 @@
 				saveTemplateRemote: saveTemplateRemote,
 				validateTemplate: validateTemplate,
 				validateCanvasPayload: validateCanvasPayload,
-				applyTemplate: applyTemplate,
-				applyCanvasPayload: applyCanvasPayload,
+				applyTemplate: withCanvasLoad(applyTemplate),
+				applyCanvasPayload: withCanvasLoad(applyCanvasPayload),
 			};
 		},
 	};
