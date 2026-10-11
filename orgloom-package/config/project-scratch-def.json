@@ -1,0 +1,9 @@
+  {
+    "orgName": "Orgloom Dev",
+    "edition": "Enterprise",
+    "features": ["EnableSetPasswordInApi"],
+    "settings": {
+      "lightningExperienceSettings": { "enableS1DesktopEnabled": true },
+      "mobileSettings": { "enableS1EncryptedStoragePref2": true }
+    }
+  }

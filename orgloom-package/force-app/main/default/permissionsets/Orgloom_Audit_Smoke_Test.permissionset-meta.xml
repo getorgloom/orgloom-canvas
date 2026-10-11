@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Dev-only smoke-test permset for Audit_Event__c source-deploy testing. Not for production.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Orgloom Audit Smoke Test</label>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>Audit_Event__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Actor_Email__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Actor_Sf_User_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Error_Code__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Mcp_Token_Name__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Payload__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Request_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Target_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Target_Object__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Target_Sf_Org_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Audit_Event__c.Workspace_Id__c</field><readable>true</readable></fieldPermissions>
+</PermissionSet>

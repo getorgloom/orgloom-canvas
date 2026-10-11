@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>External_Id__c</fullName>
+    <description>The stable Orgloom Activity History event id. Its unique external-id constraint makes retries idempotent: repeated upserts converge on one Salesforce row.</description>
+    <externalId>true</externalId>
+    <label>External Id</label>
+    <length>64</length>
+    <required>true</required>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>
