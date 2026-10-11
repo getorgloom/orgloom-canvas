@@ -41,9 +41,16 @@
 				}
 			}
 
-			function _captureValuesUndo(records) {
+			function _captureValuesUndo(records, relationshipField) {
 				// Arm undo after apply so revisions describe the exact state eligible for restoration.
 				const priorByRecord = new Map(records.map((r) => [r, r.values]));
+				const linksFor = (rec) =>
+					relationshipField
+						? (canvasState.bulkAssociations || []).filter(
+								(a) => a.fromId === rec.id && a.fieldName === relationshipField,
+							)
+						: [];
+				const priorLinks = new Map(records.map((r) => [r, linksFor(r).map((a) => ({ ...a }))]));
 				return function arm(touchedRecords) {
 					const entries = touchedRecords.map((rec) => ({
 						rec: rec,
@@ -51,22 +58,38 @@
 						expectedRevision: Number(rec._valuesRevision) || 0,
 						expectedValues: rec.values,
 						expectedFingerprint: _valuesFingerprint(rec.values),
+						expectedLinks: _valuesFingerprint(linksFor(rec)),
 					}));
 					return function restore() {
 						const stale = entries.some(
 							(p) =>
+								!canvasState.bulkRecords.includes(p.rec) ||
 								(Number(p.rec._valuesRevision) || 0) !== p.expectedRevision ||
 								p.rec.values !== p.expectedValues ||
-								_valuesFingerprint(p.rec.values) !== p.expectedFingerprint,
+								_valuesFingerprint(p.rec.values) !== p.expectedFingerprint ||
+								_valuesFingerprint(linksFor(p.rec)) !== p.expectedLinks ||
+								priorLinks
+									.get(p.rec)
+									.some(
+										(link) =>
+											!canvasState.bulkRecords.some((r) => r.id === link.toId) ||
+											(canvasState.bulkAssociations || []).some((a) => a.id === link.id),
+									),
 						);
 						if (stale) {
 							showBulkToast(
-								'Can\u2019t undo Bulk edit because one or more affected records were edited afterward.',
+								'Can\u2019t undo Bulk edit because affected records or relationships changed afterward.',
 								'info',
 							);
 							return;
 						}
 						entries.forEach((p) => _replaceValues(p.rec, p.priorValues));
+						if (relationshipField) {
+							const ids = new Set(entries.map((p) => p.rec.id));
+							canvasState.bulkAssociations = (canvasState.bulkAssociations || [])
+								.filter((a) => !(ids.has(a.fromId) && a.fieldName === relationshipField))
+								.concat(entries.flatMap((p) => priorLinks.get(p.rec)));
+						}
 						renderBulkView();
 						showBulkToast('Restored the previous field values.');
 					};
@@ -272,8 +295,7 @@
 						return (
 							'<input type="text" id="be-value" value="' +
 							escapeHtml(cur) +
-							'" placeholder="Salesforce Id (15 or 18 chars)">' +
-							'<p class="tag" style="margin-top:0.3em">Lookup fields take a Salesforce Id. For relationship-style linking, use the canvas drag-to-link instead.</p>'
+							'" placeholder="Salesforce Id (15 or 18 chars)">'
 						);
 					case 'textarea':
 						return (
@@ -636,7 +658,8 @@
 						: null;
 				// Recompute the affected set at apply time rather than trusting the preview count.
 				const affected = bulkEditAffectedRecords();
-				const _undo = _captureValuesUndo(affected);
+				const relationshipField = field && field.type === 'reference' ? field.name : null;
+				const _undo = _captureValuesUndo(affected, relationshipField);
 				let updatedCount = 0;
 				const touchedRecords = [];
 				if (_beState.action === 'replace') {
@@ -676,7 +699,7 @@
 					}
 					affected.forEach((r) => {
 						const next = Object.assign({}, r.values || {});
-						if (coerced === null) {
+						if (coerced === null && !relationshipField) {
 							delete next[_beState.fieldName];
 						} else {
 							next[_beState.fieldName] = coerced;
@@ -684,6 +707,16 @@
 						_replaceValues(r, next);
 						touchedRecords.push(r);
 						updatedCount++;
+					});
+				}
+				if (relationshipField) {
+					// An explicit canvas link overrides its lookup on upload. A direct field
+					// edit replaces that link; rendering derives any new edge from the new ID.
+					const ids = new Set(touchedRecords.map((r) => r.id));
+					canvasState.bulkAssociations = (canvasState.bulkAssociations || []).filter((a) => {
+						if (!ids.has(a.fromId) || a.fieldName !== relationshipField) return true;
+						if (canvasState.bulkSelectedEdgeId === a.id) canvasState.bulkSelectedEdgeId = null;
+						return false;
 					});
 				}
 				closeBulkEditModal();

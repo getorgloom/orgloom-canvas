@@ -1501,15 +1501,11 @@
 					: '';
 				const deletesBlock =
 					willDeleteCount > 0
-						? '<div class="upload-delete-summary"><span aria-hidden="true">⌫</span><div><strong>' +
+						? '<div class="upload-delete-summary"><span class="upload-ready-count"><strong>' +
 							willDeleteCount +
-							(willDeleteCount === 1 ? ' deletion runs' : ' deletions run') +
-							' last</strong> — ' +
-							objectSummary
-								.filter((group) => group.deletes)
-								.map((group) => group.deletes + ' ' + escapeHtml(group.label))
-								.join(', ') +
-							'.<span class="upload-delete-note">Deleted records cannot be restored through Recall.</span></div><span class="upload-delete-badge">Irreversible</span></div>'
+							'</strong> ' +
+							(willDeleteCount === 1 ? 'record ready' : 'records ready') +
+							' to delete</span><span class="upload-delete-badge">Irreversible</span></div>'
 						: '';
 				const systemBlocked = !!(_migActive || describeFailure || _recordAccessLoadFailure);
 				uploadModal.querySelector('#upload-modal-title').textContent = systemBlocked
@@ -1520,12 +1516,13 @@
 					? ''
 					: !willUploadCount && !willDeleteCount
 						? '<div class="upload-ready-count">No changes to upload.</div>'
-						: '<div class="upload-ready-count"><strong>' +
-							(willUploadCount || willDeleteCount) +
-							'</strong> ' +
-							((willUploadCount || willDeleteCount) === 1 ? 'record ready' : 'records ready') +
-							(willUploadCount ? ' to write' : ' to delete') +
-							'</div>' +
+						: (willUploadCount
+								? '<div class="upload-ready-count"><strong>' +
+									willUploadCount +
+									'</strong> ' +
+									(willUploadCount === 1 ? 'record ready' : 'records ready') +
+									' to write</div>'
+								: '') +
 							(objectSummaryRows
 								? '<div class="upload-summary upload-summary--objects upload-ready-objects">' +
 									objectSummaryRows +
@@ -2271,7 +2268,6 @@
 					'</span>' +
 					'<span class="busy-elapsed" id="rest-elapsed"></span>' +
 					'</p>' +
-					'<p class="tag center">Records upload one at a time: expect ~5\u201310 records per second.</p>' +
 					skippedNote;
 				const stopElapsed = startElapsedTicker(content.querySelector('#rest-elapsed'));
 				try {

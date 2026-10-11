@@ -923,6 +923,7 @@
 				const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
 				let elapsed;
 				let changed = 0;
+				const changedRecords = [];
 				try {
 					_bsInterpret(ast, env);
 					elapsed = (
@@ -935,6 +936,7 @@
 						}
 						if (JSON.stringify(snap.values || {}) !== JSON.stringify(r.values || {})) {
 							changed++;
+							changedRecords.push(r);
 						}
 					});
 				} catch (err) {
@@ -946,6 +948,26 @@
 					renderScriptError(msg);
 					return;
 				}
+
+				// Explicit canvas links override lookup values at upload time. Remove
+				// only links whose source field changed, after all script validation succeeds.
+				const changedById = new Map(changedRecords.map((r) => [r.id, r]));
+				const removedLinks = [];
+				canvasState.bulkAssociations = (canvasState.bulkAssociations || []).filter((link) => {
+					const rec = changedById.get(link.fromId);
+					if (!rec) return true;
+					const before = recordSnapshots.get(rec.id).values || {};
+					const after = rec.values || {};
+					if (
+						Object.prototype.hasOwnProperty.call(before, link.fieldName) ===
+							Object.prototype.hasOwnProperty.call(after, link.fieldName) &&
+						JSON.stringify(before[link.fieldName]) === JSON.stringify(after[link.fieldName])
+					)
+						return true;
+					removedLinks.push({ ...link });
+					if (canvasState.bulkSelectedEdgeId === link.id) canvasState.bulkSelectedEdgeId = null;
+					return false;
+				});
 
 				if (changed > 0) {
 					renderBulkView();
@@ -961,8 +983,42 @@
 				if (changed > 0) {
 					const _doneMsg = 'Script updated ' + changed + ' record' + (changed === 1 ? '' : 's') + '.';
 					if (showBulkToastWithAction) {
+						const expectedRecords = new Map(changedRecords.map((r) => [r, JSON.stringify(r)]));
+						const currentLinks = () =>
+							JSON.stringify(
+								(canvasState.bulkAssociations || []).filter((a) => changedById.has(a.fromId)),
+							);
+						const expectedLinks = currentLinks();
 						showBulkToastWithAction(_doneMsg, 'Undo', () => {
-							rollbackAll();
+							const stale =
+								currentLinks() !== expectedLinks ||
+								changedRecords.some(
+									(r) =>
+										!canvasState.bulkRecords.includes(r) ||
+										JSON.stringify(r) !== expectedRecords.get(r),
+								) ||
+								removedLinks.some(
+									(link) =>
+										!canvasState.bulkRecords.some((r) => r.id === link.toId) ||
+										(canvasState.bulkAssociations || []).some(
+											(a) =>
+												a.id === link.id ||
+												(a.fromId === link.fromId && a.fieldName === link.fieldName),
+										),
+								);
+							if (stale) {
+								showBulkToast(
+									'Can\u2019t undo Run script because affected records or relationships changed afterward.',
+									'info',
+								);
+								return;
+							}
+							changedRecords.forEach((r) => {
+								const snap = recordSnapshots.get(r.id);
+								for (const key of Object.keys(r)) if (!(key in snap)) delete r[key];
+								Object.assign(r, structuredClone(snap));
+							});
+							canvasState.bulkAssociations = (canvasState.bulkAssociations || []).concat(removedLinks);
 							renderBulkView();
 							showBulkToast(
 								'Reverted the script’s changes to ' +

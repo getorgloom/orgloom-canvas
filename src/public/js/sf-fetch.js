@@ -80,29 +80,33 @@
 		overlay.className = 'modal sf-reauth-prompt';
 		overlay.innerHTML =
 			'<div class="modal-overlay"></div>' +
-			'<div class="modal-body" style="max-width:520px">' +
+			'<div class="modal-body" style="max-width:400px">' +
 			'<div class="modal-header">' +
 			'<h3>Your Salesforce session ended</h3>' +
 			'</div>' +
 			'<div class="modal-content">' +
-			'<p>Your access token expired. Pick how to continue: the canvas itself stays usable in every option.</p>' +
 			'<div class="sf-reauth-options">' +
-			'<button type="button" class="sf-reauth-card sf-reauth-card--primary" data-rap-action="signin">' +
+			'<button type="button" class="sf-reauth-card is-highlighted" data-rap-action="signin">' +
 			'<span class="sf-reauth-card-title">Sign in again</span>' +
-			'<span class="sf-reauth-card-desc">Reconnect to your current Salesforce org and resume what you were doing.</span>' +
 			'</button>' +
 			'<button type="button" class="sf-reauth-card" data-rap-action="switch">' +
 			'<span class="sf-reauth-card-title">Sign in to a different org</span>' +
-			'<span class="sf-reauth-card-desc">Switch to a different Salesforce connection.</span>' +
 			'</button>' +
 			'<button type="button" class="sf-reauth-card" data-rap-action="offline">' +
 			'<span class="sf-reauth-card-title">Keep working offline</span>' +
-			'<span class="sf-reauth-card-desc">Keep editing the canvas without reconnecting. Salesforce-touching actions (Browse, Upload, etc.) will prompt you when you try them.</span>' +
 			'</button>' +
 			'</div>' +
 			'</div>' +
 			'</div>';
 		document.body.appendChild(overlay);
+		const options = overlay.querySelectorAll('.sf-reauth-card');
+		options.forEach((option) => {
+			const highlight = () => {
+				options.forEach((other) => other.classList.toggle('is-highlighted', other === option));
+			};
+			option.addEventListener('pointerenter', highlight);
+			option.addEventListener('focus', highlight);
+		});
 		const cleanup = () => {
 			try {
 				overlay.remove();

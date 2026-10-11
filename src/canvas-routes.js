@@ -103,6 +103,7 @@ import {
 	planDeleteOrder,
 } from './upload-recall.js';
 import { runBulkJob } from './sf-bulk.js';
+import { executeUploadDeletes } from './upload-deletes.js';
 import { listObjects, loadDescribeForObject, getQueryableSObjects, cleanLabel, isNoiseSObject } from './sf-describe.js';
 import { isSpecializedSObject, specializedObjectError } from './sf-object-support.js';
 import {
@@ -3801,10 +3802,12 @@ export function mountCanvasRoutes(app, options = {}) {
 			const mutationSuccessCount = _countCommittedMutations(orderedResults);
 			const failureCount = orderedResults.length - successCount;
 
-			const deleteResults = [];
-			for (const d of deletesIn) {
-				deleteResults.push(await _deleteSalesforceRecord({ conn, getDescribe, record: d }));
-			}
+			const deleteResults = await executeUploadDeletes({
+				conn,
+				getDescribe,
+				records: deletesIn,
+				deleteRecord: (record) => _deleteSalesforceRecord({ conn, getDescribe, record }),
+			});
 			const deleteSuccessCount = deleteResults.filter((r) => r.success).length;
 			const deleteFailureCount = deleteResults.length - deleteSuccessCount;
 
@@ -4669,9 +4672,14 @@ export function mountCanvasRoutes(app, options = {}) {
 			const deleteResults = [];
 			const someGraphCommitted = mutationSuccessCount > 0;
 			if (deletesIn.length > 0 && (records.length === 0 || someGraphCommitted)) {
-				for (const d of deletesIn) {
-					deleteResults.push(await _deleteSalesforceRecord({ conn, getDescribe, record: d }));
-				}
+				deleteResults.push(
+					...(await executeUploadDeletes({
+						conn,
+						getDescribe,
+						records: deletesIn,
+						deleteRecord: (record) => _deleteSalesforceRecord({ conn, getDescribe, record }),
+					})),
+				);
 			} else if (deletesIn.length > 0) {
 				for (const d of deletesIn) {
 					deleteResults.push({
@@ -5445,10 +5453,12 @@ export function mountCanvasRoutes(app, options = {}) {
 					}
 				});
 
-				const deleteResults = [];
-				for (const d of deletesIn) {
-					deleteResults.push(await _deleteSalesforceRecord({ conn, getDescribe, record: d }));
-				}
+				const deleteResults = await executeUploadDeletes({
+					conn,
+					getDescribe,
+					records: deletesIn,
+					deleteRecord: (record) => _deleteSalesforceRecord({ conn, getDescribe, record }),
+				});
 				const deleteSuccessCount = deleteResults.filter((r) => r.success).length;
 				const deleteFailureCount = deleteResults.length - deleteSuccessCount;
 

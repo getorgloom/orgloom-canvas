@@ -156,8 +156,11 @@ test('clean review summarizes writes separately from deletes and labels its dest
 	assert.match(env.content.innerHTML, /<strong>2<\/strong> records ready to write/);
 	assert.match(env.content.innerHTML, /1 new/);
 	assert.match(env.content.innerHTML, /1 update/);
-	assert.match(env.content.innerHTML, /1 deletion runs last/);
-	assert.match(env.content.innerHTML, /1 Case/);
+	assert.match(
+		env.content.innerHTML,
+		/upload-delete-summary.*<strong>1<\/strong> record ready to delete<\/span><span class="upload-delete-badge">Irreversible/,
+	);
+	assert.doesNotMatch(env.content.innerHTML, /deletion runs last|upload-delete-note/);
 	assert.doesNotMatch(env.content.innerHTML, /unchanged records? skipped|upload-skipped-note/);
 	assert.doesNotMatch(env.content.innerHTML, /Must fix|Pre-flight passed|Records included/);
 	assert.equal(env.confirm.textContent, 'Upload & delete 1');

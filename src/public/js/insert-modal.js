@@ -1345,6 +1345,7 @@
 			modal.innerHTML =
 				'<div class="modal-overlay" data-close></div>' +
 				'<div class="modal-body">' +
+				'<div class="record-editor-drag-handle" aria-hidden="true"></div>' +
 				'<div class="modal-header">' +
 				'<div class="record-editor-heading"><div class="record-editor-title-row">' +
 				'<h3 data-editor-element="modal-title">New record</h3>' +
@@ -1701,7 +1702,7 @@
 					_inlineBoundsObserver.observe(container);
 				}
 				_syncSelected();
-				const header = modal.querySelector('.modal-header');
+				const header = modal.querySelector('.record-editor-drag-handle');
 				if (header) {
 					_attachInlineDrag(header, cy, cyNode, container);
 				}
@@ -1884,7 +1885,7 @@
 					_inlineViewportHandler = null;
 				}
 				modal.classList.remove('is-selected');
-				const header = modal.querySelector('.modal-header');
+				const header = modal.querySelector('.record-editor-drag-handle');
 				if (header && header._inlineDragOnDown) {
 					header.removeEventListener('mousedown', header._inlineDragOnDown);
 					header._inlineDragOnDown = null;
@@ -4923,11 +4924,24 @@
 				}
 			}
 
-			function fieldBounds(f) {
+			function fieldBounds(f, fields = currentFields) {
 				if (!f) {
 					return null;
 				}
-				const coordinateKind = geolocationCoordinateKind(f, currentFields);
+				// Address coordinates and custom location components can be present
+				// without their read-only compound container in writable metadata.
+				const coordinateMatch =
+					f.type === 'double' &&
+					(f.compoundFieldName
+						? /(?:Latitude|Longitude)(?:__s)?$/i.exec(f.name)
+						: /^(?:(?:Mailing|Other|Billing|Shipping|PersonMailing|PersonOther)?(?:Latitude|Longitude)|.+__(?:Latitude|Longitude)__s)$/i.exec(
+								f.name,
+							));
+				const coordinateKind = coordinateMatch
+					? /Latitude(?:__s)?$/i.test(coordinateMatch[0])
+						? 'latitude'
+						: 'longitude'
+					: geolocationCoordinateKind(f, fields);
 				if (coordinateKind === 'latitude') {
 					return { min: -90, max: 90, step: numericFieldStep(f, 0.000001) };
 				}
@@ -5283,7 +5297,7 @@
 					return null;
 				}
 				const clamped = (n) => {
-					const b = fieldBounds(f);
+					const b = fieldBounds(f, list);
 					if (!b) {
 						return n;
 					}

@@ -1,6 +1,6 @@
 (function () {
 	'use strict';
-	// Searches values already present on the canvas and focuses the selected result.
+	// Searches canvas values and selects matching records by object.
 
 	window.OrgLoom = window.OrgLoom || {};
 
@@ -16,11 +16,9 @@
 		'IsDeleted',
 	]);
 
-	const MAX_RESULTS = 100;
-
 	window.OrgLoom.canvasSearch = {
 		mount: function mount(deps) {
-			const required = ['canvasState', 'getCyInstance', 'escapeHtml'];
+			const required = ['canvasState', 'getCyInstance', 'escapeHtml', 'setSelection'];
 			if (!deps) {
 				throw new Error('canvas-search.mount: missing deps object');
 			}
@@ -32,6 +30,8 @@
 			const canvasState = deps.canvasState;
 			const getCyInstance = deps.getCyInstance;
 			const escapeHtml = deps.escapeHtml;
+			let activeObject = null;
+			let activeRecords = [];
 
 			const modal = document.createElement('div');
 			modal.className = 'modal canvas-search-modal hidden';
@@ -47,7 +47,8 @@
 				'placeholder="Search field values across all cards on the canvas…" ' +
 				'autocomplete="off" spellcheck="false">' +
 				'<div class="csr-stats" id="csr-stats"></div>' +
-				'<div class="csr-results" id="csr-results"></div>' +
+				'<div class="csr-tabs" id="csr-tabs"></div>' +
+				'<div class="csr-results" id="csr-results" role="region" aria-label="Search results"></div>' +
 				'</div>' +
 				'<div class="modal-footer">' +
 				'<button class="button secondary" data-csr-close>Close</button>' +
@@ -58,6 +59,7 @@
 			const input = modal.querySelector('#csr-input');
 			const statsEl = modal.querySelector('#csr-stats');
 			const resultsEl = modal.querySelector('#csr-results');
+			const tabsEl = modal.querySelector('#csr-tabs');
 
 			function closeModal() {
 				modal.classList.add('hidden');
@@ -128,9 +130,6 @@
 					let perRecordFieldHits = 0;
 					const values = (rec && rec.values) || {};
 					for (const k of Object.keys(values)) {
-						if (matches.length >= MAX_RESULTS) {
-							break;
-						}
 						if (!k || k.startsWith('_')) {
 							continue;
 						}
@@ -159,7 +158,7 @@
 						});
 						perRecordFieldHits++;
 					}
-					if (perRecordFieldHits === 0 && matches.length < MAX_RESULTS) {
+					if (perRecordFieldHits === 0) {
 						if (labelHit) {
 							matches.push({
 								recordId: rec.id,
@@ -188,9 +187,6 @@
 							}
 						}
 					}
-					if (matches.length >= MAX_RESULTS) {
-						break;
-					}
 				}
 				return { matches, recordsScanned };
 			}
@@ -208,6 +204,11 @@
 			function renderResults() {
 				const query = input.value || '';
 				const { matches, recordsScanned } = search(query);
+				activeRecords = [];
+				tabsEl.innerHTML = '';
+				tabsEl.removeAttribute('role');
+				resultsEl.removeAttribute('aria-labelledby');
+				resultsEl.setAttribute('role', 'region');
 				if (!query.trim()) {
 					statsEl.textContent = '';
 					resultsEl.innerHTML = '';
@@ -219,44 +220,122 @@
 					resultsEl.innerHTML = '<div class="csr-empty">No field values or record names contain that.</div>';
 					return;
 				}
-				statsEl.textContent =
-					matches.length >= MAX_RESULTS
-						? 'Showing first ' + MAX_RESULTS + ' results - refine to narrow.'
-						: '';
-				resultsEl.innerHTML = matches
-					.map((m, i) => {
-						const valueHtml = renderMatchedValue(m.value, m.matchStart, m.matchLen);
-						const fieldChip = m.fieldName
-							? '<span class="csr-field"><code>' + escapeHtml(m.fieldName) + '</code></span>'
-							: m.kind === 'id'
-								? '<span class="csr-field csr-field--label">Salesforce Id</span>'
-								: '<span class="csr-field csr-field--label">name</span>';
-						return (
-							'<button type="button" class="csr-result" data-csr-idx="' +
-							i +
-							'">' +
-							'<div class="csr-result-head">' +
-							'<span class="csr-result-label">' +
-							escapeHtml(m.label) +
-							'</span>' +
-							'<span class="csr-result-obj tag">' +
-							escapeHtml(m.objectName || '') +
-							'</span>' +
-							'</div>' +
-							'<div class="csr-result-body">' +
-							fieldChip +
-							'<span class="csr-result-value">' +
-							valueHtml +
-							'</span>' +
-							'</div>' +
-							'</button>'
+				statsEl.textContent = '';
+				const groups = new Map();
+				for (const match of matches) {
+					const object = match.objectName || 'Record';
+					if (!groups.has(object)) groups.set(object, new Map());
+					const records = groups.get(object);
+					if (!records.has(match.recordId)) records.set(match.recordId, { ...match, hits: [] });
+					records.get(match.recordId).hits.push(match);
+				}
+				const objects = Array.from(groups.keys()).sort();
+				if (!groups.has(activeObject)) activeObject = objects[0];
+				activeRecords = Array.from(groups.get(activeObject).values());
+				if (objects.length === 1) {
+					tabsEl.innerHTML =
+						'<div class="csr-object-heading">' +
+						escapeHtml(activeObject) +
+						' (' +
+						activeRecords.length +
+						')</div>';
+				} else {
+					tabsEl.setAttribute('role', 'tablist');
+					tabsEl.setAttribute('aria-label', 'Matching objects');
+					tabsEl.innerHTML = objects
+						.map(
+							(object, i) =>
+								'<button type="button" class="csr-tab" role="tab" id="csr-tab-' +
+								i +
+								'" aria-controls="csr-results" aria-selected="' +
+								(object === activeObject) +
+								'" tabindex="' +
+								(object === activeObject ? '0' : '-1') +
+								'" data-csr-tab="' +
+								i +
+								'">' +
+								escapeHtml(object) +
+								' (' +
+								groups.get(object).size +
+								')</button>',
+						)
+						.join('');
+					resultsEl.setAttribute('role', 'tabpanel');
+					resultsEl.setAttribute('aria-labelledby', 'csr-tab-' + objects.indexOf(activeObject));
+					tabsEl.querySelectorAll('[data-csr-tab]').forEach((tab, i) => {
+						tab.addEventListener('click', () => {
+							activeObject = objects[i];
+							renderResults();
+							tabsEl.querySelector('[aria-selected="true"]').focus();
+						});
+						tab.addEventListener('keydown', (e) => {
+							const next =
+								e.key === 'ArrowRight'
+									? (i + 1) % objects.length
+									: e.key === 'ArrowLeft'
+										? (i + objects.length - 1) % objects.length
+										: e.key === 'Home'
+											? 0
+											: e.key === 'End'
+												? objects.length - 1
+												: null;
+							if (next === null) return;
+							e.preventDefault();
+							tabsEl.querySelector('[data-csr-tab="' + next + '"]').click();
+						});
+					});
+				}
+				resultsEl.scrollTop = 0;
+				resultsEl.innerHTML =
+					'<table class="csr-table"><thead><tr><th class="csr-select-cell"><input type="checkbox" data-csr-all aria-label="Select all matching ' +
+					escapeHtml(activeObject) +
+					' records"></th><th scope="col">Record</th><th scope="col">Matches</th></tr></thead><tbody>' +
+					activeRecords
+						.map(
+							(record, i) =>
+								'<tr><td class="csr-select-cell"><input type="checkbox" data-csr-select="' +
+								i +
+								'" aria-label="Select ' +
+								escapeHtml(record.label) +
+								'"></td><td><button type="button" class="csr-result" data-csr-idx="' +
+								i +
+								'">' +
+								escapeHtml(record.label) +
+								'</button></td><td>' +
+								record.hits
+									.map(
+										(m) =>
+											'<div class="csr-result-body"><span class="csr-field">' +
+											escapeHtml(m.fieldName || (m.kind === 'id' ? 'Salesforce Id' : 'Name')) +
+											'</span><span class="csr-result-value">' +
+											renderMatchedValue(m.value, m.matchStart, m.matchLen) +
+											'</span></div>',
+									)
+									.join('') +
+								'</td></tr>',
+						)
+						.join('') +
+					'</tbody></table>';
+				resultsEl.querySelector('[data-csr-all]').addEventListener('change', (e) => {
+					applySelection(e.target.checked ? activeRecords.map((r) => r.recordId) : []);
+				});
+				resultsEl.querySelectorAll('[data-csr-select]').forEach((checkbox, i) => {
+					checkbox.addEventListener('change', () => {
+						const ids = new Set(
+							activeRecords
+								.filter((r) => canvasState.bulkSelectedIds?.has(r.recordId))
+								.map((r) => r.recordId),
 						);
-					})
-					.join('');
+						if (checkbox.checked) ids.add(activeRecords[i].recordId);
+						else ids.delete(activeRecords[i].recordId);
+						applySelection(Array.from(ids));
+					});
+				});
+				syncCheckboxes();
 				resultsEl.querySelectorAll('[data-csr-idx]').forEach((btn) => {
 					btn.addEventListener('click', () => {
 						const i = parseInt(btn.dataset.csrIdx, 10);
-						const m = matches[i];
+						const m = activeRecords[i];
 						if (!m) {
 							return;
 						}
@@ -264,6 +343,37 @@
 						closeModal();
 					});
 				});
+			}
+
+			function applySelection(ids) {
+				// Resolve against live records so removed/pending records cannot be selected.
+				const liveIds = new Set(
+					canvasState.bulkRecords
+						.filter((r) => r && !r.isTypeNode && !r.isPending && r.objectName === activeObject)
+						.map((r) => r.id),
+				);
+				deps.setSelection(ids.filter((id) => liveIds.has(id)));
+				if (activeRecords.some((r) => !liveIds.has(r.recordId))) {
+					const scrollTop = resultsEl.scrollTop;
+					renderResults();
+					resultsEl.scrollTop = scrollTop;
+					return;
+				}
+				syncCheckboxes();
+			}
+
+			function syncCheckboxes() {
+				let selected = 0;
+				resultsEl.querySelectorAll('[data-csr-select]').forEach((checkbox, i) => {
+					checkbox.checked = !!canvasState.bulkSelectedIds?.has(activeRecords[i].recordId);
+					checkbox.closest('tr').classList.toggle('csr-selected', checkbox.checked);
+					if (checkbox.checked) selected++;
+				});
+				const all = resultsEl.querySelector('[data-csr-all]');
+				if (all) {
+					all.checked = activeRecords.length > 0 && selected === activeRecords.length;
+					all.indeterminate = selected > 0 && selected < activeRecords.length;
+				}
 			}
 
 			let _debounce = null;

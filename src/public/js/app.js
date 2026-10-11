@@ -506,6 +506,15 @@ function csrfFetch(url, options) {
 
 	const _csr = window.OrgLoom.canvasSearch.mount({
 		canvasState: canvasState,
+		setSelection: function (ids) {
+			canvasState.bulkSelectedIds = new Set(ids);
+			canvasState.bulkSelectedEdgeId = null;
+			canvasState._schemaViewObject = null;
+			canvasState._schemaViewPath = [];
+			canvasState._schemaViewPathEdges = [];
+			renderBulkView();
+			renderCanvas();
+		},
 		getCyInstance: function () {
 			return _cyInstance;
 		},
