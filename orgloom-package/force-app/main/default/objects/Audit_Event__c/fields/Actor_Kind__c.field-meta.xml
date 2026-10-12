@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Actor_Kind__c</fullName>
+    <description>web = human acting in the Orgloom UI; mcp = AI client acting via MCP; system = server-internal (retention purges, etc.).</description>
+    <label>Actor Kind</label>
+    <required>true</required>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>web</fullName>
+                <default>true</default>
+                <label>Web</label>
+            </value>
+            <value>
+                <fullName>mcp</fullName>
+                <default>false</default>
+                <label>MCP (AI client)</label>
+            </value>
+            <value>
+                <fullName>system</fullName>
+                <default>false</default>
+                <label>System</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

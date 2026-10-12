@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Identifies users authorized through an Org Loom managed permission set without requiring access to Salesforce setup objects.</description>
+    <isLicensed>false</isLicensed>
+    <label>Org Loom Access</label>
+</CustomPermission>
