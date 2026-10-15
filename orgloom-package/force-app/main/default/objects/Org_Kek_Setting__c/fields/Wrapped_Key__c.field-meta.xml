@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Wrapped_Key__c</fullName>
+    <description>Base64-encoded KEK material. Length = 32 raw bytes = 44 base64 chars (with padding). Generated at bootstrap via Crypto.generateAesKey(256). Never transmitted out of the customer's org; Apex reads it via getValues() and uses it to wrap / unwrap DEKs inside the same execution context.</description>
+    <label>Wrapped Key</label>
+    <length>255</length>
+    <required>true</required>
+    <type>Text</type>
+</CustomField>

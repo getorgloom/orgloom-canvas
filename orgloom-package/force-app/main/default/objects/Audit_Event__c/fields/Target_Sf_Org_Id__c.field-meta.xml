@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Target_Sf_Org_Id__c</fullName>
+    <description>The Salesforce Organization Id the event targeted. Will normally match the current org id but is stored explicitly so cross-org reports work; useful when a workspace admin has been connected to multiple orgs over time and wants to filter activity by the org that actually saw the write.</description>
+    <label>Target SF Org Id</label>
+    <length>18</length>
+    <required>false</required>
+    <type>Text</type>
+</CustomField>
