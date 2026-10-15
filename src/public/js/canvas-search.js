@@ -32,6 +32,7 @@
 			const escapeHtml = deps.escapeHtml;
 			let activeObject = null;
 			let activeRecords = [];
+			const SELECTED_TAB = Symbol('selected');
 
 			const modal = document.createElement('div');
 			modal.className = 'modal canvas-search-modal hidden';
@@ -201,26 +202,19 @@
 				return escapeHtml(before) + '<mark class="csr-mark">' + escapeHtml(hit) + '</mark>' + escapeHtml(after);
 			}
 
+			function selectedRecords() {
+				return (canvasState.bulkRecords || []).filter(
+					(record) =>
+						record &&
+						!record.isTypeNode &&
+						!record.isPending &&
+						canvasState.bulkSelectedIds?.has(record.id),
+				);
+			}
+
 			function renderResults() {
 				const query = input.value || '';
 				const { matches, recordsScanned } = search(query);
-				activeRecords = [];
-				tabsEl.innerHTML = '';
-				tabsEl.removeAttribute('role');
-				resultsEl.removeAttribute('aria-labelledby');
-				resultsEl.setAttribute('role', 'region');
-				if (!query.trim()) {
-					statsEl.textContent = '';
-					resultsEl.innerHTML = '';
-					return;
-				}
-				if (matches.length === 0) {
-					statsEl.textContent =
-						'No matches in ' + recordsScanned + ' record' + (recordsScanned === 1 ? '' : 's') + '.';
-					resultsEl.innerHTML = '<div class="csr-empty">No field values or record names contain that.</div>';
-					return;
-				}
-				statsEl.textContent = '';
 				const groups = new Map();
 				for (const match of matches) {
 					const object = match.objectName || 'Record';
@@ -230,66 +224,91 @@
 					records.get(match.recordId).hits.push(match);
 				}
 				const objects = Array.from(groups.keys()).sort();
-				if (!groups.has(activeObject)) activeObject = objects[0];
-				activeRecords = Array.from(groups.get(activeObject).values());
-				if (objects.length === 1) {
-					tabsEl.innerHTML =
-						'<div class="csr-object-heading">' +
-						escapeHtml(activeObject) +
-						' (' +
-						activeRecords.length +
-						')</div>';
-				} else {
-					tabsEl.setAttribute('role', 'tablist');
-					tabsEl.setAttribute('aria-label', 'Matching objects');
-					tabsEl.innerHTML = objects
-						.map(
-							(object, i) =>
-								'<button type="button" class="csr-tab" role="tab" id="csr-tab-' +
-								i +
-								'" aria-controls="csr-results" aria-selected="' +
-								(object === activeObject) +
-								'" tabindex="' +
-								(object === activeObject ? '0' : '-1') +
-								'" data-csr-tab="' +
-								i +
-								'">' +
-								escapeHtml(object) +
-								' (' +
-								groups.get(object).size +
-								')</button>',
-						)
-						.join('');
-					resultsEl.setAttribute('role', 'tabpanel');
-					resultsEl.setAttribute('aria-labelledby', 'csr-tab-' + objects.indexOf(activeObject));
-					tabsEl.querySelectorAll('[data-csr-tab]').forEach((tab, i) => {
-						tab.addEventListener('click', () => {
-							activeObject = objects[i];
-							renderResults();
-							tabsEl.querySelector('[aria-selected="true"]').focus();
-						});
-						tab.addEventListener('keydown', (e) => {
-							const next =
-								e.key === 'ArrowRight'
-									? (i + 1) % objects.length
-									: e.key === 'ArrowLeft'
-										? (i + objects.length - 1) % objects.length
-										: e.key === 'Home'
-											? 0
-											: e.key === 'End'
-												? objects.length - 1
-												: null;
-							if (next === null) return;
-							e.preventDefault();
-							tabsEl.querySelector('[data-csr-tab="' + next + '"]').click();
-						});
+				const selected = selectedRecords();
+				if (activeObject !== SELECTED_TAB && !groups.has(activeObject)) activeObject = objects[0] || null;
+				const showingSelected = activeObject === SELECTED_TAB;
+				activeRecords = showingSelected
+					? selected.map((record) => ({
+							recordId: record.id,
+							objectName: record.objectName || 'Record',
+							label: recordLabel(record),
+							hits: [],
+						}))
+					: Array.from(groups.get(activeObject)?.values() || []);
+				statsEl.textContent =
+					!showingSelected && query.trim() && !matches.length
+						? 'No matches in ' + recordsScanned + ' record' + (recordsScanned === 1 ? '' : 's') + '.'
+						: '';
+				const tabs = [
+					...objects.map((object) => ({ key: object, label: object + ' (' + groups.get(object).size + ')' })),
+					{
+						key: SELECTED_TAB,
+						label: 'Selected (' + selected.length + ')',
+						disabled: !selected.length && !showingSelected,
+					},
+				];
+				tabsEl.setAttribute('role', 'tablist');
+				tabsEl.setAttribute('aria-label', 'Search results and selection');
+				tabsEl.innerHTML = tabs
+					.map(
+						(tab, i) =>
+							'<button type="button" class="csr-tab" role="tab" id="csr-tab-' +
+							i +
+							'" aria-controls="csr-results" aria-selected="' +
+							(tab.key === activeObject) +
+							'" tabindex="' +
+							(tab.key === activeObject || (activeObject === null && !tab.disabled) ? '0' : '-1') +
+							'" data-csr-tab="' +
+							i +
+							'"' +
+							(tab.key === SELECTED_TAB ? ' data-csr-selected-tab' : '') +
+							(tab.disabled ? ' disabled' : '') +
+							'>' +
+							escapeHtml(tab.label) +
+							'</button>',
+					)
+					.join('');
+				const activeIndex = tabs.findIndex((tab) => tab.key === activeObject);
+				resultsEl.setAttribute('role', activeIndex >= 0 ? 'tabpanel' : 'region');
+				if (activeIndex >= 0) resultsEl.setAttribute('aria-labelledby', 'csr-tab-' + activeIndex);
+				else resultsEl.removeAttribute('aria-labelledby');
+				tabsEl.querySelectorAll('[data-csr-tab]').forEach((tab, i) => {
+					tab.addEventListener('click', () => {
+						activeObject = tabs[i].key;
+						renderResults();
+						tabsEl.querySelector('[aria-selected="true"]').focus();
 					});
-				}
+					tab.addEventListener('keydown', (event) => {
+						const enabled = Array.from(tabsEl.querySelectorAll('[data-csr-tab]:not(:disabled)'));
+						const index = enabled.indexOf(tab);
+						const next =
+							event.key === 'ArrowRight'
+								? (index + 1) % enabled.length
+								: event.key === 'ArrowLeft'
+									? (index + enabled.length - 1) % enabled.length
+									: event.key === 'Home'
+										? 0
+										: event.key === 'End'
+											? enabled.length - 1
+											: null;
+						if (next === null) return;
+						event.preventDefault();
+						enabled[next].click();
+					});
+				});
 				resultsEl.scrollTop = 0;
+				if (!activeRecords.length) {
+					resultsEl.innerHTML = showingSelected
+						? '<div class="csr-empty">No records selected.</div>'
+						: query.trim()
+							? '<div class="csr-empty">No field values or record names contain that.</div>'
+							: '';
+					return;
+				}
 				resultsEl.innerHTML =
-					'<table class="csr-table"><thead><tr><th class="csr-select-cell"><input type="checkbox" data-csr-all aria-label="Select all matching ' +
-					escapeHtml(activeObject) +
-					' records"></th><th scope="col">Record</th><th scope="col">Matches</th></tr></thead><tbody>' +
+					'<table class="csr-table"><colgroup><col class="csr-checkbox-column"><col class="csr-record-column"><col></colgroup><thead><tr><th colspan="2" scope="colgroup"><label class="csr-select-all"><input type="checkbox" data-csr-all> Select all</label></th><th scope="col">' +
+					(showingSelected ? 'Object' : 'Matches') +
+					'</th></tr></thead><tbody>' +
 					activeRecords
 						.map(
 							(record, i) =>
@@ -302,58 +321,57 @@
 								'">' +
 								escapeHtml(record.label) +
 								'</button></td><td>' +
-								record.hits
-									.map(
-										(m) =>
-											'<div class="csr-result-body"><span class="csr-field">' +
-											escapeHtml(m.fieldName || (m.kind === 'id' ? 'Salesforce Id' : 'Name')) +
-											'</span><span class="csr-result-value">' +
-											renderMatchedValue(m.value, m.matchStart, m.matchLen) +
-											'</span></div>',
-									)
-									.join('') +
+								(showingSelected
+									? escapeHtml(record.objectName)
+									: record.hits
+											.map(
+												(m) =>
+													'<div class="csr-result-body"><span class="csr-field">' +
+													escapeHtml(
+														m.fieldName || (m.kind === 'id' ? 'Salesforce Id' : 'Name'),
+													) +
+													'</span><span class="csr-result-value">' +
+													renderMatchedValue(m.value, m.matchStart, m.matchLen) +
+													'</span></div>',
+											)
+											.join('')) +
 								'</td></tr>',
 						)
 						.join('') +
 					'</tbody></table>';
-				resultsEl.querySelector('[data-csr-all]').addEventListener('change', (e) => {
-					applySelection(e.target.checked ? activeRecords.map((r) => r.recordId) : []);
+				resultsEl.querySelector('[data-csr-all]').addEventListener('change', (event) => {
+					const ids = new Set(canvasState.bulkSelectedIds || []);
+					for (const record of activeRecords) {
+						if (event.target.checked) ids.add(record.recordId);
+						else ids.delete(record.recordId);
+					}
+					applySelection(Array.from(ids));
 				});
 				resultsEl.querySelectorAll('[data-csr-select]').forEach((checkbox, i) => {
 					checkbox.addEventListener('change', () => {
-						const ids = new Set(
-							activeRecords
-								.filter((r) => canvasState.bulkSelectedIds?.has(r.recordId))
-								.map((r) => r.recordId),
-						);
+						const ids = new Set(canvasState.bulkSelectedIds || []);
 						if (checkbox.checked) ids.add(activeRecords[i].recordId);
 						else ids.delete(activeRecords[i].recordId);
 						applySelection(Array.from(ids));
 					});
 				});
 				syncCheckboxes();
-				resultsEl.querySelectorAll('[data-csr-idx]').forEach((btn) => {
-					btn.addEventListener('click', () => {
-						const i = parseInt(btn.dataset.csrIdx, 10);
-						const m = activeRecords[i];
-						if (!m) {
-							return;
-						}
-						jumpToRecord(m.recordId);
+				resultsEl.querySelectorAll('[data-csr-idx]').forEach((button, i) => {
+					button.addEventListener('click', () => {
+						jumpToRecord(activeRecords[i].recordId);
 						closeModal();
 					});
 				});
 			}
 
 			function applySelection(ids) {
-				// Resolve against live records so removed/pending records cannot be selected.
 				const liveIds = new Set(
 					canvasState.bulkRecords
-						.filter((r) => r && !r.isTypeNode && !r.isPending && r.objectName === activeObject)
-						.map((r) => r.id),
+						.filter((record) => record && !record.isTypeNode && !record.isPending)
+						.map((record) => record.id),
 				);
 				deps.setSelection(ids.filter((id) => liveIds.has(id)));
-				if (activeRecords.some((r) => !liveIds.has(r.recordId))) {
+				if (activeObject === SELECTED_TAB || activeRecords.some((record) => !liveIds.has(record.recordId))) {
 					const scrollTop = resultsEl.scrollTop;
 					renderResults();
 					resultsEl.scrollTop = scrollTop;
@@ -363,11 +381,16 @@
 			}
 
 			function syncCheckboxes() {
-				let selected = 0;
+				const selectedCount = selectedRecords().length;
+				const selectedTab = tabsEl.querySelector('[data-csr-selected-tab]');
+				selectedTab.textContent = 'Selected (' + selectedCount + ')';
+				selectedTab.disabled = selectedCount === 0 && activeObject !== SELECTED_TAB;
+				const selected = activeRecords.filter((record) =>
+					canvasState.bulkSelectedIds?.has(record.recordId),
+				).length;
 				resultsEl.querySelectorAll('[data-csr-select]').forEach((checkbox, i) => {
 					checkbox.checked = !!canvasState.bulkSelectedIds?.has(activeRecords[i].recordId);
 					checkbox.closest('tr').classList.toggle('csr-selected', checkbox.checked);
-					if (checkbox.checked) selected++;
 				});
 				const all = resultsEl.querySelector('[data-csr-all]');
 				if (all) {

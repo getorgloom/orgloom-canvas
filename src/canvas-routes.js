@@ -104,6 +104,7 @@ import {
 } from './upload-recall.js';
 import { runBulkJob } from './sf-bulk.js';
 import { executeUploadDeletes } from './upload-deletes.js';
+import { requestGraphBatches, parseGraphResults } from './sf-graph.js';
 import { listObjects, loadDescribeForObject, getQueryableSObjects, cleanLabel, isNoiseSObject } from './sf-describe.js';
 import { isSpecializedSObject, specializedObjectError } from './sf-object-support.js';
 import {
@@ -4521,15 +4522,7 @@ export function mountCanvasRoutes(app, options = {}) {
 			const graphRequestBody = JSON.stringify({ graphs: graphsPayload });
 			let graphResp;
 			try {
-				graphResp = await conn.request({
-					method: 'POST',
-					url: apiBase + '/composite/graph',
-					body: graphRequestBody,
-					headers: Object.assign(
-						{ 'Content-Type': 'application/json' },
-						allowDuplicates ? { 'Sforce-Duplicate-Rule-Header': 'allowSave=true' } : {},
-					),
-				});
+				graphResp = await requestGraphBatches({ conn, apiBase, graphs: graphsPayload, allowDuplicates });
 			} catch (err) {
 				console.error('[upload/graph] failed:', err && (err.errorCode || err.message));
 				try {
@@ -4554,7 +4547,6 @@ export function mountCanvasRoutes(app, options = {}) {
 				});
 			}
 
-			const respGraphs = (graphResp && graphResp.graphs) || [];
 			const results = [];
 
 			cycleIds.forEach((id) => {
@@ -4585,77 +4577,23 @@ export function mountCanvasRoutes(app, options = {}) {
 				});
 			});
 
-			let allAtomicSuccess = respGraphs.length > 0;
-			respGraphs.forEach((respGraph) => {
-				const graphId = respGraph && respGraph.graphId;
-				const isSuccessful = !!(respGraph && respGraph.isSuccessful);
-				if (!isSuccessful) {
-					allAtomicSuccess = false;
-				}
-				const responses =
-					(respGraph && respGraph.graphResponse && respGraph.graphResponse.compositeResponse) || [];
-				const componentIdx =
-					typeof graphId === 'string' && graphId.startsWith('g') ? parseInt(graphId.slice(1), 10) : NaN;
-				const componentTempIds = (Number.isInteger(componentIdx) && components[componentIdx]) || [];
-				const tempIdByRefId = new Map();
-				componentTempIds.forEach((tempId) => tempIdByRefId.set(graphRefIdFor(tempId), tempId));
-
-				responses.forEach((r) => {
-					if (!r || !r.referenceId) {
-						return;
-					}
-					const tempId = tempIdByRefId.get(r.referenceId);
-					if (tempId == null) {
-						return;
-					}
-					const rec = recordsById.get(tempId);
-					if (!rec) {
-						return;
-					}
-					const status = r.httpStatusCode || 0;
-					if (isSuccessful) {
-						const isUpdate = !!rec.loadedFromId;
-						const id = isUpdate ? rec.loadedFromId : (r.body && r.body.id) || null;
-						results.push({
-							tempId,
-							objectName: rec.objectName,
-							success: true,
-							id,
-							mode: isUpdate ? 'update' : 'create',
-						});
-						return;
-					}
-					if (status < 400) {
-						results.push({
-							tempId,
-							objectName: rec.objectName,
-							success: false,
-							error: 'Rolled back: another record in the same component failed.',
-						});
-						return;
-					}
-					const bodies = Array.isArray(r.body) ? r.body : r.body ? [r.body] : [];
-					if (bodies.length === 0) {
-						results.push({
-							tempId,
-							objectName: rec.objectName,
-							success: false,
-							error: 'HTTP ' + status,
-						});
-						return;
-					}
-					bodies.forEach((b) => {
-						results.push({
-							tempId,
-							objectName: rec.objectName,
-							success: false,
-							error: (b && b.message) || 'HTTP ' + status,
-							errorCode: b && b.errorCode,
-							fields: Array.isArray(b && b.fields) ? b.fields : [],
-						});
-					});
-				});
+			const parsedGraph = parseGraphResults({
+				graphs: graphsPayload,
+				response: graphResp,
+				recordsByRefId: new Map(records.map((record) => [graphRefIdFor(record.tempId), record])),
 			});
+			results.push(...parsedGraph.results);
+			const allAtomicSuccess = parsedGraph.allAtomicSuccess;
+			if (parsedGraph.hasUnknownOutcome) {
+				// Do not finalize the ledger, retry writes, or start deletes without a
+				// complete outcome. An absent response is not evidence of no commit.
+				return res.status(409).json({
+					error: 'upload-attempt-incomplete',
+					batchId: _pendingBatchId,
+					results,
+					message: UPLOAD_ATTEMPT_UNCERTAIN_MESSAGE,
+				});
+			}
 
 			const byId = new Map(results.map((r) => [r.tempId, r]));
 			const orderedResults = records.map((r) => byId.get(r.tempId)).filter(Boolean);

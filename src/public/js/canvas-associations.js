@@ -238,6 +238,7 @@
 
 				let clrId = null,
 					clrField = null,
+					clrHadValue = false,
 					clrVal;
 				if (killed) {
 					const holderRec = canvasState.bulkRecords.find((r) => r.id === killed.fromId);
@@ -246,15 +247,18 @@
 					if (
 						holderRec &&
 						killed.fieldName &&
-						holderRec.values &&
-						holderRec.values[killed.fieldName] != null &&
-						tgtLoaded &&
-						String(holderRec.values[killed.fieldName]).slice(0, 15) === String(tgtLoaded).slice(0, 15)
+						(holderRec.values?.[killed.fieldName] == null ||
+							(tgtLoaded &&
+								String(holderRec.values[killed.fieldName]).slice(0, 15) ===
+									String(tgtLoaded).slice(0, 15)))
 					) {
+						holderRec.values = holderRec.values || {};
 						clrId = holderRec.id;
 						clrField = killed.fieldName;
+						clrHadValue = Object.prototype.hasOwnProperty.call(holderRec.values, clrField);
 						clrVal = holderRec.values[killed.fieldName];
-						delete holderRec.values[killed.fieldName];
+						// Omission means leave unchanged on upload; null explicitly clears the lookup.
+						holderRec.values[killed.fieldName] = null;
 					}
 					const afterDeleteValue = holderRec?.values?.[killed.fieldName];
 					pushUndo('Restore deleted connection', () => {
@@ -277,7 +281,11 @@
 							const hr = canvasState.bulkRecords.find((r) => r.id === clrId);
 							if (hr) {
 								hr.values = hr.values || {};
-								hr.values[clrField] = clrVal;
+								if (clrHadValue) {
+									hr.values[clrField] = clrVal;
+								} else {
+									delete hr.values[clrField];
+								}
 							}
 						}
 						if (wasSelectedEdge) {
@@ -322,7 +330,7 @@
 					renderBulkView();
 					showBulkToast('Restored connection.');
 				});
-				delete rec.values[fieldName];
+				rec.values[fieldName] = null;
 				const sde = getSelectedDerivedEdge();
 				if (sde && sde.recId === recId && sde.fieldName === fieldName) {
 					setSelectedDerivedEdge(null);

@@ -141,7 +141,7 @@
 						? canvasState.selectedObjects[canvasState.activeIndex].name
 						: Array.from(objCounts.keys())[0];
 				_beState = {
-					action: 'replace',
+					action: 'set',
 					objectName: activeObj,
 					scope: canvasState.bulkSelectedIds.size > 0 ? 'selected' : 'all',
 					fieldName: null,
@@ -699,11 +699,9 @@
 					}
 					affected.forEach((r) => {
 						const next = Object.assign({}, r.values || {});
-						if (coerced === null && !relationshipField) {
-							delete next[_beState.fieldName];
-						} else {
-							next[_beState.fieldName] = coerced;
-						}
+						// Omitted fields are not uploaded. Keep an explicit null when the
+						// user clears a value so Salesforce receives the field clear.
+						next[_beState.fieldName] = coerced;
 						_replaceValues(r, next);
 						touchedRecords.push(r);
 						updatedCount++;

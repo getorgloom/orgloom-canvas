@@ -7265,6 +7265,9 @@ function csrfFetch(url, options) {
 
 	const _soql = window.OrgLoom.soqlImport.mount({
 		canvasState: canvasState,
+		setSelectedDerivedEdge: function (value) {
+			_selectedDerivedEdge = value;
+		},
 		showBulkToast: showBulkToast,
 		showBulkToastWithAction: showBulkToastWithAction,
 		escapeHtml: escapeHtml,

@@ -8,6 +8,7 @@ const schemaSource = readFileSync(new URL('../src/public/js/schema-builder.js', 
 const cssSource = readFileSync(new URL('../src/public/css/app.css', import.meta.url), 'utf8');
 const uploadModalSource = readFileSync(new URL('../src/public/js/upload-modal.js', import.meta.url), 'utf8');
 const routesSource = readFileSync(new URL('../src/canvas-routes.js', import.meta.url), 'utf8');
+const graphSource = readFileSync(new URL('../src/sf-graph.js', import.meta.url), 'utf8');
 
 test('validation rules are presented on schema objects instead of every record editor', () => {
 	assert.doesNotMatch(editorSource, /renderRulesSectionHtml|data-section="rules"|Validation Rules/);
@@ -72,5 +73,6 @@ test('Salesforce validates actual uploads without a separate sample-write pass',
 	assert.doesNotMatch(uploadModalSource, /\/api\/upload\/preflight/);
 	assert.match(routesSource, /app\.post\('\/api\/upload\/graph'/);
 	assert.doesNotMatch(routesSource, /app\.post\('\/api\/upload\/preflight'/);
-	assert.match(routesSource, /url: apiBase \+ '\/composite\/graph'/);
+	assert.match(routesSource, /await requestGraphBatches\(/);
+	assert.match(graphSource, /url: apiBase \+ '\/composite\/graph'/);
 });

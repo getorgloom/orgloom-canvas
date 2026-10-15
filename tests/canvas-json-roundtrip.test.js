@@ -152,7 +152,7 @@ test('delete, reconnect, undo twice, then JSON replace preserves exactly the cur
 	assert.equal(h.context.undoCount(), 2);
 	h.context.undo();
 	assert.equal(h.state.bulkAssociations.length, 0);
-	assert.equal(h.child.values.AccountId, undefined);
+	assert.equal(h.child.values.AccountId, null);
 	h.context.undo();
 	assert.equal(h.state.bulkAssociations.length, 1);
 	assert.equal(h.child.values.AccountId, h.a.loadedFromId);
@@ -328,7 +328,7 @@ test('merge never restores a lookup that was cleared locally', async () => {
 	await h.api.applyTemplate(file, { merge: true });
 	assert.equal(h.state.bulkRecords.length, 3);
 	assert.equal(h.state.bulkAssociations.length, 0);
-	assert.equal(h.child.values.AccountId, undefined);
+	assert.equal(h.child.values.AccountId, null);
 });
 
 test('undoing a merge leaves earlier same-canvas undo history available', async () => {

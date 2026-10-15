@@ -1970,12 +1970,13 @@
 						return true;
 					} // nothing to do
 					if (
-						fromRec.values &&
-						toRec.loadedFromId &&
-						String(fromRec.values[data.fieldName] || '').slice(0, 15) ===
-							String(toRec.loadedFromId).slice(0, 15)
+						fromRec.values?.[data.fieldName] == null ||
+						(toRec.loadedFromId &&
+							String(fromRec.values[data.fieldName]).slice(0, 15) ===
+								String(toRec.loadedFromId).slice(0, 15))
 					) {
-						delete fromRec.values[data.fieldName];
+						fromRec.values = fromRec.values || {};
+						fromRec.values[data.fieldName] = null;
 					}
 					_lastBroadcastLinks.delete(key);
 				}

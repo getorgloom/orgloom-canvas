@@ -370,7 +370,7 @@
 							return;
 						}
 						_undo = captureUndoSnapshot ? captureUndoSnapshot() : null;
-						const summary = await soqlImportCommitToCanvas(result);
+						const summary = await soqlImportCommitToCanvas(result, { focusImported: true });
 						if (summary.blocked) {
 							previewPane.innerHTML =
 								'<div class="banner error">' +
@@ -576,12 +576,19 @@
 				clearBulkUserDeleted();
 				if (newBulkIds.size > 0) {
 					setSkipNextCyAutoPan(true);
+					if (opts && opts.focusImported) {
+						canvasState.bulkSelectedIds = new Set(newBulkIds);
+						canvasState.bulkSelectedEdgeId = null;
+						if (typeof deps.setSelectedDerivedEdge === 'function') {
+							deps.setSelectedDerivedEdge(null);
+						}
+					}
 				}
 				if (typeof renderBulkView === 'function') {
 					renderBulkView();
 				}
 				if (newBulkIds.size > 0) {
-					relayoutNewRecords(newBulkIds);
+					relayoutNewRecords(newBulkIds, { focusImported: !!(opts && opts.focusImported) });
 				}
 				return {
 					added: newRecords.length,

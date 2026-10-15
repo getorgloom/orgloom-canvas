@@ -24,11 +24,48 @@
 		return cardCount >= 100 ? 0 : 0.4;
 	}
 
+	function findImportSpace(width, height, obstacles, center, gap = 80) {
+		const preferred = { x: center.x - width / 2, y: center.y - height / 2 };
+		const candidates = [preferred];
+		let right = preferred.x;
+		for (const box of obstacles) {
+			const leftX = box.x1 - gap - width;
+			const rightX = box.x2 + gap;
+			const topY = box.y1 - gap - height;
+			const bottomY = box.y2 + gap;
+			right = Math.max(right, rightX);
+			for (const x of [leftX, rightX]) {
+				for (const y of [preferred.y, topY, bottomY]) {
+					candidates.push({ x, y });
+				}
+			}
+			candidates.push({ x: preferred.x, y: topY }, { x: preferred.x, y: bottomY });
+		}
+		// Guaranteed fallback outside all occupied bounds, even for a crowded canvas.
+		candidates.push({ x: right, y: preferred.y });
+		candidates.sort(
+			(a, b) =>
+				(a.x - preferred.x) ** 2 +
+				(a.y - preferred.y) ** 2 -
+				((b.x - preferred.x) ** 2 + (b.y - preferred.y) ** 2),
+		);
+		return candidates.find((point) =>
+			obstacles.every(
+				(box) =>
+					point.x + width <= box.x1 - gap ||
+					point.x >= box.x2 + gap ||
+					point.y + height <= box.y1 - gap ||
+					point.y >= box.y2 + gap,
+			),
+		);
+	}
+
 	window.OrgLoom.treeLayout = {
 		_test: {
 			componentLayoutName: componentLayoutName,
 			compactGridColumns: compactGridColumns,
 			minimumOverviewZoom: minimumOverviewZoom,
+			findImportSpace: findImportSpace,
 		},
 		mount: function mount(deps) {
 			if (!deps || !deps.canvasState || !deps.getCyInstance) {
@@ -37,7 +74,7 @@
 			const canvasState = deps.canvasState;
 			const getCyInstance = deps.getCyInstance;
 
-			function relayoutNewRecords(newRecIds) {
+			function relayoutNewRecords(newRecIds, options = {}) {
 				const _cyInstance = getCyInstance();
 				if (!_cyInstance || !newRecIds || newRecIds.size === 0) {
 					return;
@@ -46,6 +83,23 @@
 				_cyInstance.stop(true, true);
 				_cyInstance.elements().stop(true, true);
 				_cyInstance.resize();
+				const previousZoom = _cyInstance.zoom();
+				const extent = _cyInstance.extent();
+				const viewCenter = { x: (extent.x1 + extent.x2) / 2, y: (extent.y1 + extent.y2) / 2 };
+				const occupied = options.focusImported
+					? _cyInstance
+							.elements()
+							.filter((element) => {
+								if (!element.visible()) {
+									return false;
+								}
+								return element.isNode()
+									? !newRecIds.has(element.data('recId'))
+									: !newRecIds.has(element.source().data('recId')) &&
+											!newRecIds.has(element.target().data('recId'));
+							})
+							.map((element) => element.boundingBox())
+					: [];
 
 				const newCyNodes = _cyInstance.nodes().filter((n) => newRecIds.has(n.data('recId')));
 				const newCyEdges = _cyInstance
@@ -153,17 +207,29 @@
 						}
 					}
 				} else {
-					const layout = newEles.layout({
-						name: 'cose',
-						animate: false,
-						fit: false,
-						padding: 60,
-						nodeRepulsion: 400000,
-						idealEdgeLength: 200,
-						nodeOverlap: 30,
-						randomize: false,
-						numIter: 2500,
-					});
+					const layout = newEles.layout(
+						options.focusImported && !hasEdges
+							? {
+									name: 'grid',
+									animate: false,
+									fit: false,
+									cols: compactGridColumns(newCyNodes.length),
+									avoidOverlap: true,
+									avoidOverlapPadding: 32,
+									condense: true,
+								}
+							: {
+									name: 'cose',
+									animate: false,
+									fit: false,
+									padding: 60,
+									nodeRepulsion: 400000,
+									idealEdgeLength: 200,
+									nodeOverlap: 30,
+									randomize: false,
+									numIter: 2500,
+								},
+					);
 					layout.run();
 					if (hasExisting && newCyNodes.length > 0) {
 						const bb = newCyNodes.boundingBox();
@@ -178,16 +244,26 @@
 				const cardSel = '[kind ^= "card"]';
 				const allCards = _cyInstance.nodes(cardSel);
 				const newCards = newCyNodes.filter(cardSel);
-				const fitTarget = allCards.length > 0 ? allCards : _cyInstance.elements();
-				_cyInstance.fit(fitTarget, 60);
-				const z = _cyInstance.zoom();
-				const minZoom = minimumOverviewZoom(newCards.length);
-				if (minZoom > 0 && z < minZoom) {
-					_cyInstance.zoom(minZoom);
-					_cyInstance.center(newCards.length > 0 ? newCards : fitTarget);
-				} else if (z > 1) {
-					_cyInstance.zoom(1);
-					_cyInstance.center(fitTarget);
+				if (options.focusImported && newCyNodes.length > 0) {
+					const bounds = newEles.boundingBox();
+					const space = findImportSpace(bounds.w, bounds.h, occupied, viewCenter);
+					newCyNodes.shift({ x: space.x - bounds.x1, y: space.y - bounds.y1 });
+					const target = newCards.length > 0 ? newCards : newCyNodes;
+					_cyInstance.fit(target, 60);
+					_cyInstance.zoom(Math.min(previousZoom, _cyInstance.zoom()));
+					_cyInstance.center(target);
+				} else {
+					const fitTarget = allCards.length > 0 ? allCards : _cyInstance.elements();
+					_cyInstance.fit(fitTarget, 60);
+					const z = _cyInstance.zoom();
+					const minZoom = minimumOverviewZoom(newCards.length);
+					if (minZoom > 0 && z < minZoom) {
+						_cyInstance.zoom(minZoom);
+						_cyInstance.center(newCards.length > 0 ? newCards : fitTarget);
+					} else if (z > 1) {
+						_cyInstance.zoom(1);
+						_cyInstance.center(fitTarget);
+					}
 				}
 				_cyInstance.nodes().forEach((n) => {
 					const recId = n.data('recId');

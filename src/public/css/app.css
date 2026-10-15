@@ -9431,8 +9431,11 @@ body:has(.trial-banner:not([hidden])) .graph-overlay {
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
 }
-.canvas-search-modal .csr-table th:nth-child(2) {
+.canvas-search-modal .csr-table .csr-record-column {
 	width: 32%;
+}
+.canvas-search-modal .csr-table .csr-checkbox-column {
+	width: 30px;
 }
 .canvas-search-modal .csr-table .csr-select-cell {
 	width: 30px;
@@ -9449,6 +9452,21 @@ body:has(.trial-banner:not([hidden])) .graph-overlay {
 .canvas-search-modal .csr-table tbody tr:hover,
 .canvas-search-modal .csr-table .csr-selected {
 	background: var(--bg-hover);
+}
+.canvas-search-modal .csr-select-all {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	text-transform: none;
+	letter-spacing: normal;
+}
+.canvas-search-modal .csr-select-all input {
+	accent-color: var(--accent);
+}
+.canvas-search-modal .csr-tab:disabled {
+	opacity: 0.5;
+	cursor: default;
 }
 .canvas-search-modal .csr-empty {
 	font-size: 0.86rem;

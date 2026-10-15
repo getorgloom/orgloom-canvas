@@ -2527,7 +2527,7 @@ describe('presence client request gating', () => {
 			fieldName: 'AccountId',
 		});
 		assert.equal(receiving.canvasState.bulkAssociations.length, 0);
-		assert.equal(receiving.canvasState.bulkRecords[0].values.AccountId, undefined);
+		assert.equal(receiving.canvasState.bulkRecords[0].values.AccountId, null);
 		receivingSource.emit('presence', {
 			type: 'draft-link',
 			kind: 'add',

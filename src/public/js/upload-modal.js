@@ -3237,10 +3237,6 @@
 				html = '';
 				if (deleted.length > 0) {
 					html +=
-						'<div class="upload-section-head upload-section-head--danger">Deleted in Salesforce (' +
-						deleted.length +
-						')</div>' +
-						'<p class="tag" style="margin-top:-0.4em">These records are gone. Org Loom can’t undelete them; restore from the Salesforce recycle bin within 15 days if needed.</p>' +
 						'<div class="upload-results-list">' +
 						deleted
 							.map((d) => {
