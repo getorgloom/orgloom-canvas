@@ -80,6 +80,9 @@ const _ts_showSfControl = _ts_sfControlPaths.has(_ts_path);
 		</div>
 	<% } %>
 </header>
+<% if (typeof redditPixelId !== 'undefined' && redditPixelId) { %>
+	<script src="/js/reddit-pixel.js" defer data-pixel-id="<%= redditPixelId %>" data-event="PageVisit"></script>
+<% } %>
 <div class="trial-banner" id="trial-banner-mount" hidden></div>
 <% if (typeof posthogKey !== 'undefined' && posthogKey) { %>
 	<%
