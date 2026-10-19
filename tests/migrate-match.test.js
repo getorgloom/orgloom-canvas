@@ -9,6 +9,7 @@ const appSource = readFileSync(new URL('../src/public/js/app.js', import.meta.ur
 const uploadSource = readFileSync(new URL('../src/public/js/upload-modal.js', import.meta.url), 'utf8');
 const sandbox = { window: { OrgLoom: {} } };
 vm.createContext(sandbox);
+vm.runInContext(readFileSync(new URL('../src/public/js/records-canvas.js', import.meta.url), 'utf8'), sandbox);
 vm.runInContext(source, sandbox);
 const match = sandbox.window.OrgLoom.migrateMatch._test;
 
@@ -181,17 +182,40 @@ describe('cross-org match resolution', () => {
 	});
 
 	test('destination search records become selectable migration candidates', () => {
-		assert.deepEqual(
-			{ ...match.searchCandidate({ id: '001TARGET', name: 'Acme' }) },
-			{
-				id: '001TARGET',
-				label: 'Acme',
-				lastModifiedDate: null,
-				matchField: null,
-				matchValue: null,
-			},
-		);
+		assert.deepEqual(JSON.parse(JSON.stringify(match.searchCandidate({ id: '001TARGET', name: 'Acme' }))), {
+			id: '001TARGET',
+			label: 'Acme',
+			lastModifiedDate: null,
+			matchField: null,
+			matchValue: null,
+			details: [],
+		});
 		assert.equal(match.searchCandidate({ name: 'Missing id' }), null);
+	});
+
+	test('same-name candidates prioritize differing details and fall back to IDs when necessary', () => {
+		const detail = (name, value) => ({ name, label: name, value });
+		const a = { id: '001A', label: 'Same name', details: [detail('City', 'Phoenix'), detail('Number', 'A')] };
+		const b = { id: '001B', label: 'Same name', details: [detail('City', 'Phoenix'), detail('Number', 'B')] };
+		assert.deepEqual(Array.from(match.candidateDetailLines(a, [a, b])), ['Number: A', 'City: Phoenix']);
+		b.details = a.details;
+		assert.deepEqual(Array.from(match.candidateDetailLines(a, [a, b])), ['City: Phoenix', 'Number: A', 'ID: 001A']);
+		assert.deepEqual(Array.from(match.candidateDetailLines({ id: '001C', details: [] }, [])), ['ID: 001C']);
+	});
+
+	test('matching and typed search retain destination preview details', () => {
+		const details = [{ name: 'AccountNumber', label: 'Account Number', value: 'MIG-DUP-A' }];
+		const rec = { values: { Name: 'Duplicate' } };
+		match.applyMatchResponse([rec], 'Name', {
+			candidatesByValue: {
+				Duplicate: [
+					{ id: '001A', label: 'Duplicate', details },
+					{ id: '001B', label: 'Duplicate', details: [] },
+				],
+			},
+		});
+		assert.equal(rec._migrateMatchCandidates[0].details, details);
+		assert.equal(match.searchCandidate({ id: '001A', name: 'Duplicate', details }).details, details);
 	});
 
 	test('switching the key back to insert clears all match state', () => {
@@ -323,6 +347,31 @@ describe('destination field mapping compatibility', () => {
 	});
 });
 
+test('migration identities use canvas titles without changing matching keys', () => {
+	const describe = {
+		label: 'Contact',
+		fields: [
+			{ name: 'LastName', nameField: true, filterable: true, type: 'string' },
+			{ name: 'Email', idLookup: true, filterable: true, type: 'email' },
+		],
+	};
+	const contact = {
+		objectName: 'Contact',
+		label: 'Contact',
+		values: { FirstName: 'Adrian', LastName: 'Davis', Email: 'adrian@example.com' },
+	};
+	assert.equal(match.recordDisplayLabel(contact, describe, [contact]), 'Contact · Adrian Davis');
+	assert.equal(match.preferredKeyCandidate(describe, contact).name, 'Email');
+	assert.equal(
+		match.recordDisplayLabel(
+			{ objectName: 'Case', values: { Subject: 'Service request' } },
+			{ label: 'Case', fields: [] },
+			[],
+		),
+		'Case · Service request',
+	);
+});
+
 test('unnamed records of the same object receive stable migration labels', () => {
 	const describe = {
 		label: 'Account',
@@ -353,7 +402,6 @@ test('the guided modal owns matching, destination differences, and final review'
 	assert.match(source, /'Complete ' \+[\s\S]*' required field'/);
 	assert.doesNotMatch(source, /required difference/);
 	assert.match(source, /Choose what happens to each canvas record/);
-	assert.match(source, /Records start as Create new/);
 	assert.match(source, /mm-record-decisions/);
 	assert.match(source, /mm-record-identity/);
 	assert.doesNotMatch(source, />Canvas record</);
@@ -383,34 +431,34 @@ test('the guided modal owns matching, destination differences, and final review'
 	assert.match(source, /data-mm-field-resolution/);
 	assert.match(source, /_applyAutomaticFieldMappings\(\)/);
 	assert.match(source, /Auto-matched/);
-	assert.match(source, /Needs your input/);
-	assert.match(source, /Completed required fields/);
+	assert.match(source, /aria-label="Migration field choices"/);
+	assert.match(
+		source,
+		/<th scope="col">Source field<\/th><th scope="col">Source value<\/th><th scope="col">Destination field<\/th><th scope="col">Destination value<\/th>/,
+	);
+	assert.match(source, /scope="rowgroup"/);
+	assert.match(source, /mm-field-record-heading/);
+	assert.doesNotMatch(source, /function _fieldMappingGroupHtml/);
 	assert.match(source, /kind: 'required-reviewed'/);
 	assert.match(source, /reviewedRequiredFields\.set/);
 	assert.match(source, /escapeHtml\(String\(displayedValue\)\)/);
-	assert.match(source, /Reviewed mappings/);
-	assert.match(source, /Automatically matched \(/);
-	assert.match(source, /mm-field-map-group/);
 	assert.doesNotMatch(source, /Destination action/);
 	assert.doesNotMatch(source, />Drop<\/button>/);
 	assert.match(source, /Don't map \(destination unchanged\)/);
 	assert.match(source, /Unmapped values do not clear or overwrite destination data/);
-	assert.match(source, /Blank source fields won\\u2019t replace existing Salesforce values/);
-	assert.match(source, /To clear a field, apply the migration, open the record/);
 	assert.match(source, /Apply to canvas/);
-	assert.match(source, /Nothing is written to Salesforce until you use Upload/);
+	assert.match(
+		source,
+		/The plan will only apply your choices to your canvas\. Nothing will be written to Salesforce\./,
+	);
 	assert.match(source, /summaryEl\.hidden = step === 'review'/);
-	assert.match(source, /status\.updates > 0/);
 	assert.match(source, /Map to a destination field/);
 	assert.match(source, /value selection required/);
 	assert.match(source, /data-mm-map-value/);
-	assert.match(source, /Source value <code>/);
-	assert.match(source, /Destination value<select/);
+	assert.match(source, /aria-label="Destination value for/);
+	assert.match(source, /mm-destination-value/);
 	assert.match(source, /resolvedFieldMaps/);
 	assert.match(source, /_migrateFieldResolutions/);
-	assert.match(source, /mm-field-resolution-state/);
-	assert.match(source, /Needs attention/);
-	assert.match(source, /Resolved/);
 	assert.match(source, /pendingFieldMapCount/);
 	assert.match(cssSource, /\.mm-map-value-resolution/);
 	assert.match(cssSource, /\.mm-field-resolution-state--resolved/);
@@ -421,7 +469,12 @@ test('the guided modal owns matching, destination differences, and final review'
 	assert.match(source, /onCommitPlan/);
 	assert.match(source, /Applying to canvas/);
 	assert.doesNotMatch(source, /data-mm-close>Cancel/);
-	assert.match(source, /What should happen to this record\?/);
+	assert.match(source, /<table class="mm-record-table" aria-label="Migration record choices">/);
+	assert.match(
+		source,
+		/<th scope="col">Record<\/th><th scope="col">Action<\/th><th scope="col">Destination record<\/th>/,
+	);
+	assert.match(source, /class="mm-action-segments"/);
 	assert.match(source, /value="new"[\s\S]*Create new[\s\S]*value="existing"[\s\S]*Update existing/);
 	assert.match(source, /Update existing/);
 	assert.match(source, /Search destination/);
@@ -463,4 +516,51 @@ test('the guided modal owns matching, destination differences, and final review'
 		uploadSource,
 		/function _clearCommittedMigrationMatch\(rec\)[\s\S]*delete rec\._migrateFieldResolutions/,
 	);
+});
+
+describe('deletion matching and summary', () => {
+	test('an exact ID match stays selected and counts as a deletion', () => {
+		const record = { id: 1, pendingDelete: true, _wasLoadedFromId: '003SOURCE', values: { LastName: 'Source' } };
+		match.applyMatchResponse([record], 'Id', {
+			candidatesByValue: { '003SOURCE': [candidate('003SOURCE', 'Destination contact')] },
+		});
+		assert.equal(record._migrateMatchedId, '003SOURCE');
+		assert.equal(record._migrateMatchCandidates[0].label, 'Destination contact');
+		assert.equal(match.recordPlanCounts([record]).deletes, 1);
+		assert.equal(match.recordPlanCounts([record]).updates, 0);
+	});
+	test('deletion matching can switch to Create new and back without losing source intent', () => {
+		const record = { id: 1, pendingDelete: true, values: { Name: 'Source' } };
+		match.applyMatchResponse([record], 'Name', { candidatesByValue: { Source: [candidate('001TARGET')] } });
+		match.resolveRecord(record, 'new', [record]);
+		assert.equal(record.pendingDelete, true);
+		assert.equal(match.recordPlanCounts([record]).creates, 1);
+		assert.equal(match.recordPlanCounts([record]).deletes, 0);
+		match.resolveRecord(record, '001TARGET', [record]);
+		assert.equal(match.recordPlanCounts([record]).deletes, 1);
+	});
+	test('unmatched deletions cannot silently become creates', () => {
+		const record = { id: 1, pendingDelete: true, values: { Name: 'Absent' } };
+		match.applyMatchResponse([record], 'Name', { candidatesByValue: {} });
+		assert.equal(match.recordPlanCounts([record]).unresolved, 1);
+		assert.equal(match.recordPlanCounts([record]).creates, 0);
+	});
+	test('mixed plans distinguish deletes, updates, creates, unresolved and excluded records', () => {
+		const records = [
+			{ pendingDelete: true, _migrateMatchedId: '001DELETE' },
+			{ _migrateMatchedId: '001UPDATE' },
+			{ pendingDelete: true, _migrateMatchResolution: 'new' },
+			{ pendingDelete: true },
+			{ pendingDelete: true, _migrateExcluded: true },
+		];
+		assert.deepEqual(JSON.parse(JSON.stringify(match.recordPlanCounts(records))), {
+			updates: 1,
+			deletes: 1,
+			creates: 1,
+			unresolved: 1,
+			explicitNew: 1,
+			excluded: 1,
+			total: 4,
+		});
+	});
 });

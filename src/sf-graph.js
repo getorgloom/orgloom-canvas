@@ -2,10 +2,15 @@
 // Keep connected components intact so their rollback boundaries do not change.
 export const GRAPH_REQUEST_CAP = 75;
 
-export async function requestGraphBatches({ conn, apiBase, graphs, allowDuplicates }) {
+export async function requestGraphBatches({ conn, apiBase, graphs, allowDuplicates, beforeBatch, afterBatch }) {
 	const responses = [];
 	for (let offset = 0; offset < graphs.length; offset += GRAPH_REQUEST_CAP) {
 		const batch = graphs.slice(offset, offset + GRAPH_REQUEST_CAP);
+		// Persist intent before sending, and confirmed outcomes before another batch.
+		// A checkpoint failure must stop writes rather than trigger a transport retry.
+		if (beforeBatch) {
+			await beforeBatch(batch);
+		}
 		const response = await conn.request({
 			method: 'POST',
 			url: apiBase + '/composite/graph',
@@ -17,6 +22,11 @@ export async function requestGraphBatches({ conn, apiBase, graphs, allowDuplicat
 		});
 		const returned = Array.isArray(response?.graphs) ? response.graphs : [];
 		responses.push(...returned);
+		if (afterBatch) {
+			if ((await afterBatch(batch, { graphs: returned })) === false) {
+				break;
+			}
+		}
 		// Do not submit more work after an incomplete response. The caller keeps
 		// the attempt pending because a missing result does not prove rollback.
 		const ids = new Set(returned.map((graph) => graph?.graphId));

@@ -62,8 +62,14 @@
 	function clear() {
 		try {
 			eachKey(window.sessionStorage, (key) => {
-				if (isRecoveryKey(key) || key.startsWith('orgloom-describe-') || key === 'orgloom:sfOfflineMode')
+				if (
+					isRecoveryKey(key) ||
+					key.startsWith('orgloom:upload-attempts:') ||
+					key.startsWith('orgloom-describe-') ||
+					key === 'orgloom:sfOfflineMode'
+				) {
 					removeItem(key);
+				}
 			});
 		} catch (_) {}
 		// Clean up copies left by older versions too; leave preferences/demo data alone.

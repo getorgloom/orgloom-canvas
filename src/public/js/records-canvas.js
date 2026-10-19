@@ -42,7 +42,24 @@
 		return '<span class="record-type-tag" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</span>';
 	}
 
+	function recordValueTitle(rec, describe) {
+		const values = (rec && rec.values) || {};
+		const fullName = ((values.FirstName || '') + ' ' + (values.LastName || '')).trim();
+		if (fullName) return fullName;
+		const nameField = ((describe && describe.fields) || []).find((field) => field.nameField);
+		const value =
+			(nameField && values[nameField.name]) ||
+			values.Name ||
+			values.CaseNumber ||
+			values.OrderNumber ||
+			values.WorkOrderNumber ||
+			values.Subject ||
+			values.Title;
+		return value ? String(value) : '';
+	}
+
 	window.OrgLoom.recordsCanvas = {
+		recordValueTitle,
 		_test: { reconcileExistingEdge, canRenderDerivedRecordLink, migrationMatchLabel, recordObjectLabel },
 		mount: function mount(deps) {
 			const required = [
@@ -417,40 +434,10 @@
 						cls +=
 							rec.slot.kind === 'fields' ? ' record-card--field-request' : ' record-card--record-request';
 					}
-					const titleText = (() => {
-						if (rec.values) {
-							const fn = rec.values.FirstName,
-								ln = rec.values.LastName;
-							if (fn != null || ln != null) {
-								const composed = ((fn || '') + ' ' + (ln || '')).trim();
-								if (composed) {
-									return composed;
-								}
-							}
-							const desc = canvasState.describeCache[rec.objectName];
-							if (desc && Array.isArray(desc.fields)) {
-								const nf = desc.fields.find((f) => f.nameField);
-								if (nf && rec.values[nf.name]) {
-									return String(rec.values[nf.name]);
-								}
-							}
-							const generic =
-								rec.values.Name ||
-								rec.values.CaseNumber ||
-								rec.values.OrderNumber ||
-								rec.values.WorkOrderNumber ||
-								rec.values.Subject ||
-								rec.values.Title;
-							if (generic) {
-								return String(generic);
-							}
-						}
-						const matchedLabel = migrationMatchLabel(rec);
-						if (matchedLabel) {
-							return matchedLabel;
-						}
-						return isExisting ? '(no title)' : '(no name yet)';
-					})();
+					const titleText =
+						recordValueTitle(rec, canvasState.describeCache[rec.objectName]) ||
+						migrationMatchLabel(rec) ||
+						(isExisting ? '(no title)' : '(no name yet)');
 					let badge;
 					if (isPendingDelete) {
 						badge =
@@ -501,7 +488,9 @@
 					}
 					if (salesforceReadOnly) {
 						badge +=
-							'<span class="record-readonly-badge" title="Your Salesforce user can view this record but cannot update it.">read-only</span>';
+							rec._recordAccess.hasReadAccess === false
+								? '<span class="record-readonly-badge" title="This record may have been deleted, or your Salesforce user no longer has access.">unavailable</span>'
+								: '<span class="record-readonly-badge" title="Your Salesforce user can view this record but cannot update it.">read-only</span>';
 					}
 					const requestBadge = slotKind && showRequestContext ? _slotRequestBadgeHtml(rec) : '';
 					const requestBadges = requestBadge

@@ -221,8 +221,16 @@
 							previous !== undefined &&
 							previous !== null &&
 							!(typeof previous === 'string' && previous === '');
+						// Salesforce supplies Case business hours even though Describe reports
+						// nillable=false and defaultedOnCreate=false. Only exempt missing values
+						// on insert; explicit IDs and updates still use the normal validation.
+						const caseBusinessHoursDefault = rec.objectName === 'Case' && f.name === 'BusinessHoursId';
 						const requiredMissingOnCreate =
-							!isUpdate && !hasValue && !hasRelationship && !f.defaultedOnCreate;
+							!isUpdate &&
+							!hasValue &&
+							!hasRelationship &&
+							!f.defaultedOnCreate &&
+							!caseBusinessHoursDefault;
 						const requiredClearedOnUpdate = isUpdate && previouslyHadValue && !hasValue && !hasRelationship;
 
 						if (f.required && (requiredMissingOnCreate || requiredClearedOnUpdate)) {

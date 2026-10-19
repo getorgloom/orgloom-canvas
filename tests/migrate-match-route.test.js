@@ -3,6 +3,25 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { initTestDb } from './helpers/db.js';
 import { ext } from '../src/extensions.js';
+import { migrationCandidateFields, migrationCandidateDetails } from '../src/migration-candidate-details.js';
+
+test('custom objects use external identifiers and preserve meaningful zero values', () => {
+	const fields = migrationCandidateFields(
+		{
+			fields: [
+				{ name: 'Name', type: 'string', nameField: true },
+				{ name: 'Seed_Key__c', label: 'Seed Key', type: 'string', externalId: true },
+				{ name: 'Sequence__c', label: 'Sequence', type: 'int', unique: true },
+				{ name: 'Encrypted_Key__c', type: 'encryptedstring', externalId: true },
+			],
+		},
+		'Project__c',
+	);
+	assert.deepEqual(migrationCandidateDetails({ Seed_Key__c: 'PROJECT-1', Sequence__c: 0 }, fields), [
+		{ name: 'Seed_Key__c', label: 'Seed Key', value: 'PROJECT-1' },
+		{ name: 'Sequence__c', label: 'Sequence', value: '0' },
+	]);
+});
 
 let server;
 let baseUrl;
@@ -14,6 +33,9 @@ const accountDescribe = {
 	fields: [
 		{ name: 'Id', type: 'id', filterable: true },
 		{ name: 'Name', type: 'string', filterable: true, nameField: true },
+		{ name: 'AccountNumber', label: 'Account Number', type: 'string', filterable: true },
+		{ name: 'Secret_Key__c', type: 'string', externalId: true, encrypted: true },
+		{ name: 'Hidden_Key__c', type: 'string', externalId: true, accessible: false },
 		{ name: 'Description', label: 'Description', type: 'textarea', filterable: false },
 		{ name: 'AnnualRevenue', type: 'double', filterable: true },
 		{ name: 'LastModifiedDate', type: 'datetime', filterable: true },
@@ -44,7 +66,7 @@ before(async () => {
 		req.session = {};
 		next();
 	});
-	app.use('/api/migrate/match', (req, _res, next) => {
+	app.use(['/api/migrate/match', '/api/objects'], (req, _res, next) => {
 		req.sf = {
 			conn,
 			sfOrgId: '00DDEST',
@@ -82,6 +104,38 @@ async function post(body) {
 }
 
 describe('POST /api/migrate/match field-aware SOQL literals', () => {
+	test('ambiguous matches include readable identifiers but exclude encrypted or inaccessible fields', async () => {
+		queryRecords = [
+			{ Id: '001000000000001AAA', Name: 'Duplicate', AccountNumber: 'MIG-DUP-A' },
+			{ Id: '001000000000002AAA', Name: 'Duplicate', AccountNumber: 'MIG-DUP-B' },
+		];
+		const response = await post({ objectName: 'Account', keyField: 'Name', values: ['Duplicate'] });
+		assert.equal(response.status, 200);
+		const body = await response.json();
+		assert.deepEqual(body.ambiguous, ['Duplicate']);
+		assert.deepEqual(
+			body.candidatesByValue.Duplicate.map((candidate) => candidate.details),
+			[
+				[{ name: 'AccountNumber', label: 'Account Number', value: 'MIG-DUP-A' }],
+				[{ name: 'AccountNumber', label: 'Account Number', value: 'MIG-DUP-B' }],
+			],
+		);
+		assert.match(capturedQueries[0], /AccountNumber/);
+		assert.doesNotMatch(capturedQueries[0], /Secret_Key__c|Hidden_Key__c/);
+	});
+
+	test('typed migration search includes details without changing ordinary lookup responses', async () => {
+		queryRecords = [{ Id: '001000000000001AAA', Name: 'Duplicate', AccountNumber: 'MIG-DUP-A' }];
+		const response = await fetch(baseUrl + '/api/objects/Account/search?q=Duplicate&migrationDetails=1');
+		assert.equal(response.status, 200);
+		assert.deepEqual((await response.json()).records[0].details, [
+			{ name: 'AccountNumber', label: 'Account Number', value: 'MIG-DUP-A' },
+		]);
+		assert.doesNotMatch(capturedQueries[0], /Secret_Key__c|Hidden_Key__c/);
+		const ordinary = await fetch(baseUrl + '/api/objects/Account/search?q=Duplicate');
+		assert.equal(ordinary.status, 200);
+		assert.equal(Object.hasOwn((await ordinary.json()).records[0], 'details'), false);
+	});
 	test('AnnualRevenue uses an unquoted numeric IN literal', async () => {
 		queryRecords = [
 			{
@@ -135,4 +189,12 @@ describe('POST /api/migrate/match field-aware SOQL literals', () => {
 		assert.match(body.message, /external ID or unique field/i);
 		assert.equal(capturedQueries.length, 0);
 	});
+});
+
+test('exact Salesforce ID matching returns the selected destination candidate', async () => {
+	queryRecords = [{ Id: '001000000000001AAA', Name: 'Exact destination' }];
+	const response = await post({ objectName: 'Account', keyField: 'Id', values: ['001000000000001AAA'] });
+	assert.equal(response.status, 200);
+	assert.match(capturedQueries[0], /Id IN \('001000000000001AAA'\)$/);
+	assert.equal((await response.json()).candidatesByValue['001000000000001AAA'][0].label, 'Exact destination');
 });

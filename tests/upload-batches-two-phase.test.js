@@ -73,6 +73,62 @@ describe('upload-batches store, layer 4: VersionData-as-URL', () => {
 });
 
 describe('upload-batches store: two-phase write', () => {
+	test('Graph checkpoints encrypt confirmed IDs and retain pending intent without business values', async () => {
+		const stub = installSfFetchStub();
+		try {
+			const id = '069O400000RjEorIAF';
+			const conn = makeKekConn({
+				creates: [{ success: true, id: '068O400000S8kK5IAJ' }],
+				retrieves: [{ ContentDocumentId: id }],
+			});
+			const store = await uploadBatchesStoreFromSfConnection(conn, USER_ID, ORG_ID);
+			await store.createPending({
+				source: 'canvas-graph',
+				attemptId: 'checkpoint-test-01',
+				intendedRecords: [
+					{ tempId: 1, objectName: 'Contact' },
+					{ tempId: 2, objectName: 'Contact' },
+				],
+			});
+			const pending = conn.calls.sobjectCreates[0].payload.VersionData;
+			conn._queues.queries.push(
+				{ records: [{ Id: id, OwnerId: USER_ID }] },
+				{
+					records: [
+						{ Id: '068O400000S8kK5IAJ', VersionData: pending, PathOnClient: 'checkpoint' + BATCH_EXT },
+					],
+				},
+			);
+			conn._queues.creates.push({ success: true, id: '068O400000S8kK6IAJ' });
+			await store.checkpointGraph(id, {
+				startedTempIds: new Set([1]),
+				stopped: true,
+				results: [
+					{
+						tempId: 1,
+						objectName: 'Contact',
+						success: true,
+						id: '003saved',
+						mode: 'create',
+						values: { LastName: 'private' },
+					},
+				],
+			});
+			const written = conn.calls.sobjectCreates[1].payload.VersionData;
+			const decoded = await decodeWithKey(conn, written, id);
+			assert.equal(decoded.status, 'pending');
+			assert.equal(decoded.attemptId, 'checkpoint-test-01');
+			assert.equal(decoded.insertedIds[0].sfId, '003saved');
+			assert.deepEqual(decoded.graphProgress.startedTempIds, [1]);
+			assert.deepEqual(decoded.graphProgress.intendedTempIds, [1, 2]);
+			assert.equal(decoded.graphProgress.stopped, true);
+			assert(!JSON.stringify(decoded).includes('private'));
+			assert(!Buffer.from(written, 'base64').toString().includes('003saved'));
+		} finally {
+			stub.restore();
+		}
+	});
+
 	test('createPending records intent (pending, no ids); finalize flips to uploaded with ids', async () => {
 		const stub = installSfFetchStub();
 		try {

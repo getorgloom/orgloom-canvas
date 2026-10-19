@@ -111,8 +111,24 @@
 				return Array.from(intents).sort();
 			}
 
+			function uploadRecoveryMarker(value) {
+				if (
+					!value ||
+					!/^[a-zA-Z0-9-]{16,64}$/.test(value.attemptId || '') ||
+					!value.orgId ||
+					!value.userId ||
+					value.tempId == null
+				) {
+					return undefined;
+				}
+				return { attemptId: value.attemptId, tempId: value.tempId, orgId: value.orgId, userId: value.userId };
+			}
 			function recordCommonParts(r) {
 				const out = {};
+				const uploadRecovery = uploadRecoveryMarker(r._uploadRecovery);
+				if (uploadRecovery) {
+					out.uploadRecovery = uploadRecovery;
+				}
 				if (r.slot) {
 					out.slot = r.slot;
 				}
@@ -1429,6 +1445,7 @@
 						x: _savedCoordinate(ref.x, 200),
 						y: _savedCoordinate(ref.y, 200) + _offY,
 						_canvasRecordId: canvasRecordIds.get(ref),
+						_uploadRecovery: uploadRecoveryMarker(ref.uploadRecovery),
 						loadedValues: Object.assign({}, _fresh),
 						values:
 							ref.changes && typeof ref.changes === 'object'
@@ -1471,6 +1488,7 @@
 						values: _cleanValues(d.values),
 						_persistedTempId: d.tempId,
 						_canvasRecordId: canvasRecordIds.get(d),
+						_uploadRecovery: uploadRecoveryMarker(d.uploadRecovery),
 					};
 					encryptedFields.hydrateIntents(recObj, d.encryptedFieldIntents, canvasState);
 					if (d.slot && d.slot.slotId != null) {

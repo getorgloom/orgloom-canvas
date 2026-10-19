@@ -702,9 +702,8 @@
 				const ok = await showConfirmDialog({
 					title: 'Migrate this canvas to another Salesforce org?',
 					message:
-						'Your canvas stays open while you connect or switch to the destination Salesforce org in a popup. ' +
-						'When connected, you’ll review how each record should be handled, then apply those choices to the canvas. ' +
-						'Compatible field values carry over, and you can match records to existing destination records or create new ones.',
+						'Save this canvas, then connect to the destination org. ' +
+						'You’ll review which records to create or match before anything is uploaded.',
 					confirmLabel: 'Save and choose destination',
 					cancelLabel: 'Cancel',
 				});

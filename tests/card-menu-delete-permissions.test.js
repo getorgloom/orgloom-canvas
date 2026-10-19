@@ -5,7 +5,7 @@ import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../src/public/js/canvas-card-menu.js', import.meta.url), 'utf8');
 const appSource = fs.readFileSync(new URL('../src/public/js/app.js', import.meta.url), 'utf8');
-function setup({ deletable = true, cached = false, fails = false, realMark = false } = {}) {
+function setup({ deletable = true, cached = false, fails = false, realMark = false, incomplete = false } = {}) {
 	const target = { innerHTML: '' };
 	const pop = {
 		style: {},
@@ -90,7 +90,7 @@ function setup({ deletable = true, cached = false, fails = false, realMark = fal
 		ensureDescribe: async () => {
 			env.calls++;
 			if (fails) throw new Error('Describe unavailable');
-			return (state.describeCache.Contact = { deletable });
+			return (state.describeCache.Contact = incomplete ? {} : { deletable });
 		},
 	});
 	env.open = () => api.showCardMoreMenu({ getBoundingClientRect: () => ({ left: 100, top: 100, bottom: 120 }) }, rec);
@@ -129,6 +129,14 @@ test('missing metadata fails closed and can be retried by reopening the menu', a
 	e.open();
 	await settle();
 	assert.equal(e.calls, 2);
+});
+
+test('incomplete metadata is a failed check, not a confirmed permission denial', async () => {
+	const e = setup({ incomplete: true });
+	e.open();
+	await settle();
+	assert.match(e.target.innerHTML, /Could not check delete permissions/);
+	assert.doesNotMatch(e.target.innerHTML, /Delete not permitted|data-card-action="mark-delete"/);
 });
 
 test('late permission responses respect denial, role changes and closed menus', async () => {

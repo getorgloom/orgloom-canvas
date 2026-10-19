@@ -243,6 +243,11 @@
 						.then(() => deps.ensureDescribe(rec.objectName, describe ? { force: true } : undefined))
 						.then(() => {
 							if (!pop.isConnected) return;
+							const currentDescribe =
+								canvasState.describeCache && canvasState.describeCache[rec.objectName];
+							if (!currentDescribe || typeof currentDescribe.deletable !== 'boolean') {
+								throw new Error('Delete permissions unavailable');
+							}
 							const target = pop.querySelector('[data-delete-permissions]');
 							if (target)
 								target.innerHTML =

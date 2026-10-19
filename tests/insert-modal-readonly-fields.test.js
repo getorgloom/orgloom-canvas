@@ -840,6 +840,37 @@ test('saving an existing record writes only fields intentionally touched in the 
 	assert.match(source, /currentRecordRef\.values = mergeSubmittedFieldValues/);
 });
 
+test('renaming a draft preserves untouched values even if a control renders blank', () => {
+	const previous = { Name: 'Before', Type__c: 'Build', Subtype__c: 'Configuration', Enabled__c: true };
+	const payload = { Name: 'After', Type__c: 'Build', Subtype__c: null, Enabled__c: false };
+	const changed = intentionalChangedFieldNames(
+		['Name', 'Subtype__c', 'Enabled__c'],
+		new Set(['Name']),
+		false,
+		previous,
+	);
+	assert.deepEqual({ ...mergeSubmittedFieldValues(previous, payload, changed) }, { ...previous, Name: 'After' });
+});
+
+test('draft saves still apply explicit clears and defaults for fields without stored values', () => {
+	const previous = { Name: 'Draft', Subtype__c: 'Configuration', Enabled__c: null };
+	const payload = { ...previous, Subtype__c: null, Enabled__c: false, Status__c: 'Backlog' };
+	const changed = intentionalChangedFieldNames(
+		['Subtype__c', 'Enabled__c', 'Status__c'],
+		new Set(['Subtype__c']),
+		false,
+		previous,
+	);
+	assert.deepEqual(
+		{ ...mergeSubmittedFieldValues(previous, payload, changed) },
+		{
+			...previous,
+			Subtype__c: null,
+			Status__c: 'Backlog',
+		},
+	);
+});
+
 test('untouched loaded fields cannot block an unrelated edit', () => {
 	const touched = new Set(['Description']);
 	assert.equal(shouldValidateEditorField('Description', touched, true), true);

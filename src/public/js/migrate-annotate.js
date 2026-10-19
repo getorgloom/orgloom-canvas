@@ -87,30 +87,6 @@
 		return !!(field && Array.isArray(field.picklistValues) && field.picklistValues.length);
 	}
 
-	function picklistValuesForContext(field, recordTypeId, values) {
-		var options = picklistValuesForRecordType(field, recordTypeId);
-		if (!field || !field.controllerName) {
-			return options;
-		}
-		var mapsByRecordType = field.controllerValuesByRecordType;
-		var controllerMap =
-			mapsByRecordType && recordTypeId && Object.prototype.hasOwnProperty.call(mapsByRecordType, recordTypeId)
-				? mapsByRecordType[recordTypeId]
-				: field.controllerValues;
-		if (!controllerMap || typeof controllerMap !== 'object') {
-			return options;
-		}
-		var rawController = _lookupValue(values, field.controllerName);
-		var controllerKey = rawController == null ? '' : String(rawController);
-		if (!controllerKey || !Object.prototype.hasOwnProperty.call(controllerMap, controllerKey)) {
-			return [];
-		}
-		var controllerIndex = controllerMap[controllerKey];
-		return options.filter(function (option) {
-			return Array.isArray(option && option.validFor) && option.validFor.indexOf(controllerIndex) !== -1;
-		});
-	}
-
 	function supportsCustomPicklistValue(field) {
 		return !!(
 			field &&
@@ -137,7 +113,20 @@
 		return null;
 	}
 
+	function isMigrationDelete(record) {
+		return !!(
+			record &&
+			record.pendingDelete &&
+			record._migrateMatchResolution !== 'new' &&
+			record._migrateMatchIntent !== 'new'
+		);
+	}
+
 	function computeMigrationStatus(record, targetDescribe) {
+		// Deletions use only the selected destination identity, not source field values.
+		if (isMigrationDelete(record) && targetDescribe) {
+			return { status: 'ready', issues: [], resolvedRecordTypeId: null };
+		}
 		// Treat missing fields as ambiguous: they may not exist or may be hidden by destination FLS.
 		var issues = [];
 		var resolvedRecordTypeId = null;
@@ -230,7 +219,8 @@
 				picklistRecordTypeAvailable &&
 				hasAuthoritativePicklistValues(pf, picklistRecordTypeId)
 			) {
-				var picklistValues = picklistValuesForContext(pf, picklistRecordTypeId, values);
+				// Map unavailable values here; leave conflicts with controlling fields to upload validation.
+				var picklistValues = picklistValuesForRecordType(pf, picklistRecordTypeId);
 				var active = {};
 				for (var a = 0; a < picklistValues.length; a++) {
 					var opt = picklistValues[a];
@@ -479,8 +469,9 @@
 					.map(function (part) {
 						return Object.prototype.hasOwnProperty.call(map, part) ? map[part] : part;
 					})
-					.filter(function (part) {
-						return part !== '';
+					.filter(function (part, index, values) {
+						// Several source choices can map to the same destination choice.
+						return part !== '' && values.indexOf(part) === index;
 					});
 				if (parts.length) {
 					out[key] = parts.join(';');
@@ -531,7 +522,7 @@
 	}
 
 	function exclusionIssues(record, records, associations, describeByObject) {
-		if (!record || record._migrateExcluded) {
+		if (!record || record._migrateExcluded || isMigrationDelete(record)) {
 			return [];
 		}
 		var excluded = new Set(
@@ -552,7 +543,11 @@
 				var field = fields.find(function (f) {
 					return f.name.toLowerCase() === String(a.fieldName).toLowerCase();
 				});
-				return field && (field.required === true || (field.nillable === false && !field.defaultedOnCreate));
+				return (
+					field &&
+					!(record._migrateMatchedId && field.updateable === false) &&
+					(field.required === true || (field.nillable === false && !field.defaultedOnCreate))
+				);
 			})
 			.map(function (a) {
 				return {
@@ -575,7 +570,9 @@
 		var baselines = baselinesByKey || {};
 		var plannedById = {};
 		var planned = [];
+		var relationshipTargets = new Map();
 		var updates = 0;
+		var deletes = 0;
 		var creates = 0;
 		var excludedIds = new Set(
 			source
@@ -608,9 +605,26 @@
 				throw new Error('Resolve unavailable objects and required fields before applying the migration.');
 			}
 			var matchedId = record._migrateMatchedId || null;
-			var patch = prepareMigrationValues(record, annotations[record.id] || null);
+			var deleting = isMigrationDelete(record);
+			if (deleting && !matchedId) {
+				throw new Error('Select a destination record to delete, or choose Create new.');
+			}
+			var patch = deleting ? {} : prepareMigrationValues(record, annotations[record.id] || null);
 			delete patch.attributes;
 			delete patch.Id;
+			// Matched records keep destination relationships that Salesforce cannot update.
+			// These can be present as either literal values or canvas associations.
+			var fields = ((describeByObject || {})[record.objectName] || {}).fields || [];
+			var preservedRelationships = fields.filter(function (field) {
+				return matchedId && field.type === 'reference' && (deleting || field.updateable === false);
+			});
+			preservedRelationships.forEach(function (field) {
+				Object.keys(patch).forEach(function (key) {
+					if (key.toLowerCase() === field.name.toLowerCase()) {
+						delete patch[key];
+					}
+				});
+			});
 			(associations || []).forEach(function (a) {
 				if (a && String(a.fromId) === String(record.id) && excludedIds.has(String(a.toId))) {
 					var key = _valueKey(patch, a.fieldName);
@@ -637,7 +651,11 @@
 					loadedValues: loadedValues,
 					values: Object.assign({}, loadedValues, patch),
 				};
-				updates++;
+				if (deleting) {
+					deletes++;
+				} else {
+					updates++;
+				}
 			} else {
 				next = {
 					record: record,
@@ -648,6 +666,8 @@
 				creates++;
 			}
 			planned.push(next);
+			next.pendingDelete = deleting;
+			next.preservedRelationships = preservedRelationships;
 			plannedById[String(record.id)] = next;
 		}
 
@@ -657,6 +677,28 @@
 			}
 			var child = plannedById[String(association.fromId)];
 			var parent = plannedById[String(association.toId)];
+			var preservedField =
+				child &&
+				child.preservedRelationships.find(function (field) {
+					return field.name.toLowerCase() === association.fieldName.toLowerCase();
+				});
+			if (preservedField || (child && child.pendingDelete)) {
+				var destinationId = _lookupValue(
+					child.loadedValues,
+					preservedField ? preservedField.name : association.fieldName,
+				);
+				var destinationParent =
+					destinationId &&
+					planned.find(function (candidate) {
+						return (
+							candidate.loadedFromId &&
+							candidate.loadedFromId.slice(0, 15) === String(destinationId).slice(0, 15)
+						);
+					});
+				// Keep the line only when its actual destination parent is on this canvas.
+				relationshipTargets.set(association, destinationParent ? destinationParent.record.id : null);
+				return;
+			}
 			if (!child || !parent) {
 				return;
 			}
@@ -671,6 +713,28 @@
 		planned.forEach(function (next) {
 			var record = next.record;
 			record.values = next.values;
+			if (next.pendingDelete) {
+				record.pendingDelete = true;
+			} else {
+				delete record.pendingDelete;
+			}
+			// Import warnings describe the old connection. Rebuild them from the
+			// destination schema and the values that survived the migration plan.
+			var describe = describeByObject && describeByObject[record.objectName];
+			if (describe && Array.isArray(describe.fields)) {
+				var availableFields = new Set(
+					describe.fields.map(function (field) {
+						return field.name.toLowerCase();
+					}),
+				);
+				var missingFields = Object.keys(record.values || {}).filter(function (name) {
+					return name !== 'attributes' && !name.startsWith('_') && !availableFields.has(name.toLowerCase());
+				});
+				delete record._importSchemaWarning;
+				if (missingFields.length) {
+					record._importSchemaWarning = { objectUnavailable: false, fields: missingFields };
+				}
+			}
 			if (next.loadedFromId) {
 				record.loadedFromId = next.loadedFromId;
 				record.loadedValues = next.loadedValues;
@@ -693,14 +757,29 @@
 		}
 		for (var k = (associations || []).length - 1; k >= 0; k--) {
 			var edge = associations[k];
+			if (relationshipTargets.has(edge)) {
+				var targetId = relationshipTargets.get(edge);
+				if (targetId === null) {
+					associations.splice(k, 1);
+					continue;
+				}
+				edge.toId = targetId;
+			}
 			if (excludedIds.has(String(edge.fromId)) || excludedIds.has(String(edge.toId))) {
 				associations.splice(k, 1);
 			}
 		}
-		return { updates: updates, creates: creates, excluded: excludedIds.size, total: updates + creates };
+		return {
+			updates: updates,
+			deletes: deletes,
+			creates: creates,
+			excluded: excludedIds.size,
+			total: updates + deletes + creates,
+		};
 	}
 
 	var api = {
+		isMigrationDelete: isMigrationDelete,
 		exclusionIssues: exclusionIssues,
 		computeMigrationStatus: computeMigrationStatus,
 		resolveTargetRecordTypeId: resolveTargetRecordTypeId,

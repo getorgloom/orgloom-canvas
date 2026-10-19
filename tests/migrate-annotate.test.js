@@ -153,7 +153,7 @@ describe('computeMigrationStatus', () => {
 		]);
 	});
 
-	test('dependent picklists use the destination controller value', () => {
+	test('dependent picklist combinations are preserved while unavailable values still need mapping', () => {
 		const d = describe_([
 			field('Country__c', { type: 'picklist', picklistValues: [pv('USA'), pv('Canada')] }),
 			field('State__c', {
@@ -166,9 +166,18 @@ describe('computeMigrationStatus', () => {
 				],
 			}),
 		]);
-		const invalid = annotate.computeMigrationStatus({ values: { Country__c: 'Canada', State__c: 'Arizona' } }, d);
+		const rec = { values: { Country__c: 'Canada', State__c: 'Arizona' } };
+		const result = annotate.computeMigrationStatus(rec, d);
+		assert.equal(result.status, 'ready');
+		assert.equal(result.issues.length, 0);
+		assert.deepEqual({ ...annotate.prepareMigrationValues(rec, result) }, rec.values);
+
+		const missing = { values: { Country__c: 'Canada', State__c: 'Unavailable' } };
+		const invalid = annotate.computeMigrationStatus(missing, d);
 		assert.equal(invalid.status, 'warning');
 		assert.equal(invalid.issues[0].field, 'State__c');
+		assert.deepEqual(Array.from(invalid.issues[0].invalidValues), ['Unavailable']);
+		assert.equal(annotate.prepareMigrationValues(missing, invalid).State__c, undefined);
 	});
 
 	test('an unavailable destination record type does not borrow generic picklist options', () => {
@@ -466,6 +475,35 @@ describe('prepareMigrationValues: destination-safe upload payload', () => {
 		);
 	});
 
+	for (const scenario of [
+		{ source: 'Apex;Data_Migration;Security', expected: 'Apex;DataOps' },
+		{ source: 'DataOps;Apex;Data_Migration;Security', expected: 'DataOps;Apex' },
+		{ source: 'Data_Migration;Apex;DataOps;Security', expected: 'DataOps;Apex' },
+	]) {
+		test(`deduplicates converging multi-select mappings in first occurrence order: ${scenario.source}`, () => {
+			const record = {
+				values: { Skills__c: scenario.source },
+				_migratePicklistRemap: { Skills__c: { Data_Migration: 'DataOps', Security: 'DataOps' } },
+			};
+			const result = annotate.prepareMigrationValues(record, { issues: [] });
+			assert.equal(result.Skills__c, scenario.expected);
+			assert.equal(record.values.Skills__c, scenario.source);
+		});
+	}
+
+	test('deduplicates translated values while preserving explicit omissions', () => {
+		const record = {
+			values: { Skills__c: 'Apex;Data_Migration;Security;DataOps', Removed__c: 'Security' },
+			_migratePicklistRemap: {
+				Skills__c: { Data_Migration: 'DataOps', Security: '' },
+				Removed__c: { Security: '' },
+			},
+		};
+		const result = annotate.prepareMigrationValues(record, { issues: [] });
+		assert.equal(result.Skills__c, 'Apex;DataOps');
+		assert.equal(Object.hasOwn(result, 'Removed__c'), false);
+	});
+
 	test('applies explicit remaps and target record type without mutating canvas values', () => {
 		const record = {
 			values: { Stage__c: 'Source', Keep__c: 'same' },
@@ -481,6 +519,195 @@ describe('prepareMigrationValues: destination-safe upload payload', () => {
 });
 
 describe('applyMigrationPlan: normal canvas materialization', () => {
+	for (const scenario of [
+		{ name: 'removes a link to a different matched parent', parentMatched: true },
+		{ name: 'removes a link to a new parent', parentMatched: false },
+		{ name: 'redirects the link to the existing parent on the canvas', parentMatched: true, includeOriginal: true },
+		{ name: 'keeps a link already pointing at the existing parent', parentMatched: true, sameParent: true },
+		{ name: 'keeps a blank destination relationship blank', parentMatched: true, blank: true },
+		{ name: 'preserves the parent when the source parent is excluded', parentMatched: true, excluded: true },
+	]) {
+		test(`read-only update relationship: ${scenario.name}`, () => {
+			const originalId = 'a07000000000001AAA';
+			const otherId = 'a07000000000002AAA';
+			const parent = {
+				id: 1,
+				objectName: 'Project__c',
+				values: { Name: 'Source project' },
+				_migrateMatchedId: scenario.parentMatched ? (scenario.sameParent ? originalId : otherId) : null,
+				_migrateExcluded: !!scenario.excluded,
+			};
+			const milestone = {
+				id: 2,
+				objectName: 'Milestone__c',
+				_migrateMatchedId: 'a06000000000001AAA',
+				values: { Label__c: 'Updated label', project__c: 'a07SOURCE' },
+			};
+			const records = [parent, milestone];
+			if (scenario.includeOriginal) {
+				records.push({ id: 3, objectName: 'Project__c', values: {}, _migrateMatchedId: originalId });
+			}
+			const edges = [{ id: 4, fromId: 2, toId: 1, fieldName: 'Project__c' }];
+			const baseline = {
+				Id: milestone._migrateMatchedId,
+				Label__c: 'Original label',
+				Project__c: scenario.blank ? null : originalId.slice(0, 15),
+			};
+			const baselineBefore = JSON.stringify(baseline);
+			annotate.applyMigrationPlan(
+				records,
+				edges,
+				{},
+				{
+					['Project__c::' + originalId]: { Id: originalId, Name: 'Original project' },
+					['Project__c::' + otherId]: { Id: otherId, Name: 'Other project' },
+					['Milestone__c::' + milestone._migrateMatchedId]: baseline,
+				},
+				{
+					Milestone__c: {
+						fields: [
+							{
+								name: 'Project__c',
+								type: 'reference',
+								createable: true,
+								updateable: false,
+								nillable: false,
+							},
+							{ name: 'Label__c', type: 'string', updateable: true },
+						],
+					},
+				},
+			);
+			assert.equal(milestone.values.Project__c, baseline.Project__c);
+			assert.equal(milestone.values.project__c, undefined);
+			assert.equal(milestone.values.Label__c, 'Updated label');
+			assert.equal(JSON.stringify(milestone.loadedValues), baselineBefore);
+			assert.equal(JSON.stringify(baseline), baselineBefore);
+			if (scenario.includeOriginal || scenario.sameParent) {
+				assert.equal(edges.length, 1);
+				assert.equal(edges[0].toId, scenario.includeOriginal ? 3 : 1);
+			} else {
+				assert.equal(edges.length, 0);
+			}
+		});
+	}
+
+	for (const matched of [true, false]) {
+		test(`allows writable relationships for ${matched ? 'updates' : 'new records with create-only relationships'}`, () => {
+			const parent = { id: 1, objectName: 'Project__c', values: { Name: 'New project' } };
+			const child = {
+				id: 2,
+				objectName: 'Milestone__c',
+				values: { Project__c: 'a07SOURCE' },
+				_migrateMatchedId: matched ? 'a06TARGET' : null,
+			};
+			const edges = [{ fromId: 2, toId: 1, fieldName: 'Project__c' }];
+			annotate.applyMigrationPlan(
+				[parent, child],
+				edges,
+				{},
+				{
+					'Milestone__c::a06TARGET': { Id: 'a06TARGET', Project__c: 'a07ORIGINAL' },
+				},
+				{
+					Milestone__c: {
+						fields: [{ name: 'Project__c', type: 'reference', createable: true, updateable: matched }],
+					},
+				},
+			);
+			assert.equal(edges.length, 1);
+			assert.equal(edges[0].toId, 1);
+			assert.equal(child.values.Project__c, undefined);
+		});
+	}
+
+	test('preserves a read-only relationship supplied as a value without a canvas link', () => {
+		const child = {
+			id: 1,
+			objectName: 'Milestone__c',
+			values: { Project__c: 'a07SOURCE' },
+			_migrateMatchedId: 'a06TARGET',
+		};
+		annotate.applyMigrationPlan(
+			[child],
+			[],
+			{},
+			{
+				'Milestone__c::a06TARGET': { Id: 'a06TARGET', Project__c: 'a07ORIGINAL' },
+			},
+			{
+				Milestone__c: {
+					fields: [{ name: 'Project__c', type: 'reference', createable: true, updateable: false }],
+				},
+			},
+		);
+		assert.equal(child.values.Project__c, 'a07ORIGINAL');
+	});
+
+	test('refreshes source import warnings using destination field visibility, including read-only fields', () => {
+		const record = {
+			id: 1,
+			objectName: 'Project__c',
+			values: { Migration_Batch__c: 'TEST' },
+			_migrateMatchedId: 'a00TARGET',
+			_importSchemaWarning: { objectUnavailable: false, fields: ['Migration_Batch__c', 'Destination_Only__c'] },
+		};
+		annotate.applyMigrationPlan(
+			[record],
+			[],
+			{},
+			{ 'Project__c::a00TARGET': { Id: 'a00TARGET', Destination_Only__c: 'KEEP' } },
+			{
+				Project__c: {
+					fields: [
+						{ name: 'Id' },
+						{ name: 'Migration_Batch__c', createable: true, updateable: true },
+						{ name: 'Destination_Only__c', createable: false, updateable: false },
+					],
+				},
+			},
+		);
+		assert.equal(record._importSchemaWarning, undefined);
+		assert.equal(record.values.Migration_Batch__c, 'TEST');
+		assert.equal(record.values.Destination_Only__c, 'KEEP');
+	});
+
+	test('warns only about unavailable values still present after omissions and field remapping', () => {
+		const record = {
+			id: 1,
+			objectName: 'Project__c',
+			// The field-mapping UI has already moved Summary__c to Migration_Notes__c.
+			values: {
+				Migration_Notes__c: 'Notes',
+				Hidden__c: 'Omit',
+				Remaining__c: 'Retained',
+				attributes: {},
+				_local: true,
+			},
+			_importSchemaWarning: { objectUnavailable: true, fields: [] },
+		};
+		annotate.applyMigrationPlan(
+			[record],
+			[],
+			{
+				1: {
+					issues: [
+						{ kind: 'missing-field', field: 'Summary__c' },
+						{ kind: 'missing-field', field: 'Hidden__c' },
+					],
+				},
+			},
+			{},
+			{ Project__c: { fields: [{ name: 'migration_notes__c' }] } },
+		);
+		assert.equal(
+			JSON.stringify(record._importSchemaWarning),
+			JSON.stringify({ objectUnavailable: false, fields: ['Remaining__c'] }),
+		);
+		assert.equal(record.values.Hidden__c, undefined);
+		assert.equal(record.values.Migration_Notes__c, 'Notes');
+	});
+
 	test('merges an update over its destination baseline and removes migration metadata', () => {
 		const record = {
 			id: 1,
@@ -499,7 +726,10 @@ describe('applyMigrationPlan: normal canvas materialization', () => {
 			},
 		);
 
-		assert.equal(JSON.stringify(result), JSON.stringify({ updates: 1, creates: 0, excluded: 0, total: 1 }));
+		assert.equal(
+			JSON.stringify(result),
+			JSON.stringify({ updates: 1, deletes: 0, creates: 0, excluded: 0, total: 1 }),
+		);
 		assert.equal(record.loadedFromId, '001TARGET');
 		assert.equal(
 			JSON.stringify(record.loadedValues),
@@ -568,5 +798,93 @@ describe('applyMigrationPlan: normal canvas materialization', () => {
 			/Could not load the selected destination record/,
 		);
 		assert.equal(JSON.stringify([first, second]), before);
+	});
+});
+
+describe('explicit migration deletions', () => {
+	const destinationId = '003DESTINATION';
+	function deletion(extra = {}) {
+		return {
+			id: 1,
+			objectName: 'Contact',
+			pendingDelete: true,
+			values: { LastName: 'Source', Gone__c: 'source only' },
+			_migrateMatchedId: destinationId,
+			_migrateMatchResolution: 'existing',
+			...extra,
+		};
+	}
+	const baseline = { Id: destinationId, LastName: 'Destination', AccountId: '001ACTUAL' };
+	const baselines = { ['Contact::' + destinationId]: baseline };
+	test('a matched deletion uses destination values and counts separately from updates', () => {
+		const record = deletion();
+		const result = annotate.applyMigrationPlan([record], [], {}, baselines);
+		assert.equal(result.deletes, 1);
+		assert.equal(result.updates, 0);
+		assert.equal(result.creates, 0);
+		assert.equal(result.total, 1);
+		assert.equal(record.pendingDelete, true);
+		assert.equal(record.loadedFromId, destinationId);
+		assert.deepEqual(JSON.parse(JSON.stringify(record.values)), baseline);
+		assert.equal(record._migrateMatchedId, undefined);
+	});
+	test('an unmatched deletion blocks apply without mutating any records', () => {
+		const records = [
+			{ id: 2, objectName: 'Account', values: { Name: 'New' } },
+			deletion({ _migrateMatchedId: undefined }),
+		];
+		const before = JSON.stringify(records);
+		assert.throws(() => annotate.applyMigrationPlan(records, [], {}, {}), /Select a destination record to delete/);
+		assert.equal(JSON.stringify(records), before);
+	});
+	test('choosing Create new explicitly clears the source deletion flag', () => {
+		const record = deletion({
+			_migrateMatchedId: undefined,
+			_migrateMatchResolution: 'new',
+			_migrateMatchIntent: 'new',
+		});
+		const result = annotate.applyMigrationPlan([record], [], {}, {});
+		assert.equal(result.creates, 1);
+		assert.equal(result.deletes, 0);
+		assert.equal(record.pendingDelete, undefined);
+		assert.equal(record.loadedFromId, undefined);
+		assert.equal(record.values.LastName, 'Source');
+	});
+	test('deletions do not require mapping source values or filling destination fields', () => {
+		const record = deletion();
+		const schema = describe_([field('Required__c', { required: true })]);
+		assert.equal(annotate.computeMigrationStatus(record, schema).status, 'ready');
+		record._migrateMatchResolution = 'new';
+		assert.equal(annotate.computeMigrationStatus(record, schema).status, 'blocked');
+	});
+	test('a deletion keeps the destination relationship instead of reparenting it', () => {
+		const record = deletion();
+		const parent = { id: 2, objectName: 'Account', values: { Name: 'Different' }, _migrateMatchedId: '001OTHER' };
+		const edges = [{ fromId: 1, toId: 2, fieldName: 'AccountId' }];
+		annotate.applyMigrationPlan(
+			[record, parent],
+			edges,
+			{},
+			{ ...baselines, 'Account::001OTHER': { Id: '001OTHER', Name: 'Different' } },
+			{ Contact: describe_([field('AccountId', { type: 'reference' })]) },
+		);
+		assert.equal(record.values.AccountId, '001ACTUAL');
+		assert.equal(edges.length, 0);
+	});
+	test('a missing destination baseline prevents staging a delete', () => {
+		const record = deletion();
+		const before = JSON.stringify(record);
+		assert.throws(() => annotate.applyMigrationPlan([record], [], {}, {}), /Could not load/);
+		assert.equal(JSON.stringify(record), before);
+	});
+	test('excluded deletions are removed from the destination plan', () => {
+		const records = [
+			deletion({ _migrateExcluded: true }),
+			{ id: 2, objectName: 'Account', values: { Name: 'New' } },
+		];
+		const result = annotate.applyMigrationPlan(records, [], {}, {});
+		assert.equal(result.deletes, 0);
+		assert.equal(result.excluded, 1);
+		assert.equal(records.length, 1);
 	});
 });

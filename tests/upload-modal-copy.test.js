@@ -250,6 +250,12 @@ function renderResults(results, deletes = []) {
 	const state = {
 		window: {},
 		_fixTasks: null,
+		recoveryJournal: uploadModal.createUploadRecoveryJournal(
+			{ getItem: () => null, setItem: () => {} },
+			'org',
+			'user',
+			() => 'id',
+		),
 		deps: { openRecordForCurrentUser: noop },
 		_uploadAttemptId: 'attempt',
 		_allowDuplicates: false,
@@ -323,6 +329,13 @@ test('graph attempts use results for zero, partial, and complete success while p
 			body,
 			window: {},
 			payload: {},
+			uploadingRecords: [],
+			recoveryJournal: uploadModal.createUploadRecoveryJournal(
+				{ getItem: () => null, setItem: () => {} },
+				'org',
+				'user',
+				() => 'id',
+			),
 			submittedSnapshots: new Map(),
 			displayUploadResults: (...args) => calls.push(args),
 		};
@@ -1259,7 +1272,8 @@ test('uncertain upload guard explains the duplicate risk and concrete recovery s
 	assert.match(source, /Upload paused to prevent duplicate records/);
 	assert.match(source, /find the entry marked <strong>Outcome unknown<\/strong>/);
 	assert.match(source, /Check Salesforce to see whether the affected records were saved/);
-	assert.match(source, /refresh or replace the matching drafts on the canvas/);
+	assert.match(source, /Replace saved drafts with their existing Salesforce records/);
+	assert.match(source, /Unresolved records remain blocked from another upload/);
 	assert.match(source, /confirmBtn\.textContent = 'Close'/);
 });
 

@@ -3,6 +3,42 @@
 	// Freezes a validated canvas snapshot, submits it, and reconciles only confirmed successes.
 
 	window.OrgLoom = window.OrgLoom || {};
+	function createUploadRecoveryJournal(storage, orgId, userId, newId) {
+		const key = 'orgloom:upload-attempts:' + orgId + ':' + userId;
+		const read = () => JSON.parse(storage.getItem(key) || '{}');
+		const write = (entries) => storage.setItem(key, JSON.stringify(entries));
+		const matches = (entry) => entry && entry.orgId === orgId;
+		return {
+			entries(records) {
+				const saved = read();
+				return records.flatMap((record) => {
+					const entry = saved[record._canvasRecordId] || record._uploadRecovery;
+					return matches(entry) ? [{ record, entry }] : [];
+				});
+			},
+			track(records, attemptId) {
+				const saved = read();
+				for (const record of records) {
+					if (!record._canvasRecordId) {
+						record._canvasRecordId = newId();
+					}
+					const entry = { attemptId, tempId: record.id, orgId, userId };
+					saved[record._canvasRecordId] = entry;
+					record._uploadRecovery = entry;
+				}
+				// Deliberately do not swallow storage failures before a write is sent.
+				write(saved);
+			},
+			clear(records) {
+				const saved = read();
+				for (const record of records) {
+					delete saved[record._canvasRecordId];
+					delete record._uploadRecovery;
+				}
+				write(saved);
+			},
+		};
+	}
 	const UPLOAD_SYSTEM_FIELDS = new Set([
 		'attributes',
 		'Id',
@@ -629,6 +665,7 @@
 		recordAccessWriteReason: recordAccessWriteReason,
 		reconcileSyncedRecords: reconcileSyncedRecords,
 		snapshotUploadRecords: snapshotUploadRecords,
+		createUploadRecoveryJournal: createUploadRecoveryJournal,
 		scopeUploadExclusions: scopeUploadExclusions,
 		incompleteFieldRequests: incompleteFieldRequests,
 		unresolvedEncryptedUploadIssue: unresolvedEncryptedUploadIssue,
@@ -1030,6 +1067,18 @@
 				const content = uploadModal.querySelector('#upload-modal-content');
 				content.innerHTML = '<p class="center tag">Running pre-flight checks\u2026</p>';
 				uploadModal.classList.remove('hidden');
+				confirmBtn.disabled = true;
+				try {
+					if (await recoverPendingUploads(_scopedRealRecords())) {
+						return;
+					}
+				} catch (_) {
+					renderAttemptIncomplete({
+						message: 'Upload recovery could not be checked. Please reconnect and try again.',
+					});
+					return;
+				}
+				confirmBtn.disabled = false;
 				const uniqObjs = Array.from(
 					new Set(
 						_scopedRealRecords()
@@ -1486,7 +1535,11 @@
 								? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + heading + '</a>'
 								: heading) +
 							'</span><span class="tag">' +
-							(entry.reason === 'no-delete-access' ? 'No delete access' : 'Read-only in Salesforce') +
+							(record._recordAccess && record._recordAccess.hasReadAccess === false
+								? '<span title="This record may have been deleted, or your Salesforce user no longer has access.">Unavailable in Salesforce</span>'
+								: entry.reason === 'no-delete-access'
+									? 'No delete access'
+									: 'Read-only in Salesforce') +
 							'</span></div>'
 						);
 					})
@@ -1494,7 +1547,7 @@
 				const accessExclusionBlock = accessExclusionRows
 					? '<div class="upload-section-head upload-section-head--muted">Won\u2019t upload (' +
 						accessExclusions.length +
-						')</div><p class="upload-access-exclusion-lead">These changes are excluded because your Salesforce user cannot perform them.</p>' +
+						')</div><p class="upload-access-exclusion-lead">These changes are excluded because the records are unavailable or your Salesforce user lacks permission.</p>' +
 						'<div class="upload-access-exclusions">' +
 						accessExclusionRows +
 						'</div>'
@@ -1647,6 +1700,102 @@
 			}
 
 			let _uploadAttemptId = null;
+			const recoveryJournal = createUploadRecoveryJournal(
+				window.sessionStorage,
+				window.SF_ORG_ID,
+				window.SF_USER_ID,
+				() => crypto.randomUUID(),
+			);
+			async function recoverPendingUploads(records, snapshots) {
+				const entries = recoveryJournal.entries(records);
+				if (!entries.length) {
+					return false;
+				}
+				let recovered = 0;
+				for (const attemptId of new Set(entries.map(({ entry }) => entry.attemptId))) {
+					const response = await csrfFetch('/api/upload-attempts/' + encodeURIComponent(attemptId));
+					if (!response.ok) {
+						continue;
+					}
+					const body = await response.json();
+					const group = entries.filter(({ entry }) => entry.attemptId === attemptId);
+					const resolved = new Map();
+					const safe = [];
+					for (const { record, entry } of group) {
+						const result = (body.results || []).find(
+							(r) => r.tempId === entry.tempId && r.objectName === record.objectName,
+						);
+						if (result && result.success && result.id) {
+							resolved.set(record.id, result.id);
+							safe.push(record);
+						} else if ((body.retryableTempIds || []).includes(entry.tempId)) {
+							safe.push(record);
+						}
+					}
+					if (resolved.size) {
+						const rows = records.filter((r) => resolved.has(r.id));
+						const canonical = {};
+						for (let offset = 0; offset < rows.length; offset += 200) {
+							const chunk = rows.slice(offset, offset + 200);
+							try {
+								const refresh = await csrfFetch('/api/records/refresh', {
+									method: 'POST',
+									headers: { 'Content-Type': 'application/json' },
+									body: JSON.stringify({
+										records: chunk.map((r) => ({
+											objectName: r.objectName,
+											sfId: resolved.get(r.id),
+										})),
+									}),
+								});
+								if (refresh.ok) {
+									for (const row of (await refresh.json()).results || []) {
+										const record = chunk.find(
+											(r) => r.objectName === row.objectName && resolved.get(r.id) === row.sfId,
+										);
+										if (record && row.ok && row.values) {
+											canonical[record.id] = row.values;
+										}
+									}
+								}
+							} catch (_) {
+								/* Confirmed IDs remain useful even when refresh is unavailable. */
+							}
+						}
+						// After a reload, preserve draft edits instead of pretending they were submitted.
+						const recoverySnapshots =
+							snapshots ||
+							new Map(
+								rows.map((r) => [
+									r.id,
+									{
+										values: {},
+										canvasValues: {},
+										loadedValues: r.loadedValues || {},
+									},
+								]),
+							);
+						_applyRecoveredIds(resolved, canonical, recoverySnapshots);
+						recovered += resolved.size;
+					}
+					recoveryJournal.clear(safe);
+				}
+				_uploadAttemptId = null;
+				flushAutosave();
+				const unresolved = recoveryJournal.entries(records).length;
+				renderAttemptIncomplete({
+					recoveryComplete: unresolved === 0,
+					message:
+						(recovered ? recovered + ' confirmed records restored to the canvas. ' : '') +
+						(unresolved
+							? unresolved +
+								' records still have an unknown outcome. Check Upload History and Salesforce before replacing these drafts.'
+							: entries.length > recovered
+								? 'The remaining records were not saved. Close this message and upload again to retry them safely.'
+								: 'All records from this attempt have been recovered.'),
+				});
+				return true;
+			}
 			let _allowDuplicates = false;
 			let _baselineConfirmations = [];
 			async function confirmUpload() {
@@ -1658,6 +1807,16 @@
 				uploadModal.querySelector('#upload-result-summary').hidden = true;
 				const realRecords = _scopedRealRecords();
 				if (realRecords.length === 0) {
+					return;
+				}
+				try {
+					if (await recoverPendingUploads(realRecords)) {
+						return;
+					}
+				} catch (_) {
+					renderAttemptIncomplete({
+						message: 'Upload recovery could not be checked. Please reconnect and try again.',
+					});
 					return;
 				}
 				const migrateApi = window.Orgloom && window.Orgloom.canvasMigrate;
@@ -1894,7 +2053,8 @@
 				}
 
 				const uploadingCountForGate = recordsForPayload.length - skipTempIds.length;
-				const PER_COMPONENT_CAP = 75;
+				// 75 limits graphs per request, not records in a connected component.
+				const PER_COMPONENT_CAP = 500;
 				const TOTAL_NODES_CAP = 500;
 				const BYTE_CAP = 5 * 1024 * 1024; // 5 MB, leaves room under the 6 MB hard ceiling
 				const components = (() => {
@@ -2052,6 +2212,9 @@
 						'</p>';
 					let body;
 					try {
+						recoveryJournal.track(uploadingRecords, _uploadAttemptId);
+						renderBulkView();
+						flushAutosave();
 						const r = await csrfFetch('/api/upload/graph', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
@@ -2059,6 +2222,23 @@
 							credentials: 'same-origin',
 						});
 						body = await r.json().catch(() => ({}));
+						if (r.ok && !Array.isArray(body.results)) {
+							throw new Error('The upload response was incomplete.');
+						}
+						if (
+							!r.ok &&
+							([400, 401, 402, 403].includes(r.status) ||
+								[
+									'salesforce-records-changed',
+									'active-org-changed',
+									'upload-ledger-unavailable',
+									'salesforce-field-metadata-unavailable',
+								].includes(body.error))
+						) {
+							// These responses reject the request before Salesforce business writes.
+							recoveryJournal.clear(uploadingRecords);
+							flushAutosave();
+						}
 						if (r.status === 401) {
 							content.innerHTML =
 								'<div class="banner error">Your Salesforce session expired. ' +
@@ -2091,7 +2271,7 @@
 						}
 						if (r.status === 409 && body && body.error === 'upload-attempt-incomplete') {
 							// The server owns recovery guidance when an earlier attempt has an uncertain outcome.
-							renderAttemptIncomplete(body);
+							await recoverPendingUploads(realRecords, submittedSnapshots);
 							return;
 						}
 						if (r.status === 409 && body && body.error === 'salesforce-records-changed') {
@@ -2135,6 +2315,7 @@
 							return;
 						}
 						if (body && body.retryWithoutGraph === true && !hasCommitted) {
+							recoveryJournal.clear(uploadingRecords);
 							_uploadAttemptId =
 								window.crypto && typeof crypto.randomUUID === 'function'
 									? crypto.randomUUID()
@@ -2152,12 +2333,20 @@
 							return;
 						}
 					} catch (err) {
-						console.warn('[graph upload] failed, falling back:', err);
+						console.warn('[graph upload] interrupted:', err);
 						try {
-							await reconcileLostUpload(payload.records, submittedSnapshots);
+							if (!(await recoverPendingUploads(realRecords, submittedSnapshots))) {
+								content.innerHTML =
+									'<div class="banner error">' +
+									escapeHtml(err.message || 'Upload failed.') +
+									'</div>';
+								confirmBtn.disabled = false;
+								confirmBtn.textContent = 'Retry';
+							}
 						} catch (_e) {
-							/* best-effort */
+							renderAttemptIncomplete({});
 						}
+						return;
 					}
 				}
 
@@ -3017,22 +3206,25 @@
 				if (content) {
 					content.innerHTML =
 						'<div class="banner">' +
-						'<strong>Upload paused to prevent duplicate records.</strong> ' +
+						(body && body.recoveryComplete
+							? '<strong>Upload interrupted.</strong> '
+							: '<strong>Upload paused to prevent duplicate records.</strong> ') +
 						escapeHtml(
 							(body && body.message) ||
 								'Org Loom could not confirm whether Salesforce saved the previous attempt.',
 						) +
 						'</div>' +
-						'<div style="margin-top:0.75em">' +
-						'<strong>Before uploading these drafts again:</strong>' +
-						'<ol style="margin:0.45em 0 0 1.3em;padding:0">' +
-						'<li>Open <strong>Upload History</strong> using the ↻ toolbar button and find the entry marked <strong>Outcome unknown</strong>.</li>' +
-						'<li>Check Salesforce to see whether the affected records were saved.</li>' +
-						'<li>If they were saved, refresh or replace the matching drafts on the canvas. If they were not saved, close this message and start the upload again.</li>' +
-						'</ol>' +
-						'</div>';
+						(body && body.recoveryComplete
+							? ''
+							: '<div style="margin-top:0.75em">' +
+								'<strong>Before uploading these drafts again:</strong>' +
+								'<ol style="margin:0.45em 0 0 1.3em;padding:0">' +
+								'<li>Open <strong>Upload History</strong> using the ↻ toolbar button and find the entry marked <strong>Outcome unknown</strong>.</li>' +
+								'<li>Check Salesforce to see whether the affected records were saved.</li>' +
+								'<li>Replace saved drafts with their existing Salesforce records. Unresolved records remain blocked from another upload.</li>' +
+								'</ol>' +
+								'</div>');
 				}
-				_uploadAttemptId = null;
 				if (confirmBtn) {
 					confirmBtn.disabled = false;
 					confirmBtn.textContent = 'Close';
@@ -3041,6 +3233,8 @@
 			}
 
 			function displayUploadResults(results, instanceUrl, deletesResults, canonicalValues, submittedSnapshots) {
+				const completedIds = new Set(results.map((r) => r.tempId));
+				recoveryJournal.clear(canvasState.bulkRecords.filter((r) => completedIds.has(r.id)));
 				// Only successful rows become existing records; failed rows remain editable drafts.
 				_uploadAttemptId = null;
 				_allowDuplicates = false;
@@ -3110,7 +3304,7 @@
 						'<div class="upload-section-head upload-section-head--muted">Won\u2019t upload (' +
 						accessExcluded.length +
 						')</div>' +
-						'<p class="tag" style="margin-top:-0.4em">These records still contain local changes, but your Salesforce user cannot perform the staged operations.</p>' +
+						'<p class="tag" style="margin-top:-0.4em">Your local changes are preserved. These records are unavailable or your Salesforce user lacks permission to make these changes.</p>' +
 						'<div class="upload-results-list">' +
 						accessExcluded
 							.map((result) => {

@@ -16,6 +16,7 @@ import {
 import * as mcpRelay from './mcp/relay.js';
 import * as canvasPresence from './canvas-presence.js';
 import { retrieveRecordValues } from './record-refresh.js';
+import { migrationCandidateFields, migrationCandidateDetails } from './migration-candidate-details.js';
 import { PLANS, planById } from './capabilities.js';
 import { getActiveSfConnection } from './sf-connection.js';
 import { hasAssignedOrgloomPermissionSet } from './sf-permset.js';
@@ -105,6 +106,7 @@ import {
 import { runBulkJob } from './sf-bulk.js';
 import { executeUploadDeletes } from './upload-deletes.js';
 import { requestGraphBatches, parseGraphResults } from './sf-graph.js';
+import { uploadAttemptRecovery } from './upload-attempt-recovery.js';
 import { listObjects, loadDescribeForObject, getQueryableSObjects, cleanLabel, isNoiseSObject } from './sf-describe.js';
 import { isSpecializedSObject, specializedObjectError } from './sf-object-support.js';
 import {
@@ -4085,6 +4087,25 @@ export function mountCanvasRoutes(app, options = {}) {
 		}
 	});
 
+	app.get('/api/upload-attempts/:attemptId', requireAccount, requireSfConnection, async (req, res, next) => {
+		try {
+			if (!UPLOAD_ATTEMPT_ID_RE.test(req.params.attemptId)) {
+				return res.status(400).json({ error: 'attempt-id-invalid' });
+			}
+			const store = await uploadBatchesStoreFromSfConnection(req.sf.conn, req.sf.sfUserId, req.sf.sfOrgId, {
+				sessionId: req.session && req.session.id,
+			});
+			const batch = await store.findByAttemptId(req.params.attemptId);
+			// A missing ledger is not proof that an in-flight request did not start.
+			if (!batch) {
+				return res.status(404).json({ error: 'upload-attempt-not-found' });
+			}
+			res.json(uploadAttemptRecovery(batch));
+		} catch (err) {
+			next(err);
+		}
+	});
+
 	app.get('/api/upload-batches', requireAccount, requireSfConnection, async (req, res, next) => {
 		try {
 			const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
@@ -4521,9 +4542,40 @@ export function mountCanvasRoutes(app, options = {}) {
 
 			const graphRequestBody = JSON.stringify({ graphs: graphsPayload });
 			let graphResp;
+			const progress = { startedTempIds: new Set(), results: [], stopped: false };
+			const recordsByRefId = new Map(records.map((record) => [graphRefIdFor(record.tempId), record]));
+			let checkpoint = null;
+			const saveProgress = async () => {
+				checkpoint = await _twoPhaseStore.checkpointGraph(_pendingBatchId, progress);
+			};
 			try {
-				graphResp = await requestGraphBatches({ conn, apiBase, graphs: graphsPayload, allowDuplicates });
+				graphResp = await requestGraphBatches({
+					conn,
+					apiBase,
+					graphs: graphsPayload,
+					allowDuplicates,
+					beforeBatch: async (batch) => {
+						for (const graph of batch) {
+							for (const request of graph.compositeRequest) {
+								progress.startedTempIds.add(recordsByRefId.get(request.referenceId).tempId);
+							}
+						}
+						await saveProgress();
+					},
+					afterBatch: async (batch, response) => {
+						const parsed = parseGraphResults({ graphs: batch, response, recordsByRefId });
+						progress.results.push(...parsed.results);
+						await saveProgress();
+						return !parsed.hasUnknownOutcome;
+					},
+				});
 			} catch (err) {
+				progress.stopped = true;
+				try {
+					await saveProgress();
+				} catch (e) {
+					console.warn('[upload/graph] checkpoint failed:', e.message);
+				}
 				console.error('[upload/graph] failed:', err && (err.errorCode || err.message));
 				try {
 					await ext.auditWrite({
@@ -4541,7 +4593,7 @@ export function mountCanvasRoutes(app, options = {}) {
 				return res.status(409).json({
 					error: 'upload-attempt-incomplete',
 					batchId: _pendingBatchId,
-					results: [],
+					...(checkpoint ? uploadAttemptRecovery(checkpoint) : { results: [] }),
 					message: UPLOAD_ATTEMPT_UNCERTAIN_MESSAGE,
 					cause: (err && err.message) || 'Composite Graph upload failed.',
 				});
@@ -4585,12 +4637,19 @@ export function mountCanvasRoutes(app, options = {}) {
 			results.push(...parsedGraph.results);
 			const allAtomicSuccess = parsedGraph.allAtomicSuccess;
 			if (parsedGraph.hasUnknownOutcome) {
+				progress.stopped = true;
+				try {
+					await saveProgress();
+				} catch (e) {
+					console.warn('[upload/graph] checkpoint failed:', e.message);
+				}
 				// Do not finalize the ledger, retry writes, or start deletes without a
 				// complete outcome. An absent response is not evidence of no commit.
 				return res.status(409).json({
 					error: 'upload-attempt-incomplete',
 					batchId: _pendingBatchId,
 					results,
+					...(checkpoint ? uploadAttemptRecovery(checkpoint) : {}),
 					message: UPLOAD_ATTEMPT_UNCERTAIN_MESSAGE,
 				});
 			}
@@ -6771,8 +6830,17 @@ export function mountCanvasRoutes(app, options = {}) {
 			const nameFieldMeta = (describe.fields || []).find((f) => f && f.nameField);
 			const nameField = nameFieldMeta && nameFieldMeta.name;
 			const hasLastModified = (describe.fields || []).some((f) => f && f.name === 'LastModifiedDate');
+			const detailFields = migrationCandidateFields(describe, objectName);
 			const selectFields = Array.from(
-				new Set(['Id', keyField, nameField, hasLastModified ? 'LastModifiedDate' : null].filter(Boolean)),
+				new Set(
+					[
+						'Id',
+						keyField,
+						nameField,
+						hasLastModified ? 'LastModifiedDate' : null,
+						...detailFields.map((f) => f.name),
+					].filter(Boolean),
+				),
 			);
 			const candidatesByNormalized = new Map();
 			let resultRows = 0;
@@ -6817,6 +6885,7 @@ export function mountCanvasRoutes(app, options = {}) {
 								id: rec.Id,
 								label: nameField && rec[nameField] != null ? String(rec[nameField]) : '',
 								lastModifiedDate: hasLastModified && rec.LastModifiedDate ? rec.LastModifiedDate : null,
+								details: migrationCandidateDetails(rec, detailFields),
 							});
 						}
 					}
@@ -6874,7 +6943,10 @@ export function mountCanvasRoutes(app, options = {}) {
 			}
 			const { nameField, searchFields, clause } = search;
 			const where = clause ? ' WHERE ' + clause : '';
-			const selectFields = Array.from(new Set(['Id', ...(nameField ? [nameField] : []), ...searchFields]));
+			const detailFields = req.query.migrationDetails === '1' ? migrationCandidateFields(describe, name) : [];
+			const selectFields = Array.from(
+				new Set(['Id', ...(nameField ? [nameField] : []), ...searchFields, ...detailFields.map((f) => f.name)]),
+			);
 			const soql = `SELECT ${selectFields.join(', ')} FROM ${name}${where} ORDER BY ${nameField || 'Id'} LIMIT 20`;
 			const result = await conn.query(soql);
 			res.json({
@@ -6886,6 +6958,9 @@ export function mountCanvasRoutes(app, options = {}) {
 					return {
 						id: record.Id,
 						name: primary && subject ? `${primary} — ${subject}` : primary || subject,
+						...(req.query.migrationDetails === '1'
+							? { details: migrationCandidateDetails(record, detailFields) }
+							: {}),
 					};
 				}),
 			});

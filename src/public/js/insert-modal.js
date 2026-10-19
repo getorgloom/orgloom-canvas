@@ -909,12 +909,13 @@
 		});
 	}
 
-	function intentionalChangedFieldNames(changedFields, touchedFields, existingRecord) {
-		if (!existingRecord) {
-			return Array.isArray(changedFields) ? changedFields.slice() : [];
-		}
+	function intentionalChangedFieldNames(changedFields, touchedFields, existingRecord, previousValues) {
 		const touched = touchedFields instanceof Set ? touchedFields : new Set(touchedFields || []);
-		return (Array.isArray(changedFields) ? changedFields : []).filter((fieldName) => touched.has(fieldName));
+		return (Array.isArray(changedFields) ? changedFields : []).filter(
+			(fieldName) =>
+				touched.has(fieldName) ||
+				(!existingRecord && !Object.prototype.hasOwnProperty.call(previousValues || {}, fieldName)),
+		);
 	}
 
 	function shouldValidateEditorField(fieldName, touchedFields, existingRecord) {
@@ -2691,6 +2692,15 @@
 							})
 							.then(() => {
 								if (!stillOpen()) return;
+								let initialValues = canvasState.currentRecordRef
+									? canvasState.currentRecordRef.values
+									: canvasState.savedRecords[currentObject];
+								const hasExplicit = initialValues && Object.keys(initialValues).length > 0;
+								if (!hasExplicit && currentLayout && currentLayout.defaults) {
+									initialValues = currentLayout.defaults;
+								}
+								// Build dependent options from the record, before reading any empty form controls.
+								currentFormValues = Object.assign({}, initialValues || {});
 								renderForm('');
 								wireLiveValidation();
 								const submitBtn = _syncSubmitButtonAccess();
@@ -2703,24 +2713,8 @@
 									submitBtn.disabled = true;
 									submitBtn.title = 'Reserved for the assigned teammate; read-only for you.';
 								}
-								let initialValues = canvasState.currentRecordRef
-									? canvasState.currentRecordRef.values
-									: canvasState.savedRecords[currentObject];
-								const hasExplicit = initialValues && Object.keys(initialValues).length > 0;
-								if (
-									!hasExplicit &&
-									currentLayout &&
-									currentLayout.defaults &&
-									Object.keys(currentLayout.defaults).length > 0
-								) {
-									initialValues = Object.assign({}, currentLayout.defaults);
-								}
 								if (initialValues && Object.keys(initialValues).length > 0) {
 									populateForm(initialValues);
-									const hasDependents = currentFields.some((f) => f.controllerName);
-									if (hasDependents) {
-										rerenderFormPreservingValues();
-									}
 									refreshEditorValidation();
 								}
 								focusTaskField(opts.focusField);
@@ -2949,8 +2943,11 @@
 				let html = banner ? banner : '';
 				if (salesforceRecordIsReadOnly(canvasState.currentRecordRef)) {
 					html +=
-						'<div class="banner info" style="margin-bottom:0.7em"><strong>Read-only in Salesforce.</strong> ' +
-						'Your Salesforce user can view this record but cannot update it. Its fields are locked in Org Loom.</div>';
+						canvasState.currentRecordRef._recordAccess.hasReadAccess === false
+							? '<div class="banner info" style="margin-bottom:0.7em"><strong>Unavailable in Salesforce.</strong> ' +
+								'This record may have been deleted, or your Salesforce user no longer has access. Your local changes are preserved.</div>'
+							: '<div class="banner info" style="margin-bottom:0.7em"><strong>Read-only in Salesforce.</strong> ' +
+								'Your Salesforce user can view this record but cannot update it. Its fields are locked in Org Loom.</div>';
 				}
 				if (isPartialLoad) {
 					const n = partialFieldSet.size;
@@ -5676,6 +5673,7 @@
 							changedFieldNames(payload, previousValues),
 							editorTouchedFields,
 							isLoaded,
+							previousValues,
 						);
 						const encryptedFieldNames = encryptedFields.fieldNames(
 							canvasState,

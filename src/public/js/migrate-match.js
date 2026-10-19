@@ -31,6 +31,28 @@
 		return map;
 	}
 
+	function _recordPlanCounts(records) {
+		const counts = { updates: 0, deletes: 0, creates: 0, unresolved: 0, explicitNew: 0, excluded: 0, total: 0 };
+		records.forEach((record) => {
+			if (record._migrateExcluded) {
+				counts.excluded++;
+				return;
+			}
+			counts.total++;
+			if (record._migrateMatchResolution === 'new') {
+				counts.creates++;
+				counts.explicitNew++;
+			} else if (record._migrateMatchedId) {
+				counts[record.pendingDelete ? 'deletes' : 'updates']++;
+			} else if (record.pendingDelete || (record._migrateMatchAmbiguous && !record._migrateMatchResolution)) {
+				counts.unresolved++;
+			} else {
+				counts.creates++;
+			}
+		});
+		return counts;
+	}
+
 	function _keyCandidates(describe) {
 		const fields = ((describe && describe.fields) || []).filter(
 			(f) => f && f.name && f.filterable === true && KEYABLE_TYPES.has(f.type),
@@ -91,6 +113,12 @@
 		return undefined;
 	}
 
+	function _matchValue(rec, keyField) {
+		return keyField === 'Id'
+			? rec._wasLoadedFromId || _lookup(rec.values, 'Id') || rec.loadedFromId
+			: _lookup(rec.values, keyField);
+	}
+
 	function _clearMatchState(rec) {
 		if (rec._migrateMatchedId) {
 			delete rec.loadedFromId;
@@ -138,6 +166,9 @@
 	}
 
 	function _meaningfulRecordLabel(rec, describe) {
+		const canvasTitle = window.OrgLoom.recordsCanvas && window.OrgLoom.recordsCanvas.recordValueTitle;
+		const valueTitle = canvasTitle && canvasTitle(rec, describe);
+		if (valueTitle) return valueTitle;
 		const objectLabel = (describe && describe.label) || (rec && rec.objectName) || 'Record';
 		const nameField = ((describe && describe.fields) || []).find((field) => field && field.nameField);
 		const nameValue = nameField && _lookup(rec && rec.values, nameField.name);
@@ -337,14 +368,50 @@
 			lastModifiedDate: null,
 			matchField: null,
 			matchValue: null,
+			details: record.details || [],
 		};
+	}
+
+	function _candidateDetailLines(candidate, candidates) {
+		const peers = candidates.filter((item) => item.label === candidate.label);
+		const details = (candidate.details || []).filter(
+			(detail) => detail && detail.value != null && detail.value !== '',
+		);
+		const distinct = (detail) =>
+			peers.some(
+				(peer) =>
+					String((peer.details || []).find((item) => item.name === detail.name)?.value ?? '') !==
+					String(detail.value),
+			);
+		const ordered =
+			peers.length > 1
+				? [...details.filter(distinct), ...details.filter((detail) => !distinct(detail))]
+				: details;
+		const chosen = ordered.slice(0, 2);
+		const lines = chosen.map((detail) => (detail.label || detail.name) + ': ' + detail.value);
+		// If the human-readable details still collide, expose the stable record ID.
+		if (
+			!lines.length ||
+			peers.some(
+				(peer) =>
+					peer.id !== candidate.id &&
+					chosen.every(
+						(detail) =>
+							String((peer.details || []).find((item) => item.name === detail.name)?.value ?? '') ===
+							String(detail.value),
+					),
+			)
+		) {
+			lines.push('ID: ' + candidate.id);
+		}
+		return lines;
 	}
 
 	function _applyMatchResponse(recs, keyField, data) {
 		const candidatesByValue = (data && data.candidatesByValue) || {};
 		const byValue = new Map();
 		recs.forEach((rec) => {
-			const raw = _lookup(rec.values, keyField);
+			const raw = _matchValue(rec, keyField);
 			rec._migrateMatchKey = keyField;
 			rec._migrateMatchValue = raw == null ? '' : String(raw);
 			if (raw === null || raw === undefined || String(raw) === '') {
@@ -369,6 +436,7 @@
 					id: c.id,
 					label: c.label == null ? '' : String(c.label),
 					lastModifiedDate: c.lastModifiedDate || null,
+					details: c.details || [],
 					matchField: keyField,
 					matchValue: value,
 				}));
@@ -383,6 +451,7 @@
 						id: c.id,
 						label: c.label == null ? '' : String(c.label),
 						lastModifiedDate: c.lastModifiedDate || null,
+						details: c.details || [],
 						matchField: keyField,
 						matchValue: value,
 					}));
@@ -486,20 +555,14 @@
 				);
 				let committed = false;
 				let closed = false;
+				let applying = false;
 				const overlay = document.createElement('div');
 				overlay.className = 'modal migrate-match-modal';
-				const destinationHost =
-					(window.SF_INSTANCE_URL || '').replace(/^https?:\/\//, '').replace(/\/$/, '') ||
-					window.SF_ORG_ID ||
-					'the connected Salesforce org';
 				overlay.innerHTML =
 					'<div class="modal-overlay" data-mm-close></div>' +
 					'<div class="modal-body mm-modal-body">' +
 					'<div class="modal-header">' +
-					'<div><h3>Prepare migration</h3>' +
-					'<div class="mm-destination">Destination: <strong>' +
-					escapeHtml(destinationHost) +
-					'</strong></div></div>' +
+					'<h3>Prepare migration</h3>' +
 					'<button class="modal-close" data-mm-close aria-label="Close">&times;</button>' +
 					'</div>' +
 					'<div class="modal-content mm-content">' +
@@ -512,7 +575,7 @@
 					'</div>' +
 					'<div class="mm-summary"></div>' +
 					'<section class="mm-panel" data-mm-panel="matches">' +
-					'<div class="mm-decision-intro"><div><strong>Choose what happens to each canvas record</strong><span>Records start as Create new. Choose Update existing when a record should target one already in this Salesforce org.</span></div></div>' +
+					'<div class="mm-decision-intro"><div><strong>Choose what happens to each canvas record</strong></div></div>' +
 					'<div class="mm-record-decisions"></div>' +
 					'</section>' +
 					'<section class="mm-panel" data-mm-panel="differences" hidden>' +
@@ -531,7 +594,7 @@
 				document.body.appendChild(overlay);
 
 				const cleanup = () => {
-					if (closed) {
+					if (closed || (applying && !committed)) {
 						return;
 					}
 					closed = true;
@@ -561,6 +624,11 @@
 				};
 				const onEsc = (e) => {
 					if (e.key === 'Escape') {
+						if (applying) {
+							e.preventDefault();
+							e.stopImmediatePropagation();
+							return;
+						}
 						cleanup();
 					}
 				};
@@ -610,17 +678,14 @@
 
 				overlay.querySelectorAll('[data-mm-step]').forEach((stepBtn) => {
 					stepBtn.addEventListener('click', () => {
-						if (!describesReady || pendingMatches.size > 0) {
+						if (closed || applying || !describesReady || pendingMatches.size > 0) {
 							return;
 						}
 						const requested = stepBtn.getAttribute('data-mm-step');
 						const counts = _statusCounts();
 						const differences = _differenceCounts();
 						if (requested !== 'matches' && counts.unresolved > 0) {
-							showBulkToast(
-								'Decide whether every record should update an existing record or be created as new.',
-								'warning',
-							);
+							showBulkToast('Choose an action and destination for each record.', 'warning');
 							return;
 						}
 						if (
@@ -643,6 +708,9 @@
 					_setStep(stepOrder[Math.max(0, index - 1)]);
 				});
 				primaryBtn.addEventListener('click', async () => {
+					if (closed || applying || primaryBtn.disabled) {
+						return;
+					}
 					if (currentStep === 'matches') {
 						_setStep('differences');
 						return;
@@ -652,8 +720,8 @@
 						return;
 					}
 					if (!primaryBtn.disabled) {
-						primaryBtn.disabled = true;
-						primaryBtn.textContent = 'Applying to canvas…';
+						applying = true;
+						_updateFooter();
 						try {
 							await Promise.resolve(onCommitPlan());
 							committed = true;
@@ -663,12 +731,16 @@
 								(error && error.message) || 'Could not apply the migration to the canvas.',
 								'error',
 							);
-							_recomputeSummary();
+						} finally {
+							applying = false;
+							if (!closed) {
+								_recomputeSummary();
+							}
 						}
 					}
 				});
 				function _setStep(step) {
-					if (!stepOrder.includes(step)) {
+					if (closed || applying || !stepOrder.includes(step)) {
 						return;
 					}
 					currentStep = step;
@@ -780,7 +852,8 @@
 							'/api/objects/' +
 								encodeURIComponent(rec.objectName) +
 								'/search?q=' +
-								encodeURIComponent(query),
+								encodeURIComponent(query) +
+								'&migrationDetails=1',
 							{ credentials: 'same-origin' },
 						);
 						if (!resp.ok) {
@@ -837,9 +910,33 @@
 						)
 						.forEach((rec) => {
 							_clearMatchState(rec);
-							_markCreate(rec);
+							if (rec.pendingDelete) {
+								_markUpdateWithoutMatch(rec);
+								void _initializeDeleteMatch(rec);
+							} else {
+								_markCreate(rec);
+							}
 						});
 					_recomputeSummary();
+				}
+
+				async function _initializeDeleteMatch(rec) {
+					const describe = canvasState.describeCache[rec.objectName];
+					const idField = ((describe && describe.fields) || []).find(
+						(field) => field.name === 'Id' && field.filterable,
+					);
+					if (idField && _matchValue(rec, 'Id')) {
+						await _runMatchForRecord(rec, 'Id');
+						if (
+							closed ||
+							rec._migrateMatchedId ||
+							rec._migrateMatchSearchError ||
+							rec._migrateMatchResolution === 'new'
+						)
+							return;
+					}
+					const key = _preferredKeyCandidate(describe, rec);
+					if (key) await _runMatchForRecord(rec, key.name);
 				}
 
 				function _allRecords() {
@@ -1159,7 +1256,7 @@
 					});
 				}
 
-				function _fieldMapValueControl(raw, field, rec, recordIndex, sourceField, selectedValue) {
+				function _fieldMapValueControl(field, rec, recordIndex, sourceField, selectedValue) {
 					const options = _picklistValuesForRecordType(field, _effectiveRecordTypeId(rec))
 						.filter((entry) => entry && entry.active !== false && entry.value !== undefined)
 						.map(
@@ -1174,13 +1271,9 @@
 						)
 						.join('');
 					return (
-						'<div class="mm-map-value-resolution">' +
-						'<span>Source value <code>' +
-						escapeHtml(_displayValue(raw)) +
-						'</code> is not available for ' +
-						escapeHtml(field.label || field.name) +
-						'.</span>' +
-						'<label>Destination value<select data-mm-map-value data-mm-map-record="' +
+						'<select aria-label="Destination value for ' +
+						escapeHtml(sourceField) +
+						'" data-mm-map-value data-mm-map-record="' +
 						recordIndex +
 						'" data-mm-map-source="' +
 						escapeHtml(sourceField) +
@@ -1191,7 +1284,7 @@
 						(selectedValue ? '' : ' selected') +
 						'>Choose a destination value...</option>' +
 						options +
-						'</select></label></div>'
+						'</select>'
 					);
 				}
 
@@ -1267,6 +1360,35 @@
 					);
 				}
 
+				function _fieldDifferenceRow(
+					label,
+					value,
+					reason,
+					control,
+					resolved,
+					attributes = '',
+					destinationField = escapeHtml(label),
+				) {
+					return (
+						'<tr class="mm-field-row' +
+						(resolved ? ' is-resolved' : ' needs-attention') +
+						'"' +
+						attributes +
+						'>' +
+						'<th scope="row">' +
+						escapeHtml(label) +
+						'</th><td class="mm-field-source"><span>' +
+						escapeHtml(value === null || value === undefined || value === '' ? '—' : _displayValue(value)) +
+						'</span><small>' +
+						escapeHtml(reason) +
+						'</small></td><td class="mm-field-destination">' +
+						destinationField +
+						'</td><td class="mm-field-destination mm-destination-value">' +
+						control +
+						'</td></tr>'
+					);
+				}
+
 				function _differenceIssueHtml(rec, issue, recordIndex) {
 					const fieldLabel = (_fieldFor(rec, issue.field) || {}).label || issue.field || 'Destination field';
 					if (issue.kind === 'missing-field') {
@@ -1296,109 +1418,82 @@
 							selectedField &&
 							_fieldMapDisposition(raw, selectedField, _effectiveRecordTypeId(rec)) === 'choice'
 								? _fieldMapValueControl(
-										raw,
 										selectedField,
 										rec,
 										recordIndex,
 										issue.field,
 										resolvedMap && resolvedMap.mappedValue,
 									)
-								: '';
-						const statusText = resolvedMap
-							? resolvedMap.automatic
-								? 'Auto-matched'
-								: 'Resolved'
-							: pendingMap
-								? 'Needs destination value'
-								: 'Needs attention';
-						const statusClass = resolvedMap ? 'resolved' : pendingMap ? 'pending' : 'attention';
-						const statusId =
-							'mm-field-status-' + recordIndex + '-' + String(issue.field).replace(/[^a-z0-9_-]/gi, '-');
-						return (
-							'<div class="mm-difference-row' +
-							(resolvedMap ? ' mm-difference-row--resolved' : '') +
-							'" data-mm-missing-record="' +
-							recordIndex +
-							'" data-mm-missing-field="' +
-							escapeHtml(issue.field) +
-							'">' +
-							'<div class="mm-difference-meta"><strong>' +
-							escapeHtml(
-								issue._groupedLabel || (issue._grouped ? _differenceRecordLabel(rec) : issue.field),
-							) +
-							'</strong></div>' +
-							'<div class="mm-difference-actions"><div class="mm-field-resolution-head">' +
-							'<span id="' +
-							statusId +
-							'" class="mm-field-resolution-state mm-field-resolution-state--' +
-							statusClass +
-							'">' +
-							statusText +
-							'</span></div>' +
+								: selectedField
+									? '<span class="mm-destination-plain">' +
+										escapeHtml(_displayValue(resolvedMap ? resolvedMap.mappedValue : raw)) +
+										'</span>'
+									: '<span class="mm-destination-inactive">' +
+										(resolvedMap && resolvedMap.resolution === '__omit__' ? 'Not mapped' : '—') +
+										'</span>';
+						const control =
 							'<select data-mm-field-resolution aria-label="How to handle ' +
 							escapeHtml(issue.field) +
-							'" aria-describedby="' +
-							statusId +
 							'">' +
 							'<option value=""' +
 							(!resolvedMap && !pendingMap ? ' selected' : '') +
-							'>Choose how to handle this field...</option>' +
+							'>Choose destination field...</option>' +
 							'<option value="__omit__"' +
 							(resolvedMap && resolvedMap.resolution === '__omit__' ? ' selected' : '') +
 							">Don't map (destination unchanged)</option>" +
 							(mapOptions
 								? '<optgroup label="Map to a destination field">' + mapOptions + '</optgroup>'
 								: '') +
-							'</select>' +
-							valueControl +
-							'</div>' +
-							'</div>'
+							'</select>';
+						return _fieldDifferenceRow(
+							fieldLabel,
+							raw,
+							resolvedMap
+								? resolvedMap.automatic
+									? 'Auto-matched'
+									: 'Reviewed mapping'
+								: 'Field missing',
+							valueControl,
+							Boolean(resolvedMap),
+							' data-mm-missing-record="' +
+								recordIndex +
+								'" data-mm-missing-field="' +
+								escapeHtml(issue.field) +
+								'"',
+							control,
 						);
 					}
 					if (issue.kind === 'required-unfilled' || issue.kind === 'required-reviewed') {
-						return (
-							'<div class="mm-difference-row ' +
-							(issue.kind === 'required-reviewed'
-								? 'mm-difference-row--resolved'
-								: 'mm-difference-row--blocked') +
-							'"><div class="mm-difference-meta"><strong>' +
-							escapeHtml(
-								issue.kind === 'required-reviewed'
-									? _differenceRecordLabel(rec) + ' \u00b7 ' + fieldLabel
-									: fieldLabel,
-							) +
-							'</strong>' +
-							'<span>' +
-							(issue.kind === 'required-reviewed'
-								? 'Required field completed'
-								: 'Required when creating this record in the destination') +
-							'</span></div>' +
-							_requiredFieldControl(rec, issue, recordIndex) +
-							'</div>'
+						return _fieldDifferenceRow(
+							fieldLabel,
+							_lookup(rec.values, issue.field),
+							issue.kind === 'required-reviewed' ? 'Required field completed' : 'Required in destination',
+							_requiredFieldControl(rec, issue, recordIndex),
+							issue.kind === 'required-reviewed',
 						);
 					}
 					if (issue.kind === 'recordtype-unresolved') {
 						const describe = canvasState.describeCache[rec.objectName] || {};
 						const options = (describe.recordTypes || [])
 							.map(
-								(recordType) =>
+								(type) =>
 									'<option value="' +
-									escapeHtml(recordType.id) +
+									escapeHtml(type.id) +
 									'">' +
-									escapeHtml(recordType.label || recordType.name || recordType.developerName) +
+									escapeHtml(type.label || type.name || type.developerName) +
 									'</option>',
 							)
 							.join('');
-						return (
-							'<div class="mm-difference-row mm-difference-row--blocked"><div class="mm-difference-meta"><strong>Record type</strong>' +
-							'<span>Source record type ' +
-							escapeHtml(issue.developerName || '') +
-							' is not available in the destination</span></div>' +
-							'<select class="mm-difference-input" data-mm-recordtype-record="' +
-							recordIndex +
-							'"><option value="">Choose a destination record type...</option>' +
-							options +
-							'<option value="__clear__">No record type</option></select></div>'
+						return _fieldDifferenceRow(
+							'Record type',
+							issue.developerName,
+							'Record type unavailable',
+							'<select class="mm-difference-input" aria-label="Destination record type" data-mm-recordtype-record="' +
+								recordIndex +
+								'"><option value="">Choose a destination record type...</option>' +
+								options +
+								'<option value="__clear__">No record type</option></select>',
+							false,
 						);
 					}
 					if (issue.kind === 'picklist-mismatch') {
@@ -1415,63 +1510,31 @@
 							)
 							.join('');
 						return (issue.invalidValues || [])
-							.map(
-								(sourceValue) =>
-									'<div class="mm-difference-row"><div class="mm-difference-meta"><strong>' +
-									escapeHtml(fieldLabel) +
-									'</strong>' +
-									'<span><code>' +
-									escapeHtml(sourceValue) +
-									'</code> is not valid in the destination</span></div>' +
-									'<select class="mm-difference-input" data-mm-picklist-record="' +
-									recordIndex +
-									'" data-mm-picklist-field="' +
-									escapeHtml(issue.field) +
-									'" data-mm-picklist-source="' +
-									escapeHtml(sourceValue) +
-									'">' +
-									'<option value="__unresolved__">Omit on upload</option>' +
-									options +
-									'<option value="__drop__">Don\'t map this value</option></select></div>',
+							.map((sourceValue) =>
+								_fieldDifferenceRow(
+									fieldLabel,
+									sourceValue,
+									'Value unavailable',
+									'<select class="mm-difference-input" aria-label="Destination value for ' +
+										escapeHtml(fieldLabel) +
+										' (' +
+										escapeHtml(sourceValue) +
+										')" data-mm-picklist-record="' +
+										recordIndex +
+										'" data-mm-picklist-field="' +
+										escapeHtml(issue.field) +
+										'" data-mm-picklist-source="' +
+										escapeHtml(sourceValue) +
+										'">' +
+										'<option value="__unresolved__">Omit on upload</option>' +
+										options +
+										'<option value="__drop__">Don\'t map this value</option></select>',
+									false,
+								),
 							)
 							.join('');
 					}
 					return '';
-				}
-
-				function _fieldMappingGroupHtml(group) {
-					const resolvedCount = group.entries.filter((entry) => entry.resolved).length;
-					const attentionCount = group.entries.length - resolvedCount;
-					return (
-						'<section class="mm-field-map-group' +
-						(attentionCount ? '' : ' mm-field-map-group--resolved') +
-						'">' +
-						'<div class="mm-field-map-head"><div><strong>' +
-						escapeHtml(group.objectLabel + ' \u00b7 ' + group.sourceField) +
-						'</strong><span>' +
-						group.entries.length +
-						' record' +
-						(group.entries.length === 1 ? '' : 's') +
-						'</span></div></div>' +
-						'<div class="mm-field-map-body">' +
-						group.entries
-							.map((entry) => {
-								const recordLabel = _differenceRecordLabel(entry.rec);
-								const objectPrefix = group.objectLabel + ' \u00b7 ';
-								return _differenceIssueHtml(
-									entry.rec,
-									Object.assign({}, entry.issue, {
-										_grouped: true,
-										_groupedLabel: recordLabel.toLowerCase().startsWith(objectPrefix.toLowerCase())
-											? recordLabel.slice(objectPrefix.length)
-											: recordLabel,
-									}),
-									entry.recordIndex,
-								);
-							})
-							.join('') +
-						'</div></section>'
-					);
 				}
 
 				function _renderDifferences() {
@@ -1494,193 +1557,131 @@
 							resolvedFieldMaps.delete(key);
 						}
 					});
-					const recordRows = [];
-					const completedRequiredRows = [];
-					const fieldGroups = new Map();
-					function addFieldEntry(rec, recordIndex, issue, resolved) {
-						const describe = canvasState.describeCache[rec.objectName] || {};
-						const objectLabel = describe.label || rec.objectName;
-						const key = String(rec.objectName).toLowerCase() + ':' + String(issue.field).toLowerCase();
-						if (!fieldGroups.has(key)) {
-							fieldGroups.set(key, {
-								objectLabel: objectLabel,
-								sourceField: issue.field,
-								entries: [],
-							});
-						}
-						fieldGroups.get(key).entries.push({
-							rec: rec,
-							recordIndex: recordIndex,
-							issue: issue,
-							resolved: resolved,
-						});
-					}
+					const recordGroups = [];
 					all.forEach((rec, recordIndex) => {
 						const annotation = _annotationFor(rec);
-						if (rec._migrateExcluded) {
-							recordRows.push(
-								'<section class="mm-difference-record"><strong>' +
-									escapeHtml(_differenceRecordLabel(rec)) +
-									'</strong><p>Excluded from this migration. The saved source canvas is unchanged.</p><button type="button" class="button secondary" data-mm-include="' +
-									recordIndex +
-									'">Include again</button></section>',
-							);
-							return;
-						}
-						if (annotation.status === 'pending') {
-							recordRows.push(
-								'<section class="mm-difference-record mm-difference-record--blocked"><div class="mm-difference-record-head"><div><strong>' +
-									escapeHtml(_differenceRecordLabel(rec)) +
-									'</strong></div><span>Object unavailable</span></div><p>This object is unavailable through the destination connection. It may not exist in that org, your Salesforce user may not have access, or its fields could not be loaded. Retry or exclude this object and all its records from the migration.</p><button type="button" class="button secondary" data-mm-exclude-object="' +
-									escapeHtml(rec.objectName) +
-									'">Exclude object from migration</button> <button type="button" class="button secondary" data-mm-retry-schema="' +
-									escapeHtml(rec.objectName) +
-									'">Retry</button></section>',
-							);
-							return;
-						}
 						const issues = annotation.issues || [];
-						if (issues.some((issue) => issue.kind === 'excluded-relationship')) {
-							recordRows.push(
-								'<section class="mm-difference-record mm-difference-record--blocked"><strong>' +
-									escapeHtml(_differenceRecordLabel(rec)) +
-									'</strong><p>' +
-									issues
-										.filter((issue) => issue.kind === 'excluded-relationship')
-										.map((issue) => escapeHtml(issue.message))
-										.join(' ') +
-									'</p><button type="button" class="button secondary" data-mm-exclude-record="' +
-									recordIndex +
-									'">Exclude this record too</button></section>',
+						const rows = [];
+						let attentionCount = 0;
+						if (rec._migrateExcluded) {
+							rows.push(
+								_fieldDifferenceRow(
+									'Record',
+									null,
+									'Excluded from this migration. The saved source canvas is unchanged.',
+									'<button type="button" class="button secondary" data-mm-include="' +
+										recordIndex +
+										'">Include again</button>',
+									true,
+								),
 							);
+						} else if (annotation.status === 'pending') {
+							attentionCount++;
+							rows.push(
+								_fieldDifferenceRow(
+									'Object',
+									rec.objectName,
+									'This object is unavailable through the destination connection. It may not exist in that org, your Salesforce user may not have access, or its fields could not be loaded.',
+									'<button type="button" class="button secondary" data-mm-exclude-object="' +
+										escapeHtml(rec.objectName) +
+										'">Exclude object from migration</button> ' +
+										'<button type="button" class="button secondary" data-mm-retry-schema="' +
+										escapeHtml(rec.objectName) +
+										'">Retry</button>',
+									false,
+								),
+							);
+						} else {
+							const renderedMapKeys = new Set();
+							issues.forEach((issue) => {
+								if (issue.kind === 'excluded-relationship') {
+									attentionCount++;
+									rows.push(
+										_fieldDifferenceRow(
+											issue.field || 'Relationship',
+											null,
+											issue.message,
+											'<button type="button" class="button secondary" data-mm-exclude-record="' +
+												recordIndex +
+												'">Exclude this record too</button>',
+											false,
+										),
+									);
+									return;
+								}
+								const key =
+									issue.kind === 'missing-field' ? _fieldMapKey(recordIndex, issue.field) : null;
+								if (key) renderedMapKeys.add(key);
+								const markup = _differenceIssueHtml(rec, issue, recordIndex);
+								if (markup) {
+									rows.push(markup);
+									if (!key || !resolvedFieldMaps.has(key)) attentionCount++;
+								}
+							});
+							_resolvedFieldMapsForRecord(recordIndex).forEach(([key, resolved]) => {
+								if (!renderedMapKeys.has(key)) {
+									rows.push(
+										_differenceIssueHtml(
+											rec,
+											{
+												kind: 'missing-field',
+												field: resolved.sourceField,
+												severity: 'resolved',
+											},
+											recordIndex,
+										),
+									);
+								}
+							});
+							const activeRequiredFields = new Set(
+								issues
+									.filter((issue) => issue.kind === 'required-unfilled')
+									.map((issue) => String(issue.field).toLowerCase()),
+							);
+							reviewedRequiredFields.forEach((reviewed) => {
+								const value = _lookup(rec.values, reviewed.field);
+								if (
+									reviewed.recordIndex === recordIndex &&
+									!rec._migrateMatchedId &&
+									!activeRequiredFields.has(String(reviewed.field).toLowerCase()) &&
+									value != null &&
+									value !== ''
+								) {
+									rows.push(
+										_differenceIssueHtml(
+											rec,
+											{ kind: 'required-reviewed', field: reviewed.field, severity: 'resolved' },
+											recordIndex,
+										),
+									);
+								}
+							});
 						}
-						const activeRequiredFields = new Set(
-							issues
-								.filter((issue) => issue.kind === 'required-unfilled')
-								.map((issue) => String(issue.field).toLowerCase()),
-						);
-						reviewedRequiredFields.forEach((reviewed) => {
-							if (
-								reviewed.recordIndex === recordIndex &&
-								!rec._migrateMatchedId &&
-								!activeRequiredFields.has(String(reviewed.field).toLowerCase()) &&
-								_lookup(rec.values, reviewed.field) !== null &&
-								_lookup(rec.values, reviewed.field) !== undefined &&
-								String(_lookup(rec.values, reviewed.field)) !== ''
-							) {
-								completedRequiredRows.push(
-									_differenceIssueHtml(
-										rec,
-										{ kind: 'required-reviewed', field: reviewed.field, severity: 'resolved' },
-										recordIndex,
-									),
-								);
-							}
-						});
-						const renderedMapKeys = new Set();
-						const issueEntries = [];
-						issues.forEach((issue) => {
-							if (issue.kind === 'excluded-relationship') {
-								return;
-							}
-							const key = issue.kind === 'missing-field' ? _fieldMapKey(recordIndex, issue.field) : null;
-							if (key) {
-								renderedMapKeys.add(key);
-								addFieldEntry(rec, recordIndex, issue, resolvedFieldMaps.get(key));
-								return;
-							}
-							issueEntries.push({ issue: issue, resolved: null });
-						});
-						_resolvedFieldMapsForRecord(recordIndex).forEach(([key, resolved]) => {
-							if (!renderedMapKeys.has(key)) {
-								addFieldEntry(
-									rec,
-									recordIndex,
-									{ kind: 'missing-field', field: resolved.sourceField, severity: 'resolved' },
-									resolved,
-								);
-							}
-						});
-						if (!issueEntries.length) {
-							return;
-						}
-						const resolvedCount = issueEntries.filter((entry) => entry.resolved).length;
-						const attentionCount = issueEntries.length - resolvedCount;
-						const recordStatus = attentionCount
-							? attentionCount +
-								' need' +
-								(attentionCount === 1 ? 's' : '') +
-								' attention' +
-								(resolvedCount ? ' \u00b7 ' + resolvedCount + ' resolved' : '')
-							: resolvedCount + ' resolved';
-						recordRows.push(
-							'<section class="mm-difference-record' +
-								(annotation.status === 'blocked' && attentionCount
-									? ' mm-difference-record--blocked'
-									: '') +
-								(!attentionCount ? ' mm-difference-record--resolved' : '') +
-								'">' +
-								'<div class="mm-difference-record-head"><div><strong>' +
-								escapeHtml(_differenceRecordLabel(rec)) +
-								'</strong></div>' +
-								'<span>' +
-								recordStatus +
-								'</span></div>' +
-								'<div class="mm-difference-record-body">' +
-								issueEntries
-									.map((entry) => _differenceIssueHtml(rec, entry.issue, recordIndex))
-									.join('') +
-								'</div></section>',
+						if (!rows.length) return;
+						const describe = canvasState.describeCache[rec.objectName];
+						const title = _meaningfulRecordLabel(rec, describe) || _differenceRecordLabel(rec);
+						const objectLabel = (describe && describe.label) || rec.objectName;
+						recordGroups.push(
+							'<tbody><tr class="mm-field-record-heading"><th colspan="4" scope="rowgroup"><div><strong>' +
+								escapeHtml(title) +
+								'</strong><span>' +
+								escapeHtml(objectLabel) +
+								'</span><span class="mm-field-record-status">' +
+								(attentionCount
+									? attentionCount + ' to review'
+									: rec._migrateExcluded
+										? 'Excluded'
+										: 'Reviewed') +
+								'</span></div></th></tr>' +
+								rows.join('') +
+								'</tbody>',
 						);
 					});
-					const groups = Array.from(fieldGroups.values());
-					const attentionGroups = groups.filter((group) => group.entries.some((entry) => !entry.resolved));
-					const automaticGroups = groups.filter((group) =>
-						group.entries.every((entry) => entry.resolved && entry.resolved.automatic),
-					);
-					const reviewedGroups = groups.filter(
-						(group) => !attentionGroups.includes(group) && !automaticGroups.includes(group),
-					);
-					const sections = [];
-					if (attentionGroups.length || recordRows.length) {
-						sections.push(
-							'<div class="mm-section-heading"><strong>' +
-								(attentionGroups.length || _differenceCounts().blocked || _differenceCounts().pending
-									? 'Needs your input'
-									: 'Excluded or reviewed records') +
-								'</strong></div>' +
-								attentionGroups.map(_fieldMappingGroupHtml).join('') +
-								recordRows.join(''),
-						);
-					}
-					if (reviewedGroups.length) {
-						sections.push(
-							'<div class="mm-section-heading"><strong>Reviewed mappings</strong></div>' +
-								reviewedGroups.map(_fieldMappingGroupHtml).join(''),
-						);
-					}
-					if (completedRequiredRows.length) {
-						sections.push(
-							'<div class="mm-section-heading"><strong>Completed required fields</strong></div>' +
-								completedRequiredRows.join(''),
-						);
-					}
-					if (automaticGroups.length) {
-						const automaticCount = automaticGroups.reduce(
-							(total, group) => total + group.entries.length,
-							0,
-						);
-						sections.push(
-							'<details class="mm-auto-matches"><summary>Automatically matched (' +
-								automaticCount +
-								')</summary><div class="mm-auto-match-list">' +
-								automaticGroups.map(_fieldMappingGroupHtml).join('') +
-								'</div></details>',
-						);
-					}
-					differencesEl.innerHTML = sections.length
-						? sections.join('')
-						: '<div class="mm-difference-empty"><strong>No destination differences need attention.</strong><span>The current record values are available through this Salesforce connection.</span></div>';
+					differencesEl.innerHTML = recordGroups.length
+						? '<div class="mm-field-table-wrap"><table class="mm-field-table" aria-label="Migration field choices"><colgroup><col class="mm-field-name-col"><col class="mm-field-source-col"><col class="mm-field-target-col"><col></colgroup><thead><tr><th scope="col">Source field</th><th scope="col">Source value</th><th scope="col">Destination field</th><th scope="col">Destination value</th></tr></thead>' +
+							recordGroups.join('') +
+							'</table></div>'
+						: '<div class="mm-difference-empty"><strong>No destination differences need attention.</strong></div>';
 
 					differencesEl.querySelectorAll('[data-mm-retry-schema]').forEach((button) => {
 						button.addEventListener('click', async () => {
@@ -1894,10 +1895,6 @@
 								(omitted === 1 ? '' : 's') +
 								' will be omitted.</strong> Return to Fields if you want to map them. Unmapped values do not clear or overwrite destination data.</li>'
 							: '';
-					const blankUpdateItem =
-						status.updates > 0
-							? '<li>Blank source fields won\u2019t replace existing Salesforce values. To clear a field, apply the migration, open the record, and clear it on the canvas before uploading.</li>'
-							: '';
 					finalReviewEl.innerHTML =
 						'<div class="mm-plan-summary" aria-label="Migration record plan">' +
 						'<div><strong>' +
@@ -1909,10 +1906,20 @@
 						status.creates +
 						'</strong><span>New record' +
 						(status.creates === 1 ? '' : 's') +
-						' to create</span></div></div>' +
+						' to create</span></div>' +
+						(status.deletes
+							? '<div><strong>' +
+								status.deletes +
+								'</strong><span>Existing record' +
+								(status.deletes === 1 ? '' : 's') +
+								' to delete</span></div>'
+							: '') +
+						'</div>' +
 						'<div class="mm-before-upload"><strong>Apply to canvas</strong><ul>' +
-						'<li>The plan will replace migration choices with normal canvas records. Nothing is written to Salesforce until you use Upload.</li>' +
-						blankUpdateItem +
+						'<li>The plan will only apply your choices to your canvas. Nothing will be written to Salesforce.</li>' +
+						(status.deletes
+							? '<li>Deletions are staged on the canvas. Records are only deleted in Salesforce when you upload and confirm deletion.</li>'
+							: '') +
 						omissionItem +
 						(status.excluded
 							? '<li><strong>' +
@@ -1928,50 +1935,68 @@
 					return _recordDisplayLabel(rec, describe, _allRecords(), recordOrdinal ? recordOrdinal(rec) : null);
 				}
 
-				function _recordKeyText(rec) {
-					const preferred = _preferredKeyForRecord(rec);
-					const key = rec._migrateMatchKey || (preferred && preferred.name);
-					if (!key) {
-						return '';
-					}
-					const field = _fieldFor(rec, key);
-					const value = rec._migrateMatchKey ? rec._migrateMatchValue : _lookup(rec.values, key);
-					return ((field && field.label) || key) + ' = ' + _displayValue(value);
-				}
-
-				function _recordOpenUrl(rec) {
+				function _recordOpenUrl(rec, id = rec._migrateMatchedId) {
 					const sfBase = (window.SF_INSTANCE_URL || '').replace(/\/+$/, '');
-					return rec._migrateMatchedId && sfBase
+					return id && sfBase
 						? sfBase +
 								'/lightning/r/' +
 								encodeURIComponent(rec.objectName) +
 								'/' +
-								encodeURIComponent(rec._migrateMatchedId) +
+								encodeURIComponent(id) +
 								'/view'
 						: '';
 				}
 
-				function _canvasIdentity(rec) {
+				function _canvasIdentity(rec, index) {
 					const describe = canvasState.describeCache[rec.objectName];
 					const objectLabel = (describe && describe.label) || rec.objectName;
-					const keyText = _recordKeyText(rec);
+					const title = _meaningfulRecordLabel(rec, describe) || _differenceRecordLabel(rec);
+					const fields = (describe && describe.fields) || [];
+					const details = Object.entries(rec.values || {})
+						.filter(([name, value]) => {
+							const field = fields.find((item) => item.name === name);
+							return (
+								!rec._inaccessible &&
+								value !== null &&
+								value !== undefined &&
+								value !== '' &&
+								!(field && (field.encrypted || field.type === 'encryptedstring'))
+							);
+						})
+						.map(([name, value]) => {
+							const field = fields.find((item) => item.name === name);
+							return (
+								'<dt>' +
+								escapeHtml((field && field.label) || name) +
+								'</dt><dd>' +
+								escapeHtml(_displayValue(value)) +
+								'</dd>'
+							);
+						})
+						.join('');
 					return (
-						'<strong class="mm-record-identity">' +
-						escapeHtml(keyText ? objectLabel + ' \u00b7 ' + keyText : _differenceRecordLabel(rec)) +
-						'</strong>'
-					);
-				}
-
-				function _candidateReason(rec, candidate) {
-					if (!candidate || !candidate.matchField) {
-						return '';
-					}
-					const field = _fieldFor(rec, candidate.matchField);
-					return (
-						'Matched using ' +
-						((field && field.label) || candidate.matchField) +
-						' = ' +
-						(candidate.matchValue == null ? '' : candidate.matchValue)
+						'<div class="mm-record-name-line"><strong class="mm-record-identity">' +
+						escapeHtml(title) +
+						'</strong><button type="button" class="mm-inspect-record" aria-label="Inspect ' +
+						escapeHtml(title) +
+						'" aria-expanded="false" aria-controls="mm-record-preview-' +
+						index +
+						'">ⓘ</button></div>' +
+						'<span class="mm-record-object">' +
+						escapeHtml(objectLabel) +
+						'</span>' +
+						'<div class="mm-record-preview" id="mm-record-preview-' +
+						index +
+						'" popover="auto" role="dialog" aria-label="Record details: ' +
+						escapeHtml(title) +
+						'">' +
+						'<strong>' +
+						escapeHtml(title) +
+						'</strong><dl>' +
+						details +
+						'</dl>' +
+						(details ? '' : '<p>No populated fields.</p>') +
+						'</div>'
 					);
 				}
 
@@ -2006,13 +2031,9 @@
 					}
 					const candidates = _destinationCandidates(rec);
 					if (!candidates.length) {
-						return (
-							'<div class="mm-search-status">' +
-							(state.query.trim()
-								? 'No destination records found.'
-								: 'Type a record name to search the destination org.') +
-							'</div>'
-						);
+						return state.query.trim()
+							? '<div class="mm-search-status">No destination records found.</div>'
+							: '';
 					}
 					return candidates
 						.map((candidate) => {
@@ -2020,25 +2041,40 @@
 							const claimedByOther = all.some(
 								(other) => other && other !== rec && other._migrateMatchedId === candidate.id,
 							);
-							const reason = _candidateReason(rec, candidate);
+							const openUrl = _recordOpenUrl(rec, candidate.id);
+							const details = _candidateDetailLines(candidate, candidates)
+								.map((line) => '<small>' + escapeHtml(line) + '</small>')
+								.join('');
 							return (
-								'<button type="button" class="mm-search-result' +
+								'<div class="mm-candidate-row" role="listitem"><button type="button" class="mm-search-result' +
 								(selected ? ' is-selected' : '') +
 								'" data-mm-destination-id="' +
 								escapeHtml(candidate.id) +
-								'" role="option" aria-selected="' +
+								'" aria-pressed="' +
 								(selected ? 'true' : 'false') +
 								'"' +
-								(claimedByOther ? ' disabled title="Already selected for another canvas record"' : '') +
+								' title="' +
+								escapeHtml(candidate.id) +
+								'"' +
+								(claimedByOther ? ' disabled' : '') +
 								'><span><strong>' +
 								escapeHtml(candidate.label || '(no name)') +
-								'</strong><small>ID ' +
-								escapeHtml(candidate.id) +
-								(reason ? ' &middot; ' + escapeHtml(reason) : '') +
-								(claimedByOther ? ' &middot; already selected' : '') +
-								'</small></span>' +
+								'</strong>' +
+								details +
+								(claimedByOther ? '<small>Already selected for another canvas record</small>' : '') +
+								'</span>' +
 								(selected ? '<span class="mm-search-selected">Selected</span>' : '') +
-								'</button>'
+								'</button>' +
+								(openUrl
+									? '<a class="mm-preview-destination" href="' +
+										escapeHtml(openUrl) +
+										'" target="_blank" rel="noopener" aria-label="Open ' +
+										escapeHtml(candidate.label || candidate.id) +
+										' in Salesforce (' +
+										escapeHtml(candidate.id) +
+										')" title="Open in Salesforce">↗</a>'
+									: '') +
+								'</div>'
 							);
 						})
 						.join('');
@@ -2066,47 +2102,41 @@
 					);
 				}
 
-				function _decisionCard(rec, index, all) {
+				function _decisionRow(rec, index, all) {
 					if (rec._migrateExcluded) {
 						return (
-							'<section class="mm-difference-record"><strong>' +
+							'<tr><td><strong class="mm-record-identity">' +
 							escapeHtml(_differenceRecordLabel(rec)) +
-							'</strong><p>Excluded from this migration. Open Fields to include it again.</p></section>'
+							'</strong></td><td>Excluded</td><td>Open Fields to include it again.</td></tr>'
 						);
 					}
 					const destinationSearch = _destinationSearchState(rec);
 					const pending = pendingMatches.has(rec);
 					const action = rec._migrateMatchedId || rec._migrateMatchIntent === 'existing' ? 'existing' : 'new';
 					const needsDecision = action === 'existing' && !rec._migrateMatchedId;
-					let badge = '<span class="mm-plan-badge">Create new</span>';
+					let badge = '';
 					if (pending) {
 						badge = '<span class="mm-plan-badge">Searching...</span>';
 					} else if (rec._migrateMatchSearchError) {
 						badge = '<span class="mm-plan-badge mm-plan-badge--warn">Search failed</span>';
-					} else if (needsDecision) {
-						badge = '<span class="mm-plan-badge mm-plan-badge--warn">Needs decision</span>';
-					} else if (rec._migrateMatchedId) {
-						badge = '<span class="mm-plan-badge mm-plan-badge--ok">Update existing</span>';
 					}
 					const describe = canvasState.describeCache[rec.objectName];
 					const objectLabel =
 						(describe && describe.labelPlural) || (describe && describe.label) || rec.objectName;
-					const targetControl =
-						'<label for="mm-destination-search-' +
+					const searchControl =
+						'<div class="mm-search-input-wrap"><input id="mm-destination-search-' +
 						index +
-						'">Search destination ' +
+						'" aria-label="Search destination ' +
 						escapeHtml(objectLabel) +
-						'</label><div class="mm-search-input-wrap"><input id="mm-destination-search-' +
-						index +
-						'" class="mm-destination-search" type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="mm-search-results-' +
+						'" class="mm-destination-search" type="search" autocomplete="off" aria-controls="mm-search-results-' +
 						index +
 						'" aria-expanded="' +
 						(destinationSearch.open ? 'true' : 'false') +
-						'" placeholder="Type a record name..." value="' +
+						'" placeholder="Search..." value="' +
 						escapeHtml(destinationSearch.query) +
 						'"></div><div id="mm-search-results-' +
 						index +
-						'" class="mm-search-results" role="listbox"' +
+						'" class="mm-search-results" role="list" aria-label="Destination records"' +
 						(destinationSearch.open ? '' : ' hidden') +
 						'>' +
 						_destinationResultsMarkup(rec, all) +
@@ -2152,61 +2182,118 @@
 								'<small>This changes suggestions for this record only.</small></details>'
 							: '';
 					const openUrl = _recordOpenUrl(rec);
-					const radioName = 'mm-action-' + index;
+					const selectedCandidate = _destinationCandidates(rec).find(
+						(candidate) => candidate.id === rec._migrateMatchedId,
+					);
+					const targetControl =
+						openUrl && !destinationSearch.open
+							? '<div class="mm-selected-destination"><a class="mm-open-record" href="' +
+								escapeHtml(openUrl) +
+								'" target="_blank" rel="noopener" title="Open in Salesforce">' +
+								escapeHtml((selectedCandidate && selectedCandidate.label) || rec._migrateMatchedId) +
+								'</a><button type="button" class="link-button" data-mm-change-destination>Change</button></div>'
+							: searchControl;
 					return (
-						'<section class="mm-decision-card' +
+						'<tr class="mm-decision-card' +
 						(needsDecision || rec._migrateMatchSearchError ? ' mm-decision-card--needs' : '') +
 						'" data-mm-record-index="' +
 						index +
 						'">' +
-						'<div class="mm-decision-head">' +
-						_canvasIdentity(rec) +
+						'<td><div class="mm-decision-head">' +
+						_canvasIdentity(rec, index) +
 						badge +
-						'</div>' +
-						searchMessage +
-						'<fieldset class="mm-review-choice"' +
+						'</div></td><td><fieldset class="mm-action-segments" aria-label="Action for ' +
+						escapeHtml(_differenceRecordLabel(rec)) +
+						'"' +
 						(pending ? ' disabled' : '') +
-						'><legend>What should happen to this record?</legend>' +
-						'<label class="mm-action-option"><input type="radio" class="mm-action-radio" name="' +
-						radioName +
+						'><label><input class="mm-action-radio" type="radio" name="mm-action-' +
+						index +
 						'" value="new"' +
 						(action === 'new' ? ' checked' : '') +
-						'>' +
-						'<span><strong>Create new</strong><small>Insert this as a separate destination record.</small></span></label>' +
-						'<label class="mm-action-option"><input type="radio" class="mm-action-radio" name="' +
-						radioName +
+						'><span>Create new</span></label>' +
+						'<label><input class="mm-action-radio" type="radio" name="mm-action-' +
+						index +
 						'" value="existing"' +
 						(action === 'existing' ? ' checked' : '') +
+						'><span>' +
+						(rec.pendingDelete ? 'Delete existing' : 'Update existing') +
+						'</span></label>' +
+						'</fieldset></td><td>' +
+						searchMessage +
+						(action === 'new' ? '<span class="mm-new-destination">New record</span>' : '') +
+						'<fieldset class="mm-target-controls"' +
+						(pending ? ' disabled' : '') +
 						'>' +
-						'<span><strong>Update existing</strong><small>Apply this canvas record to a destination record.</small></span></label>' +
 						'<div class="mm-target-choice"' +
 						(action === 'existing' ? '' : ' hidden') +
 						'>' +
 						targetControl +
-						(openUrl
-							? '<a class="mm-open-record" href="' +
-								escapeHtml(openUrl) +
-								'" target="_blank" rel="noopener">Open selected record in Salesforce</a>'
-							: '') +
 						'</div>' +
 						'</fieldset>' +
 						matchOptions +
-						'</section>'
+						'</td></tr>'
 					);
 				}
 
 				function _renderRecordDecisions() {
 					const all = _allRecords();
 					decisionsEl.innerHTML = all.length
-						? all.map((rec, index) => _decisionCard(rec, index, all)).join('')
+						? '<table class="mm-record-table" aria-label="Migration record choices"><thead><tr><th scope="col">Record</th><th scope="col">Action</th><th scope="col">Destination record</th></tr></thead><tbody>' +
+							all.map((rec, index) => _decisionRow(rec, index, all)).join('') +
+							'</tbody></table>'
 						: '<div class="mm-empty-differences"><strong>No records to migrate</strong><span>Add records to the canvas before starting a migration.</span></div>';
 					decisionsEl.querySelectorAll('.mm-decision-card').forEach((card) => {
 						const rec = all[Number(card.getAttribute('data-mm-record-index'))];
+						const inspect = card.querySelector('.mm-inspect-record');
+						const preview = card.querySelector('.mm-record-preview');
+						if (inspect && preview) {
+							let pinned = false;
+							const showPreview = () => {
+								preview.showPopover();
+								const anchor = inspect.getBoundingClientRect();
+								const rect = preview.getBoundingClientRect();
+								preview.style.left =
+									Math.max(8, Math.min(anchor.left, window.innerWidth - rect.width - 8)) + 'px';
+								preview.style.top =
+									Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - rect.height - 8)) +
+									'px';
+							};
+							const hidePreview = () => {
+								if (
+									!pinned &&
+									!preview.matches(':hover') &&
+									document.activeElement !== inspect &&
+									!preview.contains(document.activeElement)
+								)
+									preview.hidePopover();
+							};
+							inspect.addEventListener('mouseenter', showPreview);
+							inspect.addEventListener('focus', showPreview);
+							inspect.addEventListener('mouseleave', () => setTimeout(hidePreview, 150));
+							preview.addEventListener('mouseleave', hidePreview);
+							inspect.addEventListener('blur', () => setTimeout(hidePreview, 0));
+							inspect.addEventListener('click', () => {
+								pinned = !pinned;
+								if (pinned) showPreview();
+								else preview.hidePopover();
+							});
+							preview.addEventListener('toggle', () => {
+								const open = preview.matches(':popover-open');
+								inspect.setAttribute('aria-expanded', String(open));
+								if (!open) pinned = false;
+							});
+						}
 						card.querySelectorAll('.mm-action-radio').forEach((radio) => {
 							radio.addEventListener('change', () => {
-								if (!radio.checked) {
-									return;
-								}
+								if (!radio.checked) return;
+								const restoreActionFocus = () =>
+									decisionsEl
+										.querySelector(
+											'[data-mm-record-index="' +
+												card.getAttribute('data-mm-record-index') +
+												'"] .mm-action-radio:checked',
+										)
+										?.focus({ preventScroll: true });
 								if (radio.value === 'new') {
 									_resolveRecord(rec, 'new', all);
 									delete rec._migrateMatchSearchError;
@@ -2232,14 +2319,30 @@
 										}
 									}
 									_afterRecordDecision();
+									restoreActionFocus();
 									if (searchField) {
 										_runMatchForRecord(rec, searchField);
 									}
 									return;
 								}
 								_afterRecordDecision();
+								restoreActionFocus();
 							});
 						});
+						const changeDestination = card.querySelector('[data-mm-change-destination]');
+						if (changeDestination) {
+							changeDestination.addEventListener('click', () => {
+								_destinationSearchState(rec).open = true;
+								_renderRecordDecisions();
+								const input = decisionsEl.querySelector(
+									'[data-mm-record-index="' + all.indexOf(rec) + '"] .mm-destination-search',
+								);
+								if (input) {
+									input.focus();
+									input.select();
+								}
+							});
+						}
 						const destinationInput = card.querySelector('.mm-destination-search');
 						if (destinationInput) {
 							destinationInput.addEventListener('input', () => {
@@ -2311,7 +2414,7 @@
 
 				async function _runMatchForRecord(rec, keyField) {
 					const all = _allRecords();
-					const value = _lookup(rec.values, keyField);
+					const value = _matchValue(rec, keyField);
 					const token = {};
 					_clearMatchState(rec);
 					rec._migrateMatchSearched = true;
@@ -2376,38 +2479,21 @@
 				}
 
 				function _statusCounts() {
-					let updates = 0;
-					let unresolved = 0;
-					let explicitNew = 0;
-					let total = 0;
-					let excluded = 0;
-					objects.forEach((recs) => {
-						recs.forEach((r) => {
-							if (r._migrateExcluded) {
-								excluded++;
-								return;
-							}
-							total++;
-							if (r._migrateMatchedId) {
-								updates++;
-							} else if (r._migrateMatchAmbiguous && !r._migrateMatchResolution) {
-								unresolved++;
-							} else if (r._migrateMatchResolution === 'new') {
-								explicitNew++;
-							}
-						});
-					});
-					return {
-						updates: updates,
-						excluded: excluded,
-						unresolved: unresolved,
-						explicitNew: explicitNew,
-						creates: total - updates - unresolved,
-						total: total,
-					};
+					return _recordPlanCounts(_allRecords());
 				}
 
 				function _updateFooter(counts) {
+					overlay.setAttribute('aria-busy', String(applying));
+					overlay.querySelector('button[data-mm-close]').disabled = applying;
+					backBtn.disabled = applying;
+					overlay.querySelectorAll('[data-mm-step]').forEach((stepBtn) => {
+						stepBtn.disabled = applying;
+					});
+					if (applying) {
+						primaryBtn.disabled = true;
+						primaryBtn.textContent = 'Applying to canvas…';
+						return;
+					}
 					counts = counts || _statusCounts();
 					const pending = pendingMatches.size;
 					const pendingFieldMapCount = pendingFieldMaps.size;
@@ -2482,7 +2568,15 @@
 						counts.creates +
 						'</strong> new record' +
 						(counts.creates === 1 ? '' : 's') +
-						' to create</span><i>\u00b7</i><span class="' +
+						' to create</span>' +
+						(counts.deletes
+							? '<i>\u00b7</i><span><strong>' +
+								counts.deletes +
+								'</strong> existing record' +
+								(counts.deletes === 1 ? '' : 's') +
+								' to delete</span>'
+							: '') +
+						'<i>\u00b7</i><span class="' +
 						(attention ? 'is-warn' : 'is-ready') +
 						'">' +
 						(attention ? attention + ' need' + (attention === 1 ? 's' : '') + ' attention' : 'Ready') +
@@ -2494,6 +2588,7 @@
 			return { open: open };
 		},
 		_test: {
+			recordPlanCounts: _recordPlanCounts,
 			applyMatchResponse: _applyMatchResponse,
 			resolveRecord: _resolveRecord,
 			clearMatchState: _clearMatchState,
@@ -2503,6 +2598,7 @@
 			automaticFieldCandidate: _automaticFieldCandidate,
 			recordDisplayLabel: _recordDisplayLabel,
 			searchCandidate: _searchCandidate,
+			candidateDetailLines: _candidateDetailLines,
 		},
 	};
 })();

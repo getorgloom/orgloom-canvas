@@ -435,7 +435,9 @@ export const SYSTEM_RO_FIELDS = new Set([
 	'LastReferencedDate',
 ]);
 
-export const GRAPH_PER_GRAPH_CAP = 75;
+// Salesforce allows 500 subrequests per graph/payload. The separate limit
+// of 75 graphs per request is enforced by requestGraphBatches.
+export const GRAPH_PER_GRAPH_CAP = 500;
 export const GRAPH_TOTAL_NODES_CAP = 500;
 
 export function groupConnectedComponents(submittedIds, submittedOrder, associations) {

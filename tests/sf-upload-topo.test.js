@@ -213,8 +213,8 @@ describe('groupConnectedComponents', () => {
 });
 
 describe('graph caps (contract values)', () => {
-	test('per-graph cap is 75', () => {
-		assert.equal(GRAPH_PER_GRAPH_CAP, 75, 'caller relies on this exact value');
+	test('one graph can contain all 500 supported record operations', () => {
+		assert.equal(GRAPH_PER_GRAPH_CAP, 500);
 	});
 
 	test('total nodes cap is 500', () => {

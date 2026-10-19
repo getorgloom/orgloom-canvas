@@ -5,6 +5,59 @@ import vm from 'node:vm';
 
 const preflightSource = readFileSync(new URL('../src/public/js/preflight.js', import.meta.url), 'utf8');
 
+const businessHoursField = {
+	name: 'BusinessHoursId',
+	label: 'Business Hours ID',
+	type: 'reference',
+	createable: true,
+	updateable: true,
+	required: true,
+	nillable: false,
+	defaultedOnCreate: false,
+	referenceTo: ['BusinessHours'],
+};
+
+test('new Cases can use Salesforce business hours defaults despite required Describe metadata', () => {
+	for (const values of [{}, { BusinessHoursId: null }, { BusinessHoursId: '' }]) {
+		const result = validate({ id: 1, objectName: 'Case', values }, [businessHoursField]);
+		assert.equal(result.issues.length, 0);
+	}
+});
+
+test('the business hours exception does not exempt other objects or required lookups', () => {
+	for (const [objectName, field] of [
+		['OtherObject__c', businessHoursField],
+		['Case', { ...businessHoursField, name: 'RequiredParent__c' }],
+	]) {
+		const result = validate({ id: 1, objectName, values: {} }, [field]);
+		assert.equal(result.issues.length, 1);
+		assert.equal(result.issues[0].message, 'Required field is empty.');
+	}
+});
+
+test('an explicit invalid Case business hours ID is still rejected', () => {
+	const result = validate({ id: 1, objectName: 'Case', values: { BusinessHoursId: 'invalid' } }, [
+		businessHoursField,
+	]);
+	assert.equal(result.issues.length, 1);
+	assert.match(result.issues[0].message, /isn’t a Salesforce ID/);
+});
+
+test('the Case insert exception does not bypass required-field clearing checks on updates', () => {
+	const result = validate(
+		{
+			id: 1,
+			objectName: 'Case',
+			loadedFromId: '500TARGET',
+			values: { BusinessHoursId: null },
+			loadedValues: { BusinessHoursId: '01mcU000005IudZQAS' },
+		},
+		[businessHoursField],
+	);
+	assert.equal(result.issues.length, 1);
+	assert.equal(result.issues[0].message, 'Required field is empty.');
+});
+
 function validate(record, fields, describeOverrides = {}) {
 	const context = { window: { OrgLoom: {} }, Set, Map, Date, isFinite };
 	vm.runInNewContext(preflightSource, context);
@@ -12,7 +65,7 @@ function validate(record, fields, describeOverrides = {}) {
 		canvasState: {
 			bulkRecords: [record],
 			bulkAssociations: [],
-			describeCache: { Account: { fields, ...describeOverrides } },
+			describeCache: { [record.objectName]: { fields, ...describeOverrides } },
 		},
 		isRecordModified: () => true,
 		recordOrdinal: () => 1,

@@ -2573,20 +2573,20 @@ function csrfFetch(url, options) {
 				.then(() => ensureDescribe(name, { force: true }));
 		}
 		if (force) {
-			delete canvasState.describeCache[name];
-			delete canvasState.describeRequests[name];
+			// Keep the last complete metadata available to synchronous permission checks
+			// until its replacement arrives. A concurrent refresh must not look like denial.
 			try {
 				sessionStorage.removeItem(_describeStorageKey(name));
 			} catch (e) {}
-		}
-		if (canvasState.describeCache[name]) {
-			return Promise.resolve(canvasState.describeCache[name]);
 		}
 		// Share in-flight requests so concurrent panels see one consistent describe response.
 		if (canvasState.describeRequests[name]) {
 			return canvasState.describeRequests[name];
 		}
-		const cached = _loadDescribeFromStorage(name);
+		if (!force && canvasState.describeCache[name]) {
+			return Promise.resolve(canvasState.describeCache[name]);
+		}
+		const cached = !force && _loadDescribeFromStorage(name);
 		if (cached) {
 			canvasState.describeCache[name] = cached;
 			return Promise.resolve(cached);
@@ -2613,6 +2613,11 @@ function csrfFetch(url, options) {
 				canvasState.describeCache[name] = d;
 				_saveDescribeToStorage(name, d);
 				return d;
+			})
+			.catch((error) => {
+				// A failed refresh must not leave old permissions available as current metadata.
+				delete canvasState.describeCache[name];
+				throw error;
 			})
 			.finally(() => {
 				delete canvasState.describeRequests[name];
@@ -3726,9 +3731,10 @@ function csrfFetch(url, options) {
 		showBulkToast(
 			'Migration applied to the canvas: ' +
 				result.updates +
-				' existing and ' +
+				' to update, ' +
 				result.creates +
-				' new' +
+				' to create' +
+				(result.deletes ? ', ' + result.deletes + ' to delete' : '') +
 				(result.excluded ? ', ' + result.excluded + ' excluded' : '') +
 				'. Review the records, then upload when ready.',
 			'success',

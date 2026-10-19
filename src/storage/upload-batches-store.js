@@ -209,6 +209,7 @@ function makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 				insertedIds: Array.isArray(payload.insertedIds) ? payload.insertedIds : [],
 				deletedIds: Array.isArray(payload.deletedIds) ? payload.deletedIds : [],
 				intendedRecords: Array.isArray(payload.intendedRecords) ? payload.intendedRecords : [],
+				graphProgress: payload.graphProgress || null,
 				associations: Array.isArray(payload.associations) ? payload.associations : null,
 			};
 		},
@@ -256,6 +257,40 @@ function makeBatchStoreFromConnection(conn, sfUserId, sfOrgId, opts) {
 				associations: null,
 			};
 			return _writeBatchPayload(payload);
+		},
+
+		async checkpointGraph(id, progress) {
+			const existing = await this.get(id);
+			if (!existing || existing.status !== 'pending') {
+				throw new Error('checkpoint: pending batch not found');
+			}
+			const results = progress.results.map(({ tempId, objectName, success, id, mode, errorCode }) => ({
+				tempId,
+				objectName,
+				success,
+				id,
+				mode,
+				errorCode,
+			}));
+			const next = {
+				...existing,
+				graphProgress: {
+					intendedTempIds: (existing.intendedRecords || []).map((r) => r.tempId),
+					startedTempIds: [...progress.startedTempIds],
+					results,
+					stopped: progress.stopped === true,
+				},
+				insertedIds: results
+					.filter((r) => r.success && r.id)
+					.map((r) => ({
+						tempId: r.tempId,
+						objectName: r.objectName,
+						sfId: r.id,
+						mode: r.mode,
+					})),
+			};
+			await _rewriteBatch(conn, id, next, { sfOrgId, kekProvider, sessionId });
+			return next;
 		},
 
 		async finalize(id, { insertedIds, deletedIds, associations, recordCount } = {}) {
