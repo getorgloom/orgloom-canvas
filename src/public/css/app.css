@@ -18880,7 +18880,6 @@ body.canvas-recipient-mode .graph-bulk {
 	margin: 1.5rem 0;
 	padding: 1rem 1.15rem;
 	border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
-	border-left: 3px solid var(--accent);
 	border-radius: 6px;
 	background: var(--accent-soft);
 	color: var(--ink-soft);
