@@ -4108,6 +4108,33 @@ tbody tr[data-row-open]:hover code {
 .app-playground-banner-content {
 	white-space: nowrap;
 }
+.app-playground-small-screen {
+	display: none;
+}
+.app-playground-small-screen a {
+	color: inherit;
+	text-decoration: underline;
+	white-space: nowrap;
+}
+@media (max-width: 820px) {
+	.app-playground-banner {
+		height: 64px;
+		box-sizing: border-box;
+		padding: 6px 12px;
+		font-size: 0.8rem;
+		line-height: 1.4;
+	}
+	.app-playground-banner .app-playground-banner-home,
+	.app-playground-banner .app-playground-banner-content {
+		display: none;
+	}
+	.app-playground-small-screen {
+		display: block;
+	}
+	body:has(.app-playground-banner) .bulk-empty-placeholder {
+		display: none;
+	}
+}
 .app-playground-banner-cta {
 	color: inherit;
 	text-decoration: underline;
@@ -4177,6 +4204,11 @@ tbody tr[data-row-open]:hover code {
 }
 body:has(.app-playground-banner) .graph-overlay {
 	top: 84px;
+}
+@media (max-width: 820px) {
+	body:has(.app-playground-banner) .graph-overlay {
+		top: 112px;
+	}
 }
 body.canvas-share-banner-active .presence-saved-banner {
 	top: calc(56px + 44px);
