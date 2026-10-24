@@ -1,4 +1,5 @@
 import { MemoryStore, rateLimit } from 'express-rate-limit';
+import { consumeSfOAuthAttempt } from './auth.js';
 
 export const SF_OAUTH_START_RATE_LIMIT = Object.freeze({
 	windowMs: 5 * 60 * 1000,
@@ -61,7 +62,8 @@ export function validateSfOAuthCallback(req, res, next) {
 		return res.status(400).type('text/plain').send('Missing OAuth code.');
 	}
 	const state = typeof req.query?.state === 'string' ? req.query.state : null;
-	if (!state || !req.session?.id || state !== req.session.id) {
+	const attempt = consumeSfOAuthAttempt(req.session?.id, state);
+	if (!attempt) {
 		console.warn('[sf-oauth] state missing/mismatch on /auth/callback (possible CSRF)');
 		return res
 			.status(400)
@@ -69,6 +71,7 @@ export function validateSfOAuthCallback(req, res, next) {
 			.send('Salesforce sign-in failed a security check (state mismatch). Try again from the start.');
 	}
 	res.locals.sfOAuthCode = code;
+	res.locals.sfOAuthAttempt = attempt;
 	return next();
 }
 

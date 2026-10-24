@@ -4,7 +4,7 @@ Org Loom Canvas is the source-available canvas core at the center of [Org Loom](
 
 The canvas brings existing records, drafts, and relationships into one visual workspace. It includes the Salesforce integration and browser interface used to import, edit, validate, upload, and recall record changes.
 
-This repository contains the canvas portion of Org Loom and a reviewable copy of the [Salesforce managed package source](./orgloom-package). Hosted account, workspace, billing, and administration features are maintained separately.
+This repository contains the shared canvas portion of Org Loom. Salesforce package source is maintained separately in [orgloom-package](https://github.com/getorgloom/orgloom-package). Hosted account, workspace, billing, and administration features are maintained separately.
 
 ## Feedback and source publication
 
@@ -36,6 +36,14 @@ npm run dev
 ```
 
 The comments in [`.env.example`](./.env.example) describe the development configuration. Never include credentials, access tokens, customer data, or Salesforce record data in an issue, fixture, or pull request.
+
+### Salesforce OAuth deployment
+
+Salesforce sign-in uses the authorization-code flow with S256 PKCE. Each attempt has a random state and verifier, is bound to the browser session and selected login host, expires after ten minutes, and can be exchanged only once. Starting another Salesforce sign-in in the same session supersedes the previous attempt.
+
+Pending sign-ins and refresh tokens stay in process memory. Multiple server instances require session affinity; a restart requires restarting pending sign-ins, and existing connections require reconnecting when their access tokens expire. Refreshes are coordinated per session and connection, and replacement refresh tokens are retained only in memory. If a refresh fails or its response is lost, reconnect rather than retrying a potentially rotated token.
+
+These code controls do not configure the Salesforce External Client App. Validate sign-in, refresh-token rotation, token expiry, and any refresh-token IP restrictions using a test ECA before changing or locking production policies.
 
 ## Issues and security
 

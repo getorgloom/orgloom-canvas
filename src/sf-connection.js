@@ -4,7 +4,7 @@ import { connections as connectionsDb } from './database/index.js';
 import * as viewStateDb from 'orgloom-canvas/database/view-state';
 import { config } from './config.js';
 import { createOAuth2 } from './auth.js';
-import { getRefreshToken } from './sf-refresh-store.js';
+import { getRefreshToken, createSfRefreshFn } from './sf-refresh-store.js';
 
 const { Connection } = jsforce;
 
@@ -59,21 +59,27 @@ export async function getActiveSfConnection(req) {
 			accessToken: sfAuth.accessToken,
 			refreshToken,
 			version: config.salesforce.apiVersion,
-		});
-		sfConn.on('refresh', (newAccessToken) => {
-			try {
-				if (newAccessToken && req.session) {
-					if (req.session.sfAuth) {
-						req.session.sfAuth.accessToken = newAccessToken;
+			refreshFn: createSfRefreshFn(sid, connectionId, (newAccessToken, response) => {
+				try {
+					if (newAccessToken && req.session?.id === sid) {
+						if (req.session.sfAuth === sfAuth && req.session.currentConnectionId === connectionId) {
+							req.session.sfAuth.accessToken = newAccessToken;
+							if (response.instance_url) {
+								req.session.sfAuth.instanceUrl = response.instance_url;
+							}
+						}
+						if (req.session.sfAuthByConnection && req.session.sfAuthByConnection[connectionId]) {
+							req.session.sfAuthByConnection[connectionId].accessToken = newAccessToken;
+							if (response.instance_url) {
+								req.session.sfAuthByConnection[connectionId].instanceUrl = response.instance_url;
+							}
+						}
+						if (typeof req.session.save === 'function') {
+							req.session.save(() => {});
+						}
 					}
-					if (req.session.sfAuthByConnection && req.session.sfAuthByConnection[connectionId]) {
-						req.session.sfAuthByConnection[connectionId].accessToken = newAccessToken;
-					}
-					if (typeof req.session.save === 'function') {
-						req.session.save(() => {});
-					}
-				}
-			} catch (_) {}
+				} catch (_) {}
+			}),
 		});
 	} else {
 		sfConn = new Connection({

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import express from 'express';
+import { beginSfOAuth } from '../src/auth.js';
 import {
 	resetSfOAuthRateLimitsForTests,
 	SF_OAUTH_CALLBACK_IP_RATE_LIMIT,
@@ -17,7 +18,12 @@ let callbackHits = 0;
 let server;
 
 function request(path, { ip = '198.51.100.10', session = 'session-a' } = {}) {
-	return fetch(`${baseUrl}${path}`, {
+	// Each valid callback represents a separate login attempt, not a replay.
+	const url = new URL(path, baseUrl);
+	if (url.searchParams.get('state') === session) {
+		url.searchParams.set('state', beginSfOAuth(session).authParams.state);
+	}
+	return fetch(url, {
 		headers: {
 			'x-forwarded-for': ip,
 			'x-test-session': session,

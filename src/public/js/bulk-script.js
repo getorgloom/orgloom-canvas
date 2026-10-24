@@ -1035,6 +1035,12 @@
 			}
 
 			async function runBulkScriptWithGate(source) {
+				const operationCanvas = canvasState.currentCanvas;
+				const operationRecords = canvasState.bulkRecords;
+				const canCommit = () =>
+					operationCanvas === canvasState.currentCanvas &&
+					operationRecords === canvasState.bulkRecords &&
+					(!deps.canCommit || deps.canCommit());
 				const runButton = bulkScriptModal.querySelector('#bs-run');
 				const output = bulkScriptModal.querySelector('#bs-output');
 				if (runButton.disabled) {
@@ -1094,6 +1100,14 @@
 					if (!ok) {
 						return;
 					}
+				}
+				if (!canCommit()) {
+					_bsRender(
+						output,
+						'error',
+						'The canvas or editing session changed. Reopen Run script. No changes were applied.',
+					);
+					return;
 				}
 				runBulkScript(source);
 			}

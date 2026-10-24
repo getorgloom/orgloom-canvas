@@ -680,6 +680,30 @@ test('record-type picklist options remain authoritative when Salesforce returns 
 	assert.equal(recordTypePicklistAvailable(field, '012OTHER'), false);
 });
 
+test('layout controller indexes filter dependent options by record type and retain metadata when omitted', () => {
+	const field = { name: 'State__c', type: 'picklist', controllerName: 'Country__c' };
+	const layout = {
+		State__c: {
+			controllerValues: { USA: 0, Canada: 1 },
+			values: [
+				{ value: 'Arizona', label: 'Arizona', validFor: [0] },
+				{ value: 'Ontario', label: 'Ontario', validFor: [1] },
+			],
+		},
+	};
+	applyLayoutPicklistFallback([field], layout, '012TYPE');
+	assert.deepEqual(
+		{ ...picklistSelectionForContext(field, '012TYPE', 'Canada', 'Arizona') },
+		{ known: true, value: null },
+	);
+	assert.deepEqual(
+		{ ...picklistSelectionForContext(field, '012TYPE', 'Canada', 'Ontario') },
+		{ known: true, value: 'Ontario' },
+	);
+	applyLayoutPicklistFallback([field], { State__c: { values: layout.State__c.values } }, '012TYPE');
+	assert.deepEqual(field.controllerValuesByRecordType['012TYPE'], { USA: 0, Canada: 1 });
+});
+
 test('exact layout picklist metadata replaces stale record-type options', () => {
 	const fields = [
 		{

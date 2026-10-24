@@ -45,6 +45,18 @@
 				}
 			}
 			const canvasState = deps.canvasState;
+			const escapeHtml = (value) =>
+				String(value).replace(
+					/[&<>"']/g,
+					(character) =>
+						({
+							'&': '&amp;',
+							'<': '&lt;',
+							'>': '&gt;',
+							'"': '&quot;',
+							"'": '&#39;',
+						})[character],
+				);
 			const canEditCanvasStructure = deps.canEditCanvasStructure;
 			const _hasCap = deps._hasCap;
 			const isCapabilityReady = deps.isCapabilityReady;
@@ -549,9 +561,21 @@
 								'</span></button>';
 				}
 				const _migrateHasRecords = canvasState.bulkRecords.some((r) => !r.isTypeNode);
+				const migration = window.OrgLoom.platform?.migration || {};
+				const migrationLabel = escapeHtml(migration.label || 'Migrate to another org…');
+				const migrationDescription = escapeHtml(
+					migration.description ||
+						'Recreate these records in a different Salesforce org. Your canvas is saved first so the switch is safe.',
+				);
 				const _migrateItem = _migrateHasRecords
-					? '<button type="button" data-bulk-op="migrate-org" title="Recreate these records in a different Salesforce org. Your canvas is saved first so the switch is safe.">Migrate to another org…</button>'
-					: '<button type="button" data-bulk-op="migrate-org" disabled aria-disabled="true" title="Add or load records before migrating to another org.">Migrate to another org…</button>';
+					? '<button type="button" data-bulk-op="migrate-org" title="' +
+						migrationDescription +
+						'">' +
+						migrationLabel +
+						'</button>'
+					: '<button type="button" data-bulk-op="migrate-org" disabled aria-disabled="true" title="Add or load records before migrating to another org.">' +
+						migrationLabel +
+						'</button>';
 				pop.innerHTML =
 					(aiItem ? '<div class="fm-header">Create</div>' + aiItem : '') +
 					'<div class="fm-header">Modify records</div>' +

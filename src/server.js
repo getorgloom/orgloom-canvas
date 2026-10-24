@@ -10,7 +10,7 @@ import jsforce from 'jsforce';
 import { createSqliteSessionStore } from './database/sqlite-session-store.js';
 import connectPgSimpleFactory from 'connect-pg-simple';
 import { config } from './config.js';
-import { createOAuth2 } from './auth.js';
+import { createOAuth2, beginSfOAuth } from './auth.js';
 import { connections as connectionsDb } from './database/index.js';
 import { ensureSalesforceUserTimeZone, getActiveSfConnection } from './sf-connection.js';
 import { putRefreshToken, dropSessionRefreshTokens } from './sf-refresh-store.js';
@@ -447,8 +447,9 @@ app.get('/auth/login', sfOAuthStartIpRateLimit, (req, res) => {
 	if (loginUrlOverride) {
 		req.session.sfLoginUrl = loginUrlOverride;
 	}
-	const oauth2 = createOAuth2(loginUrlOverride);
-	const authParams = { state: req.session.id };
+	const { oauth2, authParams } = beginSfOAuth(req.session.id, loginUrlOverride);
+	// Ensure a first-time session gets a cookie even when using the default host.
+	req.session.sfLoginUrl = oauth2.loginUrl;
 	if (config.salesforce.scope) {
 		authParams.scope = config.salesforce.scope;
 	}
@@ -466,11 +467,12 @@ app.get(
 	async (req, res, next) => {
 		try {
 			const code = res.locals.sfOAuthCode;
-			const callbackLoginUrl = _canonicalizeSfLoginUrl(req.session.sfLoginUrl) || null;
+			const attempt = res.locals.sfOAuthAttempt;
+			const callbackLoginUrl = attempt.loginUrl;
 			if (callbackLoginUrl) {
 				req.session.sfLoginUrl = callbackLoginUrl;
 			}
-			const oauth2 = createOAuth2(callbackLoginUrl);
+			const oauth2 = createOAuth2(callbackLoginUrl, attempt.codeVerifier);
 			const conn = new Connection({ oauth2, version: config.salesforce.apiVersion });
 			let userInfo;
 			try {

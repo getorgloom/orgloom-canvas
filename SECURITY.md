@@ -9,7 +9,6 @@ and proof-of-concept code when available. We aim to acknowledge reports within
 three business days and provide an initial assessment within seven business
 days.
 
-The hosted Org Loom service at [orgloom.com](https://orgloom.com) is in scope.
 Third-party self-hosted deployments and scanner output without a demonstrated
 impact are out of scope. We do not currently operate a paid bug bounty.
 

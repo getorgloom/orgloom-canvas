@@ -495,6 +495,9 @@
 					selByName[objName] = sel;
 				}
 
+				if (opts?.canCommit && !opts.canCommit()) {
+					throw new Error('The canvas changed while loading. Try importing the records again.');
+				}
 				clearEmptyStarterCard();
 				const canvasEl = getGraph().querySelector('#bulk-canvas');
 				const startX = (canvasEl ? canvasEl.clientWidth / 2 : 600) - 220;
@@ -624,6 +627,7 @@
 			return {
 				openModal: openSoqlImportModal,
 				runAndCommitSoql: runAndCommitSoql,
+				commitRecords: soqlImportCommitToCanvas,
 			};
 		},
 	};

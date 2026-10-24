@@ -115,6 +115,7 @@
 				options = options || {};
 				const payload = options.payload || currentPayload();
 				baseline = payload === null ? null : fingerprint(payload);
+				window.OrgLoom.platform?.recovery?.captureSaved?.();
 				return emit({
 					phase: canPersistCurrentCanvas() ? 'clean' : 'shared',
 					dirty: false,

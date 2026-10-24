@@ -136,6 +136,12 @@
 			}
 
 			async function bulkAutoFill(scope, fieldType, opts) {
+				const operationCanvas = canvasState.currentCanvas;
+				const operationRecords = canvasState.bulkRecords;
+				const canCommit = () =>
+					operationCanvas === canvasState.currentCanvas &&
+					operationRecords === canvasState.bulkRecords &&
+					(!deps.canCommit || deps.canCommit());
 				// Relationship fields need real canvas links, so autofill reports rather than fabricates them.
 				opts = opts || {};
 				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0 ? new Set(opts.tempIds) : null;
@@ -237,6 +243,10 @@
 				}
 				return Promise.all([loadSmartDefaults(), ...objectNames.map((n) => ensureDescribe(n))])
 					.then(() => {
+						if (!canCommit()) {
+							showBulkToast('The canvas or editing session changed. No records were changed.', 'error');
+							return false;
+						}
 						const _undo = _captureValuesUndo(draftRecords);
 						let touchedCount = 0;
 						const touchedRecords = [];
@@ -353,6 +363,12 @@
 			}
 
 			async function bulkClearAllFields(opts) {
+				const operationCanvas = canvasState.currentCanvas;
+				const operationRecords = canvasState.bulkRecords;
+				const canCommit = () =>
+					operationCanvas === canvasState.currentCanvas &&
+					operationRecords === canvasState.bulkRecords &&
+					(!deps.canCommit || deps.canCommit());
 				opts = opts || {};
 				const onlyIds = Array.isArray(opts.tempIds) && opts.tempIds.length > 0 ? new Set(opts.tempIds) : null;
 				const selectionScope = opts.selectionScope !== undefined ? !!opts.selectionScope : !!onlyIds;
@@ -405,6 +421,10 @@
 				const access = await verifyAutoFillPermission();
 				if (!access.allowed) {
 					_showAutoFillAccessError(access.message);
+					return false;
+				}
+				if (!canCommit()) {
+					showBulkToast('The canvas or editing session changed. No records were changed.', 'error');
 					return false;
 				}
 				const _undo = _captureValuesUndo(draftRecords);

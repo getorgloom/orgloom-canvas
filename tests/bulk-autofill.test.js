@@ -17,6 +17,7 @@ function harness({
 	sampleValueForField,
 	autoFillAllowed = true,
 	confirmResult = true,
+	canCommit = () => true,
 } = {}) {
 	const toasts = [];
 	let capabilityRefreshes = 0;
@@ -26,6 +27,7 @@ function harness({
 	const window = {};
 	vm.runInNewContext(source, { window, Map, Set, Promise, JSON, Number });
 	const api = window.OrgLoom.bulkAutofill.mount({
+		canCommit,
 		canvasState: state,
 		csrfFetch: async () => ({
 			ok: autoFillAllowed,
@@ -212,4 +214,47 @@ test('draft-only clear can skip confirmation after review while loaded-record cl
 	assert.equal(result.lastConfirmation.title, 'Clear fields?');
 	assert.equal(result.lastConfirmation.message, 'The next upload will clear field values for 1 Salesforce record.');
 	assert.doesNotMatch(result.lastConfirmation.message, /What this does|Wipe every field value|Undo/);
+});
+
+test('auto-fill does not apply after the canvas or session changes while metadata loads', async () => {
+	for (const transition of ['canvas', 'records', 'session']) {
+		let finish,
+			canEdit = true;
+		const record = { id: 1, objectName: 'Account', values: {} };
+		const h = harness({
+			records: [record],
+			describes: { Account: { fields: [{ name: 'Name', required: true }] } },
+			canCommit: () => canEdit,
+			ensureDescribe: () =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		});
+		const pending = h.api.bulkAutoFill('required', 'both', { skipConfirm: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		if (transition === 'canvas') {
+			h.state.currentCanvas = { id: 'replacement' };
+		}
+		if (transition === 'records') {
+			h.state.bulkRecords = [];
+		}
+		if (transition === 'session') {
+			canEdit = false;
+		}
+		finish();
+		await pending;
+		assert.deepEqual(record.values, {});
+		assert.match(h.toasts.at(-1).message, /session changed/);
+	}
+});
+
+test('clear fields checks editing-session ownership after the permission request', async () => {
+	let canEdit = true;
+	const record = { id: 1, objectName: 'Account', values: { Name: 'Preserve' } };
+	const h = harness({ records: [record], canCommit: () => canEdit });
+	const pending = h.api.bulkClearAllFields({ skipConfirm: true });
+	canEdit = false;
+	await pending;
+	assert.deepEqual(record.values, { Name: 'Preserve' });
+	assert.match(h.toasts.at(-1).message, /session changed/);
 });

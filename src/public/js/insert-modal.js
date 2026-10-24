@@ -724,6 +724,11 @@
 			if (recordTypeId) {
 				field.picklistValuesByRecordType = field.picklistValuesByRecordType || {};
 				field.picklistValuesByRecordType[recordTypeId] = values;
+				// UI API layouts can carry record-type-specific dependent-picklist indexes.
+				if (layoutField.controllerValues) {
+					field.controllerValuesByRecordType = field.controllerValuesByRecordType || {};
+					field.controllerValuesByRecordType[recordTypeId] = layoutField.controllerValues;
+				}
 				return;
 			}
 			if (!Array.isArray(field.picklistValues) || field.picklistValues.length === 0) {

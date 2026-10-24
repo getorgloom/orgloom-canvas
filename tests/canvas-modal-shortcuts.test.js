@@ -10,10 +10,11 @@ const start = source.indexOf(
 const end = source.indexOf('\n\tasync function addToSelection(', start);
 assert.ok(start >= 0 && end > start);
 
-function setup({ modalVisible = false, selectionText = '' } = {}) {
+function setup({ modalVisible = false, selectionText = '', platform = {} } = {}) {
 	let handler;
 	const calls = [];
 	const state = {
+		platform,
 		graph: { classList: { contains: () => false } },
 		document: {
 			addEventListener: (_type, callback) => {
@@ -82,4 +83,20 @@ test('already handled keyboard events do not trigger canvas copying', () => {
 	const env = setup();
 	assert.equal(env.press('c', { defaultPrevented: true }), false);
 	assert.deepEqual(env.calls, []);
+});
+
+test('event-based platform clipboard leaves native copy/paste events available but retains paste-many', () => {
+	const env = setup({ platform: { clipboard: { usesEvents: true } } });
+	assert.equal(env.press('c'), false);
+	assert.equal(env.press('v'), false);
+	assert.deepEqual(env.calls, []);
+	assert.equal(env.press('v', { shiftKey: true }), true);
+	assert.deepEqual(env.calls, ['paste-many']);
+});
+
+test('hosted clipboard still handles ordinary paste and paste-many', () => {
+	const env = setup();
+	assert.equal(env.press('v'), true);
+	assert.equal(env.press('v', { shiftKey: true }), true);
+	assert.deepEqual(env.calls, ['paste', 'paste-many']);
 });

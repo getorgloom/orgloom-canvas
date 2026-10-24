@@ -1163,6 +1163,10 @@
 			}
 
 			async function applyCanvasPayload(payload, opts) {
+				const sequenceFloor = Number(window.OrgLoom.platform?.requestSequenceFloor?.(payload));
+				if (Number.isSafeInteger(sequenceFloor) && sequenceFloor > 0) {
+					setSlotIdSeq(Math.max(getSlotIdSeq(), sequenceFloor));
+				}
 				opts = opts || {};
 				const beforeImport = new Set(canvasState.bulkRecords);
 				const merge = !!opts.merge;

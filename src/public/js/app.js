@@ -20,6 +20,9 @@ function csrfFetch(url, options) {
 }
 
 (function () {
+	// Trusted platform integration, installed before bootstrap; never sourced from a canvas file.
+	const platform = window.OrgLoom.platform || {};
+	const canCommitLocalChanges = () => _canEditCanvasStructure() && (!platform.canEdit || platform.canEdit());
 	const canvasState = {
 		allObjects: null,
 		_allObjectsError: null,
@@ -100,6 +103,9 @@ function csrfFetch(url, options) {
 			return true;
 		}
 		try {
+			if (platform.onboarding?.getFlag) {
+				return platform.onboarding.getFlag(key === _canvasGuideDismissKey ? 'dismissed' : 'completed');
+			}
 			return localStorage.getItem(key) === '1';
 		} catch (_) {
 			return false;
@@ -109,6 +115,10 @@ function csrfFetch(url, options) {
 	function _dismissCanvasGuide() {
 		_canvasGuideDismissedThisPage = true;
 		try {
+			if (platform.onboarding?.setFlag) {
+				platform.onboarding.setFlag('dismissed');
+				return;
+			}
 			localStorage.setItem(_canvasGuideDismissKey, '1');
 		} catch (_) {
 			/* private mode: runtime flag still hides it */
@@ -118,6 +128,10 @@ function csrfFetch(url, options) {
 	function _completeCanvasGuide() {
 		_canvasGuideCompletedThisPage = true;
 		try {
+			if (platform.onboarding?.setFlag) {
+				platform.onboarding.setFlag('completed');
+				return;
+			}
 			localStorage.setItem(_canvasGuideCompleteKey, '1');
 		} catch (_) {
 			/* private mode: runtime flag still hides it */
@@ -768,6 +782,7 @@ function csrfFetch(url, options) {
 		const finishCanvasLoad = beginCanvasReplacementLoad('Opening shared canvas\u2026');
 		_allObjectsReady.then(async () => {
 			try {
+				if (await platform.recovery?.ready?.()) return;
 				const r = await csrfFetch('/api/canvas/' + encodeURIComponent(shareCanvasId), {
 					credentials: 'same-origin',
 				});
@@ -873,6 +888,7 @@ function csrfFetch(url, options) {
 		const finishCanvasLoad = beginCanvasReplacementLoad('Opening canvas\u2026');
 		_allObjectsReady.then(async () => {
 			try {
+				if (await platform.recovery?.ready?.()) return;
 				const r = await csrfFetch('/api/canvas/' + encodeURIComponent(openId), { credentials: 'same-origin' });
 				const data = await r.json().catch(() => null);
 				if (!r.ok) {
@@ -1078,6 +1094,16 @@ function csrfFetch(url, options) {
 				return;
 			}
 			succeeded = true;
+			if (platform.afterRequestsSubmitted) {
+				await platform.afterRequestsSubmitted({
+					role: _canvasShareRole,
+					fills,
+					response: data,
+					canvasState,
+					reload: _reloadCanvasFromServer,
+					render: renderBulkView,
+				});
+			}
 			setShareRecipientSubmitState('success');
 			showBulkToast(
 				'Submitted ' +
@@ -2093,12 +2119,15 @@ function csrfFetch(url, options) {
 				if (selection && !selection.isCollapsed && selection.toString()) {
 					return;
 				}
-				if (copySelectionToClipboard()) {
+				if (!platform.clipboard?.usesEvents && copySelectionToClipboard()) {
 					e.preventDefault();
 				}
 				return;
 			}
 			if (cmd && (e.key === 'v' || e.key === 'V')) {
+				if (platform.clipboard?.usesEvents && !e.shiftKey) {
+					return;
+				}
 				if (e.shiftKey) {
 					openPasteCountPrompt();
 				} else {
@@ -3118,6 +3147,9 @@ function csrfFetch(url, options) {
 		}
 		if (emptyPh) {
 			const realCount = canvasState.bulkRecords.filter((r) => r && (!r.isTypeNode || r.isPending)).length;
+			if (realCount > 0 && platform.onboarding?.completeOnFirstRecord && !_canvasGuideCompletedThisPage) {
+				_completeCanvasGuide();
+			}
 			const _dismissed = _canvasGuideHas(_canvasGuideDismissKey, _canvasGuideDismissedThisPage);
 			const _completed = _canvasGuideHas(_canvasGuideCompleteKey, _canvasGuideCompletedThisPage);
 			const showPh = realCount === 0 && !_dismissed && !_completed;
@@ -6391,6 +6423,7 @@ function csrfFetch(url, options) {
 	}
 
 	const _bs = window.OrgLoom.bulkScript.mount({
+		canCommit: canCommitLocalChanges,
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
 		refreshCapabilities: function () {
@@ -6594,6 +6627,12 @@ function csrfFetch(url, options) {
 			return openBulkRefreshFlow.apply(null, arguments);
 		},
 		beginMigration: function () {
+			if (platform.migration?.start) {
+				return platform.migration.start({
+					exportForMigration: () =>
+						downloadTemplate(canvasState.currentCanvas?.title || 'canvas', false, true),
+				});
+			}
 			return beginMigration.apply(null, arguments);
 		},
 		openStandaloneRecordRequestPicker: function () {
@@ -6632,6 +6671,7 @@ function csrfFetch(url, options) {
 	const showBulkHelpPopover = _bom.showBulkHelpPopover;
 
 	const _baf = window.OrgLoom.bulkAutofill.mount({
+		canCommit: canCommitLocalChanges,
 		canvasState: canvasState,
 		csrfFetch: csrfFetch,
 		ensureDescribe: ensureDescribe,
@@ -6838,6 +6878,7 @@ function csrfFetch(url, options) {
 	const renderBulkCanvasCy = _rcv.renderBulkCanvasCy;
 
 	async function startNewCanvas() {
+		await platform.recovery?.discard?.();
 		_clearUploadFixes();
 		const previousCanvasId =
 			canvasState.currentCanvas && canvasState.currentCanvas.id ? canvasState.currentCanvas.id : null;
@@ -7077,6 +7118,7 @@ function csrfFetch(url, options) {
 			return _publishPresenceChanges();
 		},
 		flushAutosave: function () {
+			platform.recovery?.uploadStateApplied?.();
 			return _autosaveFlush();
 		},
 		pingAuditEvent: pingAuditEvent,
@@ -7849,5 +7891,55 @@ function csrfFetch(url, options) {
 		e.preventDefault();
 		e.stopPropagation();
 		showBrowseSavedMenu(trigger);
+	});
+	// The host owns durable recovery; the canvas owns serialization and rendering.
+	// Nothing in an imported file can register or replace this integration.
+	platform.recovery?.mount?.({
+		ready: _allObjectsReady,
+		snapshot: () => {
+			window.Orgloom.canvasState.getCurrentCanvas();
+			return window.Orgloom.canvasState.snapshot();
+		},
+		busy: () => _canvasReplacementLoads > 0 || canvasState.migrateMode.active,
+		readOnly: () => canvasState.currentCanvas?.recipientRole === 'viewer',
+		restore: async (data) => {
+			const current = data.id
+				? {
+						id: data.id,
+						title: data.title,
+						ownedByMe: !!data.ownedByMe,
+						versionId: data.versionId,
+						recipientRole: data.recipientRole || null,
+					}
+				: null;
+			await applyCanvasPayload(data.payload, {
+				presenceSnapshot: true,
+				merge: false,
+				canvasIdentity: current,
+				ownedByMe: current ? current.ownedByMe : true,
+				recipientRole: current?.recipientRole || null,
+			});
+			canvasState.currentCanvas = current;
+			_canvasShareCanvasId = current && !current.ownedByMe ? current.id : null;
+			_canvasShareRole = current?.recipientRole || null;
+			canvasState._renderCanvasShareRole = _canvasShareRole;
+			_canvasSaveState.markRestored();
+			renderShareRecipientBanner();
+			renderBulkView();
+			renderBulkToolbar();
+		},
+		confirm: (options) => showConfirmDialog(options),
+		toast: showBulkToast,
+	});
+	platform.clipboard?.mount?.({
+		canvasState,
+		canEdit: canCommitLocalChanges,
+		commit: _soql.commitRecords,
+		render: renderBulkView,
+		toast: showBulkToast,
+		graph: () => graph,
+		canvas: () => canvasState.currentCanvas,
+		copyCards: copySelectionToClipboard,
+		pasteCards: () => pasteFromClipboard(1),
 	});
 })();

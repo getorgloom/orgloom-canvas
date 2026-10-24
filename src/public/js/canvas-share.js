@@ -25,6 +25,7 @@
 					throw new Error('canvas-share.mount: missing dep ' + k);
 				}
 			}
+			const platformShare = window.OrgLoom.platform?.share || {};
 			const canvasState = deps.canvasState;
 			const csrfFetch = deps.csrfFetch;
 			const escapeHtml = deps.escapeHtml;
@@ -39,7 +40,7 @@
 				hostEl,
 				{
 					onPick,
-					placeholder = 'Search by name, email, or username…',
+					placeholder = platformShare.searchPlaceholder || 'Search by name, email, or username…',
 					changeLabel = 'Change',
 					excludeCurrentUser = false,
 				} = {},
@@ -305,7 +306,7 @@
 					sendBtnEl.disabled = !ready || sharing || shareAccessBlocked || !!window.ORGLOOM_MOCK;
 				}
 				const picker = attachSfUserPicker(modal.querySelector('#cs-link-picker'), {
-					placeholder: 'Pick a teammate by name, email, or username…',
+					placeholder: platformShare.teammatePlaceholder || 'Pick a teammate by name, email, or username…',
 					excludeCurrentUser: true,
 					onPick() {
 						const picked = picker.getPicked();
@@ -592,9 +593,13 @@
 						const who = r2.name || r2.email || picked.email || picked.name || 'the recipient';
 						roleSelect.value = '';
 						picker.clear({ focus: false });
-						msgEl.textContent = data.emailDeliverFailed
-							? 'Access granted, but the email to ' + who + ' failed. Use Copy canvas link to share it.'
-							: '';
+						msgEl.textContent =
+							platformShare.notificationMessage?.(data) ??
+							(data.emailDeliverFailed
+								? 'Access granted, but the email to ' +
+									who +
+									' failed. Use Copy canvas link to share it.'
+								: '');
 						msgEl.style.color = data.emailDeliverFailed ? 'var(--warn)' : '';
 						await refreshAccessList();
 						modal.querySelector('#cs-share-url-copy').focus();
@@ -612,11 +617,12 @@
 				const copyLabel = copyBtn.querySelector('.cs-copy-label');
 				copyBtn.disabled = !!window.ORGLOOM_MOCK;
 				copyBtn.addEventListener('click', async () => {
-					const canvasUrl =
-						window.location.origin +
-						(window.ORGLOOM_CANVAS_PATH || '/') +
-						'?openCanvas=' +
-						encodeURIComponent(canvasId);
+					const canvasUrl = platformShare.buildUrl
+						? platformShare.buildUrl(canvasId)
+						: window.location.origin +
+							(window.ORGLOOM_CANVAS_PATH || '/') +
+							'?openCanvas=' +
+							encodeURIComponent(canvasId);
 					try {
 						if (navigator.clipboard && navigator.clipboard.writeText) {
 							await navigator.clipboard.writeText(canvasUrl);

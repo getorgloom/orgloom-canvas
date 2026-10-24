@@ -292,12 +292,16 @@
 					'<button type="button" class="batch-btn batch-btn-icon" data-app-history title="Recent uploads: recall a previous batch" aria-label="Upload history">' +
 					_historyIconSvg +
 					'</button>';
+				const canvasesBtn = window.OrgLoom.platform?.toolbar?.showCanvasesMenu
+					? '<button type="button" class="batch-btn" data-app-canvases title="Open saved canvases" aria-haspopup="menu">Canvases ▾</button>'
+					: '';
 				recordsBar.innerHTML =
 					addMenuBtn +
 					bulkOpsBtn +
 					'<span class="bulk-hint-spacer"></span>' +
 					playgroundResetBtn +
 					shareBtn +
+					canvasesBtn +
 					saveCanvasBtn +
 					uploadBtn +
 					historyBtn;

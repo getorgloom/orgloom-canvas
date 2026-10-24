@@ -355,7 +355,14 @@ test('fix state remains private to the sidebar and is never serialized into canv
 	const app = fs.readFileSync(new URL('../src/public/js/app.js', import.meta.url), 'utf8');
 	const templates = fs.readFileSync(new URL('../src/public/js/templates.js', import.meta.url), 'utf8');
 	const template = fs.readFileSync(new URL('../src/views/index.ejs', import.meta.url), 'utf8');
-	assert.match(app, /async function startNewCanvas\(\)\s*{\s*_clearUploadFixes\(\)/);
+	const startNewCanvas = app.match(/async function startNewCanvas\(\)\s*{([\s\S]*?)\n\t}/)?.[1];
+	assert.ok(startNewCanvas, 'new-canvas lifecycle must be present');
+	// Recovery cleanup may run first; fixes must still be cleared before the canvas identity changes.
+	assert.match(startNewCanvas, /_clearUploadFixes\(\);/);
+	assert.ok(
+		startNewCanvas.indexOf('_clearUploadFixes();') < startNewCanvas.indexOf('canvasState.currentCanvas = null'),
+		'upload fixes must not carry over into the new canvas',
+	);
 	assert.match(
 		app,
 		/onCanvasReplace: \(\) =>\s*{\s*clearUndoHistory\(\);\s*_clearUploadFixes\(\);\s*closeRecordEditors\(\);/,
